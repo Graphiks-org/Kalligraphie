@@ -41,5 +41,9 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.ktor.client.okhttp)
         }
+
+        jvmTest.dependencies {
+            implementation(project(":font"))
+        }
     }
 }
