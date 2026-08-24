@@ -4642,8 +4642,15 @@ private fun packAtlasItems(
                 cursorX > padding
         ) {
             cursorX = padding
-            cursorY += rowHeight + padding
+            val nextCursorY = cursorY.toLong() + rowHeight.toLong() + padding.toLong()
+            require(nextCursorY <= Int.MAX_VALUE.toLong()) {
+                "Glyph ${item.glyphId} vertical cursor exceeds Int.MAX_VALUE."
+            }
+            cursorY = nextCursorY.toInt()
             rowHeight = 0
+        }
+        require(cursorY.toLong() + item.height.toLong() <= Int.MAX_VALUE.toLong()) {
+            "Glyph ${item.glyphId} vertical placement exceeds Int.MAX_VALUE."
         }
         placements += GlyphAtlasPlacement(
             glyphId = item.glyphId,

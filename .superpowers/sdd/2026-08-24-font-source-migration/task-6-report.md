@@ -36,3 +36,11 @@
 - The row-wrap predicate now promotes `cursorX`, item width, padding, and atlas width to `Long`, preventing an `Int` overflow from bypassing a required wrap.
 - `rowPackerWrapsAtIntMaximumWidthWithoutPlacingOutsideAtlas` uses zero-height masks with widths `Int.MAX_VALUE` and `1`, so it allocates no giant pixel buffer. It proves the second item wraps and every placement's right edge stays inside the atlas.
 - RED: the focused regression failed with the previous `Int` addition. GREEN: the focused test and `rtk ./gradlew --no-daemon :font:glyph:test` both succeeded after the `Long` calculation.
+
+## Post-review follow-up — safe vertical row cursor
+
+- Baseline commit: `e6c8058`.
+- Vertical row advances and every placement bottom edge are checked with `Long` before converting back to `Int`; invalid geometry is rejected before a negative or out-of-range `y` can be emitted.
+- `rowPackerRejectsDegenerateRowsThatOverflowTheVerticalCursor` uses only zero-width/maximum-height and one-width/zero-height masks. Their pixel lists are empty, so the regression triggers the former overflow pattern without a large allocation; it expects an explicit vertical-bound rejection.
+- The packer remains one pass over input masks with one placement per accepted mask; neither this check nor the test adds a dimension-dependent loop or allocation.
+- RED: the focused regression failed before the bounds checks. GREEN: the focused regression and `rtk ./gradlew --no-daemon :font:glyph:test` succeeded after the correction; the GPU boundary scan remained empty.

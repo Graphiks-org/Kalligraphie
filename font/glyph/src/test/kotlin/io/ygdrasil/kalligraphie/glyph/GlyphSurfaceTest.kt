@@ -700,6 +700,24 @@ class GlyphSurfaceTest {
     }
 
     @Test
+    fun rowPackerRejectsDegenerateRowsThatOverflowTheVerticalCursor() {
+        val failure = assertFailsWith<IllegalArgumentException> {
+            RowGlyphAtlasPacker(atlasWidth = 1, padding = 0).pack(
+                listOf(
+                    a8Mask(glyphId = 72, width = 0, height = Int.MAX_VALUE),
+                    a8Mask(glyphId = 73, width = 1, height = 0),
+                    a8Mask(glyphId = 74, width = 0, height = Int.MAX_VALUE),
+                    a8Mask(glyphId = 75, width = 1, height = 0),
+                    a8Mask(glyphId = 76, width = 0, height = Int.MAX_VALUE),
+                    a8Mask(glyphId = 77, width = 1, height = 0),
+                ),
+            )
+        }
+
+        assertTrue(failure.message.orEmpty().contains("vertical"))
+    }
+
+    @Test
     fun rowPackerPreservesDegenerateMaskPlacements() {
         val placements = RowGlyphAtlasPacker(atlasWidth = 8, padding = 1).pack(
             listOf(
