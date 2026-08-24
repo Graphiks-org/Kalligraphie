@@ -32,9 +32,11 @@ licence.
   (représentations et masques), et text (shaping et paragraphes). Cette
   topologie préserve la séparation amont entre font.glyph et glyph et évite
   leurs collisions de noms.
-- Les fontes binaires et fixtures de Kanvas ne font pas partie de l’import
-  initial. Toute fixture tierce ajoutée ultérieurement doit garder son fichier
-  de licence et une provenance vérifiable (par exemple SIL OFL ou Unicode).
+- Le sous-arbre de fixtures requis par les tests amont est importé sous
+  font/fixtures, avec son manifeste de provenance et ses licences. Les autres
+  rapports Kanvas restent exclus. Toute fixture tierce ajoutée ultérieurement
+  doit garder son fichier de licence et une provenance vérifiable (par exemple
+  SIL OFL ou Unicode).
 
 ## Inventaire amont
 
@@ -115,8 +117,10 @@ consommateur quand ce renderer existera.
 
 - Créer un manifeste d’import contenant l’URL, le commit amont, les chemins
   repris et leurs SHA-256.
-- Établir une liste d’exclusions explicites : rapports, sources de test non
-  requises, fixtures binaires et licences associées.
+- Déplacer reports/font/fixtures vers font/fixtures, y compris les fontes de
+  test, les valeurs attendues, le manifeste de provenance et les licences.
+- Établir une liste d’exclusions explicites : rapports hors fixtures, sources
+  de test non requises et tout le module font/gpu-api.
 - Ajouter l’historique de migration dans CHANGELOG.md et documenter le
   changement de paquet.
 
@@ -202,6 +206,6 @@ pris en charge doivent être explicitement testés et documentés.
 | --- | --- |
 | Copier du JVM dans commonMain casse Android/iOS | Conserver une première implémentation JVM et isoler les adaptateurs de plateforme. |
 | Import massif difficile à déboguer | Découper par jalons et faire passer les tests à chaque module. |
-| Fixtures de fonte non redistribuables | Ne pas les importer par défaut ; ajouter provenance et licence avant chaque ajout. |
+| Fixtures de fonte non redistribuables | Importer uniquement font/fixtures, avec provenance et licence ; contrôler chaque ajout ultérieur. |
 | Contrats de rendu couplés à Kanvas | Importer d’abord les modèles et le parsing ; intégrer le renderer au jalon 3. |
 | Promesse de texte trop large | Définir le texte simple et des diagnostics de refus stables dès le jalon 2. |
