@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "a8-sdf-atlas-lifecycle",
+  "ownerTickets": [
+    "PKT-10D"
+  ],
+  "fixtureIds": [
+    "font-source-liberation-core"
+  ],
+  "requiredEvidence": [
+    "A8 atlas pack fixture rows",
+    "SDF normalization fixture rows",
+    "SDF transform refusal fixture rows",
+    "atlas capacity refusal fixture rows",
+    "stale generation refusal fixture rows",
+    "key preimage fixture rows",
+    "mask and SDF hash requirements",
+    "generation and invalidation token requirements",
+    "atlas budget facts"
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.SDF-transform-unsupported",
+    "text.glyph.SDF-generation-failed",
+    "text.glyph.atlas-capacity-exceeded",
+    "text.glyph.atlas-generation-stale",
+    "text.glyph.cache-key-nondeterministic",
+    "text.glyph.artifact-budget-exceeded"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-complete-a8-atlas-claim",
+    "no-complete-sdf-production-claim",
+    "no-complete-atlas-lifecycle-claim",
+    "no-gpu-text-route-claim",
+    "no-gpu-upload-execution-claim",
+    "no-renderer-resource-ownership-claim"
+  ]
+}

@@ -1,0 +1,391 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "truetype-malformed-glyf-isolation",
+  "ownerTickets": [
+    "KFONT-M3-005"
+  ],
+  "fixtureIds": [
+    "truetype-scaler-truetype-malformed-glyf-isolation"
+  ],
+  "requiredEvidence": [
+    "glyph-outline.json",
+    "glyph-metrics.json",
+    "variation-deltas.json",
+    "diagnostic-snapshot",
+    "positive-control-dump"
+  ],
+  "faceRefusalCases": [
+    {
+                  "caseId": "loca-final-offset-out-of-bounds",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-face",
+      "primaryDiagnostic": {"code": "font.scaler.outline-unavailable", "detail": "truetype.loca-final-offset-out-of-bounds", "operation": "face", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": false
+    },
+                  "exceptionMessage": "loca final offset 24 exceeds glyf table length 22."
+                }
+  ],
+  "glyphIsolationCases": [
+    {
+                  "caseId": "truncated-glyph-header",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.scaler.outline-unavailable", "detail": "truetype.glyf-header-truncated", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                    "glyphId": 1,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [],
+                    "normalizedVariationPosition": [],
+                    "outlineCommands": [],
+                    "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "metrics": null,
+                    "diagnostics": [
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.glyf-header-truncated", "operation": "metrics", "glyphId": 1, "severity": "refusal"},
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.glyf-header-truncated", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                    ]
+                  },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                },
+    {
+                  "caseId": "bad-contour-endpoints",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.scaler.outline-unavailable", "detail": "truetype.contour-endpoints-malformed", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                    "glyphId": 1,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [],
+                    "normalizedVariationPosition": [],
+                    "outlineCommands": [],
+                    "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "metrics": null,
+                    "diagnostics": [
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.contour-endpoints-malformed", "operation": "metrics", "glyphId": 1, "severity": "refusal"},
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.contour-endpoints-malformed", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                    ]
+                  },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                },
+    {
+                  "caseId": "flag-repeat-overflow",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.scaler.outline-unavailable", "detail": "truetype.flag-repeat-overflow", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                    "glyphId": 1,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [],
+                    "normalizedVariationPosition": [],
+                    "outlineCommands": [],
+                    "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "metrics": null,
+                    "diagnostics": [
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.flag-repeat-overflow", "operation": "metrics", "glyphId": 1, "severity": "refusal"},
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.flag-repeat-overflow", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                    ]
+                  },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                },
+    {
+                  "caseId": "coordinate-run-truncation",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.scaler.outline-unavailable", "detail": "truetype.coordinate-run-truncated", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                    "glyphId": 1,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [],
+                    "normalizedVariationPosition": [],
+                    "outlineCommands": [],
+                    "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "metrics": null,
+                    "diagnostics": [
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.coordinate-run-truncated", "operation": "metrics", "glyphId": 1, "severity": "refusal"},
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.coordinate-run-truncated", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                    ]
+                  },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                },
+    {
+                  "caseId": "composite-cycle",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.outline-format-unsupported", "detail": "truetype.composite-recursion-depth", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                                "glyphId": 1,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": [],
+                                "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                                "metrics": {
+                    "advanceX": 500.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 16.0,
+                      "bottom": 16.0
+                    }
+                  },
+                                "diagnostics": [
+                                  {"code": "font.outline-format-unsupported", "detail": "truetype.composite-recursion-depth", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                                ]
+                              },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                },
+    {
+                  "caseId": "missing-component-glyph",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.outline-format-unsupported", "detail": "truetype.composite-component-glyph-id", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                                "glyphId": 1,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": [],
+                                "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                                "metrics": {
+                    "advanceX": 500.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 16.0,
+                      "bottom": 16.0
+                    }
+                  },
+                                "diagnostics": [
+                                  {"code": "font.outline-format-unsupported", "detail": "truetype.composite-component-glyph-id", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                                ]
+                              },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                },
+    {
+                  "caseId": "invalid-composite-transform-flags",
+                  "requestedArtifact": "glyph-outline.json",
+                  "failurePolicy": {
+      "action": "refuse-glyph",
+      "primaryDiagnostic": {"code": "font.scaler.outline-unavailable", "detail": "truetype.composite-transform-flags", "operation": "outline", "glyphId": 1, "severity": "refusal"},
+      "safeGlyphsStillAvailable": true
+    },
+                  "malformedGlyphEvidence": {
+                    "glyphId": 1,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [],
+                    "normalizedVariationPosition": [],
+                    "outlineCommands": [],
+                    "outlineCommandDumpSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                    "metrics": null,
+                    "diagnostics": [
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.composite-transform-flags", "operation": "metrics", "glyphId": 1, "severity": "refusal"},
+                      {"code": "font.scaler.outline-unavailable", "detail": "truetype.composite-transform-flags", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+                    ]
+                  },
+                  "positiveControlGlyphEvidence": {
+                                "glyphId": 0,
+                                "scalerFamily": "truetype-glyf",
+                                "route": "font.scaler.truetype-glyf",
+                                "requestedVariationPosition": [],
+                                "normalizedVariationPosition": [],
+                                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                                "metrics": {
+                    "advanceX": 600.0,
+                    "advanceY": 0.0,
+                    "bounds": {
+                      "left": 0.0,
+                      "top": 0.0,
+                      "right": 100.0,
+                      "bottom": 100.0
+                    }
+                  },
+                                "diagnostics": []
+                              }
+                }
+  ],
+  "variationCases": [
+    {
+      "caseId": "malformed-gvar-point-data",
+      "requestedArtifact": "variation-deltas.json",
+      "primaryDiagnostic": {"code": "font.variation-data-malformed", "detail": "truetype.gvar-malformed", "operation": "variation", "glyphId": 0, "severity": "warning"},
+      "glyphEvidence": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": 1.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": 1.0}
+      ],
+                    "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                    "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                    "metrics": {
+        "advanceX": 600.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": [
+                      {"code": "font.variation-data-malformed", "detail": "truetype.gvar-malformed", "operation": "variation", "glyphId": 0, "severity": "warning"}
+                    ]
+                  }
+    }
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-notdef-substitution-runtime-claim",
+    "no-complete-variable-font-support-claim",
+    "no-hvar-vvar-mvar-metrics-claim",
+    "no-vertical-metrics-claim",
+    "no-complete-hinting-vm-claim",
+    "no-a8-or-sdf-artifact-claim",
+    "no-gpu-text-route-claim"
+  ]
+}

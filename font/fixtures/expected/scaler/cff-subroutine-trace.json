@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "cff-subroutine-trace",
+  "ownerTickets": [
+    "KFONT-M4-003"
+  ],
+  "fixtureIds": [
+    "cff-subr-local.otf",
+    "cff-subr-global.otf",
+    "cff-subr-nested.otf",
+    "cff-subr-recursive.otf",
+    "cff-subr-out-of-range.otf",
+    "cff-subr-missing-return.otf"
+  ],
+  "executionLimits": {
+    "default": {
+        "maxOperandStack": 48,
+        "maxCallDepth": 16,
+        "maxInstructionCount": 1024,
+        "maxExpandedBytes": 4096
+      },
+    "instructionLimitFixture": {
+        "maxOperandStack": 48,
+        "maxCallDepth": 16,
+        "maxInstructionCount": 8,
+        "maxExpandedBytes": 64
+      }
+  },
+  "positiveFixtures": [
+    {
+      "fixtureId": "cff-subr-local.otf",
+      "evidence": {
+          "format": "cff",
+          "glyphId": 19,
+          "width": null,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 0.0 0.0", "L 25.0 0.0", "Z"],
+          "outlineCommandDump": "M 0.0 0.0\nL 25.0 0.0\nZ",
+          "outlineCommandDumpSha256": "f5b5f4faf6f0eab2d7d61edb1630de801b5776cb73904c285bdd2b15fb615261",
+          "callTrace": [{"depth": 0, "scope": "local", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 4, "returnByteOffset": 3, "instructionBudgetRemaining": 1016, "expandedByteBudgetRemaining": 4088}],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        }
+    },
+    {
+      "fixtureId": "cff-subr-global.otf",
+      "evidence": {
+          "format": "cff",
+          "glyphId": 24,
+          "width": null,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 0.0 0.0", "L 0.0 25.0", "Z"],
+          "outlineCommandDump": "M 0.0 0.0\nL 0.0 25.0\nZ",
+          "outlineCommandDumpSha256": "42d19811c2c5b2d09a55ea90625c2f1c26e0b99508c3c0a13c5ca39fefb46353",
+          "callTrace": [{"depth": 0, "scope": "global", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 4, "returnByteOffset": 3, "instructionBudgetRemaining": 1016, "expandedByteBudgetRemaining": 4088}],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        }
+    },
+    {
+      "fixtureId": "cff-subr-nested.otf",
+      "evidence": {
+          "format": "cff",
+          "glyphId": 25,
+          "width": null,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 0.0 0.0", "L 25.0 0.0", "L 25.0 25.0", "Z"],
+          "outlineCommandDump": "M 0.0 0.0\nL 25.0 0.0\nL 25.0 25.0\nZ",
+          "outlineCommandDumpSha256": "aec601ac802d211ebbef3b33b421c1e56e60e35f7070861977063efcada80630",
+          "callTrace": [{"depth": 1, "scope": "local", "encodedIndex": -106, "resolvedIndex": 1, "bias": 107, "callerByteOffset": 4, "returnByteOffset": 3, "instructionBudgetRemaining": 1012, "expandedByteBudgetRemaining": 4084}, {"depth": 0, "scope": "local", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 4, "returnByteOffset": 5, "instructionBudgetRemaining": 1010, "expandedByteBudgetRemaining": 4082}],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        }
+    }
+  ],
+  "diagnosticSnapshots": {
+    "subrOutOfRange": {"code": "font.scaler.cff.subr-out-of-range", "detail": "cff.subr-out-of-range", "operation": "charstring", "glyphId": 20, "severity": "refusal"},
+    "subrDepthLimit": {"code": "font.scaler.cff.subr-depth-limit", "detail": "cff.subr-depth-limit", "operation": "charstring", "glyphId": 21, "severity": "refusal"},
+    "subrMissingReturn": {"code": "font.cff-stack-malformed", "detail": "cff.subr-missing-return", "operation": "charstring", "glyphId": 22, "severity": "refusal"},
+    "instructionLimit": {"code": "font.scaler.cff.instruction-limit", "detail": "cff.instruction-limit", "operation": "charstring", "glyphId": 23, "severity": "refusal"}
+  },
+  "nonClaims": [
+    "generated-fixture-evidence-only",
+    "no-complete-cff-rendering-support-claim",
+    "no-complete-cff2-variation-support-claim",
+    "no-native-scaler-oracle-claim"
+  ]
+}

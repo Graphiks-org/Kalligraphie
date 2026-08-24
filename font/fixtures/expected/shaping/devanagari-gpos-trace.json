@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "devanagari-gpos-trace",
+  "ownerTickets": ["KFONT-M6-008"],
+  "fixtureFamilyId": "devanagari-shaping-fixtures",
+  "cases": [
+    {
+      "caseId": "fixture-mark-placement",
+      "ticketId": "KFONT-M6-008",
+      "status": "positive",
+      "reportRef": "devanagari-shaping-report#fixture-mark-placement",
+      "fixtureFont": "reports/font/fixtures/fonts/shaping/devanagari-mark-placement.otf",
+      "inputText": "कं",
+      "typefaceId": "550e8400-e29b-41d4-a716-446655440724",
+      "featureOrder": ["nukt", "akhn", "rphf", "blwf", "half", "pstf", "vatu", "pres", "abvs", "blws", "psts", "haln", "dist", "abvm", "blwm"],
+      "glyphIds": [2, 3],
+      "before": [[200, 0, 0], [200, 0, 0]],
+      "after": [[200, 0, 0], [0, -91, 0]],
+      "lookups": [{"lookupIndex": 0, "lookupType": 4, "featureTag": "abvm", "matchedGlyphIds": [2, 3], "glyphClasses": [1, 3], "markClass": 0, "anchorFormats": [1, 1], "attachmentVector": [547, 0]}]
+    }
+  ],
+  "nonClaims": ["producer-only", "no-devanagari-shaping-support-claim", "no-indic-shaping-support-claim", "no-native-shaper-oracle-claim", "no-cpu-or-gpu-rendering-claim"]
+}

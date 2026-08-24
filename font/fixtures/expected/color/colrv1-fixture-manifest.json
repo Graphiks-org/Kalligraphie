@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "colrv1-fixture-manifest",
+  "ownerTickets": ["KFONT-M10-005"],
+  "fixtureIds": [
+    "color-glyphs-colrv1-solid-glyph-colr-glyph-bounds",
+    "color-glyphs-colrv1-transform-bounds",
+    "color-glyphs-colrv1-composite-clip-bounds",
+    "color-glyphs-colrv1-cycle-refusal",
+    "color-glyphs-colrv1-recursion-depth-refusal",
+    "color-glyphs-colrv1-expanded-paint-count-refusal",
+    "color-glyphs-colrv1-malformed-offset-refusal"
+  ],
+  "cases": [
+    {
+      "fixtureId": "color-glyphs-colrv1-solid-glyph-colr-glyph-bounds",
+      "focus": "nested-glyph-colr-glyph-bounds",
+      "fixtureKind": "synthetic-colrv1-table",
+      "parserExpectation": "parsed-table",
+      "expectedRoute": "colr",
+      "expectedCaseIds": ["colrv1-solid-glyph-colr-glyph"],
+      "expectedDumpIds": ["color-glyph-plan", "colrv1-paint-graph"],
+      "expectedDiagnostics": [],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic COLRv1 bytes from ColorGlyphSurfaceTest cover PaintColrGlyph -> PaintGlyph -> PaintSolid bounds propagation."
+      }
+    },
+    {
+      "fixtureId": "color-glyphs-colrv1-transform-bounds",
+      "focus": "transform-bounds",
+      "fixtureKind": "synthetic-colrv1-table",
+      "parserExpectation": "parsed-table",
+      "expectedRoute": "colr",
+      "expectedCaseIds": ["colrv1-translate", "colrv1-transform", "colrv1-scale", "colrv1-rotate", "colrv1-skew"],
+      "expectedDumpIds": ["color-glyph-plan", "colrv1-paint-graph"],
+      "expectedDiagnostics": [],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic COLRv1 bytes from ColorGlyphSurfaceTest cover translate and generic transform matrices classified as transform/scale/rotate/skew."
+      }
+    },
+    {
+      "fixtureId": "color-glyphs-colrv1-composite-clip-bounds",
+      "focus": "composite-clip-bounds",
+      "fixtureKind": "synthetic-colrv1-table",
+      "parserExpectation": "parsed-table",
+      "expectedRoute": "colr",
+      "expectedCaseIds": ["colrv1-composite-clip"],
+      "expectedDumpIds": ["color-glyph-composite-plan", "color-glyph-plan", "colrv1-paint-graph"],
+      "expectedDiagnostics": [],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic COLRv1 bytes from ColorGlyphSurfaceTest cover clip-wrapped composite bounds plus destination-read and layer-isolation hints."
+      }
+    },
+    {
+      "fixtureId": "color-glyphs-colrv1-cycle-refusal",
+      "focus": "paint-colr-glyph-cycle-diagnostic",
+      "fixtureKind": "synthetic-colrv1-table",
+      "parserExpectation": "parsed-table",
+      "expectedRoute": null,
+      "expectedCaseIds": [],
+      "expectedDumpIds": ["colrv1-fixture-manifest", "color-svg-emoji-goldens"],
+      "expectedDiagnostics": [
+        {"glyphId": 160, "route": "colr", "code": "text.color.COLRv1-cycle-detected", "detail": "glyphId=160;tableFamily=COLR;version=1;cyclePath=160>161>160;cycleLength=2", "severity": "warning", "message": "COLRv1 PaintColrGlyph cycle detected for glyph 160: 160>161>160."}
+      ],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic parsed COLRv1 table from ColorGlyphSurfaceTest walks 160 -> 161 -> 160 and records the first stable cycle diagnostic."
+      }
+    },
+    {
+      "fixtureId": "color-glyphs-colrv1-recursion-depth-refusal",
+      "focus": "recursion-depth-refusal",
+      "fixtureKind": "synthetic-colrv1-table",
+      "parserExpectation": "parsed-table",
+      "expectedRoute": "outline",
+      "expectedCaseIds": [],
+      "expectedDumpIds": ["colrv1-fixture-manifest"],
+      "expectedDiagnostics": [
+        {"glyphId": 300, "route": "colr", "code": "text.color.COLRv1-budget-exceeded", "detail": "glyphId=300;tableFamily=COLR;version=1;limitName=recursionDepth;limit=2;observed=3", "severity": "warning", "message": "COLRv1 paint graph budget recursionDepth exceeded for glyph 300: observed 3, limit 2."}
+      ],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic COLRv1 bytes from ColorGlyphSurfaceTest set maxRecursionDepth=2 and force a third nested PaintColrGlyph walk before monochrome outline fallback."
+      }
+    },
+    {
+      "fixtureId": "color-glyphs-colrv1-expanded-paint-count-refusal",
+      "focus": "expanded-paint-budget-refusal",
+      "fixtureKind": "synthetic-colrv1-table",
+      "parserExpectation": "parsed-table",
+      "expectedRoute": "outline",
+      "expectedCaseIds": [],
+      "expectedDumpIds": ["colrv1-fixture-manifest"],
+      "expectedDiagnostics": [
+        {"glyphId": 304, "route": "colr", "code": "text.color.COLRv1-budget-exceeded", "detail": "glyphId=304;tableFamily=COLR;version=1;limitName=expandedPaintCount;limit=2;observed=3", "severity": "warning", "message": "COLRv1 paint graph budget expandedPaintCount exceeded for glyph 304: observed 3, limit 2."}
+      ],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic COLRv1 bytes from ColorGlyphSurfaceTest set maxExpandedNodeCount=2 and force the third expanded node before monochrome outline fallback."
+      }
+    },
+    {
+      "fixtureId": "color-glyphs-colrv1-malformed-offset-refusal",
+      "focus": "malformed-offset-parse-null",
+      "fixtureKind": "synthetic-colrv1-table-bytes",
+      "parserExpectation": "parse-null",
+      "expectedRoute": null,
+      "expectedCaseIds": [],
+      "expectedDumpIds": ["colrv1-fixture-manifest"],
+      "expectedDiagnostics": [],
+      "provenance": {
+        "generator": "ColorGlyphSurfaceTest",
+        "source": "synthetic-color-glyph-fixtures",
+        "notes": "Synthetic COLRv1 glyph-solid bytes are truncated to make the paint payload unreadable; the parser must fail closed without inventing a route claim."
+      }
+    }
+  ],
+  "nonClaims": ["no-complete-target-support-claim", "no-complete-colrv1-rendering-claim", "no-gpu-color-glyph-support-claim", "no-platform-color-font-fallback-claim"]
+}

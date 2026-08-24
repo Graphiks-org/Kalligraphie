@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "a8-glyph-mask",
+  "ownerTickets": [
+    "KFONT-M9-003"
+  ],
+  "fixtureIds": [
+    "a8-quadratic-simple",
+    "a8-cubic-simple",
+    "a8-composite-outline",
+    "a8-empty-notdef",
+    "a8-malformed-contour",
+    "a8-unsupported-fill-rule"
+  ],
+  "maskCount": 6,
+  "masks": [
+    {
+      "schema": "org.graphiks.kanvas.glyph.A8GlyphMaskArtifactEvidence.v1",
+      "glyphId": 54,
+      "strikeKeySha256": "623a747449a8a6e879919355e4cc7643e41ff52200f4c6271aa5596a1bd4f1e9",
+      "bounds": {"left": 1, "top": 2, "width": 3, "height": 3},
+      "rowBytes": 3,
+      "addressablePixelCount": 9,
+      "nonZeroPixels": 9,
+      "coverageSha256": "71e232cc415bd8287fbb8bf93937d2bab92359c70ca6694f2804effffffa8c68",
+      "sourceOutlineSha256": "06efaab7976d53525c114331ea9b4e333c1a9ab05925d4e9e7935e05c72eee09",
+      "diagnostics": [],
+      "dumpSha256": "282691b261f5e7d98945d72a19bbb41e7f256096d7bc9dbe6b33210d5fd11ab7"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.A8GlyphMaskArtifactEvidence.v1",
+      "glyphId": 55,
+      "strikeKeySha256": "01d21e158678ab57087ea69187d30cf1093906a256d29958bd060e796694871e",
+      "bounds": {"left": 1, "top": 2, "width": 3, "height": 3},
+      "rowBytes": 3,
+      "addressablePixelCount": 9,
+      "nonZeroPixels": 9,
+      "coverageSha256": "71e232cc415bd8287fbb8bf93937d2bab92359c70ca6694f2804effffffa8c68",
+      "sourceOutlineSha256": "1207af428e6528af4dab1b057e53d849465c885835e73e71daf39e75f522e430",
+      "diagnostics": [],
+      "dumpSha256": "89113b7e11eb7a803eced5e3a627430e9aed84cd017128be3b5cea48defa7c6c"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.A8GlyphMaskArtifactEvidence.v1",
+      "glyphId": 0,
+      "strikeKeySha256": "db6c3eafe5b0f0907f0db251d7ba89170b3842f2c694857e7a4152707f864f50",
+      "bounds": {"left": 50, "top": 50, "width": 200, "height": 100},
+      "rowBytes": 200,
+      "addressablePixelCount": 20000,
+      "nonZeroPixels": 20000,
+      "coverageSha256": "435f6e92bf8e5479aecd8a9ba3563e033338b03cd6d88f75adb8f4bc0b7a5abd",
+      "sourceOutlineSha256": "9b2e5b5ad10bf58f588c039d4e6cd8676e2fa9b9e4d18558a5525c0e3e7ac622",
+      "diagnostics": [],
+      "dumpSha256": "339416ff124313c078ced448646efe4a5763d37bcce82b729ec06be04a1a5c9f"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.A8GlyphMaskArtifactEvidence.v1",
+      "glyphId": 0,
+      "strikeKeySha256": "3803ac775fe7fd10e8ad47edb2f1b9b5e3a02327b3d38ea56ca8f5cb428d2b04",
+      "bounds": {"left": 0, "top": 0, "width": 0, "height": 0},
+      "rowBytes": 0,
+      "addressablePixelCount": 0,
+      "nonZeroPixels": 0,
+      "coverageSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sourceOutlineSha256": "03926fc7aa0defc75b9c584538d769d6a86405a4baf9ea3a96dccb3d6d928a17",
+      "diagnostics": [
+        {
+          "glyphId": 0,
+          "route": "text.glyph.A8-generation-failed",
+          "severity": "info",
+          "message": "A8 generation failed for glyph 0: reason=empty-outline, strikeKeySha256=3803ac775fe7fd10e8ad47edb2f1b9b5e3a02327b3d38ea56ca8f5cb428d2b04, detail=No closed contours were available for rasterization."
+        }
+      ],
+      "dumpSha256": "140751b92c34023adf05f64e17a2514e7b521e96db8c5bd4fae10c3ff1b43589"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.A8GlyphMaskArtifactEvidence.v1",
+      "glyphId": 57,
+      "strikeKeySha256": "70fbfbeb709db8c23dc9cb29f28e47d4950808c02ae8303891e8dff6435a3248",
+      "bounds": {"left": 0, "top": 0, "width": 0, "height": 0},
+      "rowBytes": 0,
+      "addressablePixelCount": 0,
+      "nonZeroPixels": 0,
+      "coverageSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sourceOutlineSha256": "dc873723a227fcf4e11f15756f738915728e6f48b510871c853ebcc7059529a0",
+      "diagnostics": [
+        {
+          "glyphId": 57,
+          "route": "text.glyph.A8-generation-failed",
+          "severity": "warning",
+          "message": "A8 generation failed for glyph 57: reason=malformed-outline, strikeKeySha256=70fbfbeb709db8c23dc9cb29f28e47d4950808c02ae8303891e8dff6435a3248, detail=Glyph 57 L command appears before M: 'L 1 2'."
+        }
+      ],
+      "dumpSha256": "419739abae8e07505f3f7fb36678232c9fe3c5a4d175f54537756d659b9b5233"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.A8GlyphMaskArtifactEvidence.v1",
+      "glyphId": 56,
+      "strikeKeySha256": "b8ad13c524647726ec98d283cf93804d0ed62ee91584020ade624bd557b311f3",
+      "bounds": {"left": 0, "top": 0, "width": 0, "height": 0},
+      "rowBytes": 0,
+      "addressablePixelCount": 0,
+      "nonZeroPixels": 0,
+      "coverageSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sourceOutlineSha256": "cbfacd8d416aae5b35c9540530ea5e571f543e4bd80e8469f3abf1d8e74863dd",
+      "diagnostics": [
+        {
+          "glyphId": 56,
+          "route": "text.glyph.A8-generation-failed",
+          "severity": "warning",
+          "message": "A8 generation failed for glyph 56: reason=unsupported-winding-rule, strikeKeySha256=b8ad13c524647726ec98d283cf93804d0ed62ee91584020ade624bd557b311f3, detail=Unsupported glyph winding rule 'evenOdd' for glyph 56; only nonZero is supported."
+        }
+      ],
+      "dumpSha256": "74d1e97d602b413446f9d9b5349bc1001c2fe7d16f0407836a08963d61ec7770"
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.A8-generation-failed"
+  ],
+  "nonClaims": [
+    "producer-only",
+    "no-gpu-text-route-claim",
+    "no-lcd-support-claim",
+    "no-sdf-support-claim",
+    "no-external-rasterizer-parity-claim"
+  ],
+  "dumpSha256": "aeb93f1b5222648bfd2c7b742ace3adc34d4c948ffa4df4b788ca31f1ee1f607"
+}

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "placeholder-layout",
+  "ownerTickets": ["KFONT-M8-006"],
+  "cases": [
+    {"caseId": "baseline-participates", "inputHash": "d4ce8979f199d613e5bf75c6337cd5602f2301260818152d9cda01286b73fabb", "lineMetrics": [{"ascent": -10.0, "descent": 4.0, "leading": 0.0, "width": 22.0, "baseline": 10.0}], "placeholderBoxes": [{"placeholderId": "ph-000", "sourceRange": "1..1", "lineIndex": 0, "left": 10.0, "top": 0.0, "right": 22.0, "bottom": 14.0, "baselineOffset": 10.0, "alignment": "baseline", "baseline": "alphabetic", "participatesInLineHeight": true}], "diagnostics": []},
+    {"caseId": "above-baseline", "inputHash": "2fa34da912349a76a7bebf4340e028ccd96e7c98eb40addfcbe523dac233768b", "lineMetrics": [{"ascent": -8.0, "descent": 2.0, "leading": 0.0, "width": 18.0, "baseline": 8.0}], "placeholderBoxes": [{"placeholderId": "ph-000", "sourceRange": "1..1", "lineIndex": 0, "left": 10.0, "top": 2.0, "right": 18.0, "bottom": 8.0, "baselineOffset": 6.0, "alignment": "above-baseline", "baseline": "alphabetic", "participatesInLineHeight": true}], "diagnostics": []},
+    {"caseId": "below-baseline", "inputHash": "678a45d461e0ef0bccb0ce709a3be0f60e6ef9158e667525ca03e6de9a8124d2", "lineMetrics": [{"ascent": -8.0, "descent": 8.0, "leading": 0.0, "width": 18.0, "baseline": 8.0}], "placeholderBoxes": [{"placeholderId": "ph-000", "sourceRange": "1..1", "lineIndex": 0, "left": 10.0, "top": 8.0, "right": 18.0, "bottom": 16.0, "baselineOffset": 0.0, "alignment": "below-baseline", "baseline": "alphabetic", "participatesInLineHeight": true}], "diagnostics": []},
+    {"caseId": "middle-non-participating", "inputHash": "5136574b61322f587be37cd9dc499cf1cb2a3bd43f62f52c2d07e0041defa9cd", "lineMetrics": [{"ascent": -8.0, "descent": 2.0, "leading": 0.0, "width": 20.0, "baseline": 8.0}], "placeholderBoxes": [{"placeholderId": "ph-000", "sourceRange": "1..1", "lineIndex": 0, "left": 10.0, "top": -3.0, "right": 20.0, "bottom": 13.0, "baselineOffset": 11.0, "alignment": "middle", "baseline": null, "participatesInLineHeight": false}], "diagnostics": []}
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-complete-paragraph-layout-claim",
+    "no-selection-hit-test-claim",
+    "no-skia-paragraph-parity-claim"
+  ]
+}

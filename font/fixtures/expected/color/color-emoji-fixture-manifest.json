@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "color-emoji-fixture-manifest",
+  "ownerTickets": ["KFONT-M10-010"],
+  "fixtureFamilies": ["color-glyphs", "emoji", "png-bitmap-glyphs", "svg-glyphs"],
+  "legacyGates": ["coloremoji_blendmodes", "scaledemoji", "scaledemoji_rendering"],
+  "componentDumps": [
+    {
+      "dumpId": "bitmap-glyph-plan",
+      "path": "reports/font/fixtures/expected/color/bitmap-glyph-plan.json",
+      "bodySha256": "5e79d9f01e9b8beec618fd7b8bc32b0e1bee17327f63d1a32ed191d1efee5fa2"
+    },
+    {
+      "dumpId": "color-glyph-composite-plan",
+      "path": "reports/font/fixtures/expected/color/color-glyph-composite-plan.json",
+      "bodySha256": "93b57a79573efe1dd57ade105a1a60a2957ff2a3d598f19dae7fab1e77359bcb"
+    },
+    {
+      "dumpId": "color-glyph-plan",
+      "path": "reports/font/fixtures/expected/color/color-glyph-plan.json",
+      "bodySha256": "1b7e574a8ccf78ec5bbe16767a1069e16b2445577b4a33def1e138681ddb5a76"
+    },
+    {
+      "dumpId": "color-svg-emoji-goldens",
+      "path": "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json",
+      "bodySha256": "40c6b1ccdd647e4e0fe9ac867fef81d4a9b30386563f6581db1f5f67f5784024"
+    },
+    {
+      "dumpId": "colrv1-fixture-manifest",
+      "path": "reports/font/fixtures/expected/color/colrv1-fixture-manifest.json",
+      "bodySha256": "4b3d5e6bccf7b360343ab765f2118cb96b4b05a717243cbfd75fe96646d73dcd"
+    },
+    {
+      "dumpId": "colrv1-paint-graph",
+      "path": "reports/font/fixtures/expected/color/colrv1-paint-graph.json",
+      "bodySha256": "fc1c72e4cc11a9f90970a60e2d05c8146d505390f6bd8aae57bf4923e4760cc9"
+    },
+    {
+      "dumpId": "emoji-route-trace",
+      "path": "reports/font/fixtures/expected/color/emoji-route-trace.json",
+      "bodySha256": "baf010f388aeb8c20155c9ec5e6d3f5a70901aac096568fadc326d1a493c0513"
+    },
+    {
+      "dumpId": "svg-glyph-fixture-manifest",
+      "path": "reports/font/fixtures/expected/color/svg-glyph-fixture-manifest.json",
+      "bodySha256": "10cfb39b18ff8a128deafbcf6ec3bb63e7c883027aed0327d3929e711c66e505"
+    },
+    {
+      "dumpId": "svg-glyph-plan",
+      "path": "reports/font/fixtures/expected/color/svg-glyph-plan.json",
+      "bodySha256": "8f05f9852701808fe4ea6a7ff1931d9605b21dd6ea5059fe7b88248cc07a820b"
+    }
+  ],
+  "legacyGateCoverage": [
+    {
+      "gate": "coloremoji_blendmodes",
+      "familyIds": ["color-glyphs", "emoji"],
+      "gpuEvidenceRequired": true,
+      "remainingEvidence": "Reviewed GPU composite/blend execution evidence for COLRv1 and emoji color routes remains an M11 gate."
+    },
+    {
+      "gate": "scaledemoji",
+      "familyIds": ["emoji"],
+      "gpuEvidenceRequired": true,
+      "remainingEvidence": "Emoji sequence shaping and fallback evidence is now linked here, but reviewed M11 renderer-route and GPU evidence still remain before any legacy-gate retirement."
+    },
+    {
+      "gate": "scaledemoji_rendering",
+      "familyIds": ["emoji", "png-bitmap-glyphs", "svg-glyphs"],
+      "gpuEvidenceRequired": true,
+      "remainingEvidence": "Bitmap and SVG renderer upload/sampling proofs remain M11 work even when CPU/text dumps and fixture provenance are present."
+    }
+  ],
+  "families": [
+    {
+      "familyId": "color-glyphs",
+      "coveredTickets": ["KFONT-M10-001", "KFONT-M10-002", "KFONT-M10-003", "KFONT-M10-004", "KFONT-M10-005"],
+      "claimClassification": "current-supported",
+      "fixtureIds": ["color-glyphs-colrv0-layer", "color-glyphs-colrv1-budget-refusal", "color-glyphs-colrv1-composite-clip", "color-glyphs-colrv1-cycle-refusal", "color-glyphs-colrv1-gradient-operation-group", "color-glyphs-colrv1-malformed-offset-refusal", "color-glyphs-colrv1-recursion-depth-refusal", "color-glyphs-colrv1-solid-glyph-colr-glyph", "color-glyphs-colrv1-solid-gradient-transform"],
+      "expectedDumpFiles": ["reports/font/fixtures/expected/color/color-glyph-plan.json", "reports/font/fixtures/expected/color/colrv1-paint-graph.json", "reports/font/fixtures/expected/color/color-glyph-composite-plan.json", "reports/font/fixtures/expected/color/colrv1-fixture-manifest.json", "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json"],
+      "expectedDiagnostics": ["text.color.COLRv1-cycle-detected", "text.color.COLRv1-budget-exceeded"],
+      "legacyGates": ["coloremoji_blendmodes"],
+      "gpuEvidenceRequired": true,
+      "remainingGate": "Keep coloremoji_blendmodes open until M11 links reviewed GPU composite/blend route evidence for color glyph plans and emoji color dispatch.",
+      "provenance": {
+        "kind": "mixed-fixture-sources",
+        "source": "reports/font/fixtures/provenance/index.json + ColorGlyphSurfaceTest synthetic COLRv0/COLRv1 fixtures",
+        "licenseNotes": ["Apache-2.0 vendored COLRv1 fixture assets remain coordination evidence only.", "Synthetic COLRv0/COLRv1 bytes generated inside ColorGlyphSurfaceTest stay CPU/text evidence only."],
+        "sourceHashes": ["8aa611b1ca97044ac6f13dc982fde29256612f0a5acc6ef47ca541a7a5b99b28", "ad575a09d6748aebcb3b90ffd384c64d5c64b5fd9927967e7cd7cc0d70c98d34"],
+        "generatedRecipe": "ColorGlyphSurfaceTest synthetic CPAL/COLRv0/COLRv1 table builders feed bounded plan, graph, composite, and refusal dumps with reviewed expected outputs."
+      }
+    },
+    {
+      "familyId": "emoji",
+      "coveredTickets": ["KFONT-M10-009"],
+      "claimClassification": "current-supported",
+      "fixtureIds": ["emoji-color-glyph-unavailable-refusal", "emoji-emoji-fallback-unavailable-refusal", "emoji-emoji-flag", "emoji-emoji-keycap", "emoji-emoji-skin-tone", "emoji-emoji-unsupported-sequence-refusal", "emoji-emoji-vs15-vs16", "emoji-emoji-zwj-family"],
+      "expectedDumpFiles": ["reports/font/fixtures/expected/color/emoji-route-trace.json", "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json"],
+      "expectedDiagnostics": ["text.emoji.sequence-unsupported", "text.emoji.fallback-unavailable", "text.emoji.color-glyph-unavailable"],
+      "legacyGates": ["scaledemoji"],
+      "gpuEvidenceRequired": true,
+      "remainingGate": "Keep scaledemoji open until reviewed emoji sequence shaping, fallback-family selection, and selected color route evidence is linked to M11 route execution proof where rendering is claimed.",
+      "provenance": {
+        "kind": "mixed-fixture-sources",
+        "source": "reports/font/fixtures/provenance/index.json + ColorGlyphSurfaceTest emoji route trace fixtures",
+        "licenseNotes": ["SIL-OFL-1.1 Noto Emoji asset remains bundled provenance only.", "Emoji route traces are deterministic test-owned sequence dumps, not platform-engine or GPU evidence."],
+        "sourceHashes": ["469e3b92d63cfc203789f8742f1835b8672c7b5995ab4a832f1699b712a5afcc"],
+        "generatedRecipe": "ColorGlyphSurfaceTest builds deterministic emoji sequence traces for VS15/VS16, skin tone, ZWJ, flag, keycap, fallback-unavailable, color-glyph-unavailable, and unsupported-sequence cases."
+      }
+    },
+    {
+      "familyId": "png-bitmap-glyphs",
+      "coveredTickets": ["KFONT-M10-006"],
+      "claimClassification": "tracked-gap",
+      "fixtureIds": ["png-bitmap-glyphs-cbdt-cblc-png", "png-bitmap-glyphs-malformed-png-refusal", "png-bitmap-glyphs-non-png-payload-refusal", "png-bitmap-glyphs-sbix-png", "png-bitmap-glyphs-unavailable-strike-refusal"],
+      "expectedDumpFiles": ["reports/font/fixtures/expected/color/bitmap-glyph-plan.json", "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json"],
+      "expectedDiagnostics": ["text.bitmap.PNG-decode-failed", "text.bitmap.strike-unavailable", "text.bitmap.payload-format-unsupported"],
+      "legacyGates": ["scaledemoji_rendering"],
+      "gpuEvidenceRequired": true,
+      "remainingGate": "Keep scaledemoji_rendering open until M11 links reviewed bitmap upload, sampling, and renderer-route evidence; bitmap-glyph-plan.json remains CPU/text evidence only.",
+      "provenance": {
+        "kind": "generated-test-data",
+        "source": "ColorGlyphSurfaceTest bitmap plan bundle fixtures",
+        "licenseNotes": ["Bitmap fixture payloads are bounded test-generated PNG bytes checked through ColorGlyphSurfaceTest."],
+        "sourceHashes": [],
+        "generatedRecipe": "ColorGlyphSurfaceTest emits deterministic CBDT/CBLC and sbix PNG plan bundles plus unavailable-strike, malformed-PNG, and non-PNG refusal cases."
+      }
+    },
+    {
+      "familyId": "svg-glyphs",
+      "coveredTickets": ["KFONT-M10-007", "KFONT-M10-008"],
+      "claimClassification": "fixture-gated",
+      "fixtureIds": ["svg-glyphs-svg-animation-refusal", "svg-glyphs-svg-defs-symbol-use-radial-gradient", "svg-glyphs-svg-embedded-text-refusal", "svg-glyphs-svg-external-resource-refusal", "svg-glyphs-svg-filter-refusal", "svg-glyphs-svg-foreign-object-refusal", "svg-glyphs-svg-gradient-stop-budget-refusal", "svg-glyphs-svg-gradient-transform-clip", "svg-glyphs-svg-malformed-document-refusal", "svg-glyphs-svg-malformed-path-data-refusal", "svg-glyphs-svg-network-reference-refusal", "svg-glyphs-svg-path-command-budget-refusal", "svg-glyphs-svg-script-refusal", "svg-glyphs-svg-static-path", "svg-glyphs-svg-unsupported-css-selector-refusal", "svg-glyphs-svg-use-recursion-refusal"],
+      "expectedDumpFiles": ["reports/font/fixtures/expected/color/svg-glyph-plan.json", "reports/font/fixtures/expected/color/svg-glyph-fixture-manifest.json", "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json"],
+      "expectedDiagnostics": ["text.SVG.external-resource-refused", "text.SVG.feature-unsupported", "text.SVG.document-malformed", "text.SVG.budget-exceeded"],
+      "legacyGates": ["scaledemoji_rendering"],
+      "gpuEvidenceRequired": true,
+      "remainingGate": "Keep scaledemoji_rendering open until reviewed glyph-scoped SVG renderer-route evidence lands in M11; the current SVG fixture manifest remains bounded CPU/text evidence.",
+      "provenance": {
+        "kind": "generated-test-data",
+        "source": "ColorGlyphSurfaceTest SVG fixture manifest fixtures",
+        "licenseNotes": ["SVG glyph documents are deterministic test-owned inputs generated inside ColorGlyphSurfaceTest."],
+        "sourceHashes": [],
+        "generatedRecipe": "ColorGlyphSurfaceTest builds bounded static-path, gradient/transform/clip, defs/symbol/use, and refusal SVG documents, then records deterministic plan and fixture-manifest outputs."
+      }
+    }
+  ],
+  "rebaselinePolicy": {
+    "ordinaryTestRuns": "must-not-overwrite-goldens",
+    "reviewRequirement": "Review old/new diffs for the component dumps and this convergence manifest before updating expected outputs.",
+    "reasonRequired": "State whether behavior changed intentionally or the previous expectation was wrong."
+  },
+  "nonClaims": ["no-complete-target-support-claim", "no-complete-colrv1-rendering-claim", "no-complete-png-bitmap-glyph-routing-claim", "no-complete-svg-in-opentype-rendering-claim", "no-complete-emoji-sequence-shaping-claim", "no-gpu-color-glyph-support-claim", "no-platform-color-font-fallback-claim"]
+}

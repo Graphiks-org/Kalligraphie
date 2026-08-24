@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-atlas-occupancy",
+  "ownerTickets": [
+    "KFONT-M12-004"
+  ],
+  "fixtureIds": [
+    "a8-atlas-occupancy",
+    "sdf-atlas-occupancy"
+  ],
+  "atlasCount": 2,
+  "atlases": [
+    {
+      "artifactType": "GlyphAtlasArtifact",
+      "artifactId": "2306b8bbc611321344d350ced6249accfe071cfeaae8a5cb764e97c03853a4ed",
+      "generation": 9,
+      "invalidationToken": "font-source-v9",
+      "width": 3,
+      "height": 3,
+      "rowStride": 3,
+      "entryCount": 1,
+      "occupiedPixels": 4,
+      "totalPixels": 9,
+      "occupancyRatio": 0.44444445,
+      "keyPreimageSha256s": ["0b6d7c35fc1b7195a2ae6f7c9317db2b8a5b3e8c67f4a8821a2e0f4a102e2c29"]
+    },
+    {
+      "artifactType": "SDFGlyphAtlasArtifact",
+      "artifactId": "4e1a231ea3b1a133267ca208b6b6ce9b0256fd3180b5420f73dc869cceef95df",
+      "generation": 10,
+      "invalidationToken": "font-source-v10",
+      "width": 3,
+      "height": 3,
+      "rowStride": 3,
+      "entryCount": 1,
+      "occupiedPixels": 4,
+      "totalPixels": 9,
+      "occupancyRatio": 0.44444445,
+      "keyPreimageSha256s": ["74d5f2e7ed871e7c69befd9e4a5cc11dfd0eae89806e2957a7364b84f0c6c72c"],
+      "distanceRange": 16
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.atlas-capacity-exceeded",
+    "text.glyph.atlas-generation-stale"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-gpu-text-route-claim",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "2d3c00f124719f89d94426a56eb727e5dfb1ce9e603dd30a7b4745ad806aed6d"
+}

@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "truetype-vertical-metrics",
+  "ownerTickets": [
+    "KFONT-M3-004"
+  ],
+  "fixtureIds": [
+    "truetype-scaler-vertical-metrics"
+  ],
+  "requiredEvidence": [
+    "glyph-metrics.json",
+    "diagnostic-snapshot",
+    "variation-metrics.json"
+  ],
+  "presentCase": {
+                "glyphId": 0,
+                "scalerFamily": "truetype-glyf",
+                "route": "font.scaler.truetype-glyf",
+                "requestedVariationPosition": [],
+                "normalizedVariationPosition": [],
+                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                "metrics":           {
+              "advanceX": 600.0,
+              "advanceY": 700.0,
+              "bounds": {
+                "left": 0.0,
+                "top": 0.0,
+                "right": 100.0,
+                "bottom": 100.0
+              },
+  "verticalMetrics": {
+    "state": "present",
+    "source": "vhea-vmtx",
+    "verticalAdvance": 700.0,
+    "topSideBearing": 40.0,
+    "verticalOriginY": 140.0,
+    "ascender": 850.0,
+    "descender": -320.0,
+    "lineGap": 60.0,
+    "maxAdvanceHeight": 760.0,
+    "diagnostics": []
+  }
+            },
+                "diagnostics": []
+              },
+  "fallbackCase": {
+                "glyphId": 0,
+                "scalerFamily": "truetype-glyf",
+                "route": "font.scaler.truetype-glyf",
+                "requestedVariationPosition": [],
+                "normalizedVariationPosition": [],
+                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                "metrics":           {
+              "advanceX": 600.0,
+              "advanceY": 0.0,
+              "bounds": {
+                "left": 0.0,
+                "top": 0.0,
+                "right": 100.0,
+                "bottom": 100.0
+              },
+  "verticalMetrics": {
+    "state": "fallback",
+    "source": "horizontal-fallback-fact",
+    "verticalAdvance": null,
+    "topSideBearing": null,
+    "verticalOriginY": null,
+    "ascender": null,
+    "descender": null,
+    "lineGap": null,
+    "maxAdvanceHeight": null,
+    "diagnostics": ["truetype.vertical-metrics-absent"]
+  }
+            },
+                "diagnostics": [
+                  {"code": "font.vertical-metrics-unavailable", "detail": "truetype.vertical-metrics-absent", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+                ]
+              },
+  "variedCase": {
+                "glyphId": 0,
+                "scalerFamily": "truetype-glyf",
+                "route": "font.scaler.truetype-glyf",
+                "requestedVariationPosition": [
+    {"tag": "wght", "value": 650.0}
+  ],
+                "normalizedVariationPosition": [],
+                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                "metrics":           {
+              "advanceX": 600.0,
+              "advanceY": 720.0,
+              "bounds": {
+                "left": 0.0,
+                "top": 0.0,
+                "right": 100.0,
+                "bottom": 100.0
+              },
+  "verticalMetrics": {
+    "state": "present",
+    "source": "vhea-vmtx",
+    "verticalAdvance": 720.0,
+    "topSideBearing": 40.0,
+    "verticalOriginY": 140.0,
+    "ascender": 850.0,
+    "descender": -320.0,
+    "lineGap": 60.0,
+    "maxAdvanceHeight": 760.0,
+    "diagnostics": []
+  }
+            },
+                "diagnostics": [
+                  {"code": "font.variation-axis-unsupported", "detail": "truetype.gvar-unavailable", "operation": "variation", "glyphId": 0, "severity": "warning"}
+                ]
+              },
+  "diagnosticSnapshots": {
+    "malformedVvar": [
+      {"code": "font.variation-axis-unsupported", "detail": "truetype.gvar-unavailable", "operation": "variation", "glyphId": 0, "severity": "warning"},
+      {"code": "font.variation-data-malformed", "detail": "truetype.vvar-table-malformed", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+    ]
+  },
+  "nonClaims": [
+    "no-vertical-shaping-claim",
+    "no-vertical-layout-claim",
+    "no-gpu-text-route-claim",
+    "no-native-scaler-oracle-claim"
+  ]
+}

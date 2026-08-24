@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "thai-cjk-boundary-report",
+  "ownerTickets": ["KFONT-M6-009"],
+  "fixtures": [
+    {
+      "fixtureId": "single-ttf-noto-sans-thai",
+      "fixtureFont": "reports/font/fixtures/fonts/fallback/NotoSansThai-Regular.ttf"
+    },
+    {
+      "fixtureId": "single-otf-noto-sans-sc",
+      "fixtureFont": "reports/font/fixtures/fonts/fallback/NotoSansSC-Regular.otf"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "thai-tone-mark",
+      "fixtureId": "single-ttf-noto-sans-thai",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/ThaiCjkBoundaryFixtureTest.kt"
+      ],
+      "notes": "Vendored Noto Sans Thai shapes the ก้ case as a Thai run with positioned or zero-advance tone-mark behavior without promoting broader Thai shaping support."
+    },
+    {
+      "caseId": "thai-latin-mixed-boundary",
+      "fixtureId": "single-ttf-noto-sans-thai",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/ThaiCjkBoundaryFixtureTest.kt"
+      ],
+      "notes": "Vendored Noto Sans Thai keeps the bounded Aก้A case split into Latn/Thai/Latn shaping runs when the reviewed Script_Extensions itemizer is injected locally by the test wave."
+    },
+    {
+      "caseId": "cjk-kana-vertical-alternate",
+      "fixtureId": "single-otf-noto-sans-sc",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/ThaiCjkBoundaryFixtureTest.kt"
+      ],
+      "notes": "Vendored Noto Sans SC applies a distinct glyph ID for ア when the optional vert feature is requested, proving only bounded kana vertical-alternate evidence on the reviewed runtime path."
+    }
+  ],
+  "remainingGates": [
+    {
+      "remainingGateId": "thai-dictionary-paragraph-evidence",
+      "detail": "Paragraph-owned dictionary word-breaking diagnostics for Thai remain absent; this wave does not claim paragraph-level segmentation or layout refinement."
+    },
+    {
+      "remainingGateId": "thai-refusal-fixtures-and-codes",
+      "detail": "Dedicated Thai refusal fixtures and stable unsupported-boundary diagnostics remain absent beyond the bounded tone-mark and mixed-script cases."
+    },
+    {
+      "remainingGateId": "cjk-variation-selector-evidence",
+      "detail": "Reviewed cmap format 14 variation-selector positive or refusal evidence remains absent on the shaping route; existing Unicode-segmentation coverage is not promoted here."
+    },
+    {
+      "remainingGateId": "cjk-han-hangul-boundary-evidence",
+      "detail": "Bounded Han direct-mapping and Hangul coverage or refusal rows remain absent from this review wave."
+    },
+    {
+      "remainingGateId": "paragraph-owned-ruby-line-break-diagnostics",
+      "detail": "Paragraph-owned ruby and East Asian line-break refinement diagnostics remain separate gates and are not implied by this shaping-only evidence."
+    },
+    {
+      "remainingGateId": "ticket-local-trace-dumps",
+      "detail": "Ticket-local shaping-plan.json, gsub-trace.json, gpos-trace.json, shaped-glyph-run.json, cmap-map.json, and unicode-segments.json dump families remain open before done."
+    }
+  ],
+  "nonClaims": [
+    "no-thai-shaping-support-claim",
+    "no-cjk-shaping-support-claim",
+    "no-paragraph-dictionary-support-claim",
+    "no-ruby-or-east-asian-line-break-claim",
+    "no-native-shaper-oracle-claim",
+    "no-cpu-or-gpu-rendering-claim"
+  ]
+}

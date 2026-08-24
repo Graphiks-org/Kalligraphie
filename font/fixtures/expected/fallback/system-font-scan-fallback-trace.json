@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "fallback-decision-trace",
+  "ownerTickets": ["KFONT-M7-005"],
+  "cases": [
+    {
+      "fixtureId": "host-dependent-system-fallback",
+      "request": {"text": "A", "locale": null, "preferredFamilies": ["System Fixture Sans"]},
+      "decisions": [
+        {"textRange":"0..0","clusterRange":"0..0","codePoint":"U+0041","selectedFamily":"System Fixture Sans","selectedSourceKind":"SystemScannedFontSource","selectedScanEntryId":"valid.ttf","selectedHostDependent":true,"diagnosticCode":"font.source.host-dependent"}
+      ]
+    }
+  ],
+  "nonClaims": ["no-normative-system-font-fallback-claim", "no-platform-font-engine-claim"]
+}

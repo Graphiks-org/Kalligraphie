@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "cff-cff2-readiness",
+  "ownerTickets": [
+    "PKT-05B"
+  ],
+  "fixtureIds": [
+    "scaler-source-serif-cff"
+  ],
+  "requiredEvidence": [
+    "CFF INDEX and dict rows",
+    "Type 2 line, curve, flex, endchar, and width path dump expectations",
+    "local and global subroutine rows",
+    "malformed INDEX, dict, bounds, stack, and operator refusals",
+    "CFF2 blend, vsindex, and variation-store rows"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-cff-rendering-support-claim",
+    "no-cff2-variation-support-claim",
+    "no-native-scaler-oracle-claim"
+  ]
+}

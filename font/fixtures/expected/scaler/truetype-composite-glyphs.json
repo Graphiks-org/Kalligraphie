@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "truetype-composite-glyphs",
+  "ownerTickets": [
+    "KFONT-M3-001"
+  ],
+  "fixtureIds": [
+    "truetype-scaler-truetype-composite-glyph-transform"
+  ],
+  "requiredEvidence": [
+    "glyph-outline.json",
+    "glyph-metrics.json",
+    "component-trace",
+    "diagnostic-snapshot"
+  ],
+  "pathHashArtifacts": {
+    "outlineCommandDumpSha256": "45092bc902475c8ab87de388856c656c0aeab342de1eafb8c24805f17e2a72fd",
+    "outlineCommandCount": 10,
+    "componentTraceCount": 2
+  },
+  "useMyMetricsFacts": [
+    {
+      "parentGlyphId": 0,
+      "componentIndex": 0,
+      "componentGlyphId": 1,
+      "useMyMetrics": true
+    }
+  ],
+  "supportedCompositeEvidence": {
+    "glyphId": 0,
+    "scalerFamily": "truetype-glyf",
+    "route": "font.scaler.truetype-glyf",
+    "locaRange": {"start": 0, "endExclusive": 26, "byteLength": 26, "isEmpty": false},
+    "requestedVariationPosition": [],
+    "normalizedVariationPosition": [],
+    "outlineCommands": ["M 50.0 50.0", "L 150.0 50.0", "L 150.0 150.0", "L 50.0 150.0", "Z", "M 150.0 50.0", "L 250.0 50.0", "L 250.0 150.0", "L 150.0 150.0", "Z"],
+    "outlineCommandDumpSha256": "45092bc902475c8ab87de388856c656c0aeab342de1eafb8c24805f17e2a72fd",
+    "conservativeBounds": {"left": 50.0, "top": 50.0, "right": 250.0, "bottom": 150.0},
+    "metrics": {"advanceX": 500.0, "advanceY": 0.0, "bounds": {"left": 0.0, "top": 0.0, "right": 16.0, "bottom": 16.0}},
+    "compositeComponents": [{"depth": 0, "parentGlyphId": 0, "componentIndex": 0, "componentGlyphId": 1, "flags": "0x0223", "argumentKind": "xy", "argument1": 50, "argument2": 50, "xx": 1.0, "xy": 0.0, "yx": 0.0, "yy": 1.0, "dx": 50.0, "dy": 50.0}, {"depth": 0, "parentGlyphId": 0, "componentIndex": 1, "componentGlyphId": 2, "flags": "0x0001", "argumentKind": "point-matching", "argument1": 1, "argument2": 0, "xx": 1.0, "xy": 0.0, "yx": 0.0, "yy": 1.0, "dx": 0.0, "dy": 0.0}],
+    "diagnostics": []
+  },
+  "diagnosticSnapshots": {
+    "cycle": [
+      {"code": "font.outline-format-unsupported", "detail": "truetype.composite-recursion-depth", "operation": "outline", "glyphId": 0, "severity": "refusal"}
+    ],
+    "invalidComponentGlyphId": [
+      {"code": "font.outline-format-unsupported", "detail": "truetype.composite-component-glyph-id", "operation": "outline", "glyphId": 0, "severity": "refusal"}
+    ],
+    "componentCount": [
+      {"code": "font.outline-format-unsupported", "detail": "truetype.composite-component-count", "operation": "metrics", "glyphId": 0, "severity": "refusal"},
+      {"code": "font.outline-format-unsupported", "detail": "truetype.composite-component-count", "operation": "outline", "glyphId": 0, "severity": "refusal"}
+    ]
+  },
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-a8-or-sdf-artifact-claim",
+    "no-gpu-text-route-claim",
+    "no-native-scaler-oracle-claim",
+    "no-cff-or-cff2-outline-claim",
+    "no-hinting-vm-claim",
+    "no-full-iup-interpolation-claim",
+    "no-phantom-point-metrics-claim",
+    "no-vertical-metrics-claim",
+    "no-complete-variable-font-support-claim",
+    "no-shaping-fallback-or-paragraph-claim"
+  ]
+}

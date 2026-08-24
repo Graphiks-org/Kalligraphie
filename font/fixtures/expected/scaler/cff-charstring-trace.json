@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "cff-charstring-trace",
+  "ownerTickets": [
+    "KFONT-M4-002"
+  ],
+  "fixtureIds": [
+    "cff-type2-lines.otf",
+    "cff-type2-curves.otf",
+    "cff-type2-flex.otf",
+    "cff-type2-hints-width.otf",
+    "cff-type2-stack-underflow.otf",
+    "cff-type2-unsupported-operator.otf"
+  ],
+  "positiveFixtures": [
+    {
+      "fixtureId": "cff-type2-lines.otf",
+      "evidence": {
+          "format": "cff",
+          "glyphId": 3,
+          "width": null,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 100.0 200.0", "L 150.0 200.0", "L 150.0 250.0", "C 160.0 250.0 180.0 280.0 220.0 310.0", "C 225.0 310.0 235.0 320.0 250.0 320.0", "C 265.0 320.0 275.0 310.0 280.0 310.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nL 150.0 200.0\nL 150.0 250.0\nC 160.0 250.0 180.0 280.0 220.0 310.0\nC 225.0 310.0 235.0 320.0 250.0 320.0\nC 265.0 320.0 275.0 310.0 280.0 310.0\nZ",
+          "outlineCommandDumpSha256": "604793cd371b33860ae9c6d557a654a9f27e320a53644c0e04510ab2e2ea1974",
+          "callTrace": [],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        }
+    },
+    {
+      "fixtureId": "cff-type2-hints-width.otf",
+      "evidence": {
+          "format": "cff",
+          "glyphId": 15,
+          "width": 450.0,
+          "stemHintCount": 2,
+          "hintMaskByteCount": 1,
+          "outlineCommands": ["M 0.0 0.0", "Z"],
+          "outlineCommandDump": "M 0.0 0.0\nZ",
+          "outlineCommandDumpSha256": "77e1fe51c2d01284e9e1bfaa01c3a0ca0a94b5677bd8a57dd9a9728ee18ee8ef",
+          "callTrace": [],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        }
+    },
+    {
+      "fixtureId": "cff-type2-curves.otf",
+      "evidence": {
+          "format": "cff",
+          "glyphId": 4,
+          "width": null,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 0.0 0.0", "L 25.0 0.0", "L 25.0 25.0", "Z"],
+          "outlineCommandDump": "M 0.0 0.0\nL 25.0 0.0\nL 25.0 25.0\nZ",
+          "outlineCommandDumpSha256": "aec601ac802d211ebbef3b33b421c1e56e60e35f7070861977063efcada80630",
+          "callTrace": [{"depth": 0, "scope": "local", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 4, "returnByteOffset": 3, "instructionBudgetRemaining": 1016, "expandedByteBudgetRemaining": 4088}, {"depth": 0, "scope": "global", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 6, "returnByteOffset": 3, "instructionBudgetRemaining": 1010, "expandedByteBudgetRemaining": 4082}],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        }
+    }
+  ],
+  "diagnosticSnapshots": {
+    "stackUnderflow": {"code": "font.cff-stack-malformed", "detail": "cff.stack-underflow", "operation": "charstring", "glyphId": 6, "severity": "refusal"},
+    "unsupportedOperator": {"code": "font.cff-operator-unsupported", "detail": "cff.escaped-operator-0", "operation": "charstring", "glyphId": 7, "severity": "refusal"},
+    "trailingBytes": {"code": "font.scaler.cff.trailing-bytes", "detail": "cff.trailing-bytes", "operation": "charstring", "glyphId": 16, "severity": "refusal"},
+    "stackOverflow": {"code": "font.scaler.cff.stack-overflow", "detail": "cff.stack-overflow", "operation": "charstring", "glyphId": 18, "severity": "refusal"}
+  },
+  "nonClaims": [
+    "generated-fixture-evidence-only",
+    "no-complete-type2-operator-coverage-claim",
+    "no-cff-rendering-support-claim",
+    "no-native-scaler-oracle-claim"
+  ]
+}

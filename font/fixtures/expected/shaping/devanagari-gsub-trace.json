@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "devanagari-gsub-trace",
+  "ownerTickets": ["KFONT-M6-008"],
+  "fixtureFamilyId": "devanagari-shaping-fixtures",
+  "cases": [
+    {
+      "caseId": "fixture-consonant-cluster",
+      "ticketId": "KFONT-M6-008",
+      "status": "positive",
+      "reportRef": "devanagari-shaping-report#fixture-consonant-cluster",
+      "fixtureFont": "reports/font/fixtures/fonts/shaping/devanagari-consonant-cluster.otf",
+      "inputText": "क्षा",
+      "typefaceId": "550e8400-e29b-41d4-a716-446655440720",
+      "featureOrder": ["nukt", "akhn", "rphf", "blwf", "half", "pstf", "vatu", "pres", "abvs", "blws", "psts", "haln", "dist", "abvm", "blwm"],
+      "inputGlyphIds": [1, 4, 2, 0],
+      "outputGlyphIds": [3, 0],
+      "lookups": [{"lookupIndex": 0, "lookupType": 4, "featureTag": "akhn", "inputGlyphIds": [1, 4, 2, 0], "outputGlyphIds": [3, 0], "clusterAction": "merged-clusters"}],
+      "diagnostics": [{"code": "text.shaping.fallback-missing", "message": "Missing glyph for U+093E.", "textRange": "3..3"}]
+    }
+  ],
+  "nonClaims": ["producer-only", "no-devanagari-shaping-support-claim", "no-indic-shaping-support-claim", "no-native-shaper-oracle-claim", "no-cpu-or-gpu-rendering-claim"]
+}

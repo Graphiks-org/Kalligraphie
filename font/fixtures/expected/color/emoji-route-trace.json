@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "emoji-route-trace",
+  "ownerTickets": ["KFONT-M10-009"],
+  "cases": [
+    {
+      "caseId": "variation-selector-colr",
+      "sourceText": "❤️",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "0..1",
+        "sequenceKind": "VariationSelector",
+        "codePoints": ["U+2764", "U+FE0F"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 510,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441301",
+        "selectedFamilyName": "Noto Color Emoji",
+        "selectedRoute": "colr",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Alpha Sans", "typefaceId": "550e8400-e29b-41d4-a716-446655441303", "covered": false, "reason": "requested-family", "selected": false, "diagnosticCode": null}, {"familyName": "Noto Color Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441301", "covered": true, "reason": "emoji-preference", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": {"dumpId": "color-glyph-plan", "caseId": "colrv0-layered-palette-override"},
+        "diagnostics": [
+          {"glyphId": 510, "route": "colr", "code": "text.emoji.route-selected", "detail": "selected=colr;glyphId=510;sizePx=16.0", "severity": "info", "message": "Selected colr route for glyph 510 at 16.0px."}
+        ],
+        "dumpSha256": "e47152dbbb4c25e9d27f1b9687cccf84893d192595c72bd5f0c41a46fc6cdf3c"
+      }
+      
+    },
+    {
+      "caseId": "skin-tone-bitmap",
+      "sourceText": "👋🏽",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "3..6",
+        "sequenceKind": "SkinTone",
+        "codePoints": ["U+1F44B", "U+1F3FD"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 511,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441301",
+        "selectedFamilyName": "Noto Color Emoji",
+        "selectedRoute": "bitmap",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Noto Color Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441301", "covered": true, "reason": "emoji-preference", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": {"dumpId": "bitmap-glyph-plan", "caseId": "cbdt-cblc-png"},
+        "diagnostics": [
+          {"glyphId": 511, "route": "colr", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=colr;glyphId=511;sizePx=16.0", "severity": "info", "message": "Route colr is unavailable for glyph 511 at 16.0px."},
+          {"glyphId": 511, "route": "bitmap", "code": "text.emoji.route-selected", "detail": "selected=bitmap;glyphId=511;sizePx=16.0", "severity": "info", "message": "Selected bitmap route for glyph 511 at 16.0px."},
+          {"glyphId": 511, "route": "png", "code": "text.emoji.route-lower-preference-skipped", "detail": "candidate=png;selected=bitmap;glyphId=511;sizePx=16.0", "severity": "info", "message": "Route png skipped for glyph 511 because it has lower preference than bitmap."},
+          {"glyphId": 511, "route": "outline", "code": "text.emoji.route-lower-preference-skipped", "detail": "candidate=outline;selected=bitmap;glyphId=511;sizePx=16.0", "severity": "info", "message": "Route outline skipped for glyph 511 because it has lower preference than bitmap."}
+        ],
+        "dumpSha256": "bc95357e3b3c2145faf277ec8eb9ac8819475a10f8220d080eab14f68b39eb4e"
+      }
+      
+    },
+    {
+      "caseId": "zwj-outline-fallback",
+      "sourceText": "👨‍👩‍👧",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "8..15",
+        "sequenceKind": "ZWJ",
+        "codePoints": ["U+1F468", "U+200D", "U+1F469", "U+200D", "U+1F467"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 512,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441302",
+        "selectedFamilyName": "Monochrome Emoji",
+        "selectedRoute": "outline",
+        "monochromeFallback": true,
+        "fallbackAttempts": [{"familyName": "Monochrome Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441302", "covered": true, "reason": "outline-fallback", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": null,
+        "diagnostics": [
+          {"glyphId": 512, "route": "colr", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=colr;glyphId=512;sizePx=16.0", "severity": "info", "message": "Route colr is unavailable for glyph 512 at 16.0px."},
+          {"glyphId": 512, "route": "bitmap", "code": "text.bitmap.strike-unavailable", "detail": "candidate=bitmap;glyphId=512;sizePx=16.0", "severity": "info", "message": "Route bitmap is unavailable for glyph 512 at 16.0px."},
+          {"glyphId": 512, "route": "png", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=png;glyphId=512;sizePx=16.0", "severity": "info", "message": "Route png is unavailable for glyph 512 at 16.0px."},
+          {"glyphId": 512, "route": "svg", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=svg;glyphId=512;sizePx=16.0", "severity": "info", "message": "Route svg is unavailable for glyph 512 at 16.0px."},
+          {"glyphId": 512, "route": "outline", "code": "text.emoji.route-selected", "detail": "selected=outline;glyphId=512;sizePx=16.0", "severity": "info", "message": "Selected outline route for glyph 512 at 16.0px."}
+        ],
+        "dumpSha256": "baee920999214344713c9f7096f13942c0a0138ceafdb246913841fa6d6205e8"
+      }
+      
+    },
+    {
+      "caseId": "role-skin-tone-colr",
+      "sourceText": "👩🏽‍💻",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "0..6",
+        "sequenceKind": "ZWJ",
+        "codePoints": ["U+1F469", "U+1F3FD", "U+200D", "U+1F4BB"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 515,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441301",
+        "selectedFamilyName": "Noto Color Emoji",
+        "selectedRoute": "colr",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Noto Color Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441301", "covered": true, "reason": "emoji-preference", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": null,
+        "diagnostics": [
+          {"glyphId": 515, "route": "colr", "code": "text.emoji.route-selected", "detail": "selected=colr;glyphId=515;sizePx=16.0", "severity": "info", "message": "Selected colr route for glyph 515 at 16.0px."},
+          {"glyphId": 515, "route": "outline", "code": "text.emoji.route-lower-preference-skipped", "detail": "candidate=outline;selected=colr;glyphId=515;sizePx=16.0", "severity": "info", "message": "Route outline skipped for glyph 515 because it has lower preference than colr."}
+        ],
+        "dumpSha256": "2aac4710cfc5758b9d78f0a5534afa5ef449fa86779f7f93637fcd2fd1999cb4"
+      }
+      
+    },
+    {
+      "caseId": "keycap-png",
+      "sourceText": "1️⃣",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "17..19",
+        "sequenceKind": "Keycap",
+        "codePoints": ["U+0031", "U+FE0F", "U+20E3"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 513,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441301",
+        "selectedFamilyName": "Noto Color Emoji",
+        "selectedRoute": "png",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Noto Color Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441301", "covered": true, "reason": "emoji-preference", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": {"dumpId": "bitmap-glyph-plan", "caseId": "sbix-png"},
+        "diagnostics": [
+          {"glyphId": 513, "route": "colr", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=colr;glyphId=513;sizePx=16.0", "severity": "info", "message": "Route colr is unavailable for glyph 513 at 16.0px."},
+          {"glyphId": 513, "route": "bitmap", "code": "text.bitmap.strike-unavailable", "detail": "candidate=bitmap;glyphId=513;sizePx=16.0", "severity": "info", "message": "Route bitmap is unavailable for glyph 513 at 16.0px."},
+          {"glyphId": 513, "route": "png", "code": "text.emoji.route-selected", "detail": "selected=png;glyphId=513;sizePx=16.0", "severity": "info", "message": "Selected png route for glyph 513 at 16.0px."},
+          {"glyphId": 513, "route": "outline", "code": "text.emoji.route-lower-preference-skipped", "detail": "candidate=outline;selected=png;glyphId=513;sizePx=16.0", "severity": "info", "message": "Route outline skipped for glyph 513 because it has lower preference than png."}
+        ],
+        "dumpSha256": "9ea8c8c0c11c189d98423aa709b9c03ee77461b469afdd0e858d070b2f7a041c"
+      }
+      
+    },
+    {
+      "caseId": "flag-svg",
+      "sourceText": "🇫🇷",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "21..24",
+        "sequenceKind": "Flag",
+        "codePoints": ["U+1F1EB", "U+1F1F7"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 514,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441301",
+        "selectedFamilyName": "Noto Color Emoji",
+        "selectedRoute": "svg",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Noto Color Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441301", "covered": true, "reason": "emoji-preference", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": null,
+        "diagnostics": [
+          {"glyphId": 514, "route": "colr", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=colr;glyphId=514;sizePx=16.0", "severity": "info", "message": "Route colr is unavailable for glyph 514 at 16.0px."},
+          {"glyphId": 514, "route": "bitmap", "code": "text.bitmap.strike-unavailable", "detail": "candidate=bitmap;glyphId=514;sizePx=16.0", "severity": "info", "message": "Route bitmap is unavailable for glyph 514 at 16.0px."},
+          {"glyphId": 514, "route": "png", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=png;glyphId=514;sizePx=16.0", "severity": "info", "message": "Route png is unavailable for glyph 514 at 16.0px."},
+          {"glyphId": 514, "route": "svg", "code": "text.emoji.route-selected", "detail": "selected=svg;glyphId=514;sizePx=16.0", "severity": "info", "message": "Selected svg route for glyph 514 at 16.0px."},
+          {"glyphId": 514, "route": "outline", "code": "text.emoji.route-lower-preference-skipped", "detail": "candidate=outline;selected=svg;glyphId=514;sizePx=16.0", "severity": "info", "message": "Route outline skipped for glyph 514 because it has lower preference than svg."}
+        ],
+        "dumpSha256": "fede5a4a849bf283be4de983405ba6b16a15a6998f7858ed541a49bc070d47d2"
+      }
+      
+    },
+    {
+      "caseId": "fallback-unavailable",
+      "sourceText": "1️⃣",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "17..19",
+        "sequenceKind": "Keycap",
+        "codePoints": ["U+0031", "U+FE0F", "U+20E3"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 520,
+        "selectedTypefaceId": null,
+        "selectedFamilyName": null,
+        "selectedRoute": "missing",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Alpha Sans", "typefaceId": "550e8400-e29b-41d4-a716-446655441304", "covered": false, "reason": "requested-family", "selected": false, "diagnosticCode": null}],
+        "evidenceRef": null,
+        "diagnostics": [
+          {"glyphId": 520, "route": "missing", "code": "text.emoji.fallback-unavailable", "detail": "textRange=17..19;kind=Keycap;availableFallbacks=none", "severity": "warning", "message": "No emoji-capable fallback family is available for the sequence cluster."}
+        ],
+        "dumpSha256": "435dae4c1343a4a36816bcfd753a79bd974325cf682e035ae95be4960a6ab169"
+      }
+      
+    },
+    {
+      "caseId": "color-glyph-unavailable",
+      "sourceText": "🇫🇷",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "21..24",
+        "sequenceKind": "Flag",
+        "codePoints": ["U+1F1EB", "U+1F1F7"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": 521,
+        "selectedTypefaceId": "550e8400-e29b-41d4-a716-446655441301",
+        "selectedFamilyName": "Noto Color Emoji",
+        "selectedRoute": "missing",
+        "monochromeFallback": false,
+        "fallbackAttempts": [{"familyName": "Noto Color Emoji", "typefaceId": "550e8400-e29b-41d4-a716-446655441301", "covered": true, "reason": "emoji-preference", "selected": true, "diagnosticCode": null}],
+        "evidenceRef": null,
+        "diagnostics": [
+          {"glyphId": 521, "route": "colr", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=colr;glyphId=521;sizePx=16.0", "severity": "info", "message": "Route colr is unavailable for glyph 521 at 16.0px."},
+          {"glyphId": 521, "route": "bitmap", "code": "text.bitmap.strike-unavailable", "detail": "candidate=bitmap;glyphId=521;sizePx=16.0", "severity": "info", "message": "Route bitmap is unavailable for glyph 521 at 16.0px."},
+          {"glyphId": 521, "route": "png", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=png;glyphId=521;sizePx=16.0", "severity": "info", "message": "Route png is unavailable for glyph 521 at 16.0px."},
+          {"glyphId": 521, "route": "svg", "code": "text.emoji.color-glyph-unavailable", "detail": "candidate=svg;glyphId=521;sizePx=16.0", "severity": "info", "message": "Route svg is unavailable for glyph 521 at 16.0px."},
+          {"glyphId": 521, "route": "outline", "code": "text.emoji.fallback-unavailable", "detail": "candidate=outline;glyphId=521;sizePx=16.0", "severity": "info", "message": "Route outline is unavailable for glyph 521 at 16.0px."},
+          {"glyphId": 521, "route": "missing", "code": "text.emoji.color-glyph-unavailable", "detail": "glyphId=521;sizePx=16.0;supportedRoutes=none", "severity": "warning", "message": "No supported color glyph route is available for the selected emoji typeface."}
+        ],
+        "dumpSha256": "546d95c5371c34a5b6ac2083ab99b9e022fdc82d8c6d5008365cbd9824750aaf"
+      }
+      
+    },
+    {
+      "caseId": "unsupported-sequence",
+      "sourceText": "✌️🏿‍💻",
+      "trace": {
+        "schema": "org.graphiks.kanvas.glyph.color.EmojiRouteTrace.v1",
+        "textRange": "0..6",
+        "sequenceKind": "Unsupported",
+        "codePoints": ["U+270C", "U+FE0F", "U+1F3FF", "U+200D", "U+1F4BB"],
+        "unicodeVersion": "16.0.0",
+        "glyphId": null,
+        "selectedTypefaceId": null,
+        "selectedFamilyName": null,
+        "selectedRoute": "missing",
+        "monochromeFallback": false,
+        "fallbackAttempts": [],
+        "evidenceRef": null,
+        "diagnostics": [
+          {"glyphId": null, "route": "missing", "code": "text.emoji.sequence-unsupported", "detail": "textRange=0..6;codePoints=U+270C,U+FE0F,U+1F3FF,U+200D,U+1F4BB", "severity": "warning", "message": "Emoji sequence is unsupported for the entire cluster."}
+        ],
+        "dumpSha256": "b59220513dfd15cdc4beb23718a952af219bcc3599ae09eaf25c8356f1baeb69"
+      }
+      
+    }
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-complete-emoji-sequence-shaping-claim",
+    "no-complete-color-glyph-fallback-support-claim",
+    "no-gpu-color-glyph-support-claim",
+    "no-platform-emoji-engine-claim",
+    "no-scaledemoji-retirement"
+  ]
+}

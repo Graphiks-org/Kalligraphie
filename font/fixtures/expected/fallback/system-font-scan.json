@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "system-font-scan",
+  "ownerTickets": ["KFONT-M7-005"],
+  "config": {
+    "rootLabel": "system-scan-fixture-dir",
+    "hostDependent": true,
+    "maxBytesPerFile": 72,
+    "mtimePolicy": "ignored-for-determinism",
+    "contentHashPolicy": "captured-when-within-max-bytes",
+    "configSha256": "6d1dd25c2447ca2e3d3af78774317381edf0f95d9e63a34de1fc0b9948ae948a"
+  },
+  "entries": [
+    {"entryId":"duplicate.ttf","relativePath":"duplicate.ttf","byteLength":72,"hostDependent":true,"faceCount":1,"tableTags":["cmap","head","name"],"diagnostics":[{"diagnosticCode":"font.source.host-dependent","detail":"Host-scanned entries remain non-normative until bytes are captured as fixtures."}]},
+    {"entryId":"malformed.otf","relativePath":"malformed.otf","byteLength":52,"hostDependent":true,"faceCount":1,"tableTags":["cmap","name"],"diagnostics":[{"diagnosticCode":"font.required-table-missing","detail":"Required table is not present."},{"diagnosticCode":"font.source.host-dependent","detail":"Host-scanned entries remain non-normative until bytes are captured as fixtures."}]},
+    {"entryId":"oversized.ttf","relativePath":"oversized.ttf","byteLength":73,"hostDependent":true,"faceCount":null,"tableTags":[],"diagnostics":[{"diagnosticCode":"font.source.host-dependent","detail":"Host-scanned entries remain non-normative until bytes are captured as fixtures."},{"diagnosticCode":"font.source.bytes-unavailable","detail":"Source exceeds the bounded byte budget for deterministic host-scan evidence."}]},
+    {"entryId":"unreadable.ttf","relativePath":"unreadable.ttf","byteLength":null,"hostDependent":true,"faceCount":null,"tableTags":[],"diagnostics":[{"diagnosticCode":"font.source.host-dependent","detail":"Host-scanned entries remain non-normative until bytes are captured as fixtures."},{"diagnosticCode":"font.source.unreadable","detail":"Fixture marks the source as unreadable for deterministic scan evidence."}]},
+    {"entryId":"unsupported-wrapper.pfb","relativePath":"unsupported-wrapper.pfb","byteLength":18,"hostDependent":true,"faceCount":null,"tableTags":[],"diagnostics":[{"diagnosticCode":"font.source.host-dependent","detail":"Host-scanned entries remain non-normative until bytes are captured as fixtures."},{"diagnosticCode":"font.outline-format.unsupported-wrapper","detail":"Unsupported wrapper or extension outside the pure Kotlin system scan contract."}]},
+    {"entryId":"valid.ttf","relativePath":"valid.ttf","byteLength":72,"hostDependent":true,"faceCount":1,"tableTags":["cmap","head","name"],"diagnostics":[{"diagnosticCode":"font.catalog.duplicate-face","detail":"Duplicate host-scanned face bytes keep the first deterministic entry."},{"diagnosticCode":"font.source.host-dependent","detail":"Host-scanned entries remain non-normative until bytes are captured as fixtures."}],"duplicateOf":"duplicate.ttf"}
+  ],
+  "nonClaims": ["no-normative-system-font-claim", "no-platform-font-fallback-claim", "no-native-font-api-claim"]
+}

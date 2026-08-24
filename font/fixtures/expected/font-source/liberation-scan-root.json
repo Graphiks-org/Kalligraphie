@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "font-source-liberation-scan-root",
+  "ownerTickets": [
+    "PKT-02D"
+  ],
+  "scanRoot": "reports/font/fixtures/fonts/liberation",
+  "hostDependent": false,
+  "acceptedFamilies": [
+    "Liberation Mono",
+    "Liberation Sans",
+    "Liberation Serif"
+  ],
+  "diagnostics": [],
+  "nonClaims": [
+    "no-complete-system-font-discovery-claim",
+    "no-host-platform-fallback-claim"
+  ]
+}

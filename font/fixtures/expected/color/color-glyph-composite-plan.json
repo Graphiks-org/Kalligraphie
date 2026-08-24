@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "color-glyph-composite-plan",
+  "ownerTickets": ["KFONT-M10-004"],
+  "cases": [
+    {
+      "caseId": "colrv1-composite-clip",
+      "compositePlan": {
+        "schema": "org.graphiks.kanvas.glyph.color.ColorGlyphCompositePlan.v1",
+        "glyphId": 280,
+        "typefaceId": "550e8400-e29b-41d4-a716-446655440417",
+        "paletteIdentity": "brand-transform-composite",
+        "supportedOperationGroup": "transform-composite-clip",
+        "operations": [
+          {"nodeId": 1, "kind": "colrv1-paint-clip-box", "childNodeIds": [2], "bounds": {"xMin": 2, "yMin": 1, "xMax": 6, "yMax": 5}, "clip": {"clipBounds": {"xMin": 2, "yMin": 1, "xMax": 6, "yMax": 5}}},
+          {"nodeId": 2, "kind": "colrv1-paint-composite-multiply", "childNodeIds": [3, 6], "bounds": {"xMin": 1, "yMin": 0, "xMax": 7, "yMax": 6}, "composite": {"mode": "multiply", "sourceNodeId": 3, "backdropNodeId": 6, "destinationReadClass": "shader-destination-read", "requiresLayerIsolation": true}},
+          {"nodeId": 3, "kind": "colrv1-paint-scale", "childNodeIds": [4], "bounds": {"xMin": 1, "yMin": 0, "xMax": 7, "yMax": 6}, "transform": {"transformKind": "scale", "xx": 1.5, "yx": 0, "xy": 0, "yy": 1.5, "dx": 1, "dy": 0, "determinant": 2.25}},
+          {"nodeId": 6, "kind": "colrv1-paint-translate", "childNodeIds": [7], "bounds": {"xMin": 1, "yMin": 0, "xMax": 6, "yMax": 6}, "transform": {"transformKind": "translate", "xx": 1, "yx": 0, "xy": 0, "yy": 1, "dx": -2, "dy": 1, "determinant": 1}}
+        ],
+        "diagnostics": [],
+        "dumpSha256": "d6f97779f56483092ebfaa8396ca82c4ad8c84aab7a7c9a67898ffe4c77b08e0"
+      },
+      "diagnostics": []
+    }
+  ],
+  "nonClaims": ["no-complete-target-support-claim", "no-complete-colrv1-rendering-claim", "no-gpu-color-glyph-support-claim", "no-platform-color-font-fallback-claim"]
+}

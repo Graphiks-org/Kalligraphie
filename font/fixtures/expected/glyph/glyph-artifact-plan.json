@@ -1,0 +1,316 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-artifact-plan",
+  "ownerTickets": [
+    "KFONT-M9-002"
+  ],
+  "fixtureIds": [
+    "glyph-artifact-plan-placeholders",
+    "glyph-artifact-plan-policy-refusals",
+    "glyph-artifact-plan-lcd-refusal",
+    "glyph-artifact-plan-outline-refusal"
+  ],
+  "planCount": 4,
+  "plans": [
+    {
+      "schema": "org.graphiks.kanvas.glyph.GlyphArtifactPlan.v1",
+      "runId": "550e8400-e29b-41d4-a716-446655441101",
+      "glyphCount": 5,
+      "representationCount": 4,
+      "diagnosticCount": 1,
+      "policyInputs": null,
+      "decisions": [
+        {
+          "index": 0,
+          "glyphId": 40,
+          "selectedRoute": "text.glyph.outline",
+          "representation": "outline",
+          "source": "request",
+          "planRef": null,
+          "artifactIntent": null,
+          "keySha256": "24f9bbca1c0670482207b5308744296c2423a7b80f9b5461ee7f5abfa03d16db",
+          "sourceRepresentationSha256": "ae5cee3cfa5af0c6c9f1204214e57c0f339134f2c343be8a810a40d954608817",
+          "fallbackPolicy": "fallback-selected-after-rejections",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.color.COLR", "reason": "route-unavailable"},
+            {"route": "text.glyph.bitmap.PNG", "reason": "route-unavailable"},
+            {"route": "text.glyph.SVG", "reason": "route-unavailable"}
+          ],
+          "diagnostic": null
+        },
+        {
+          "index": 1,
+          "glyphId": 41,
+          "selectedRoute": "text.glyph.color.COLR",
+          "representation": "colr",
+          "source": "request",
+          "planRef": {
+            "artifactName": "ColorGlyphPlan",
+            "planId": "color-plan-41",
+            "boundsPlaceholder": "deferred-to-color-glyph-plan"
+    
+          },
+          "artifactIntent": null,
+          "keySha256": "a3c5a63c5f9ed4c39e31a686cec7925e3522456655bd983ca8540f71f9b75fae",
+          "sourceRepresentationSha256": null,
+          "fallbackPolicy": "selected-first-requested-route",
+          "rejectedAlternatives": [],
+          "diagnostic": null
+        },
+        {
+          "index": 2,
+          "glyphId": 42,
+          "selectedRoute": "text.glyph.bitmap.PNG",
+          "representation": "bitmap",
+          "source": "request",
+          "planRef": {
+            "artifactName": "BitmapGlyphPlan",
+            "planId": "bitmap-plan-42",
+            "boundsPlaceholder": "deferred-to-bitmap-glyph-plan"
+    
+          },
+          "artifactIntent": null,
+          "keySha256": "b888fcc1e3ccdaab82bdcbc96437b5606c63afd577a4954099052357464944fb",
+          "sourceRepresentationSha256": null,
+          "fallbackPolicy": "fallback-selected-after-rejections",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.color.COLR", "reason": "route-unavailable"}
+          ],
+          "diagnostic": null
+        },
+        {
+          "index": 3,
+          "glyphId": 43,
+          "selectedRoute": "text.glyph.SVG",
+          "representation": "svg",
+          "source": "request",
+          "planRef": {
+            "artifactName": "SVGGlyphPlan",
+            "planId": "svg-plan-43",
+            "boundsPlaceholder": "deferred-to-svg-glyph-plan"
+    
+          },
+          "artifactIntent": null,
+          "keySha256": "c567763ee10d88ea2cfca608e01b54e4a1e4bb881d63452fd0f91fb2e68d7060",
+          "sourceRepresentationSha256": null,
+          "fallbackPolicy": "fallback-selected-after-rejections",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.color.COLR", "reason": "route-unavailable"},
+            {"route": "text.glyph.bitmap.PNG", "reason": "route-unavailable"}
+          ],
+          "diagnostic": null
+        },
+        {
+          "index": 4,
+          "glyphId": 44,
+          "selectedRoute": "text.glyph.unsupported",
+          "representation": null,
+          "source": null,
+          "planRef": null,
+          "artifactIntent": null,
+          "keySha256": "8234c679ff2e7334c2edca0986f72439b49807ade8e45c9163adde970ed7537c",
+          "sourceRepresentationSha256": null,
+          "fallbackPolicy": "refuse-no-requested-representation",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.color.COLR", "reason": "route-unavailable"},
+            {"route": "text.glyph.bitmap.PNG", "reason": "route-unavailable"},
+            {"route": "text.glyph.SVG", "reason": "route-unavailable"},
+            {"route": "text.glyph.outline", "reason": "route-unavailable"}
+          ],
+          "diagnostic": {
+            "glyphId": 44,
+            "route": "colr|bitmap|svg|outline",
+            "severity": "warning",
+            "message": "No requested glyph representation is available for glyph 44; requested colr|bitmap|svg|outline, available none."
+          }
+        }
+      ],
+      "diagnostics": [
+        {
+          "glyphId": 44,
+          "route": "colr|bitmap|svg|outline",
+          "severity": "warning",
+          "message": "No requested glyph representation is available for glyph 44; requested colr|bitmap|svg|outline, available none."
+        }
+      ],
+      "dumpSha256": "6527e11f14513447bd0d4c8143f31127d2f2ad5b308a5d6b0312b50bb851269b"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.GlyphArtifactPlan.v1",
+      "runId": "550e8400-e29b-41d4-a716-446655441101",
+      "glyphCount": 4,
+      "representationCount": 4,
+      "diagnosticCount": 0,
+      "policyInputs": {
+        "textStylePreference": "body",
+        "transformClass": "perspective",
+        "atlasBudgetClass": "tight",
+        "sdfEligibility": "mixed",
+        "colorGlyphAvailability": "placeholders-only",
+        "emojiSequenceFacts": "none",
+        "rendererCapabilitySummary": "cpu-only"
+    
+      },
+      "decisions": [
+        {
+          "index": 0,
+          "glyphId": 60,
+          "selectedRoute": "text.glyph.outline",
+          "representation": "outline",
+          "source": "request",
+          "planRef": null,
+          "artifactIntent": null,
+          "keySha256": "48489cbd507c842d166aba31f5ca6332279171fa2c07f7e17d98d6b82757dae6",
+          "sourceRepresentationSha256": "2918257edcea1894476e14b0e678f7b013392513f17e9fbe4a3d99e4a13613e6",
+          "fallbackPolicy": "fallback-selected-after-rejections",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.mask.SDF", "reason": "text.glyph.SDF-transform-unsupported"},
+            {"route": "text.glyph.mask.A8", "reason": "route-unavailable"}
+          ],
+          "diagnostic": null
+        },
+        {
+          "index": 1,
+          "glyphId": 61,
+          "selectedRoute": "text.glyph.mask.A8",
+          "representation": "a8",
+          "source": "request",
+          "planRef": null,
+          "artifactIntent": "CPUPreparedGPU",
+          "keySha256": "bc5cc2eac36df459c8e75a65a3de255f6f30c3795f076ad73b285ee3106cf3c0",
+          "sourceRepresentationSha256": "380918b946a526640a40df5dced6516794f3d97bbd9e6bb553d037c4439f31c3",
+          "fallbackPolicy": "fallback-selected-after-rejections",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.mask.SDF", "reason": "route-unavailable"}
+          ],
+          "diagnostic": null
+        },
+        {
+          "index": 2,
+          "glyphId": 62,
+          "selectedRoute": "text.glyph.outline",
+          "representation": "outline",
+          "source": "request",
+          "planRef": null,
+          "artifactIntent": null,
+          "keySha256": "62c98af085898770574721904b5c167302f003b8c4cb6317e09aa77e9937e034",
+          "sourceRepresentationSha256": "0bb72cdffac7bd1d44fecf1da5f2bdeaa722cb0dc0654f4adc06d9886a9a5749",
+          "fallbackPolicy": "fallback-selected-after-rejections",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.mask.SDF", "reason": "route-unavailable"},
+            {"route": "text.glyph.mask.A8", "reason": "text.glyph.atlas-capacity-exceeded"}
+          ],
+          "diagnostic": null
+        },
+        {
+          "index": 3,
+          "glyphId": 63,
+          "selectedRoute": "text.glyph.mask.SDF",
+          "representation": "sdf",
+          "source": "request",
+          "planRef": null,
+          "artifactIntent": "CPUPreparedGPU",
+          "keySha256": "526229b21ffea4b51cd582419a74de79859d60812b90bcf7d213c6f5f90ea4ce",
+          "sourceRepresentationSha256": "e4ff5e7d7a7f08e9800a3e25cb774533cb20040df30b6ba10f956f9acd0eb3f7",
+          "fallbackPolicy": "selected-first-requested-route",
+          "rejectedAlternatives": [],
+          "diagnostic": null
+        }
+      ],
+      "diagnostics": [  ],
+      "dumpSha256": "07b3b75283c4f7e4976234a4c1077edcc81a30b8ed2f46270087909c24ae1290"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.GlyphArtifactPlan.v1",
+      "runId": "550e8400-e29b-41d4-a716-446655441101",
+      "glyphCount": 1,
+      "representationCount": 0,
+      "diagnosticCount": 1,
+      "policyInputs": null,
+      "decisions": [
+        {
+          "index": 0,
+          "glyphId": 70,
+          "selectedRoute": "text.glyph.unsupported",
+          "representation": null,
+          "source": null,
+          "planRef": null,
+          "artifactIntent": null,
+          "keySha256": "9635ba87194cca347237248afec9863ace7c0eb4d87491f01301182acad775dd",
+          "sourceRepresentationSha256": null,
+          "fallbackPolicy": "refuse-no-requested-representation",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.mask.LCD", "reason": "text.glyph.LCD-future-research"}
+          ],
+          "diagnostic": {
+            "glyphId": 70,
+            "route": "text.glyph.LCD-future-research",
+            "severity": "warning",
+            "message": "LCD glyph rendering remains future research for glyph 70; refusing text.glyph.mask.LCD without fallback support claims."
+          }
+        }
+      ],
+      "diagnostics": [
+        {
+          "glyphId": 70,
+          "route": "text.glyph.LCD-future-research",
+          "severity": "warning",
+          "message": "LCD glyph rendering remains future research for glyph 70; refusing text.glyph.mask.LCD without fallback support claims."
+        }
+      ],
+      "dumpSha256": "67bbfb8f481fa5c1e636e549738805d4508da6c50f3c39c8c9121f2b65f0b759"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.GlyphArtifactPlan.v1",
+      "runId": "550e8400-e29b-41d4-a716-446655441101",
+      "glyphCount": 1,
+      "representationCount": 0,
+      "diagnosticCount": 1,
+      "policyInputs": null,
+      "decisions": [
+        {
+          "index": 0,
+          "glyphId": 71,
+          "selectedRoute": "text.glyph.unsupported",
+          "representation": null,
+          "source": null,
+          "planRef": null,
+          "artifactIntent": null,
+          "keySha256": "008c8d1025d951646014ba4cca7187d82422e21e98b58fabb1b8e948e85321ab",
+          "sourceRepresentationSha256": null,
+          "fallbackPolicy": "refuse-no-requested-representation",
+          "rejectedAlternatives": [
+            {"route": "text.glyph.outline", "reason": "text.glyph.outline-unavailable"}
+          ],
+          "diagnostic": {
+            "glyphId": 71,
+            "route": "text.glyph.outline-unavailable",
+            "severity": "warning",
+            "message": "Outline glyph representation is unavailable for glyph 71."
+          }
+        }
+      ],
+      "diagnostics": [
+        {
+          "glyphId": 71,
+          "route": "text.glyph.outline-unavailable",
+          "severity": "warning",
+          "message": "Outline glyph representation is unavailable for glyph 71."
+        }
+      ],
+      "dumpSha256": "fbeb5fba422e829d034f0cd1c5aa52ce8dbd1d8742b121e4c5469b5353e08df8"
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.LCD-future-research",
+    "text.glyph.SDF-transform-unsupported",
+    "text.glyph.atlas-capacity-exceeded",
+    "text.glyph.outline-unavailable"
+  ],
+  "nonClaims": [
+    "producer-only",
+    "no-complete-color-bitmap-svg-plan-claim",
+    "no-gpu-text-route-claim"
+  ],
+  "dumpSha256": "aebb0001ef726c5ea1dc5b315802bb18ae27ac87cd65197cba833536dcfa5a32"
+}

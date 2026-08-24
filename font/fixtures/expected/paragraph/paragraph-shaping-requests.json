@@ -1,0 +1,15 @@
+{
+  "schema": "kanvas.paragraph.shaping-requests.v1",
+  "text": "ab\u0633\u0644\u0627\ufffcz",
+  "paragraphDirection": "ltr",
+  "requests": [
+    {"segmentId": "seg-000", "textRange": "0..1", "text": "ab", "fontFamilies": ["Liberation Sans"], "fallbackPreference": "prefer-declared-families", "typefaceId": "550e8400-e29b-41d4-a716-446655440811", "fontSize": 12.0, "locale": "en-US", "features": [], "variationCoordinates": [], "script": "Latn", "bidiLevel": 0},
+    {"segmentId": "seg-001", "textRange": "2..2", "text": "\u0633", "fontFamilies": ["Liberation Serif"], "fallbackPreference": "prefer-declared-families", "typefaceId": "550e8400-e29b-41d4-a716-446655440812", "fontSize": 14.0, "locale": "ar", "features": [], "variationCoordinates": [], "script": "Arab", "bidiLevel": 1},
+    {"segmentId": "seg-002", "textRange": "3..4", "text": "\u0644\u0627", "fontFamilies": ["Liberation Serif"], "fallbackPreference": "prefer-declared-families", "typefaceId": "550e8400-e29b-41d4-a716-446655440812", "fontSize": 14.0, "locale": "ar", "features": [], "variationCoordinates": [{"axisTag": "wght", "value": 625.0}], "script": "Arab", "bidiLevel": 1},
+    {"segmentId": "seg-003", "textRange": "6..6", "text": "z", "fontFamilies": ["Liberation Sans"], "fallbackPreference": "prefer-declared-families", "typefaceId": "550e8400-e29b-41d4-a716-446655440813", "fontSize": 12.0, "locale": "en-US", "features": [], "variationCoordinates": [], "script": "Latn", "bidiLevel": 0}
+  ],
+  "placeholderRanges": [
+    "5..5"
+  ],
+  "diagnostics": []
+}

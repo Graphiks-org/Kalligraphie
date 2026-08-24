@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "script-runs",
+  "ownerTickets": ["KFONT-M5-004"],
+  "unicodeVersion": "16.0.0",
+  "sourceTextHashAlgorithm": "SHA-256",
+  "inputs": [
+    {
+      "fixtureName": "script-ambiguous-extension",
+      "sourceText": "〃",
+      "inputTextHash": "267f85d8102bdd9ec70f54aacbf0c4be5063b7658a3e32dc96528111c976e247",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..0", "codePointRange": "0..0", "selectedScript": "Zyyy", "openTypeScriptTags": [], "extensionCandidates": ["Bopo", "Hang", "Hani", "Hira", "Kana"], "languageHint": null, "reason": "script-extension-ambiguous"}
+      ],
+      "diagnostics": [
+        {"code": "text.shaping.script-run-ambiguous", "severity": "refusal", "textRange": "0..0", "message": "Script_Extensions candidates Bopo,Hang,Hani,Hira,Kana need strong context."}
+      ]
+    },
+    {
+      "fixtureName": "script-arabic-extension-ambiguous",
+      "sourceText": "ـ",
+      "inputTextHash": "ff9b03adacf28fed0de8d9e4a886d0e38ea539b22edb8f529fc68990dc6be7da",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..0", "codePointRange": "0..0", "selectedScript": "Zyyy", "openTypeScriptTags": [], "extensionCandidates": ["Arab", "Mand", "Syrc"], "languageHint": null, "reason": "script-extension-ambiguous"}
+      ],
+      "diagnostics": [
+        {"code": "text.shaping.script-run-ambiguous", "severity": "refusal", "textRange": "0..0", "message": "Script_Extensions candidates Arab,Mand,Syrc need strong context."}
+      ]
+    },
+    {
+      "fixtureName": "script-arabic-marks",
+      "sourceText": "اّ",
+      "inputTextHash": "6f184c33aca6ee56c34d4ffcc9b091ad1a550d92ab277df32c7f640ef2f0da82",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Arab", "openTypeScriptTags": ["arab"], "extensionCandidates": ["Arab"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-cjk-vs",
+      "sourceText": "一〃️",
+      "inputTextHash": "991e9424d7e8593d02cdbff1e0d5301e36a6df24aa9d59b90f7cf07d5024dbbc",
+      "runs": [
+        {"clusterRange": "0..1", "utf16Range": "0..2", "codePointRange": "0..2", "selectedScript": "Hani", "openTypeScriptTags": ["hani"], "extensionCandidates": ["Bopo", "Hang", "Hani", "Hira", "Kana"], "languageHint": null, "reason": "script-extension"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-conflicting-context",
+      "sourceText": "A.α",
+      "inputTextHash": "9ab55474190e3c2bf0edcda8be6a69cd2156f8767e39bebdeea17cf5b3a3cdae",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..0", "codePointRange": "0..0", "selectedScript": "Latn", "openTypeScriptTags": ["latn"], "extensionCandidates": ["Latn"], "languageHint": null, "reason": "strong-script"},
+        {"clusterRange": "1..1", "utf16Range": "1..1", "codePointRange": "1..1", "selectedScript": "Zyyy", "openTypeScriptTags": [], "extensionCandidates": ["Zyyy"], "languageHint": null, "reason": "context-ambiguous"},
+        {"clusterRange": "2..2", "utf16Range": "2..2", "codePointRange": "2..2", "selectedScript": "Grek", "openTypeScriptTags": ["grek"], "extensionCandidates": ["Grek"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": [
+        {"code": "text.shaping.script-run-ambiguous", "severity": "refusal", "textRange": "1..1", "message": "Common or Inherited cluster has conflicting strong context Latn/Grek."}
+      ]
+    },
+    {
+      "fixtureName": "script-devanagari-matra",
+      "sourceText": "का",
+      "inputTextHash": "e79611026fa2ce03607b9be714ae251ef9359a624ef303f70c9120c504cb0e8f",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Deva", "openTypeScriptTags": ["deva", "dev2"], "extensionCandidates": ["Deva"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-emoji-zwj",
+      "sourceText": "\uD83D\uDC66‍\uD83D\uDC66",
+      "inputTextHash": "4e6ca2540bc09e3534a583cf2d74e8b5b98dd3c1091d967be6d682b97c078e5b",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..4", "codePointRange": "0..2", "selectedScript": "Zsye", "openTypeScriptTags": ["Zsye"], "extensionCandidates": ["Zsye"], "languageHint": null, "reason": "emoji-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-greek-polytonic",
+      "sourceText": "ά",
+      "inputTextHash": "075765b9bfb608d9d8146a1d9bf3a2a2d3412d941fcbd10784f6745b6283eff0",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Grek", "openTypeScriptTags": ["grek"], "extensionCandidates": ["Grek"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-hebrew-niqqud",
+      "sourceText": "אְ",
+      "inputTextHash": "6570db9875530bef8dbf7fc59d6c47b78817944337c902a31a6c0fd726491cf0",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Hebr", "openTypeScriptTags": ["hebr"], "extensionCandidates": ["Hebr"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-latin-combining",
+      "sourceText": "Á",
+      "inputTextHash": "52a3a16a51ceb99ed94f21d05063daea179156bf881b33675ea9212d32a715b0",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Latn", "openTypeScriptTags": ["latn"], "extensionCandidates": ["Latn"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-thai-tone",
+      "sourceText": "ก้",
+      "inputTextHash": "81d3e1d719413c44b4d60be61101e4ad692f6203062747097ede02deabab4145",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Thai", "openTypeScriptTags": ["thai"], "extensionCandidates": ["Thai"], "languageHint": null, "reason": "strong-script"}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "script-unsupported",
+      "sourceText": "Ⴀ",
+      "inputTextHash": "708bfb27eaf336e86e20aff2ca7f65f69b471f8cfb16b42e12cc4d3ca09bad2e",
+      "runs": [
+        {"clusterRange": "0..0", "utf16Range": "0..0", "codePointRange": "0..0", "selectedScript": "Geor", "openTypeScriptTags": [], "extensionCandidates": ["Geor"], "languageHint": null, "reason": "unsupported-script"}
+      ],
+      "diagnostics": [
+        {"code": "text.shaping.script-unsupported", "severity": "refusal", "textRange": "0..0", "message": "Script Geor is outside the current KFONT required matrix."}
+      ]
+    }
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-complete-ucd-claim",
+    "no-complete-gsub-gpos-claim",
+    "no-shaping-support-promotion",
+    "no-paragraph-support-claim",
+    "no-gpu-text-route-claim"
+  ]
+}

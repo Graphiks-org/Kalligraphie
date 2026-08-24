@@ -1,0 +1,585 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-artifact-metrics",
+  "ownerTickets": [
+    "KFONT-M12-004"
+  ],
+  "fixtureIds": [
+    "outline-a8-sdf-routes",
+    "color-bitmap-svg-gates"
+  ],
+  "sampleCount": 2,
+  "samples": [
+    {
+      "metadata": {
+        "environmentLabel": "ci-macos-arm64",
+        "fontSourceSet": "font-source-liberation-core",
+        "unicodeVersion": "16.0.0",
+        "cacheState": "cold",
+        "sampleLabel": "artifact-cold",
+        "sampleCount": 5,
+        "timingMode": "fixture-counter",
+        "releaseGatePromoted": false
+
+      },
+      "routeCounts": [
+        {
+          "route": "text.glyph.bitmap.png",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.color.colr",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.mask.A8",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.mask.SDF",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.outline",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.unsupported",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.vector.svg",
+          "count": 1
+
+        }
+      ],
+      "timings": [
+        {
+          "metricName": "a8-generation",
+          "sampleCount": 5,
+          "median": 8,
+          "p90": 10,
+          "max": 11,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "bitmap-decode",
+          "sampleCount": 5,
+          "median": 21,
+          "p90": 24,
+          "max": 27,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "colr-plan",
+          "sampleCount": 5,
+          "median": 15,
+          "p90": 18,
+          "max": 20,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "sdf-generation",
+          "sampleCount": 5,
+          "median": 17,
+          "p90": 20,
+          "max": 23,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "svg-plan",
+          "sampleCount": 5,
+          "median": 19,
+          "p90": 22,
+          "max": 26,
+          "unit": "fixture-ticks"
+
+        }
+      ],
+      "sourceMaskHashCount": 3,
+      "refusalCounts": [
+        {
+          "route": "text.glyph.SDF-transform-unsupported",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.atlas-capacity-exceeded",
+          "count": 1
+
+        }
+      ],
+      "routePreimages": [
+        {
+          "glyphId": 44,
+          "route": "text.glyph.bitmap.png",
+          "compactHash": "95f998d5f0b8f00e21f0fea10dfae8a16d0e32d1ef0c859f4b4a90299baf37b1",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441184",
+            "glyphId": 44,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.bitmap.png",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": "emoji-palette-v1",
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 45,
+          "route": "text.glyph.color.colr",
+          "compactHash": "a276fdff59efc03008095417a7c8f8cac8ed2f5e39d6a822be0512da2f02b2bf",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441185",
+            "glyphId": 45,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.color.colr",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": "emoji-palette-v1",
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 42,
+          "route": "text.glyph.mask.A8",
+          "compactHash": "f79227a11a525d09f10cd51d017107a090e0aa5a32d73f03291b32448a242e55",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441182",
+            "glyphId": 42,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.mask.A8",
+            "maskFormat": "A8",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 43,
+          "route": "text.glyph.mask.SDF",
+          "compactHash": "8bf9540384e53f0dfb02c05e939ef7beff6d76a12079f50a64e13c55271beb7e",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441183",
+            "glyphId": 43,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.mask.SDF",
+            "maskFormat": "SDF",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": 8, "sourceResolutionPx": 16},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 41,
+          "route": "text.glyph.outline",
+          "compactHash": "7898268ba6629bbc35f4a9e6b8b6c92260aee9d880a7c6f1535fabf2f53cd6f4",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441181",
+            "glyphId": 41,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.outline",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 47,
+          "route": "text.glyph.unsupported",
+          "compactHash": "af84662d59fd8b403b5750e0b00d7e85c767f5005a76e0425a82a10f551fdef8",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441187",
+            "glyphId": 47,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.unsupported",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 46,
+          "route": "text.glyph.vector.svg",
+          "compactHash": "3710c007d5cb9873c7e4b497053c4ae6f3b83de2bf95f047d7ac8a4cb6613368",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441186",
+            "glyphId": 46,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.vector.svg",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": "svg-descriptor-v1"
+          }
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "environmentLabel": "ci-macos-arm64",
+        "fontSourceSet": "font-source-liberation-core",
+        "unicodeVersion": "16.0.0",
+        "cacheState": "warm",
+        "sampleLabel": "artifact-warm",
+        "sampleCount": 5,
+        "timingMode": "fixture-counter",
+        "releaseGatePromoted": false
+
+      },
+      "routeCounts": [
+        {
+          "route": "text.glyph.bitmap.png",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.color.colr",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.mask.A8",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.mask.SDF",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.outline",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.unsupported",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.vector.svg",
+          "count": 1
+
+        }
+      ],
+      "timings": [
+        {
+          "metricName": "a8-generation",
+          "sampleCount": 5,
+          "median": 2,
+          "p90": 3,
+          "max": 4,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "bitmap-decode",
+          "sampleCount": 5,
+          "median": 7,
+          "p90": 9,
+          "max": 10,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "colr-plan",
+          "sampleCount": 5,
+          "median": 5,
+          "p90": 6,
+          "max": 8,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "sdf-generation",
+          "sampleCount": 5,
+          "median": 4,
+          "p90": 5,
+          "max": 7,
+          "unit": "fixture-ticks"
+
+        },
+        {
+          "metricName": "svg-plan",
+          "sampleCount": 5,
+          "median": 6,
+          "p90": 8,
+          "max": 9,
+          "unit": "fixture-ticks"
+
+        }
+      ],
+      "sourceMaskHashCount": 3,
+      "refusalCounts": [
+        {
+          "route": "text.glyph.SDF-transform-unsupported",
+          "count": 1
+
+        },
+        {
+          "route": "text.glyph.atlas-capacity-exceeded",
+          "count": 1
+
+        }
+      ],
+      "routePreimages": [
+        {
+          "glyphId": 44,
+          "route": "text.glyph.bitmap.png",
+          "compactHash": "95f998d5f0b8f00e21f0fea10dfae8a16d0e32d1ef0c859f4b4a90299baf37b1",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441184",
+            "glyphId": 44,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.bitmap.png",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": "emoji-palette-v1",
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 45,
+          "route": "text.glyph.color.colr",
+          "compactHash": "a276fdff59efc03008095417a7c8f8cac8ed2f5e39d6a822be0512da2f02b2bf",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441185",
+            "glyphId": 45,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.color.colr",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": "emoji-palette-v1",
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 42,
+          "route": "text.glyph.mask.A8",
+          "compactHash": "f79227a11a525d09f10cd51d017107a090e0aa5a32d73f03291b32448a242e55",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441182",
+            "glyphId": 42,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.mask.A8",
+            "maskFormat": "A8",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 43,
+          "route": "text.glyph.mask.SDF",
+          "compactHash": "8bf9540384e53f0dfb02c05e939ef7beff6d76a12079f50a64e13c55271beb7e",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441183",
+            "glyphId": 43,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.mask.SDF",
+            "maskFormat": "SDF",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": 8, "sourceResolutionPx": 16},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 41,
+          "route": "text.glyph.outline",
+          "compactHash": "7898268ba6629bbc35f4a9e6b8b6c92260aee9d880a7c6f1535fabf2f53cd6f4",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441181",
+            "glyphId": 41,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.outline",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 47,
+          "route": "text.glyph.unsupported",
+          "compactHash": "af84662d59fd8b403b5750e0b00d7e85c767f5005a76e0425a82a10f551fdef8",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441187",
+            "glyphId": 47,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.unsupported",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": null
+          }
+        },
+        {
+          "glyphId": 46,
+          "route": "text.glyph.vector.svg",
+          "compactHash": "3710c007d5cb9873c7e4b497053c4ae6f3b83de2bf95f047d7ac8a4cb6613368",
+          "preimage": {
+            "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+            "typefaceId": "550e8400-e29b-41d4-a716-446655441186",
+            "glyphId": 46,
+            "clusterFingerprint": null,
+            "sizePx": 16,
+            "scaleX": 1,
+            "scaleY": 1,
+            "transformBucket": "identity",
+            "subpixelBucket": {"x": 0, "y": 0},
+            "route": "text.glyph.vector.svg",
+            "maskFormat": "none",
+            "edging": "antialias",
+            "variationCoordinates": [],
+            "paletteIdentity": null,
+            "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+            "unicodeDataVersion": null,
+            "rendererDescriptorVersion": "svg-descriptor-v1"
+          }
+        }
+      ]
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.SDF-transform-unsupported",
+    "text.glyph.atlas-capacity-exceeded"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-gpu-text-route-claim",
+    "no-hidden-performance-gate",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "347c219e926ffc33dda0a23c5c0cc5a7714fbcb98b31b32eb38bcc446f041cae"
+}

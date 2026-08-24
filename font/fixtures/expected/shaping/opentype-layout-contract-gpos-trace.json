@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "opentype-layout-contract-gpos-trace",
+  "ownerTickets": ["KFONT-M6-001"],
+  "unicodeVersion": "16.0.0",
+  "sourceTextHashAlgorithm": "SHA-256-UTF-8",
+  "sourceTextHash": "38164fbd17603d73f696b8b4d72664d735bb6a7c88577687fd2ae33fd6964153",
+  "stage": "GPOS",
+  "typefaceId": "550e8400-e29b-41d4-a716-446655440601",
+  "scriptRun": {"clusterRange": "0..1", "utf16Range": "0..1", "codePointRange": "0..1", "selectedScript": "Latn", "openTypeScriptTags": ["latn"], "extensionCandidates": ["Latn"], "languageHint": null, "reason": "context-script"},
+  "features": {"requested": [{"tag": "liga", "value": 1}, {"tag": "kern", "value": 1}], "enabled": [{"tag": "ccmp", "value": 1}, {"tag": "locl", "value": 1}, {"tag": "liga", "value": 1}, {"tag": "rlig", "value": 1}, {"tag": "clig", "value": 1}, {"tag": "calt", "value": 1}, {"tag": "kern", "value": 1}, {"tag": "mark", "value": 1}, {"tag": "mkmk", "value": 1}], "disabled": [], "defaulted": [{"tag": "ccmp", "value": 1}, {"tag": "locl", "value": 1}, {"tag": "rlig", "value": 1}, {"tag": "clig", "value": 1}, {"tag": "calt", "value": 1}, {"tag": "mark", "value": 1}, {"tag": "mkmk", "value": 1}], "unsupported": []},
+  "events": [{"stage": "GPOS", "lookupId": "gpos-noop", "lookupType": null, "decision": "no-op-contract", "featureTags": ["ccmp", "locl", "liga", "rlig", "clig", "calt", "kern", "mark", "mkmk"], "diagnosticCode": null}],
+  "diagnostics": [],
+  "nonClaims": ["no-complete-target-support-claim", "no-complex-shaping-support-claim", "no-gsub-gpos-lookup-implementation-claim", "no-native-shaper-oracle-claim", "no-gpu-text-route-claim"]
+}

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "svg-glyph-plan",
+  "ownerTickets": ["KFONT-M10-007"],
+  "cases": [
+    {
+      "caseId": "path-and-basic-shape",
+      "expectedGpuHandoffArtifactType": "SVGGlyphPlan",
+      "plan": {
+        "schema": "org.graphiks.kanvas.glyph.color.SVGGlyphPlan.v1",
+        "glyphId": 177,
+        "sourceDocumentSha256": "669a2c76bb7d2592422e6f683decff709b6c4c866029ec074fc4815c647eb229",
+        "viewBox": {"minX": 0, "minY": 0, "width": 128, "height": 64},
+        "bounds": {"left": 0, "top": 0, "width": 128, "height": 64},
+        "primitiveCount": 2,
+        "primitives": [
+          {"kind": "rect", "summary": "rect{fill=#ff0000,height=20,width=10,x=1,y=2}"},
+          {"kind": "path", "summary": "path{d=M0 0 L10 10,fill=none,stroke=#000000}"}
+        ],
+        "resourceLimits": {"documentChars": 183, "pathCommandCount": 2, "gradientStopCount": 0, "primitiveCount": 2, "maxDocumentChars": 65536, "maxPathCommands": 256, "maxGradientStops": 64, "maxPrimitiveCount": 256, "maxUseRecursionDepth": 8},
+        "diagnostics": [],
+        "dumpSha256": "f3eae34063f90aa41c63fb57bdc7df95e5ebfbdbe0b3df418765361206471ed9"
+      },
+      "diagnostics": []
+    },
+    {
+      "caseId": "gradient-transform-clip",
+      "expectedGpuHandoffArtifactType": "SVGGlyphPlan",
+      "plan": {
+        "schema": "org.graphiks.kanvas.glyph.color.SVGGlyphPlan.v1",
+        "glyphId": 178,
+        "sourceDocumentSha256": "ba0388bbfd09baaec03be452cc5b2a64686b05786eb49fc827f826c6baa2c6b2",
+        "viewBox": {"minX": 0, "minY": 0, "width": 16, "height": 16},
+        "bounds": {"left": 0, "top": 0, "width": 16, "height": 16},
+        "primitiveCount": 8,
+        "primitives": [
+          {"kind": "defs", "summary": "defs{}"},
+          {"kind": "linearGradient", "summary": "lineargradient{gradientunits=userSpaceOnUse,id=g,x1=0,x2=16,y1=0,y2=0}"},
+          {"kind": "stop", "summary": "stop{offset=0,stop-color=#000000}"},
+          {"kind": "stop", "summary": "stop{offset=1,stop-color=#ffffff}"},
+          {"kind": "clipPath", "summary": "clippath{id=c}"},
+          {"kind": "rect", "summary": "rect{height=14,width=14,x=1,y=1}"},
+          {"kind": "g", "summary": "g{opacity=0.75,transform=translate(2 3)}"},
+          {"kind": "path", "summary": "path{clip-path=url(#c),d=M0 0 L16 0 L16 16 Z,fill=url(#g)}"}
+        ],
+        "resourceLimits": {"documentChars": 501, "pathCommandCount": 4, "gradientStopCount": 2, "primitiveCount": 8, "maxDocumentChars": 65536, "maxPathCommands": 256, "maxGradientStops": 64, "maxPrimitiveCount": 256, "maxUseRecursionDepth": 8},
+        "diagnostics": [],
+        "dumpSha256": "a4e4c92ed9fc6a6e8b88edc5ecb0865f2010f8a3e9c13e7470b14d070060893a"
+      },
+      "diagnostics": []
+    },
+    {
+      "caseId": "defs-symbol-use-radial-gradient",
+      "expectedGpuHandoffArtifactType": "SVGGlyphPlan",
+      "plan": {
+        "schema": "org.graphiks.kanvas.glyph.color.SVGGlyphPlan.v1",
+        "glyphId": 179,
+        "sourceDocumentSha256": "8cd6e94bfb1907d279cb1d9866b734ef2c317afc616114e75f1abb6987b564e4",
+        "viewBox": {"minX": 0, "minY": 0, "width": 24, "height": 24},
+        "bounds": {"left": 0, "top": 0, "width": 24, "height": 24},
+        "primitiveCount": 7,
+        "primitives": [
+          {"kind": "defs", "summary": "defs{}"},
+          {"kind": "radialGradient", "summary": "radialgradient{cx=12,cy=12,id=rg,r=10}"},
+          {"kind": "stop", "summary": "stop{offset=0,stop-color=#ffee00}"},
+          {"kind": "stop", "summary": "stop{offset=1,stop-color=#ff6600}"},
+          {"kind": "symbol", "summary": "symbol{id=sun,viewbox=0 0 24 24}"},
+          {"kind": "circle", "summary": "circle{cx=12,cy=12,fill=url(#rg),r=8}"},
+          {"kind": "use", "summary": "use{href=#sun,opacity=0.5,transform=translate(1 2)}"}
+        ],
+        "resourceLimits": {"documentChars": 424, "pathCommandCount": 0, "gradientStopCount": 2, "primitiveCount": 7, "maxDocumentChars": 65536, "maxPathCommands": 256, "maxGradientStops": 64, "maxPrimitiveCount": 256, "maxUseRecursionDepth": 8},
+        "diagnostics": [],
+        "dumpSha256": "30f8c378df8d91478801e9db4d64e2827a713a469afe64301ed61540204f4520"
+      },
+      "diagnostics": []
+    },
+    {
+      "caseId": "external-resource-refusal",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 180, "route": "svg", "code": "text.SVG.external-resource-refused", "detail": "glyphId=180;elementName=image;attributeName=href;referenceSha256=7292a53aa9817c2589d56b97e99a1310302c588df16c487f93a2d89753f55c59", "severity": "warning", "message": "SVG glyph external resource refused for glyph 180: image href."}
+      ]
+    },
+    {
+      "caseId": "unsupported-feature-refusal",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 181, "route": "svg", "code": "text.SVG.feature-unsupported", "detail": "glyphId=181;elementName=foreignObject;featureName=embedded-text-layout", "severity": "warning", "message": "SVG glyph feature embedded-text-layout is unsupported for glyph 181 in foreignObject."}
+      ]
+    },
+    {
+      "caseId": "path-command-budget-refusal",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 182, "route": "svg", "code": "text.SVG.budget-exceeded", "detail": "glyphId=182;budgetName=pathCommands;observed=257;max=256", "severity": "warning", "message": "SVG glyph budget pathCommands exceeded for glyph 182: observed 257, max 256."}
+      ]
+    },
+    {
+      "caseId": "gradient-stop-budget-refusal",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 183, "route": "svg", "code": "text.SVG.budget-exceeded", "detail": "glyphId=183;budgetName=gradientStops;observed=65;max=64", "severity": "warning", "message": "SVG glyph budget gradientStops exceeded for glyph 183: observed 65, max 64."}
+      ]
+    },
+    {
+      "caseId": "use-recursion-budget-refusal",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 184, "route": "svg", "code": "text.SVG.budget-exceeded", "detail": "glyphId=184;referenceId=glyph-loop;depth=9;maxDepth=8", "severity": "warning", "message": "SVG glyph use recursion exceeded for glyph 184 at glyph-loop: depth 9, max 8."}
+      ]
+    }
+  ],
+  "nonClaims": ["no-complete-target-support-claim", "no-complete-svg-in-opentype-rendering-claim", "no-gpu-svg-glyph-route-claim", "no-native-svg-renderer-claim"]
+}

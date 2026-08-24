@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "cff-scaler-path-output",
+  "ownerTickets": [
+    "KFONT-M4-004"
+  ],
+  "fixtureIds": [
+    "cff-scaler-basic.otf",
+    "cff-scaler-subroutines.otf",
+    "cff-scaler-flex.otf",
+    "cff-scaler-missing-glyph.otf",
+    "cff-scaler-malformed-glyph.otf"
+  ],
+  "requiredEvidence": [
+    "glyph-outline.json",
+    "glyph-metrics.json",
+    "cff-charstring-trace.json"
+  ],
+  "pathHashArtifacts": {
+    "basic": {
+      "outlineCommandDumpSha256": "c2563e5882d86dce13cd9cf034c37190f7063c74a1a620d5f652ec85609cf55f",
+      "outlineCommandCount": 5
+    },
+    "subroutines": {
+      "outlineCommandDumpSha256": "4d5aa0d8052b96d1d9916d203c61f8f368ddf9e48e5525f29521d2db5d13e5c3",
+      "outlineCommandCount": 4
+    },
+    "flex": {
+      "outlineCommandDumpSha256": "c9bb75ee8a16a30763ba6f0d0a39fd50deefe528203e11cea69550b88a6eaaa1",
+      "outlineCommandCount": 4
+    }
+  },
+  "positiveFixtures": [
+    {
+      "fixtureId": "cff-scaler-basic.otf",
+      "evidence": {
+          "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+          "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+          "format": "cff",
+          "requestedGlyphId": 1,
+          "resolvedGlyphId": 1,
+          "notdefUsed": false,
+          "scalerFamily": "cff",
+          "route": "font.scaler.cff",
+          "fillRule": "non-zero",
+          "outlineCommands": ["M 100.0 200.0", "L 150.0 200.0", "L 150.0 250.0", "C 160.0 250.0 180.0 280.0 220.0 310.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nL 150.0 200.0\nL 150.0 250.0\nC 160.0 250.0 180.0 280.0 220.0 310.0\nZ",
+          "outlineCommandDumpSha256": "c2563e5882d86dce13cd9cf034c37190f7063c74a1a620d5f652ec85609cf55f",
+          "conservativeBounds": {"left": 100.0, "top": 200.0, "right": 220.0, "bottom": 310.0},
+          "metrics": {"advanceX": 475.0, "advanceY": 0.0, "bounds": {"left": 100.0, "top": 200.0, "right": 220.0, "bottom": 310.0}},
+          "widthSource": "charstring",
+          "linkedCharStringTraceDumpId": "cff-charstring-trace",
+          "charStringEvidence": {
+          "format": "cff",
+          "glyphId": 1,
+          "width": 475.0,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 100.0 200.0", "L 150.0 200.0", "L 150.0 250.0", "C 160.0 250.0 180.0 280.0 220.0 310.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nL 150.0 200.0\nL 150.0 250.0\nC 160.0 250.0 180.0 280.0 220.0 310.0\nZ",
+          "outlineCommandDumpSha256": "c2563e5882d86dce13cd9cf034c37190f7063c74a1a620d5f652ec85609cf55f",
+          "callTrace": [],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        },
+          "diagnostics": []
+        }
+    },
+    {
+      "fixtureId": "cff-scaler-subroutines.otf",
+      "evidence": {
+          "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+          "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+          "format": "cff",
+          "requestedGlyphId": 1,
+          "resolvedGlyphId": 1,
+          "notdefUsed": false,
+          "scalerFamily": "cff",
+          "route": "font.scaler.cff",
+          "fillRule": "non-zero",
+          "outlineCommands": ["M 100.0 200.0", "L 150.0 200.0", "L 150.0 175.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nL 150.0 200.0\nL 150.0 175.0\nZ",
+          "outlineCommandDumpSha256": "4d5aa0d8052b96d1d9916d203c61f8f368ddf9e48e5525f29521d2db5d13e5c3",
+          "conservativeBounds": {"left": 100.0, "top": 175.0, "right": 150.0, "bottom": 200.0},
+          "metrics": {"advanceX": 475.0, "advanceY": 0.0, "bounds": {"left": 100.0, "top": 175.0, "right": 150.0, "bottom": 200.0}},
+          "widthSource": "charstring",
+          "linkedCharStringTraceDumpId": "cff-charstring-trace",
+          "charStringEvidence": {
+          "format": "cff",
+          "glyphId": 1,
+          "width": 475.0,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 100.0 200.0", "L 150.0 200.0", "L 150.0 175.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nL 150.0 200.0\nL 150.0 175.0\nZ",
+          "outlineCommandDumpSha256": "4d5aa0d8052b96d1d9916d203c61f8f368ddf9e48e5525f29521d2db5d13e5c3",
+          "callTrace": [{"depth": 0, "scope": "local", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 7, "returnByteOffset": 3, "instructionBudgetRemaining": 1015, "expandedByteBudgetRemaining": 4085}, {"depth": 0, "scope": "global", "encodedIndex": -107, "resolvedIndex": 0, "bias": 107, "callerByteOffset": 9, "returnByteOffset": 3, "instructionBudgetRemaining": 1009, "expandedByteBudgetRemaining": 4079}],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        },
+          "diagnostics": []
+        }
+    },
+    {
+      "fixtureId": "cff-scaler-flex.otf",
+      "evidence": {
+          "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+          "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+          "format": "cff",
+          "requestedGlyphId": 1,
+          "resolvedGlyphId": 1,
+          "notdefUsed": false,
+          "scalerFamily": "cff",
+          "route": "font.scaler.cff",
+          "fillRule": "non-zero",
+          "outlineCommands": ["M 100.0 200.0", "C 105.0 200.0 115.0 210.0 130.0 210.0", "C 145.0 210.0 155.0 200.0 160.0 200.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nC 105.0 200.0 115.0 210.0 130.0 210.0\nC 145.0 210.0 155.0 200.0 160.0 200.0\nZ",
+          "outlineCommandDumpSha256": "c9bb75ee8a16a30763ba6f0d0a39fd50deefe528203e11cea69550b88a6eaaa1",
+          "conservativeBounds": {"left": 100.0, "top": 200.0, "right": 160.0, "bottom": 210.0},
+          "metrics": {"advanceX": 480.0, "advanceY": 0.0, "bounds": {"left": 100.0, "top": 200.0, "right": 160.0, "bottom": 210.0}},
+          "widthSource": "charstring",
+          "linkedCharStringTraceDumpId": "cff-charstring-trace",
+          "charStringEvidence": {
+          "format": "cff",
+          "glyphId": 1,
+          "width": 480.0,
+          "stemHintCount": 0,
+          "hintMaskByteCount": 0,
+          "outlineCommands": ["M 100.0 200.0", "C 105.0 200.0 115.0 210.0 130.0 210.0", "C 145.0 210.0 155.0 200.0 160.0 200.0", "Z"],
+          "outlineCommandDump": "M 100.0 200.0\nC 105.0 200.0 115.0 210.0 130.0 210.0\nC 145.0 210.0 155.0 200.0 160.0 200.0\nZ",
+          "outlineCommandDumpSha256": "c9bb75ee8a16a30763ba6f0d0a39fd50deefe528203e11cea69550b88a6eaaa1",
+          "callTrace": [],
+          "variationPosition": [],
+          "cff2VsIndex": 0,
+          "blendVectors": [],
+          "diagnostics": []
+        },
+          "diagnostics": []
+        }
+    }
+  ],
+  "diagnosticSnapshots": {
+    "missingGlyph": [
+      {"code": "font.scaler.cff.path-output-unavailable", "detail": "cff.path-output-unavailable", "operation": "outline", "glyphId": 9, "severity": "refusal"}
+    ],
+    "malformedGlyph": [
+      {"code": "font.cff-stack-malformed", "detail": "cff.stack-underflow", "operation": "charstring", "glyphId": 1, "severity": "refusal"},
+      {"code": "font.scaler.cff.glyph-malformed", "detail": "cff.glyph-malformed", "operation": "outline", "glyphId": 1, "severity": "refusal"}
+    ]
+  },
+  "nonClaims": [
+    "generated-fixture-evidence-only",
+    "no-complete-cff-rendering-support-claim",
+    "no-complete-cff2-variation-support-claim",
+    "no-native-scaler-oracle-claim",
+    "no-gpu-text-route-claim"
+  ]
+}

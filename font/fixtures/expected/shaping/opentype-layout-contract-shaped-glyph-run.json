@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "opentype-layout-contract-shaped-glyph-run",
+  "ownerTickets": ["KFONT-M6-001"],
+  "unicodeVersion": "16.0.0",
+  "sourceTextHashAlgorithm": "SHA-256-UTF-8",
+  "sourceTextHash": "38164fbd17603d73f696b8b4d72664d735bb6a7c88577687fd2ae33fd6964153",
+  "typefaceId": "550e8400-e29b-41d4-a716-446655440601",
+  "script": "Latn",
+  "direction": "LTR",
+  "glyphs": [{"glyphIndex": 0, "glyphId": 36, "clusterIndex": 0, "sourceUtf16Range": "0..0", "source": "cmap-no-op", "xAdvance": 1.0, "xOffset": 0.0, "yOffset": 0.0}, {"glyphIndex": 1, "glyphId": 37, "clusterIndex": 1, "sourceUtf16Range": "1..1", "source": "cmap-no-op", "xAdvance": 1.0, "xOffset": 0.0, "yOffset": 0.0}],
+  "clusters": [{"clusterIndex": 0, "sourceUtf16Range": "0..0", "glyphRange": "0..0", "synthetic": false}, {"clusterIndex": 1, "sourceUtf16Range": "1..1", "glyphRange": "1..1", "synthetic": false}],
+  "diagnostics": [],
+  "nonClaims": ["no-complete-target-support-claim", "no-complex-shaping-support-claim", "no-gsub-gpos-lookup-implementation-claim", "no-native-shaper-oracle-claim", "no-gpu-text-route-claim"]
+}

@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "bitmap-glyph-plan",
+  "ownerTickets": ["KFONT-M10-006"],
+  "cases": [
+    {
+      "caseId": "cbdt-cblc-png",
+      "tableFamily": "CBDT/CBLC",
+      "expectedGpuHandoffArtifactType": "BitmapGlyphPlan",
+      "plan": {
+        "schema": "org.graphiks.kanvas.glyph.color.BitmapGlyphPlan.v1",
+        "glyphId": 185,
+        "tableFamily": "CBDT/CBLC",
+        "requestedSizePx": 18,
+        "selectedStrikePpem": 16,
+        "sourceFormat": "png",
+        "bounds": {"left": 0, "top": 0, "width": 2, "height": 1},
+        "origin": {"x": 0, "y": 0},
+        "scalingPolicy": "scale-to-requested-size",
+        "alphaPolicy": "premultiplied-argb",
+        "sourcePayloadSha256": "242cc8a9b7320b5d715763075026e9b4823a4394632c5c3e90d3b2d3a19c0e8b",
+        "decodedPixelSha256": "8378b638902b93b7143f9571a59fc4779f3a3cea9b5e9dadc54f87bb53971249",
+        "diagnostics": [],
+        "dumpSha256": "5571d1950332dca029096180426deee94aef01f2c58cb1ebe9a0e0d4f1161140"
+      },
+      "diagnostics": []
+    },
+    {
+      "caseId": "sbix-png",
+      "tableFamily": "sbix",
+      "expectedGpuHandoffArtifactType": "BitmapGlyphPlan",
+      "plan": {
+        "schema": "org.graphiks.kanvas.glyph.color.BitmapGlyphPlan.v1",
+        "glyphId": 186,
+        "tableFamily": "sbix",
+        "requestedSizePx": 20,
+        "selectedStrikePpem": 20,
+        "sourceFormat": "png",
+        "bounds": {"left": 0, "top": 0, "width": 1, "height": 2},
+        "origin": {"x": -3, "y": 5},
+        "scalingPolicy": "exact-strike",
+        "alphaPolicy": "premultiplied-argb",
+        "sourcePayloadSha256": "98d1a0fca928b2c01e0768595d30f4148e232a94dff0af257d16311a2d9ad083",
+        "decodedPixelSha256": "e7fd7d5f26f841ac268764dd89314924a5cb74edf6c5ef9f494e4ca57615f3b3",
+        "diagnostics": [],
+        "dumpSha256": "f152620a7e6170a773ebd39009634b49d74b650b2d7b9e550c023cceb284fb0e"
+      },
+      "diagnostics": []
+    },
+    {
+      "caseId": "unavailable-strike-refusal",
+      "tableFamily": "bitmap",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 187, "route": "bitmap", "code": "text.bitmap.strike-unavailable", "detail": "glyphId=187;requestedSizePx=18;availableStrikes=16,24", "severity": "warning", "message": "Bitmap glyph strike is unavailable for glyph 187 at 18px: available strikes 16,24."}
+      ]
+    },
+    {
+      "caseId": "malformed-png-refusal",
+      "tableFamily": "CBDT/CBLC",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 188, "route": "bitmap", "code": "text.bitmap.PNG-decode-failed", "detail": "glyphId=188;tableFamily=CBDT/CBLC;sourceFormat=png;sourcePayloadSha256=7f9c9e31ac8256ca2f258583df262dbc7d6f68f2a03043d5c99a4ae5a7396ce9;failureClass=IllegalArgumentException;failureMessage=PNG glyph payload must start with the PNG signature.", "severity": "warning", "message": "Bitmap glyph PNG decode failed for glyph 188 from CBDT/CBLC: PNG glyph payload must start with the PNG signature."}
+      ]
+    },
+    {
+      "caseId": "non-png-payload-refusal",
+      "tableFamily": "sbix",
+      "expectedGpuHandoffArtifactType": "refusal",
+      "plan": null,
+      "diagnostics": [
+        {"glyphId": 189, "route": "bitmap", "code": "text.bitmap.payload-format-unsupported", "detail": "glyphId=189;tableFamily=sbix;sourceFormat=jpeg;sourcePayloadSha256=9ec23d79a7430da182d3a7b64c4d53e69a0512b3f0288cbf9cedaca5ab0792d3", "severity": "warning", "message": "Bitmap glyph payload format jpeg is unsupported for glyph 189 from sbix."}
+      ]
+    }
+  ],
+  "nonClaims": ["no-complete-target-support-claim", "no-complete-png-bitmap-glyph-routing-claim", "no-gpu-bitmap-glyph-route-claim", "no-platform-bitmap-codec-claim"]
+}

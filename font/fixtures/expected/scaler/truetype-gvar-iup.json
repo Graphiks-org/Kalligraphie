@@ -1,0 +1,417 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "truetype-gvar-iup",
+  "ownerTickets": [
+    "KFONT-M3-002",
+    "KFONT-M3-003"
+  ],
+  "fixtureIds": [
+    "truetype-scaler-truetype-gvar-iup"
+  ],
+  "requiredEvidence": [
+    "variation-deltas.json",
+    "glyph-outline.json",
+    "glyph-metrics.json",
+    "diagnostic-snapshot"
+  ],
+  "simplePointCase": {
+    "variationDeltas": [
+      {"pointIndex": 0, "source": "inferred", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 1, "source": "inferred", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 2, "source": "explicit", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 3, "source": "inferred", "xDelta": 20.0, "yDelta": -10.0}
+    ],
+    "positionEvidence": {
+      "min": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": -1.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": -1.0}
+      ],
+                    "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                    "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                    "metrics": {
+        "advanceX": 600.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": []
+                  },
+      "default": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": 0.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": 0.0}
+      ],
+                    "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                    "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                    "metrics": {
+        "advanceX": 600.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": []
+                  },
+      "max": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": 1.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": 1.0}
+      ],
+                    "outlineCommands": ["M 20.0 -10.0", "L 120.0 -10.0", "L 120.0 90.0", "L 20.0 90.0", "Z"],
+                    "outlineCommandDumpSha256": "7a46e8fb730f52edd4b6fa28319cc4939ee2bd1b28826e915de9973b79a4a3ce",
+                    "metrics": {
+        "advanceX": 600.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": []
+                  }
+    }
+  },
+  "wraparoundCase": {
+    "variationDeltas": [
+      {"pointIndex": 0, "source": "inferred", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 1, "source": "explicit", "xDelta": 20.0, "yDelta": 0.0},
+      {"pointIndex": 2, "source": "inferred", "xDelta": 20.0, "yDelta": -20.0},
+      {"pointIndex": 3, "source": "explicit", "xDelta": 0.0, "yDelta": -20.0}
+    ],
+    "max": {
+                  "glyphId": 0,
+                  "scalerFamily": "truetype-glyf",
+                  "route": "font.scaler.truetype-glyf",
+                  "requestedVariationPosition": [
+      {"tag": "wght", "value": 1.0}
+    ],
+                  "normalizedVariationPosition": [
+      {"tag": "wght", "value": 1.0}
+    ],
+                  "outlineCommands": ["M 0.0 0.0", "L 120.0 0.0", "L 120.0 80.0", "L 0.0 80.0", "Z"],
+                  "outlineCommandDumpSha256": "71a3e9322a80bfd10c3b6a70b5b583f6c85b81ccbcb8891760940168fdcbc3fa",
+                  "metrics": {
+      "advanceX": 600.0,
+      "advanceY": 0.0,
+      "bounds": {
+        "left": 0.0,
+        "top": 0.0,
+        "right": 100.0,
+        "bottom": 100.0
+      }
+    },
+                  "diagnostics": []
+                }
+  },
+  "contourIsolationCase": {
+    "variationDeltas": [
+      {"pointIndex": 0, "source": "inferred", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 1, "source": "inferred", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 2, "source": "explicit", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 3, "source": "inferred", "xDelta": 20.0, "yDelta": -10.0},
+      {"pointIndex": 4, "source": "none", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 5, "source": "none", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 6, "source": "none", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 7, "source": "none", "xDelta": 0.0, "yDelta": 0.0}
+    ],
+    "max": {
+                  "glyphId": 0,
+                  "scalerFamily": "truetype-glyf",
+                  "route": "font.scaler.truetype-glyf",
+                  "requestedVariationPosition": [
+      {"tag": "wght", "value": 1.0}
+    ],
+                  "normalizedVariationPosition": [
+      {"tag": "wght", "value": 1.0}
+    ],
+                  "outlineCommands": ["M 20.0 -10.0", "L 120.0 -10.0", "L 120.0 90.0", "L 20.0 90.0", "Z", "M 150.0 0.0", "L 300.0 0.0", "L 300.0 100.0", "L 150.0 100.0", "Z"],
+                  "outlineCommandDumpSha256": "f1b0e5ecf5830b44ee26939cf9bb8167e17fd19345cd7e1638c29203e45f0ff2",
+                  "metrics": {
+      "advanceX": 600.0,
+      "advanceY": 0.0,
+      "bounds": {
+        "left": 0.0,
+        "top": 0.0,
+        "right": 300.0,
+        "bottom": 100.0
+      }
+    },
+                  "diagnostics": []
+                }
+  },
+  "avarMappedCase": {
+    "max": {
+                  "glyphId": 0,
+                  "scalerFamily": "truetype-glyf",
+                  "route": "font.scaler.truetype-glyf",
+                  "requestedVariationPosition": [
+      {"tag": "wght", "value": 900.0}
+    ],
+                  "normalizedVariationPosition": [
+      {"tag": "wght", "value": 0.75}
+    ],
+                  "outlineCommands": ["M 15.0 -7.5", "L 115.0 -7.5", "L 115.0 92.5", "L 15.0 92.5", "Z"],
+                  "outlineCommandDumpSha256": "3d993f9b745450efd2c52f5a26369b5fd0079e8415b3913c2fa83ba48c2b3641",
+                  "metrics":           {
+                "advanceX": 600.0,
+                "advanceY": 0.0,
+                "bounds": {
+                  "left": 0.0,
+                  "top": 0.0,
+                  "right": 100.0,
+                  "bottom": 100.0
+                },
+    "verticalMetrics": {
+      "state": "fallback",
+      "source": "horizontal-fallback-fact",
+      "verticalAdvance": null,
+      "topSideBearing": null,
+      "verticalOriginY": null,
+      "ascender": null,
+      "descender": null,
+      "lineGap": null,
+      "maxAdvanceHeight": null,
+      "diagnostics": ["truetype.vertical-metrics-absent"]
+    }
+              },
+                  "diagnostics": [
+                    {"code": "font.vertical-metrics-unavailable", "detail": "truetype.vertical-metrics-absent", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+                  ]
+                }
+  },
+  "compositeCase": {
+    "max": {
+                  "glyphId": 0,
+                  "scalerFamily": "truetype-glyf",
+                  "route": "font.scaler.truetype-glyf",
+                  "requestedVariationPosition": [
+      {"tag": "wght", "value": 1.0}
+    ],
+                  "normalizedVariationPosition": [
+      {"tag": "wght", "value": 1.0}
+    ],
+                  "outlineCommands": ["M 20.0 -10.0", "L 120.0 -10.0", "L 120.0 90.0", "L 20.0 90.0", "Z"],
+                  "outlineCommandDumpSha256": "7a46e8fb730f52edd4b6fa28319cc4939ee2bd1b28826e915de9973b79a4a3ce",
+                  "metrics": {
+      "advanceX": 600.0,
+      "advanceY": 0.0,
+      "bounds": {
+        "left": 0.0,
+        "top": 0.0,
+        "right": 16.0,
+        "bottom": 16.0
+      }
+    },
+                  "diagnostics": []
+                }
+  },
+  "hvarAdvanceCase": {
+                "glyphId": 0,
+                "scalerFamily": "truetype-glyf",
+                "route": "font.scaler.truetype-glyf",
+                "requestedVariationPosition": [
+    {"tag": "wght", "value": 650.0}
+  ],
+                "normalizedVariationPosition": [],
+                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                "metrics":           {
+              "advanceX": 640.0,
+              "advanceY": 0.0,
+              "bounds": {
+                "left": 0.0,
+                "top": 0.0,
+                "right": 100.0,
+                "bottom": 100.0
+              },
+  "verticalMetrics": {
+    "state": "fallback",
+    "source": "horizontal-fallback-fact",
+    "verticalAdvance": null,
+    "topSideBearing": null,
+    "verticalOriginY": null,
+    "ascender": null,
+    "descender": null,
+    "lineGap": null,
+    "maxAdvanceHeight": null,
+    "diagnostics": ["truetype.vertical-metrics-absent"]
+  }
+            },
+                "diagnostics": [
+                  {"code": "font.variation-axis-unsupported", "detail": "truetype.gvar-unavailable", "operation": "variation", "glyphId": 0, "severity": "warning"},
+                  {"code": "font.vertical-metrics-unavailable", "detail": "truetype.vertical-metrics-absent", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+                ]
+              },
+  "mvarVerticalCase": {
+                "glyphId": 0,
+                "scalerFamily": "truetype-glyf",
+                "route": "font.scaler.truetype-glyf",
+                "requestedVariationPosition": [
+    {"tag": "wght", "value": 650.0}
+  ],
+                "normalizedVariationPosition": [],
+                "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                "metrics":           {
+              "advanceX": 600.0,
+              "advanceY": 700.0,
+              "bounds": {
+                "left": 0.0,
+                "top": 0.0,
+                "right": 100.0,
+                "bottom": 100.0
+              },
+  "verticalMetrics": {
+    "state": "diagnostic",
+    "source": "vhea-vmtx",
+    "verticalAdvance": 700.0,
+    "topSideBearing": 40.0,
+    "verticalOriginY": 140.0,
+    "ascender": 862.0,
+    "descender": -328.0,
+    "lineGap": 65.0,
+    "maxAdvanceHeight": 760.0,
+    "diagnostics": ["truetype.vvar-unavailable"]
+  }
+            },
+                "diagnostics": [
+                  {"code": "font.variation-axis-unsupported", "detail": "truetype.gvar-unavailable", "operation": "variation", "glyphId": 0, "severity": "warning"},
+                  {"code": "font.metrics-variation-unavailable", "detail": "truetype.vvar-unavailable", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+                ]
+              },
+  "phantomMetricCase": {
+    "variationDeltas": [
+      {"pointIndex": 0, "source": "explicit", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 1, "source": "explicit", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 2, "source": "explicit", "xDelta": 0.0, "yDelta": 0.0},
+      {"pointIndex": 3, "source": "explicit", "xDelta": 0.0, "yDelta": 0.0},
+      {"phantomPoint": "left-side-bearing", "xDelta": 10.0, "yDelta": 0.0},
+      {"phantomPoint": "right-side-bearing", "xDelta": 50.0, "yDelta": 0.0},
+      {"phantomPoint": "top-origin", "xDelta": 0.0, "yDelta": 0.0},
+      {"phantomPoint": "bottom-origin", "xDelta": 0.0, "yDelta": 0.0}
+    ],
+    "positionEvidence": {
+      "min": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": -1.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": -1.0}
+      ],
+                    "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                    "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                    "metrics": {
+        "advanceX": 600.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": []
+                  },
+      "default": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": 0.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": 0.0}
+      ],
+                    "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                    "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                    "metrics": {
+        "advanceX": 600.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": []
+                  },
+      "max": {
+                    "glyphId": 0,
+                    "scalerFamily": "truetype-glyf",
+                    "route": "font.scaler.truetype-glyf",
+                    "requestedVariationPosition": [
+        {"tag": "wght", "value": 1.0}
+      ],
+                    "normalizedVariationPosition": [
+        {"tag": "wght", "value": 1.0}
+      ],
+                    "outlineCommands": ["M 0.0 0.0", "L 100.0 0.0", "L 100.0 100.0", "L 0.0 100.0", "Z"],
+                    "outlineCommandDumpSha256": "e36274c57d14d44010e74b51a0bacc3aca0da365087f8b7311db0238ea88ce7b",
+                    "metrics": {
+        "advanceX": 640.0,
+        "advanceY": 0.0,
+        "bounds": {
+          "left": 0.0,
+          "top": 0.0,
+          "right": 100.0,
+          "bottom": 100.0
+        }
+      },
+                    "diagnostics": []
+                  }
+    }
+  },
+  "diagnosticSnapshots": {
+    "malformedHvar": [
+      {"code": "font.variation-axis-unsupported", "detail": "truetype.gvar-unavailable", "operation": "variation", "glyphId": 0, "severity": "warning"},
+      {"code": "font.variation-data-malformed", "detail": "truetype.hvar-table-malformed", "operation": "metrics", "glyphId": 0, "severity": "warning"},
+      {"code": "font.vertical-metrics-unavailable", "detail": "truetype.vertical-metrics-absent", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+    ],
+    "malformedMvar": [
+      {"code": "font.variation-axis-unsupported", "detail": "truetype.gvar-unavailable", "operation": "variation", "glyphId": 0, "severity": "warning"},
+      {"code": "font.metrics-variation-unavailable", "detail": "truetype.vvar-unavailable", "operation": "metrics", "glyphId": 0, "severity": "warning"},
+      {"code": "font.variation-data-malformed", "detail": "truetype.mvar-table-malformed", "operation": "metrics", "glyphId": 0, "severity": "warning"}
+    ],
+    "malformedTuple": [
+      {"code": "font.variation-data-malformed", "detail": "truetype.gvar-malformed", "operation": "variation", "glyphId": 0, "severity": "warning"}
+    ]
+  },
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-complete-variable-font-support-claim",
+    "no-complete-hvar-vvar-mvar-metrics-claim",
+    "no-vertical-metrics-claim",
+    "no-complete-hinting-vm-claim",
+    "no-a8-or-sdf-artifact-claim",
+    "no-gpu-text-route-claim"
+  ]
+}

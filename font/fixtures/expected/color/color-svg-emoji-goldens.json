@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "color-svg-emoji-goldens",
+  "ownerTickets": [
+    "PKT-11D"
+  ],
+  "fixtureIds": [
+    "color-colrv1-test-glyphs"
+  ],
+  "colorFamilies": [
+    "color-glyphs",
+    "png-bitmap-glyphs",
+    "svg-glyphs",
+    "emoji"
+  ],
+  "requiredRefusals": [
+    "text.color.COLRv1-cycle-detected",
+    "text.color.COLRv1-budget-exceeded",
+    "text.bitmap.PNG-decode-failed",
+    "text.bitmap.strike-unavailable",
+    "text.bitmap.payload-format-unsupported",
+    "text.SVG.external-resource-refused",
+    "text.SVG.feature-unsupported",
+    "text.SVG.budget-exceeded",
+    "text.emoji.sequence-unsupported",
+    "text.emoji.fallback-unavailable",
+    "text.emoji.color-glyph-unavailable"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-complete-colrv1-rendering-claim",
+    "no-complete-png-bitmap-glyph-routing-claim",
+    "no-complete-svg-in-opentype-rendering-claim",
+    "no-emoji-zwj-shaping-claim",
+    "no-gpu-color-glyph-support-claim",
+    "no-platform-color-font-fallback-claim"
+  ]
+}

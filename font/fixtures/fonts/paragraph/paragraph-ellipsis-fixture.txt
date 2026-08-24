@@ -1,0 +1,11 @@
+caseId=single-line-overflow
+logicalText=aa bb c
+notes=single-line maxLines ellipsis insertion with truncated source range
+
+caseId=placeholder-tail-room
+logicalText=a[placeholder]\nb
+notes=terminal placeholder keeps room for ellipsis without conflict
+
+caseId=mixed-style-trailing-style
+logicalText=ab|cd\ne
+notes=ellipsis shapes with the surviving trailing style after truncation

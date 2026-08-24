@@ -1,0 +1,10 @@
+{
+  "fixtureId": "gpos-variation-device",
+  "status": "resource-seed-only",
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-runtime-variation-adjustment-claim",
+    "no-device-table-parser-claim"
+  ],
+  "detail": "Checked-in resource seed only; live variation/device trace evidence remains gated on KFONT-M6-010 runtime assertions."
+}

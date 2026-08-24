@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "cff-index-dict",
+  "ownerTickets": [
+    "KFONT-M4-001"
+  ],
+  "fixtureIds": [
+    "cff-minimal.otf",
+    "cff-cid-keyed.otf",
+    "cff2-minimal.otf"
+  ],
+  "fixtures": [
+    {
+      "fixtureId": "cff-minimal.otf",
+      "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+      "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+      "tableEvidence": {
+        "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+        "format": "cff",
+        "charStringCount": 1,
+        "localSubroutineCount": 1,
+        "globalSubroutineCount": 0,
+        "hasPrivateDict": true,
+        "topDictOperators": ["cff.dict.charstrings", "cff.dict.private"],
+        "names": ["KanvasCFF"],
+        "indexes": [{"name": "Name INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 9, "endExclusive": 18, "byteLength": 9}]}, {"name": "Top DICT INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 23, "endExclusive": 28, "byteLength": 5}]}, {"name": "String INDEX", "count": 0, "offSize": 0, "objectRanges": []}, {"name": "Global Subr INDEX", "count": 0, "offSize": 0, "objectRanges": []}, {"name": "Local Subr INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 39, "endExclusive": 40, "byteLength": 1}]}, {"name": "CharStrings INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 45, "endExclusive": 49, "byteLength": 4}]}],
+        "topDicts": [{"section": "Top DICT", "objectIndex": 0, "byteRange": {"start": 23, "endExclusive": 28, "byteLength": 5}, "operators": [{"name": "cff.dict.charstrings", "operands": [40], "byteRange": {"start": 24, "endExclusive": 25, "byteLength": 1}}, {"name": "cff.dict.private", "operands": [2, 32], "byteRange": {"start": 27, "endExclusive": 28, "byteLength": 1}}], "unknownOperators": []}],
+        "privateDicts": [{"owner": "Top DICT", "byteRange": {"start": 32, "endExclusive": 34, "byteLength": 2}, "operators": [{"name": "cff.dict.subrs", "operands": [2], "byteRange": {"start": 33, "endExclusive": 34, "byteLength": 1}}], "localSubroutineIndex": {"name": "Local Subr INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 39, "endExclusive": 40, "byteLength": 1}]}}],
+        "fdArray": [],
+        "fdSelect": null,
+        "diagnostics": [],
+        "variationAxisTags": []
+      }
+    },
+    {
+      "fixtureId": "cff-cid-keyed.otf",
+      "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+      "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+      "tableEvidence": {
+        "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+        "format": "cff",
+        "charStringCount": 2,
+        "localSubroutineCount": 0,
+        "globalSubroutineCount": 0,
+        "hasPrivateDict": false,
+        "topDictOperators": ["cff.dict.charstrings", "cff.dict.fdarray", "cff.dict.fdselect", "cff.dict.ros"],
+        "names": ["KanvasCID"],
+        "indexes": [{"name": "Name INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 9, "endExclusive": 18, "byteLength": 9}]}, {"name": "Top DICT INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 23, "endExclusive": 36, "byteLength": 13}]}, {"name": "String INDEX", "count": 0, "offSize": 0, "objectRanges": []}, {"name": "Global Subr INDEX", "count": 0, "offSize": 0, "objectRanges": []}, {"name": "FDArray INDEX", "count": 2, "offSize": 1, "objectRanges": [{"start": 46, "endExclusive": 49, "byteLength": 3}, {"start": 49, "endExclusive": 52, "byteLength": 3}]}, {"name": "CharStrings INDEX", "count": 2, "offSize": 1, "objectRanges": [{"start": 67, "endExclusive": 71, "byteLength": 4}, {"start": 71, "endExclusive": 75, "byteLength": 4}]}],
+        "topDicts": [{"section": "Top DICT", "objectIndex": 0, "byteRange": {"start": 23, "endExclusive": 36, "byteLength": 13}, "operators": [{"name": "cff.dict.charstrings", "operands": [61], "byteRange": {"start": 24, "endExclusive": 25, "byteLength": 1}}, {"name": "cff.dict.fdarray", "operands": [40], "byteRange": {"start": 26, "endExclusive": 28, "byteLength": 2}}, {"name": "cff.dict.fdselect", "operands": [58], "byteRange": {"start": 29, "endExclusive": 31, "byteLength": 2}}, {"name": "cff.dict.ros", "operands": [0, 1, 0], "byteRange": {"start": 34, "endExclusive": 36, "byteLength": 2}}], "unknownOperators": []}],
+        "privateDicts": [{"owner": "FDArray[0]", "byteRange": {"start": 52, "endExclusive": 55, "byteLength": 3}, "operators": [{"name": "cff.dict.default-width-x", "operands": [400], "byteRange": {"start": 54, "endExclusive": 55, "byteLength": 1}}], "localSubroutineIndex": null}, {"owner": "FDArray[1]", "byteRange": {"start": 55, "endExclusive": 58, "byteLength": 3}, "operators": [{"name": "cff.dict.default-width-x", "operands": [450], "byteRange": {"start": 57, "endExclusive": 58, "byteLength": 1}}], "localSubroutineIndex": null}],
+        "fdArray": [{"section": "FDArray Font DICT", "objectIndex": 0, "byteRange": {"start": 46, "endExclusive": 49, "byteLength": 3}, "operators": [{"name": "cff.dict.private", "operands": [3, 52], "byteRange": {"start": 48, "endExclusive": 49, "byteLength": 1}}], "unknownOperators": []}, {"section": "FDArray Font DICT", "objectIndex": 1, "byteRange": {"start": 49, "endExclusive": 52, "byteLength": 3}, "operators": [{"name": "cff.dict.private", "operands": [3, 55], "byteRange": {"start": 51, "endExclusive": 52, "byteLength": 1}}], "unknownOperators": []}],
+        "fdSelect": {"format": 0, "glyphToFontDict": [0, 1]},
+        "diagnostics": [],
+        "variationAxisTags": []
+      }
+    },
+    {
+      "fixtureId": "cff2-minimal.otf",
+      "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+      "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+      "tableEvidence": {
+        "sourceId": "550e8400-e29b-41d4-a716-446655440210",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655440211",
+        "format": "cff2",
+        "charStringCount": 1,
+        "localSubroutineCount": 1,
+        "globalSubroutineCount": 0,
+        "hasPrivateDict": true,
+        "topDictOperators": ["cff.dict.charstrings", "cff.dict.private"],
+        "names": [],
+        "indexes": [{"name": "CFF2 Global Subr INDEX", "count": 0, "offSize": 0, "objectRanges": []}, {"name": "CFF2 Local Subr INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 19, "endExclusive": 20, "byteLength": 1}]}, {"name": "CFF2 CharStrings INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 25, "endExclusive": 29, "byteLength": 4}]}],
+        "topDicts": [{"section": "CFF2 Top DICT", "objectIndex": 0, "byteRange": {"start": 5, "endExclusive": 10, "byteLength": 5}, "operators": [{"name": "cff.dict.charstrings", "operands": [20], "byteRange": {"start": 6, "endExclusive": 7, "byteLength": 1}}, {"name": "cff.dict.private", "operands": [2, 12], "byteRange": {"start": 9, "endExclusive": 10, "byteLength": 1}}], "unknownOperators": []}],
+        "privateDicts": [{"owner": "CFF2 Top DICT", "byteRange": {"start": 12, "endExclusive": 14, "byteLength": 2}, "operators": [{"name": "cff.dict.subrs", "operands": [2], "byteRange": {"start": 13, "endExclusive": 14, "byteLength": 1}}], "localSubroutineIndex": {"name": "CFF2 Local Subr INDEX", "count": 1, "offSize": 1, "objectRanges": [{"start": 19, "endExclusive": 20, "byteLength": 1}]}}],
+        "fdArray": [],
+        "fdSelect": null,
+        "diagnostics": [],
+        "variationAxisTags": []
+      }
+    }
+  ],
+  "nonClaims": [
+    "generated-fixture-evidence-only",
+    "no-cff-rendering-support-claim",
+    "no-cff2-variation-output-claim",
+    "no-host-font-oracle-claim"
+  ]
+}

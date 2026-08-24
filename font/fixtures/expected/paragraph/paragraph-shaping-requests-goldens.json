@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "paragraph-shaping-requests-goldens",
+  "ownerTickets": [
+    "KFONT-M8-002"
+  ],
+  "cases": [
+    {
+      "caseId": "mixed-script-style-fallback-placeholder",
+      "requiredDumpFields": [
+        "diagnostics",
+        "paragraphDirection",
+        "placeholderRanges",
+        "requests",
+        "schema",
+        "text"
+      ],
+      "requiredRequestFields": [
+        "bidiLevel",
+        "fallbackPreference",
+        "features",
+        "fontFamilies",
+        "fontSize",
+        "locale",
+        "script",
+        "segmentId",
+        "text",
+        "textRange",
+        "typefaceId",
+        "variationCoordinates"
+      ]
+    }
+  ],
+  "negativeCases": [
+    "cluster-boundary-combining-mark",
+    "fallback-unresolved"
+  ],
+  "nonClaims": [
+    "no-complete-paragraph-layout-claim",
+    "no-skia-paragraph-parity-claim"
+  ]
+}

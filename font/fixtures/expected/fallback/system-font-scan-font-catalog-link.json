@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "font-catalog-system-scan-link",
+  "ownerTickets": ["KFONT-M7-005"],
+  "catalogId": "font-catalog",
+  "linkedSystemScans": [
+    {"entryId":"duplicate.ttf","sourceKind":"SystemScannedFontSource","hostDependent":true,"relativePath":"duplicate.ttf","diagnosticCodes":["font.source.host-dependent"]},
+    {"entryId":"malformed.otf","sourceKind":"SystemScannedFontSource","hostDependent":true,"relativePath":"malformed.otf","diagnosticCodes":["font.required-table-missing","font.source.host-dependent"]},
+    {"entryId":"oversized.ttf","sourceKind":"SystemScannedFontSource","hostDependent":true,"relativePath":"oversized.ttf","diagnosticCodes":["font.source.host-dependent","font.source.bytes-unavailable"]},
+    {"entryId":"unreadable.ttf","sourceKind":"SystemScannedFontSource","hostDependent":true,"relativePath":"unreadable.ttf","diagnosticCodes":["font.source.host-dependent","font.source.unreadable"]},
+    {"entryId":"unsupported-wrapper.pfb","sourceKind":"SystemScannedFontSource","hostDependent":true,"relativePath":"unsupported-wrapper.pfb","diagnosticCodes":["font.source.host-dependent","font.outline-format.unsupported-wrapper"]},
+    {"entryId":"valid.ttf","sourceKind":"SystemScannedFontSource","hostDependent":true,"relativePath":"valid.ttf","diagnosticCodes":["font.catalog.duplicate-face","font.source.host-dependent"]}
+  ],
+  "nonClaims": ["no-bundled-catalog-promotion", "no-normative-system-font-catalog-claim"]
+}

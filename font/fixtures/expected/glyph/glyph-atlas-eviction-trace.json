@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-atlas-eviction-trace",
+  "ownerTickets": [
+    "KFONT-M9-005"
+  ],
+  "fixtureIds": [
+    "eviction-order",
+    "stale-generation"
+  ],
+  "artifactType": "GlyphAtlasArtifact",
+  "previousGeneration": 7,
+  "nextGeneration": 8,
+  "invalidationTokenBefore": "font-source-v7",
+  "invalidationTokenAfter": "font-source-v8",
+  "budgetBytes": 256,
+  "residentBytesBefore": 224,
+  "residentBytesAfter": 96,
+  "evictionCount": 2,
+  "evictions": [
+    {
+      "strikeKeySha256": "c2d7b5a2b7a702a3dac48c15f355ce622fedc6ab7c98ab65fcfe9c6514b9f8f0",
+      "glyphIds": [124, 125],
+      "bytesFreed": 64
+    
+    },
+    {
+      "strikeKeySha256": "4a1a8d8b4d670dc35e5ebd5a83a4396d2887d7047e3c7eda3ddfbd1b80589cc6",
+      "glyphIds": [126],
+      "bytesFreed": 64
+    
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.atlas-capacity-exceeded",
+    "text.glyph.atlas-generation-stale"
+  ],
+  "nonClaims": [
+    "producer-only",
+    "no-gpu-text-route-claim",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "4a0d9a5a3a3324948d0235d52d73737ad613c94ea91f17931a86ace98671dce3"
+}

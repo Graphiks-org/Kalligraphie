@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "unicode-segments",
+  "ownerTickets": ["KFONT-M5-002"],
+  "unicodeVersion": "16.0.0",
+  "sourceTextHashAlgorithm": "sha256-utf16-code-units",
+  "inputs": [
+    {
+      "fixtureName": "grapheme-latin-combining.txt",
+      "inputTextHash": "8e23b5d42fcd05e930af5f22e87d7aad3d104be04fa2c0253e084d38064974a0",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..1", "codePointRange": "0..1", "clusterLevel": 0, "sourceTextHash": "8e23b5d42fcd05e930af5f22e87d7aad3d104be04fa2c0253e084d38064974a0", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"},
+        {"clusterIndex": 1, "utf16Range": "2..2", "codePointRange": "2..2", "clusterLevel": 0, "sourceTextHash": "8e23b5d42fcd05e930af5f22e87d7aad3d104be04fa2c0253e084d38064974a0", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB999"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..0", "leftCodePoint": null, "rightCodePoint": "U+0061"},
+        {"boundaryIndex": 1, "codePointIndex": 1, "ruleId": "GB9", "breakAllowed": false, "leftUtf16Range": "0..0", "rightUtf16Range": "1..1", "leftCodePoint": "U+0061", "rightCodePoint": "U+0301"},
+        {"boundaryIndex": 2, "codePointIndex": 2, "ruleId": "GB999", "breakAllowed": true, "leftUtf16Range": "1..1", "rightUtf16Range": "2..2", "leftCodePoint": "U+0301", "rightCodePoint": "U+0065"},
+        {"boundaryIndex": 3, "codePointIndex": 3, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "2..2", "rightUtf16Range": null, "leftCodePoint": "U+0065", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-emoji-zwj.txt",
+      "inputTextHash": "defd2e88b7ff2c20f18cedac63f15a4b5f174e05cfdce6af7bf5c44d92a2aaa2",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..6", "codePointRange": "0..3", "clusterLevel": 0, "sourceTextHash": "defd2e88b7ff2c20f18cedac63f15a4b5f174e05cfdce6af7bf5c44d92a2aaa2", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..1", "leftCodePoint": null, "rightCodePoint": "U+1F466"},
+        {"boundaryIndex": 2, "codePointIndex": 1, "ruleId": "GB9", "breakAllowed": false, "leftUtf16Range": "0..1", "rightUtf16Range": "2..3", "leftCodePoint": "U+1F466", "rightCodePoint": "U+1F3FB"},
+        {"boundaryIndex": 4, "codePointIndex": 2, "ruleId": "GB9", "breakAllowed": false, "leftUtf16Range": "2..3", "rightUtf16Range": "4..4", "leftCodePoint": "U+1F3FB", "rightCodePoint": "U+200D"},
+        {"boundaryIndex": 5, "codePointIndex": 3, "ruleId": "GB11", "breakAllowed": false, "leftUtf16Range": "4..4", "rightUtf16Range": "5..6", "leftCodePoint": "U+200D", "rightCodePoint": "U+1F466"},
+        {"boundaryIndex": 7, "codePointIndex": 4, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "5..6", "rightUtf16Range": null, "leftCodePoint": "U+1F466", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-regional-indicators.txt",
+      "inputTextHash": "61e3cd73cd3013074079f742f528cdae9929e9a61239abbef599bea83e050de0",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..3", "codePointRange": "0..1", "clusterLevel": 0, "sourceTextHash": "61e3cd73cd3013074079f742f528cdae9929e9a61239abbef599bea83e050de0", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"},
+        {"clusterIndex": 1, "utf16Range": "4..5", "codePointRange": "2..2", "clusterLevel": 0, "sourceTextHash": "61e3cd73cd3013074079f742f528cdae9929e9a61239abbef599bea83e050de0", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB999"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..1", "leftCodePoint": null, "rightCodePoint": "U+1F1E6"},
+        {"boundaryIndex": 2, "codePointIndex": 1, "ruleId": "GB12/13", "breakAllowed": false, "leftUtf16Range": "0..1", "rightUtf16Range": "2..3", "leftCodePoint": "U+1F1E6", "rightCodePoint": "U+1F1E7"},
+        {"boundaryIndex": 4, "codePointIndex": 2, "ruleId": "GB999", "breakAllowed": true, "leftUtf16Range": "2..3", "rightUtf16Range": "4..5", "leftCodePoint": "U+1F1E7", "rightCodePoint": "U+1F1E6"},
+        {"boundaryIndex": 6, "codePointIndex": 3, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "4..5", "rightUtf16Range": null, "leftCodePoint": "U+1F1E6", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-devanagari-virama.txt",
+      "inputTextHash": "2b0a81ad5c566fd52d6e69022ea0c4d8ceb1f6500e6c704ef7e3133eda01658e",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..3", "codePointRange": "0..3", "clusterLevel": 0, "sourceTextHash": "2b0a81ad5c566fd52d6e69022ea0c4d8ceb1f6500e6c704ef7e3133eda01658e", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..0", "leftCodePoint": null, "rightCodePoint": "U+0915"},
+        {"boundaryIndex": 1, "codePointIndex": 1, "ruleId": "GB9", "breakAllowed": false, "leftUtf16Range": "0..0", "rightUtf16Range": "1..1", "leftCodePoint": "U+0915", "rightCodePoint": "U+094D"},
+        {"boundaryIndex": 2, "codePointIndex": 2, "ruleId": "GB9c", "breakAllowed": false, "leftUtf16Range": "1..1", "rightUtf16Range": "2..2", "leftCodePoint": "U+094D", "rightCodePoint": "U+0937"},
+        {"boundaryIndex": 3, "codePointIndex": 3, "ruleId": "GB9a", "breakAllowed": false, "leftUtf16Range": "2..2", "rightUtf16Range": "3..3", "leftCodePoint": "U+0937", "rightCodePoint": "U+093E"},
+        {"boundaryIndex": 4, "codePointIndex": 4, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "3..3", "rightUtf16Range": null, "leftCodePoint": "U+093E", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-variation-selector.txt",
+      "inputTextHash": "ee508f80909a7843500bd9a23df41968af94199e14263e81c492557ea494724d",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..2", "codePointRange": "0..1", "clusterLevel": 0, "sourceTextHash": "ee508f80909a7843500bd9a23df41968af94199e14263e81c492557ea494724d", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..1", "leftCodePoint": null, "rightCodePoint": "U+1F600"},
+        {"boundaryIndex": 2, "codePointIndex": 1, "ruleId": "GB9", "breakAllowed": false, "leftUtf16Range": "0..1", "rightUtf16Range": "2..2", "leftCodePoint": "U+1F600", "rightCodePoint": "U+FE0F"},
+        {"boundaryIndex": 3, "codePointIndex": 2, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "2..2", "rightUtf16Range": null, "leftCodePoint": "U+FE0F", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-crlf-control.txt",
+      "inputTextHash": "0e199fb0c0427aeb9aa4841e3baeb1eb0bebefa56232fd9e88c965c90a189c86",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..1", "codePointRange": "0..1", "clusterLevel": 0, "sourceTextHash": "0e199fb0c0427aeb9aa4841e3baeb1eb0bebefa56232fd9e88c965c90a189c86", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"},
+        {"clusterIndex": 1, "utf16Range": "2..2", "codePointRange": "2..2", "clusterLevel": 0, "sourceTextHash": "0e199fb0c0427aeb9aa4841e3baeb1eb0bebefa56232fd9e88c965c90a189c86", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB4"},
+        {"clusterIndex": 2, "utf16Range": "3..3", "codePointRange": "3..3", "clusterLevel": 0, "sourceTextHash": "0e199fb0c0427aeb9aa4841e3baeb1eb0bebefa56232fd9e88c965c90a189c86", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB4"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..0", "leftCodePoint": null, "rightCodePoint": "U+000D"},
+        {"boundaryIndex": 1, "codePointIndex": 1, "ruleId": "GB3", "breakAllowed": false, "leftUtf16Range": "0..0", "rightUtf16Range": "1..1", "leftCodePoint": "U+000D", "rightCodePoint": "U+000A"},
+        {"boundaryIndex": 2, "codePointIndex": 2, "ruleId": "GB4", "breakAllowed": true, "leftUtf16Range": "1..1", "rightUtf16Range": "2..2", "leftCodePoint": "U+000A", "rightCodePoint": "U+0001"},
+        {"boundaryIndex": 3, "codePointIndex": 3, "ruleId": "GB4", "breakAllowed": true, "leftUtf16Range": "2..2", "rightUtf16Range": "3..3", "leftCodePoint": "U+0001", "rightCodePoint": "U+0061"},
+        {"boundaryIndex": 4, "codePointIndex": 4, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "3..3", "rightUtf16Range": null, "leftCodePoint": "U+0061", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-prepend.txt",
+      "inputTextHash": "d871c268ebc4b77fa6dccbda8cca6b059ac775bb2706bc522d88b0b78155789c",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "0..1", "codePointRange": "0..1", "clusterLevel": 0, "sourceTextHash": "d871c268ebc4b77fa6dccbda8cca6b059ac775bb2706bc522d88b0b78155789c", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 0, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "0..0", "leftCodePoint": null, "rightCodePoint": "U+0600"},
+        {"boundaryIndex": 1, "codePointIndex": 1, "ruleId": "GB9b", "breakAllowed": false, "leftUtf16Range": "0..0", "rightUtf16Range": "1..1", "leftCodePoint": "U+0600", "rightCodePoint": "U+0061"},
+        {"boundaryIndex": 2, "codePointIndex": 2, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "1..1", "rightUtf16Range": null, "leftCodePoint": "U+0061", "rightCodePoint": null}
+      ],
+      "diagnostics": []
+    },
+    {
+      "fixtureName": "grapheme-isolated-surrogate.txt",
+      "inputTextHash": "f71b148d5779d4be17e9a577573224b1e7b337498c12397685743efc88065397",
+      "clusters": [
+        {"clusterIndex": 0, "utf16Range": "1..1", "codePointRange": "0..0", "clusterLevel": 0, "sourceTextHash": "f71b148d5779d4be17e9a577573224b1e7b337498c12397685743efc88065397", "unicodeVersion": "16.0.0", "breakBeforeRuleId": "GB1"}
+      ],
+      "boundaries": [
+        {"boundaryIndex": 1, "codePointIndex": 0, "ruleId": "GB1", "breakAllowed": true, "leftUtf16Range": null, "rightUtf16Range": "1..1", "leftCodePoint": null, "rightCodePoint": "U+0061"},
+        {"boundaryIndex": 2, "codePointIndex": 1, "ruleId": "GB2", "breakAllowed": true, "leftUtf16Range": "1..1", "rightUtf16Range": null, "leftCodePoint": "U+0061", "rightCodePoint": null}
+      ],
+      "diagnostics": [
+        {"code": "text.unicode.invalid-scalar", "severity": "refusal", "textRange": "0..0", "message": "Invalid Unicode scalar at UTF-16 range 0..0: isolated high surrogate."},
+        {"code": "text.unicode.cluster-boundary-invalid", "severity": "refusal", "textRange": "0..0", "message": "Grapheme cluster boundary invalid for UTF-16 range 0..0: malformed UTF-16 input."}
+      ]
+    }
+  ],
+  "nonClaims": [
+    "bounded-kfont-m5-002-fixture-evidence-only",
+    "no-complete-ucd-claim",
+    "no-word-sentence-or-line-breaking-claim",
+    "no-shaping-support-promotion",
+    "no-paragraph-support-claim",
+    "no-gpu-text-route-claim"
+  ]
+}

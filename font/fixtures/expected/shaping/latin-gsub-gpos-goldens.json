@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "latin-gsub-gpos-goldens",
+  "ownerTickets": [
+    "PKT-07B"
+  ],
+  "fixtureId": "font-source-liberation-core",
+  "cases": [
+    {
+      "caseId": "latin-fi-liga-requested",
+      "text": "office",
+      "features": {
+        "liga": true,
+        "kern": true
+      },
+      "requiredDumpFields": [
+        "feature-order",
+        "glyph-sequence",
+        "cluster-map",
+        "advance-adjustments"
+      ]
+    },
+    {
+      "caseId": "latin-kern-requested-off",
+      "text": "AV",
+      "features": {
+        "liga": false,
+        "kern": false
+      },
+      "requiredDumpFields": [
+        "feature-order",
+        "glyph-sequence",
+        "cluster-map"
+      ]
+    }
+  ],
+  "nonClaims": [
+    "no-complete-gsub-gpos-support-claim",
+    "no-greek-cyrillic-hebrew-promotion-claim",
+    "no-native-shaper-oracle-claim"
+  ]
+}

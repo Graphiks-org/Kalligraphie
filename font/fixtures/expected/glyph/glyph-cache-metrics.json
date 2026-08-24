@@ -1,0 +1,120 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-cache-metrics",
+  "ownerTickets": [
+    "KFONT-M12-004"
+  ],
+  "fixtureIds": [
+    "cold-cache-metrics",
+    "warm-cache-metrics"
+  ],
+  "sampleCount": 2,
+  "samples": [
+    {
+      "metadata": {
+        "environmentLabel": "ci-macos-arm64",
+        "fontSourceSet": "font-source-liberation-core",
+        "unicodeVersion": "16.0.0",
+        "cacheState": "cold",
+        "sampleLabel": "cache-cold",
+        "sampleCount": 5,
+        "timingMode": "fixture-counter",
+        "releaseGatePromoted": false
+
+      },
+      "atlasArtifactId": "2306b8bbc611321344d350ced6249accfe071cfeaae8a5cb764e97c03853a4ed",
+      "strikeKeyCount": 1,
+      "keyPreimageSha256s": ["0b6d7c35fc1b7195a2ae6f7c9317db2b8a5b3e8c67f4a8821a2e0f4a102e2c29"],
+      "occupancyRatio": 0.44444445,
+      "timings": [
+        {
+          "metricName": "atlas-pack",
+          "sampleCount": 5,
+          "median": 6,
+          "p90": 8,
+          "max": 9,
+          "unit": "fixture-ticks"
+
+        }
+      ],
+      "cacheHitCount": 0,
+      "cacheMissCount": 3,
+      "evictionCount": 1,
+      "atlasCapacityPressureCount": 1,
+      "staleGenerationRefusalCount": 0,
+      "invalidationTokenChangeCount": 1,
+      "cacheMemoryBytes": 352,
+      "uploadByteExpectation": 768,
+      "artifactBudgetRefusalCount": 1,
+      "budgetRefusals": [
+        {
+          "diagnosticCode": "text.glyph.artifact-budget-exceeded",
+          "cacheDomain": "glyph-cache-memory",
+          "keyPreimageSha256": "0b6d7c35fc1b7195a2ae6f7c9317db2b8a5b3e8c67f4a8821a2e0f4a102e2c29",
+          "observedBytes": 544,
+          "advisoryLimitBytes": 512
+
+        }
+      ]
+    },
+    {
+      "metadata": {
+        "environmentLabel": "ci-macos-arm64",
+        "fontSourceSet": "font-source-liberation-core",
+        "unicodeVersion": "16.0.0",
+        "cacheState": "warm",
+        "sampleLabel": "cache-warm",
+        "sampleCount": 5,
+        "timingMode": "fixture-counter",
+        "releaseGatePromoted": false
+
+      },
+      "atlasArtifactId": "4e1a231ea3b1a133267ca208b6b6ce9b0256fd3180b5420f73dc869cceef95df",
+      "strikeKeyCount": 1,
+      "keyPreimageSha256s": ["74d5f2e7ed871e7c69befd9e4a5cc11dfd0eae89806e2957a7364b84f0c6c72c"],
+      "occupancyRatio": 0.44444445,
+      "timings": [
+        {
+          "metricName": "atlas-pack",
+          "sampleCount": 5,
+          "median": 1,
+          "p90": 2,
+          "max": 2,
+          "unit": "fixture-ticks"
+
+        }
+      ],
+      "cacheHitCount": 3,
+      "cacheMissCount": 0,
+      "evictionCount": 0,
+      "atlasCapacityPressureCount": 0,
+      "staleGenerationRefusalCount": 1,
+      "invalidationTokenChangeCount": 1,
+      "cacheMemoryBytes": 352,
+      "uploadByteExpectation": 256,
+      "artifactBudgetRefusalCount": 1,
+      "budgetRefusals": [
+        {
+          "diagnosticCode": "text.glyph.artifact-budget-exceeded",
+          "cacheDomain": "atlas-upload-preparation",
+          "keyPreimageSha256": "74d5f2e7ed871e7c69befd9e4a5cc11dfd0eae89806e2957a7364b84f0c6c72c",
+          "observedBytes": 1536,
+          "advisoryLimitBytes": 1024
+
+        }
+      ]
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.artifact-budget-exceeded",
+    "text.glyph.atlas-capacity-exceeded",
+    "text.glyph.atlas-generation-stale"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-gpu-text-route-claim",
+    "no-hidden-performance-gate",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "7385b2e5d6baf9b2d64616125959720c6af1e8fa18676cfef881ff1d87e56e49"
+}

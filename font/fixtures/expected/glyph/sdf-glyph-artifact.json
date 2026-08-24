@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "sdf-glyph-artifact",
+  "ownerTickets": [
+    "KFONT-M9-004"
+  ],
+  "fixtureIds": [
+    "sdf-default-spread",
+    "sdf-wide-spread"
+  ],
+  "artifactCount": 2,
+  "artifacts": [
+    {
+      "schema": "org.graphiks.kanvas.glyph.SDFGlyphArtifactEvidence.v1",
+      "glyphId": 79,
+      "strikeKeySha256": "b227bfc361fa54c94d05272cd27f6ad887143cc60c39b2442f6e8e3f528e045f",
+      "bounds": {"left": 0, "top": 0, "width": 6, "height": 6},
+      "spreadPx": 8,
+      "sourceResolutionPx": 16,
+      "atlasPaddingPx": 9,
+      "format": "R8Unorm",
+      "normalizationFormulaVersion": "sdf-normalization-r8unorm-v1",
+      "addressablePixelCount": 36,
+      "distanceFieldSha256": "ebc9b8fb833fb2301499a656c5f23b8a8774973de84982c609062fbf77c16c87",
+      "sourceOutlineSha256": "73726d13db8c9fc0774857c7249be3ab9a7cd59b4feeada33ba7704afdb1a821",
+      "dumpSha256": "c14814ab94681b39402691f28c4937f0a450675bf9a3da1b35904bca2b1614b2"
+    
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.SDFGlyphArtifactEvidence.v1",
+      "glyphId": 80,
+      "strikeKeySha256": "cba38582eea42924915487373a0866d7046506a459d6b019bad4cdd68e550326",
+      "bounds": {"left": 0, "top": 0, "width": 6, "height": 6},
+      "spreadPx": 16,
+      "sourceResolutionPx": 24,
+      "atlasPaddingPx": 17,
+      "format": "R8Unorm",
+      "normalizationFormulaVersion": "sdf-normalization-r8unorm-v1",
+      "addressablePixelCount": 36,
+      "distanceFieldSha256": "c47b4f4ebdafe32fa1037a0799029f55a93397d5bdc2ecca3c5bace614f07098",
+      "sourceOutlineSha256": "33fdc3cf4c241818b9967de556192fd7133a18686de56d871101c75d3376926c",
+      "dumpSha256": "1ff629fbc59bf80b3522ccdfc14844ed609220dfd3c7c72d66414e603c84d39b"
+    
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.SDF-generation-failed",
+    "text.glyph.SDF-transform-unsupported"
+  ],
+  "nonClaims": [
+    "producer-only",
+    "no-gpu-text-route-claim",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "9328a5e73b313b47c81ebbac94752432d79df310c633d6bc81e89fa5cb0f7739"
+}

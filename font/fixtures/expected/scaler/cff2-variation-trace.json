@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "cff2-variation-trace",
+  "ownerTickets": [
+    "KFONT-M4-005"
+  ],
+  "fixtureIds": [
+    "cff2-variable-basic.otf",
+    "cff2-vsindex-invalid.otf",
+    "cff2-missing-varstore.otf",
+    "cff2-unsupported-axis.otf",
+    "cff2-non-finite-axis.otf",
+    "cff2-blend-bad-stack.otf"
+  ],
+  "requiredEvidence": [
+    "glyph-outline.json",
+    "glyph-metrics.json",
+    "cff-charstring-trace.json"
+  ],
+  "pathHashArtifacts": {
+    "default": {"outlineCommandDumpSha256": "75343c00c1e09060eeff851f7c0265299240aeacd9720fb72ae8210878502975", "outlineCommandCount": 3},
+    "min": {"outlineCommandDumpSha256": "8e9e207e1fe978cfe8729fcc3dc54f6c7f5d023c651ee716ff44175a6de51a10", "outlineCommandCount": 3},
+    "max": {"outlineCommandDumpSha256": "7561c9753251317c25cafb07538257b2a2496d3e3f6125af70d75974e7119690", "outlineCommandCount": 3},
+    "namedWideBold": {"outlineCommandDumpSha256": "c678fcee7bd76fda7d43d3a37097b773864021db832cfa4eb6ed2c758d701254", "outlineCommandCount": 3}
+  },
+  "positiveFixtures": [
+    {
+      "fixtureId": "cff2-variable-basic.otf",
+      "positionLabel": "default",
+      "outlineCommandDumpSha256": "75343c00c1e09060eeff851f7c0265299240aeacd9720fb72ae8210878502975",
+      "outlineCommandCount": 3,
+      "outlineCommands": ["M 0.0 0.0", "L 50.0 0.0", "Z"],
+      "metrics": {"advanceX": 600.0, "advanceY": 0.0, "bounds": {"left": 0.0, "top": 0.0, "right": 50.0, "bottom": 0.0}},
+      "charStringEvidence": {
+        "variationPosition": [{"tag": "wdth", "value": 0.0}, {"tag": "wght", "value": 0.0}],
+        "cff2VsIndex": 0,
+        "blendVectors": [{"vsIndex": 0, "defaults": [50.0], "deltaSets": [[-10.0], [20.0], [15.0]], "regionIndexes": [0, 1, 2], "scalars": [0.0, 0.0, 0.0], "blendedValues": [50.0]}]
+      }
+    },
+    {
+      "fixtureId": "cff2-variable-basic.otf",
+      "positionLabel": "min",
+      "outlineCommandDumpSha256": "8e9e207e1fe978cfe8729fcc3dc54f6c7f5d023c651ee716ff44175a6de51a10",
+      "outlineCommandCount": 3,
+      "outlineCommands": ["M 0.0 0.0", "L 40.0 0.0", "Z"],
+      "metrics": {"advanceX": 600.0, "advanceY": 0.0, "bounds": {"left": 0.0, "top": 0.0, "right": 40.0, "bottom": 0.0}},
+      "charStringEvidence": {
+        "variationPosition": [{"tag": "wdth", "value": 0.0}, {"tag": "wght", "value": -1.0}],
+        "cff2VsIndex": 0,
+        "blendVectors": [{"vsIndex": 0, "defaults": [50.0], "deltaSets": [[-10.0], [20.0], [15.0]], "regionIndexes": [0, 1, 2], "scalars": [1.0, 0.0, 0.0], "blendedValues": [40.0]}]
+      }
+    },
+    {
+      "fixtureId": "cff2-variable-basic.otf",
+      "positionLabel": "max",
+      "outlineCommandDumpSha256": "7561c9753251317c25cafb07538257b2a2496d3e3f6125af70d75974e7119690",
+      "outlineCommandCount": 3,
+      "outlineCommands": ["M 0.0 0.0", "L 70.0 0.0", "Z"],
+      "metrics": {"advanceX": 600.0, "advanceY": 0.0, "bounds": {"left": 0.0, "top": 0.0, "right": 70.0, "bottom": 0.0}},
+      "charStringEvidence": {
+        "variationPosition": [{"tag": "wdth", "value": 0.0}, {"tag": "wght", "value": 1.0}],
+        "cff2VsIndex": 0,
+        "blendVectors": [{"vsIndex": 0, "defaults": [50.0], "deltaSets": [[-10.0], [20.0], [15.0]], "regionIndexes": [0, 1, 2], "scalars": [0.0, 1.0, 0.0], "blendedValues": [70.0]}]
+      }
+    },
+    {
+      "fixtureId": "cff2-variable-basic.otf",
+      "positionLabel": "namedWideBold",
+      "outlineCommandDumpSha256": "c678fcee7bd76fda7d43d3a37097b773864021db832cfa4eb6ed2c758d701254",
+      "outlineCommandCount": 3,
+      "outlineCommands": ["M 0.0 0.0", "L 85.0 0.0", "Z"],
+      "metrics": {"advanceX": 600.0, "advanceY": 0.0, "bounds": {"left": 0.0, "top": 0.0, "right": 85.0, "bottom": 0.0}},
+      "charStringEvidence": {
+        "variationPosition": [{"tag": "wdth", "value": 1.0}, {"tag": "wght", "value": 1.0}],
+        "cff2VsIndex": 0,
+        "blendVectors": [{"vsIndex": 0, "defaults": [50.0], "deltaSets": [[-10.0], [20.0], [15.0]], "regionIndexes": [0, 1, 2], "scalars": [0.0, 1.0, 1.0], "blendedValues": [85.0]}]
+      }
+    }
+  ],
+  "diagnosticSnapshots": {
+    "blendStackMalformed": {"code": "font.scaler.cff2.blend-stack-malformed", "detail": "cff2.blend-count", "operation": "charstring", "glyphId": 31, "severity": "refusal"},
+    "invalidVsIndex": [{"code": "font.variation-data-malformed", "detail": "cff2.vsindex-invalid", "operation": "charstring", "glyphId": 0, "severity": "refusal"}, {"code": "font.scaler.cff.glyph-malformed", "detail": "cff.glyph-malformed", "operation": "outline", "glyphId": 0, "severity": "refusal"}],
+    "missingVariationStore": [{"code": "font.variation-data-malformed", "detail": "cff2.variation-store-missing", "operation": "charstring", "glyphId": 0, "severity": "refusal"}, {"code": "font.scaler.cff.glyph-malformed", "detail": "cff.glyph-malformed", "operation": "outline", "glyphId": 0, "severity": "refusal"}],
+    "unsupportedAxis": [{"code": "font.variation-axis-unsupported", "detail": "cff2.variation-axis", "operation": "variation", "glyphId": 0, "severity": "refusal"}],
+    "nonFiniteAxis": [{"code": "font.variation-data-malformed", "detail": "cff2.variation-position-non-finite", "operation": "variation", "glyphId": 0, "severity": "refusal"}]
+  },
+  "nonClaims": [
+    "generated-fixture-evidence-only",
+    "no-complete-cff2-variation-support-claim",
+    "no-hvar-vvar-mvar-advance-claim",
+    "no-native-scaler-oracle-claim",
+    "no-gpu-text-route-claim"
+  ]
+}

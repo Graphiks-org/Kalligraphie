@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "sfnt-cmap-format14-readiness",
+  "ownerTickets": [
+    "PKT-03D"
+  ],
+  "fixtures": [
+    {
+      "fixtureId": "font-source-liberation-core",
+      "requiredTables": [
+        "cmap",
+        "head",
+        "hhea",
+        "hmtx",
+        "maxp",
+        "name",
+        "OS/2",
+        "post"
+      ],
+      "format14Status": "fixture-gated",
+      "diagnostics": [
+        "font.cmap.format14-fixture-missing"
+      ]
+    }
+  ],
+  "nonClaims": [
+    "no-complete-sfnt-conformance-claim",
+    "no-complete-cmap-format14-claim"
+  ]
+}

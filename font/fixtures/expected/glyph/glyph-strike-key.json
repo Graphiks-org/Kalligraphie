@@ -1,0 +1,250 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-strike-key",
+  "ownerTickets": [
+    "KFONT-M9-001"
+  ],
+  "fixtureIds": [
+    "font-source-liberation-core"
+  ],
+  "routePreimageCount": 7,
+  "routePreimages": [
+    {
+      "glyphId": 41,
+      "route": "text.glyph.mask.A8",
+      "compactHash": "baf3db82dab42cd65306ae59fd4ce83fb0ddfa8a9279f2fd3e20920aaa54deb8",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 41,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 1, "codePointCount": 1, "graphemeClusterCount": 1, "clusterSha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.mask.A8",
+        "maskFormat": "A8",
+        "edging": "antialias",
+        "variationCoordinates": [],
+        "paletteIdentity": null,
+        "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": null
+      }
+    },
+    {
+      "glyphId": 42,
+      "route": "text.glyph.mask.SDF",
+      "compactHash": "57b98b50a713afbcb21322d86ebadadd8692bfa500ecaa6e74e24950e19ef8c7",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 42,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 1, "codePointCount": 1, "graphemeClusterCount": 1, "clusterSha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.mask.SDF",
+        "maskFormat": "R8Unorm",
+        "edging": "antialias",
+        "variationCoordinates": [],
+        "paletteIdentity": null,
+        "sdf": {"spreadPx": 8, "sourceResolutionPx": 18},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": null
+      }
+    },
+    {
+      "glyphId": 43,
+      "route": "text.glyph.outline",
+      "compactHash": "b3b112868fe5de74d429b498713f7b9eb26ad3b720db198a82c5bf34195d6350",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 43,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 1, "codePointCount": 1, "graphemeClusterCount": 1, "clusterSha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.outline",
+        "maskFormat": "none",
+        "edging": "antialias",
+        "variationCoordinates": [],
+        "paletteIdentity": null,
+        "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": null
+      }
+    },
+    {
+      "glyphId": 44,
+      "route": "text.glyph.color.COLR",
+      "compactHash": "3d764e055e8f567265eddf42ec7748ed2d7a024827c2cd5bcfe5f4b79834ab00",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 44,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 1, "codePointCount": 1, "graphemeClusterCount": 1, "clusterSha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.color.COLR",
+        "maskFormat": "none",
+        "edging": "antialias",
+        "variationCoordinates": [
+          {"axis": "wght", "value": 0.7}
+        ],
+        "paletteIdentity": "cpal.palette.1",
+        "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": "colr-plan.v1"
+      }
+    },
+    {
+      "glyphId": 45,
+      "route": "text.glyph.bitmap.PNG",
+      "compactHash": "4215fbd834fa4a37d32739111fa368b2bd6b89aa06499eca2f41844774a1892d",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 45,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 1, "codePointCount": 1, "graphemeClusterCount": 1, "clusterSha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.bitmap.PNG",
+        "maskFormat": "none",
+        "edging": "antialias",
+        "variationCoordinates": [],
+        "paletteIdentity": null,
+        "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": "png-glyph-plan.v1"
+      }
+    },
+    {
+      "glyphId": 46,
+      "route": "text.glyph.SVG",
+      "compactHash": "eb6aa17bf2baf27fc930b9b368f3744b819a8f68cb13c744d7b1dc9b33cea232",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 46,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 1, "codePointCount": 1, "graphemeClusterCount": 1, "clusterSha256": "559aead08264d5795d3909718cdd05abd49572e84fe55590eef31a88a08fdffd"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.SVG",
+        "maskFormat": "none",
+        "edging": "antialias",
+        "variationCoordinates": [],
+        "paletteIdentity": null,
+        "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": "svg-glyph-plan.v1"
+      }
+    },
+    {
+      "glyphId": 0,
+      "route": "text.glyph.unsupported",
+      "compactHash": "85391251d049846a5c8e54dc9ae34038f25995efc53c754f813af2b855cd79ef",
+      "preimage": {
+        "schema": "org.graphiks.kanvas.glyph.GlyphStrikeKey.v1",
+        "typefaceId": "550e8400-e29b-41d4-a716-446655442010",
+        "glyphId": 0,
+        "clusterFingerprint": {"sourceUtf16Start": 0, "sourceUtf16EndExclusive": 8, "codePointCount": 3, "graphemeClusterCount": 1, "clusterSha256": "0f4c5d1c2f05d2e915e2cc2c2ff9a8f69058f2a965e4af1b71c7f2b1573f1b52"},
+        "sizePx": 18,
+        "scaleX": 1,
+        "scaleY": 1,
+        "transformBucket": "identity",
+        "subpixelBucket": {"x": 0, "y": 0},
+        "route": "text.glyph.unsupported",
+        "maskFormat": "none",
+        "edging": "antialias",
+        "variationCoordinates": [],
+        "paletteIdentity": null,
+        "sdf": {"spreadPx": null, "sourceResolutionPx": null},
+        "unicodeDataVersion": "Unicode-16.0.0",
+        "rendererDescriptorVersion": null
+      }
+    }
+  ],
+  "refusalCount": 5,
+  "refusals": [
+    {
+      "glyphId": 47,
+      "attemptedRoute": "text.glyph.mask.A8",
+      "diagnostic": "text.glyph.cache-key-nondeterministic",
+      "reason": "missing-typeface-id",
+      "severity": "warning",
+      "message": "Glyph strike key refused because TypefaceID is missing.",
+      "forbiddenFields": [],
+      "fallbackRoute": null
+    },
+    {
+      "glyphId": 48,
+      "attemptedRoute": "text.glyph.outline",
+      "diagnostic": "text.glyph.cache-key-nondeterministic",
+      "reason": "host-source-nondeterministic",
+      "severity": "warning",
+      "message": "Glyph strike key refused because host source 'system-font-scan' is not captured as deterministic font bytes.",
+      "forbiddenFields": [],
+      "fallbackRoute": null
+    },
+    {
+      "glyphId": 49,
+      "attemptedRoute": "text.glyph.mask.A8",
+      "diagnostic": "text.glyph.cache-key-nondeterministic",
+      "reason": "forbidden-live-handle-fields",
+      "severity": "warning",
+      "message": "Glyph strike key refused because live handles, atlas coordinates, GPU resources, or upload tokens are not key facts.",
+      "forbiddenFields": ["atlasX", "gpuTextureHandle", "uploadToken"],
+      "fallbackRoute": null
+    },
+    {
+      "glyphId": 50,
+      "attemptedRoute": "text.glyph.mask.LCD",
+      "diagnostic": "text.glyph.LCD-future-research",
+      "reason": "lcd-future-research",
+      "severity": "warning",
+      "message": "LCD subpixel text remains future research and is recorded only as a refused key request.",
+      "forbiddenFields": [],
+      "fallbackRoute": "text.glyph.mask.A8"
+    },
+    {
+      "glyphId": 51,
+      "attemptedRoute": "text.glyph.bitmap.PNG",
+      "diagnostic": "text.glyph.cache-key-nondeterministic",
+      "reason": "route-key-gap",
+      "severity": "warning",
+      "message": "Glyph strike key refused because route-specific key fields are missing.",
+      "forbiddenFields": ["rendererDescriptorVersion"],
+      "fallbackRoute": null
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.cache-key-nondeterministic",
+    "text.glyph.LCD-future-research"
+  ],
+  "nonClaims": [
+    "no-a8-rasterization-claim",
+    "no-sdf-generation-claim",
+    "no-atlas-packing-claim",
+    "no-gpu-text-route-claim",
+    "no-color-emoji-rendering-claim",
+    "no-lcd-support-claim",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "2204ca9f71fd08ac64932274e261b90b4295a75f297833a99a722507c9094bc8"
+}

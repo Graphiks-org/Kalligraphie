@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "truetype-variation-readiness",
+  "ownerTickets": [
+    "PKT-04C"
+  ],
+  "fixtureIds": [
+    "scaler-roboto-flex-variable"
+  ],
+  "requiredEvidence": [
+    "IUP interpolation fixture rows and expected outline delta dumps",
+    "phantom-point and advance-delta fixture bytes",
+    "avar coordinate mapping fixture bytes",
+    "HVAR, VVAR, and MVAR metric-refusal goldens",
+    "normalized coordinate dumps",
+    "path hashes and bounds for variation-sensitive glyph routes",
+    "stable variation diagnostics until implementation evidence lands"
+  ],
+  "nonClaims": [
+    "no-complete-target-support-claim",
+    "no-full-variable-font-support-claim",
+    "no-native-scaler-oracle-claim"
+  ]
+}

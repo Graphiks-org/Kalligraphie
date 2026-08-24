@@ -1,0 +1,233 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "svg-glyph-fixture-manifest",
+  "ownerTickets": ["KFONT-M10-008"],
+  "fixtureFamily": "svg-glyphs",
+  "cases": [
+    {
+      "fixtureId": "svg-glyphs-svg-static-path",
+      "glyphId": 177,
+      "focus": "static-path",
+      "sourceDocumentSha256": "669a2c76bb7d2592422e6f683decff709b6c4c866029ec074fc4815c647eb229",
+      "expectedRoute": "svg-plan",
+      "expectedBoundsSha256": "b66730265490cd91e6ea387571ebc53cb29481d9d82d420cf0d1a9e58105e230",
+      "expectedDiagnostics": [],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "generated-test-data",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-gradient-transform-clip",
+      "glyphId": 178,
+      "focus": "gradient-transform-clip",
+      "sourceDocumentSha256": "ba0388bbfd09baaec03be452cc5b2a64686b05786eb49fc827f826c6baa2c6b2",
+      "expectedRoute": "svg-plan",
+      "expectedBoundsSha256": "1c7bf3acd8cdcee3ff476994aef568513a8500806ff64c62bcf4e045f424cc0f",
+      "expectedDiagnostics": [],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "generated-test-data",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-defs-symbol-use-radial-gradient",
+      "glyphId": 179,
+      "focus": "defs-symbol-use-radial-gradient",
+      "sourceDocumentSha256": "8cd6e94bfb1907d279cb1d9866b734ef2c317afc616114e75f1abb6987b564e4",
+      "expectedRoute": "svg-plan",
+      "expectedBoundsSha256": "d3e139b51827e13e90c2b6495c7d861e2abaac90f0b0aa2d456732a4039a6c17",
+      "expectedDiagnostics": [],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "generated-test-data",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-script-refusal",
+      "glyphId": 185,
+      "focus": "script",
+      "sourceDocumentSha256": "f49d6726ee1d8717e4c858defca5497b272184474ff7d87df4219b5fc7045093",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.feature-unsupported"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-external-resource-refusal",
+      "glyphId": 180,
+      "focus": "external-resource",
+      "sourceDocumentSha256": "ad4941818163b934f8dcca82869d8bb10cd8163b383ae2d2a0acb68fb93de87d",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.external-resource-refused"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-network-reference-refusal",
+      "glyphId": 186,
+      "focus": "network-reference",
+      "sourceDocumentSha256": "8505e7da6197faddf39de42553fdf9429b79b3c91bf6c76f60aab6898c8490c4",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.external-resource-refused"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-animation-refusal",
+      "glyphId": 187,
+      "focus": "animation",
+      "sourceDocumentSha256": "a6c705f0892620f5a6790d6ac68f6ab9fa9068b401d2746c1c0662d1ad98c0d9",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.feature-unsupported"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-filter-refusal",
+      "glyphId": 188,
+      "focus": "filter",
+      "sourceDocumentSha256": "38446a0c288613242c80c76f472e874c7dc03f5470a69da82ce827895bdf7388",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.feature-unsupported"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-foreign-object-refusal",
+      "glyphId": 181,
+      "focus": "foreignObject",
+      "sourceDocumentSha256": "a214c288b8aacebe55f0f43bf5e67712762a81a42f046147cbbf8ba8506afd4e",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.feature-unsupported"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-embedded-text-refusal",
+      "glyphId": 189,
+      "focus": "embedded-text",
+      "sourceDocumentSha256": "b421703c82347beacf393376c23d910fef631a5d6bc1be6810764f5e1df52d36",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.feature-unsupported"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-unsupported-css-selector-refusal",
+      "glyphId": 191,
+      "focus": "unsupported-css-selector",
+      "sourceDocumentSha256": "484678eae3060b1aba5f33a69cc45fb84d725cd14b1c8d40c28b0166d54056ad",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.feature-unsupported"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-malformed-document-refusal",
+      "glyphId": 190,
+      "focus": "malformed-document",
+      "sourceDocumentSha256": "2cb7df712f4761d64b2e7dd764887805922924d437b8e715ea20a1ec0f8491ae",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.document-malformed"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-malformed-path-data-refusal",
+      "glyphId": 192,
+      "focus": "malformed-path-data",
+      "sourceDocumentSha256": "ab3d880853a4499eedb90301058a11ea3941208c2cfaf73e0abfa7f5d881b91b",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.document-malformed"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-path-command-budget-refusal",
+      "glyphId": 182,
+      "focus": "path-command-budget",
+      "sourceDocumentSha256": "74a890b7c508693e2d4a04024c082e0ee241613a114bc0911e2a25cd0bbaaf07",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.budget-exceeded"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-gradient-stop-budget-refusal",
+      "glyphId": 183,
+      "focus": "gradient-stop-budget",
+      "sourceDocumentSha256": "c899a817a7ebcb48f62b41038cbf2bfe1bde9f073a42b3ac61a8f73d8f942fdd",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.budget-exceeded"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    },
+    {
+      "fixtureId": "svg-glyphs-svg-use-recursion-refusal",
+      "glyphId": 184,
+      "focus": "use-recursion-budget",
+      "sourceDocumentSha256": "72b1ded2ee164659e8f87cb3b0c5718f1ebdd9000bc7dcb9347a9a1135eba861",
+      "expectedRoute": "refusal",
+      "expectedBoundsSha256": null,
+      "expectedDiagnostics": ["text.SVG.budget-exceeded"],
+      "expectedDumpFiles": ["svg-glyph-plan.json"],
+      "provenance": {
+        "kind": "route-diagnostic",
+        "source": "ColorGlyphSurfaceTest.svgGlyphFixtureManifestCapturesBoundsRefusalsAndProvenanceDeterministically"
+      }
+    }
+  ],
+  "nonClaims": ["no-complete-target-support-claim", "no-complete-svg-in-opentype-rendering-claim", "no-gpu-svg-glyph-route-claim", "no-native-svg-renderer-claim"]
+}

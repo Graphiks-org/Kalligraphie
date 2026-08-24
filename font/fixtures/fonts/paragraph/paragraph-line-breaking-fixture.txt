@@ -1,0 +1,8 @@
+latin-ui: alpha beta
+latin-punctuation: foo,bar
+cjk-no-spaces: 日本語テキスト
+mixed-ltr-rtl: abc אבג
+explicit-newlines: aa\nbb
+combining-mark: á b
+emoji-zwj: 👩‍👩‍👧 family
+locale-refinement-gap (locale=th): á ไทย

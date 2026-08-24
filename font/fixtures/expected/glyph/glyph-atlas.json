@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "glyph-atlas",
+  "ownerTickets": [
+    "KFONT-M9-005"
+  ],
+  "fixtureIds": [
+    "a8-atlas",
+    "sdf-atlas"
+  ],
+  "artifactCount": 2,
+  "artifacts": [
+    {
+      "schema": "org.graphiks.kanvas.glyph.GlyphAtlasArtifactEvidence.v1",
+      "artifactType": "GlyphAtlasArtifact",
+      "artifactKeySha256": "2811ca06954ad09572dbc82a74b338559e8b1df2477847ff559c8760d9720354",
+      "generation": 7,
+      "textureFormat": "A8",
+      "width": 3,
+      "height": 3,
+      "rowStride": 3,
+      "memoryBudgetClass": "atlas-budget.medium",
+      "lifetimeClass": "glyph-run-frame",
+      "invalidationToken": "font-source-v7",
+      "entryCount": 1,
+      "entries": [
+        {
+          "glyphId": 122,
+          "strikeKeySha256": "33db747e82cc559bbad2c4b83ffc9873b243ad7b21e2fdbeaa82cf7d830ccf56",
+          "rect": {"x": 1, "y": 1, "width": 2, "height": 2},
+          "sourceBounds": {"left": 1, "top": 2, "width": 2, "height": 2},
+          "paddingPx": 1,
+          "sourceMaskSha256": "5f53c0ff07ba5d9a330e68c95dabb1a9bc49e29f9ed53f6fa7c6d99abb000050"
+    
+        }
+      ],
+      "sourceMaskHashes": ["5f53c0ff07ba5d9a330e68c95dabb1a9bc49e29f9ed53f6fa7c6d99abb000050"],
+      "uploadByteSha256": "119294346c3df80ba765b670592f76577e44c967a8fedf77dc6fd5f934e5a18f",
+      "diagnostics": [],
+      "dumpSha256": "18a4034c31a704d582b49cab0a28f932ff9388785fb18e227cef8145b3258926"
+    },
+    {
+      "schema": "org.graphiks.kanvas.glyph.GlyphAtlasArtifactEvidence.v1",
+      "artifactType": "SDFGlyphAtlasArtifact",
+      "artifactKeySha256": "43eccb8fcc53683f26bf42562370d025bba6e07087a4b6fa87164604461df337",
+      "generation": 8,
+      "textureFormat": "R8Unorm",
+      "width": 3,
+      "height": 3,
+      "rowStride": 3,
+      "memoryBudgetClass": "atlas-budget.medium",
+      "lifetimeClass": "glyph-run-frame",
+      "invalidationToken": "font-source-v8",
+      "entryCount": 1,
+      "distanceRange": 16,
+      "entries": [
+        {
+          "glyphId": 123,
+          "strikeKeySha256": "18d6a60bd014e768f1875bce635e5f2298b86bdfc51526856e6a40d8d6252351",
+          "rect": {"x": 1, "y": 1, "width": 2, "height": 2},
+          "sourceBounds": {"left": -1, "top": 0, "width": 2, "height": 2},
+          "paddingPx": 1,
+          "sourceMaskSha256": "665a59fca01ccf193c9291c371fab0a1a57c2b8ee17bdf7d543f8ef70e5e311e"
+    
+        }
+      ],
+      "sourceMaskHashes": ["665a59fca01ccf193c9291c371fab0a1a57c2b8ee17bdf7d543f8ef70e5e311e"],
+      "uploadByteSha256": "1c6cbc57ed0981a56a872b377621a00d0634577918505dcb996a5356d5b1cf0c",
+      "diagnostics": [],
+      "dumpSha256": "ea4416f7aeeed02167cd138ea58def14151d8ca2f39cdd7f9139178fb0d1add0"
+    }
+  ],
+  "requiredDiagnostics": [
+    "text.glyph.atlas-capacity-exceeded",
+    "text.glyph.atlas-generation-stale"
+  ],
+  "nonClaims": [
+    "producer-only",
+    "no-gpu-text-route-claim",
+    "no-dftext-retirement"
+  ],
+  "dumpSha256": "ab8c290b70a29c2365fabfa37825ffe0e9131566ac859badf5a65fa26ee95598"
+}

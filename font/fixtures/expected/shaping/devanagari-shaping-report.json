@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "dumpId": "devanagari-shaping-report",
+  "ownerTickets": ["KFONT-M6-008"],
+  "fixtureId": "single-ttf-noto-sans-devanagari",
+  "fixtureFont": "reports/font/fixtures/fonts/fallback/NotoSansDevanagari-Regular.ttf",
+  "cases": [
+    {
+      "caseId": "prebase-matra-script-selection",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/DevanagariShapingFixtureTest.kt"
+      ],
+      "notes": "Pinned Script_Extensions itemization now lets the reviewed shaping route classify the vendored pre-base matra case as Deva without diagnostics; this row does not claim pre-base matra reordering or full phase evidence."
+    },
+    {
+      "caseId": "consonant-cluster",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/DevanagariShapingFixtureTest.kt"
+      ],
+      "notes": "Vendored Noto Sans Devanagari shapes क्षा into a bounded single cluster covering the original UTF-16 range without promoting complete Indic support."
+    },
+    {
+      "caseId": "reph-like",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/DevanagariShapingFixtureTest.kt"
+      ],
+      "notes": "Vendored र्क exposes a reordered or zero-advance cluster consistent with reph-like shaping on the reviewed runtime path."
+    },
+    {
+      "caseId": "mark-placement",
+      "status": "positive",
+      "evidence": [
+        "font/text/src/test/kotlin/org/graphiks/kanvas/text/DevanagariShapingFixtureTest.kt"
+      ],
+      "notes": "Vendored कं exposes a positioned or zero-advance mark cluster only, keeping full GPOS phase coverage as a separate gate."
+    }
+  ],
+  "remainingGates": [
+    {
+      "remainingGateId": "indic-syllable-plan-and-phase-evidence",
+      "detail": "Ticket-local indic-syllable-plan or shaping-plan phase evidence is still absent; this wave does not yet serialize syllable boundaries, feature phases, or reorder decisions per fixture."
+    },
+    {
+      "remainingGateId": "full-required-feature-set-evidence",
+      "detail": "The full required Devanagari feature set, especially blwf/half/pstf/vatu/pres/haln/dist, is not yet proven by ticket-local reviewed evidence on the runtime path."
+    },
+    {
+      "remainingGateId": "devanagari-refusal-fixtures-and-codes",
+      "detail": "Dedicated unsupported-syllable and phase refusal fixtures plus text.shaping.indic-syllable-unsupported and text.shaping.devanagari-phase-unsupported diagnostics remain absent."
+    },
+    {
+      "remainingGateId": "ticket-local-trace-dumps",
+      "detail": "Ticket-local shaping-plan.json or indic-syllable-plan.json, gsub-trace.json, gpos-trace.json, shaped-glyph-run.json, and unicode-segments.json dump families remain open before done."
+    }
+  ],
+  "nonClaims": [
+    "no-devanagari-shaping-support-claim",
+    "no-indic-shaping-support-claim",
+    "no-native-shaper-oracle-claim",
+    "no-cpu-or-gpu-rendering-claim"
+  ]
+}
