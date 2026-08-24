@@ -1,0 +1,69 @@
+name: PR policy
+
+on:
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  pr-policy:
+    name: PR policy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out pull request head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate pull request policy
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          changed_files_file="$(mktemp)"
+          commit_subjects_file="$(mktemp)"
+          body_file="$(mktemp)"
+
+          git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_files_file"
+          git log --format=%s "$PR_BASE_SHA..$PR_HEAD_SHA" > "$commit_subjects_file"
+
+          if git merge-base --is-ancestor "$PR_BASE_SHA" "$PR_HEAD_SHA"; then
+            base_ancestor=true
+          else
+            base_ancestor=false
+          fi
+
+          merge_commits="$(git rev-list --merges --count "$PR_BASE_SHA..$PR_HEAD_SHA")"
+
+          BODY_FILE="$body_file" python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text(encoding="utf-8"))
+          body = event["pull_request"].get("body") or ""
+          Path(os.environ["BODY_FILE"]).write_text(body, encoding="utf-8")
+          PY
+
+          python3 .github/scripts/validate_pr_policy.py \
+            --policy .github/contributing-policy.toml \
+            --title "$PR_TITLE" \
+            --body-file "$body_file" \
+            --branch "$PR_BRANCH" \
+            --changed-files-file "$changed_files_file" \
+            --commit-subjects-file "$commit_subjects_file" \
+            --base-ancestor "$base_ancestor" \
+            --merge-commits "$merge_commits"
