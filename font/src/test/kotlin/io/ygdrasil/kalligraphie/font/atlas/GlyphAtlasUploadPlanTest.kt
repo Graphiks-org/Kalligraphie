@@ -96,6 +96,32 @@ class GlyphAtlasUploadPlanTest {
     }
 
     @Test
+    fun `packer wraps at Int maximum width without placing outside the atlas`() {
+        val atlasWidth = Int.MAX_VALUE
+        val packer = GlyphAtlasPacker(atlasWidth = atlasWidth, atlasHeight = 0)
+
+        val placements = listOfNotNull(
+            packer.place(
+                GlyphStrikeKey(glyphId = 70, size = 16f, subpixelX = 0, subpixelY = 0),
+                glyphBitmap(Int.MAX_VALUE, 0),
+            ),
+            packer.place(
+                GlyphStrikeKey(glyphId = 71, size = 16f, subpixelX = 0, subpixelY = 0),
+                glyphBitmap(1, 0),
+            ),
+        )
+
+        assertEquals(2, placements.size)
+        assertEquals(0, placements[1].region.x)
+        assertTrue(
+            placements.all { placement ->
+                placement.region.x.toLong() + placement.region.width.toLong() <= atlasWidth.toLong() &&
+                    placement.region.y.toLong() + placement.region.height.toLong() <= 0L
+            },
+        )
+    }
+
+    @Test
     fun `legacy incremental packer preserves all degenerate rectangle placements`() {
         val packer = GlyphAtlasPacker(atlasWidth = 8, atlasHeight = 8)
         val dimensions = listOf(0 to 0, 0 to 3, 4 to 0)

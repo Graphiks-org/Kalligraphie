@@ -28,3 +28,9 @@
 - Aggregate: `rtk ./gradlew --no-daemon :font:test :font:fontTest` succeeded.
 - GPU boundary: `! rtk rg -n 'glyph\\.gpu|GPUTextAtlasPageCursor|GPUTextAtlasRectItem' font/src --glob '*.kt'` succeeded with no matches.
 - Hygiene: `rtk git diff --check` succeeded.
+
+## P1 follow-up — safe atlas-cursor arithmetic
+
+- `AtlasCursor` promotes horizontal and vertical bounds calculations to `Long` before updating coordinates.
+- `packer wraps at Int maximum width without placing outside the atlas` uses zero-height bitmaps of widths `Int.MAX_VALUE` and `1`, so it allocates no large pixel buffer. It proves the second placement wraps to `x = 0` and every region stays within the atlas.
+- RED: the focused test failed with the previous overflowing `Int` addition. GREEN: the focused test succeeded after the `Long` calculations.

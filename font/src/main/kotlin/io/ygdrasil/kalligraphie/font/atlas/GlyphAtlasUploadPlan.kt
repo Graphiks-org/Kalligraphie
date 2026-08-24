@@ -20,14 +20,16 @@ private class AtlasCursor(
 
     fun place(itemWidth: Int, itemHeight: Int): AtlasRegion? {
         if (itemWidth > width || itemHeight > height) return null
-        if (x + itemWidth > width) {
+        if (x.toLong() + itemWidth.toLong() > width.toLong()) {
+            val nextY = y.toLong() + rowHeight.toLong()
+            if (nextY > height.toLong()) return null
             x = 0
-            y += rowHeight
+            y = nextY.toInt()
             rowHeight = 0
         }
-        if (y + itemHeight > height) return null
+        if (y.toLong() + itemHeight.toLong() > height.toLong()) return null
         val region = AtlasRegion(x, y, itemWidth, itemHeight)
-        x += itemWidth
+        x = (x.toLong() + itemWidth.toLong()).toInt()
         rowHeight = maxOf(rowHeight, itemHeight)
         return region
     }
