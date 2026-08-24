@@ -23,3 +23,10 @@ dependencyResolutionManagement {
 rootProject.name = "kmp-starter-pack"
 include(":shared")
 include(":docs")
+include(":font")
+include(":font:core")
+include(":font:sfnt")
+include(":font:colr")
+include(":font:scaler")
+include(":font:text")
+include(":font:glyph")
