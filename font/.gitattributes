@@ -1,2 +1,0 @@
-# Preserve upstream fixture bytes, including canonical whitespace in third-party data.
-fixtures/** -whitespace

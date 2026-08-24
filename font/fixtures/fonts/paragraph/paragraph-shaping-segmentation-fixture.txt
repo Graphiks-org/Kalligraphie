@@ -1,4 +1,0 @@
-caseId=mixed-script-style-fallback-placeholder
-logicalText=abسلا[placeholder]z
-dumpText=abسلا￼z
-notes=synthetic paragraph shaping segmentation fixture for KFONT-M8-002 with mixed Latin Arabic variation placeholder and fallback coverage
