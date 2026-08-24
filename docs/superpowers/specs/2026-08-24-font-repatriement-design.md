@@ -24,9 +24,14 @@ licence.
 - Les API communes KMP ne dépendent pas directement d’implémentations JVM.
   Les chemins, les scans du système et les flux de fichiers restent derrière
   une frontière de plateforme.
-- Le paquet public cible sera io.ygdrasil.kalligraphie.font. Le renommage est
-  fait pendant l’import, de façon mécanique et vérifiée ; aucune compatibilité
-  binaire avec le paquet org.graphiks.kanvas.font n’est recherchée.
+- Tous les composants de font/ sont importés, à l’exception de gpu-api. Le
+  renommage est fait pendant l’import, de façon mécanique et vérifiée ; aucune
+  compatibilité binaire avec les paquets org.graphiks.kanvas n’est recherchée.
+- Les paquets publics cibles partagent la racine io.ygdrasil.kalligraphie,
+  avec trois branches : font (core, SFNT, scaler, COLR et façade), glyph
+  (représentations et masques), et text (shaping et paragraphes). Cette
+  topologie préserve la séparation amont entre font.glyph et glyph et évite
+  leurs collisions de noms.
 - Les fontes binaires et fixtures de Kanvas ne font pas partie de l’import
   initial. Toute fixture tierce ajoutée ultérieurement doit garder son fichier
   de licence et une provenance vérifiable (par exemple SIL OFL ou Unicode).
@@ -45,6 +50,16 @@ Le répertoire font/ amont contient un module agrégateur et huit composants :
 | gpu-api | contrats de données entre glyphes et renderer GPU, sans backend GPU | core | différé |
 | glyph | représentations de glyphes et routes de rendu | core, text, scaler, colr, gpu-api | 3, sans l’adaptateur GPU |
 | font | façade agrégatrice Gradle | tous les précédents sauf COLR direct | 3 |
+
+| Paquet amont | Paquet Kalligraphie |
+| --- | --- |
+| org.graphiks.kanvas.font... | io.ygdrasil.kalligraphie.font... |
+| org.graphiks.kanvas.glyph... | io.ygdrasil.kalligraphie.glyph... |
+| org.graphiks.kanvas.text... | io.ygdrasil.kalligraphie.text... |
+
+Les sources de font/src conservent ainsi leur branche
+io.ygdrasil.kalligraphie.font.glyph, distincte de
+io.ygdrasil.kalligraphie.glyph provenant du sous-module font/glyph.
 
 Les sources sont aujourd’hui compilées comme bibliothèques Kotlin/JVM et
 emploient notamment java.nio.file dans la gestion de fichiers. Ce fait interdit
