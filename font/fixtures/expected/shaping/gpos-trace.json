@@ -6,7 +6,7 @@
   "cases": [
     {
       "caseId": "single-adjustment",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-single-adjustment.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-single-adjustment.otf",
       "inputText": "A",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440621",
       "featureOrder": ["kern"],
@@ -26,7 +26,7 @@
     },
     {
       "caseId": "pair-format1-kerning",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-pair-format1-kerning.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-pair-format1-kerning.otf",
       "inputText": "AV",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440622",
       "featureOrder": ["kern"],
@@ -46,7 +46,7 @@
     },
     {
       "caseId": "pair-format2-class",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-pair-format2-class.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-pair-format2-class.otf",
       "inputText": "AV",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440623",
       "featureOrder": ["kern"],
@@ -67,7 +67,7 @@
     },
     {
       "caseId": "mark-to-base",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-mark-to-base.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-mark-to-base.otf",
       "inputText": "اَ",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440624",
       "featureOrder": ["mark"],
@@ -89,7 +89,7 @@
     },
     {
       "caseId": "mark-to-ligature",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-mark-to-ligature.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-mark-to-ligature.otf",
       "inputText": "ﷲَ",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440625",
       "featureOrder": ["mark"],
@@ -106,7 +106,7 @@
     },
     {
       "caseId": "mark-to-mark",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-mark-to-mark.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-mark-to-mark.otf",
       "inputText": "َ",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440626",
       "featureOrder": ["mkmk"],
@@ -128,7 +128,7 @@
     },
     {
       "caseId": "cursive-attachment",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-cursive-attachment.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-cursive-attachment.otf",
       "inputText": "",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440627",
       "featureOrder": ["curs"],
@@ -151,7 +151,7 @@
     },
     {
       "caseId": "valueformat-malformed",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-valueformat-malformed.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-valueformat-malformed.otf",
       "inputText": "AV",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440624",
       "featureOrder": ["kern"],
@@ -168,7 +168,7 @@
     },
     {
       "caseId": "pair-out-of-range",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-pair-out-of-range.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-pair-out-of-range.otf",
       "inputText": "AV",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440625",
       "featureOrder": ["kern"],
@@ -185,7 +185,7 @@
     },
     {
       "caseId": "missing-gdef",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-missing-gdef.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-missing-gdef.otf",
       "inputText": "اَ",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440628",
       "featureOrder": ["mark"],
@@ -202,7 +202,7 @@
     },
     {
       "caseId": "anchor-malformed",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gpos-anchor-malformed.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gpos-anchor-malformed.otf",
       "inputText": "اَ",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440629",
       "featureOrder": ["mark"],

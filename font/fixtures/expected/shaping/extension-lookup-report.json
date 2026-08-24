@@ -6,7 +6,7 @@
   "cases": [
     {
       "caseId": "extension-single-substitution",
-      "fixturePath": "reports/font/fixtures/fonts/shaping/gsub-extension-substitution.otf",
+      "fixturePath": "font/fixtures/fonts/shaping/gsub-extension-substitution.otf",
       "featureTag": "ccmp",
       "text": "A",
       "inputGlyphIds": [5],
@@ -16,7 +16,7 @@
     },
     {
       "caseId": "extension-ligature-substitution",
-      "fixturePath": "reports/font/fixtures/fonts/shaping/gsub-extension-substitution.otf",
+      "fixturePath": "font/fixtures/fonts/shaping/gsub-extension-substitution.otf",
       "featureTag": "liga",
       "text": "fi",
       "inputGlyphIds": [7, 8],
@@ -26,7 +26,7 @@
     },
     {
       "caseId": "extension-unsupported-target-diagnostic",
-      "fixturePath": "reports/font/fixtures/fonts/shaping/layout-extension-cycle.otf",
+      "fixturePath": "font/fixtures/fonts/shaping/layout-extension-cycle.otf",
       "lookupType": 7,
       "resolvedLookupType": 7,
       "diagnosticCode": "font.sfnt.optional-table-malformed",

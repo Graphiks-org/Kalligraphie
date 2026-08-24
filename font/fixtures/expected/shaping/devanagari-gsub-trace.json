@@ -9,7 +9,7 @@
       "ticketId": "KFONT-M6-008",
       "status": "positive",
       "reportRef": "devanagari-shaping-report#fixture-consonant-cluster",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/devanagari-consonant-cluster.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/devanagari-consonant-cluster.otf",
       "inputText": "क्षा",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440720",
       "featureOrder": ["nukt", "akhn", "rphf", "blwf", "half", "pstf", "vatu", "pres", "abvs", "blws", "psts", "haln", "dist", "abvm", "blwm"],

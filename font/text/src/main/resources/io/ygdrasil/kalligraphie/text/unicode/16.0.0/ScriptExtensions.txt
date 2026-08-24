@@ -1,0 +1,4 @@
+# Bounded Unicode 16.0.0 seed extract for KFONT-M5-001.
+# This is not a complete ScriptExtensions.txt file.
+0640 ; Arab Mand Syrc
+3003 ; Bopo Hang Hani Hira Kana

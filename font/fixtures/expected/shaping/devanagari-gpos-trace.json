@@ -9,7 +9,7 @@
       "ticketId": "KFONT-M6-008",
       "status": "positive",
       "reportRef": "devanagari-shaping-report#fixture-mark-placement",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/devanagari-mark-placement.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/devanagari-mark-placement.otf",
       "inputText": "कं",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440724",
       "featureOrder": ["nukt", "akhn", "rphf", "blwf", "half", "pstf", "vatu", "pres", "abvs", "blws", "psts", "haln", "dist", "abvm", "blwm"],

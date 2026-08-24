@@ -1,0 +1,13 @@
+# Bounded Unicode 16.0.0 seed extract for KFONT-M5-001.
+# This is not a complete LineBreak.txt file.
+000A ; LF
+000D ; CR
+0020 ; SP
+0041 ; AL
+0301 ; CM
+05D0 ; HL
+0627..0640 ; AL
+200D ; ZWJ
+1F1E6..1F1FF ; RI
+1F600 ; ID
+FE0E..FE0F ; CM

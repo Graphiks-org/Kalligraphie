@@ -6,7 +6,7 @@
   "cases": [
     {
       "caseId": "single-substitution",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-single-substitution.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-single-substitution.otf",
       "inputText": "a",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440611",
       "featureOrder": ["ccmp"],
@@ -30,7 +30,7 @@
     },
     {
       "caseId": "multiple-substitution",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-multiple-substitution.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-multiple-substitution.otf",
       "inputText": "b",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440612",
       "featureOrder": ["ccmp"],
@@ -54,7 +54,7 @@
     },
     {
       "caseId": "ligature-fi",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-ligature-fi.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-ligature-fi.otf",
       "inputText": "fi",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440613",
       "featureOrder": ["liga"],
@@ -78,7 +78,7 @@
     },
     {
       "caseId": "context-format1-match",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-context-format1.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-context-format1.otf",
       "inputText": "ab",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440614",
       "featureOrder": ["calt"],
@@ -107,7 +107,7 @@
     },
     {
       "caseId": "context-format1-no-match",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-context-format1.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-context-format1.otf",
       "inputText": "ac",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440614",
       "featureOrder": ["calt"],
@@ -136,7 +136,7 @@
     },
     {
       "caseId": "context-format2-class",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-context-format2-class.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-context-format2-class.otf",
       "inputText": "abc",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440615",
       "featureOrder": ["calt"],
@@ -167,7 +167,7 @@
     },
     {
       "caseId": "context-format3-coverage",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-context-format3-coverage.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-context-format3-coverage.otf",
       "inputText": "abd",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440616",
       "featureOrder": ["calt"],
@@ -198,7 +198,7 @@
     },
     {
       "caseId": "context-nested-cycle",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-context-nested-cycle.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-context-nested-cycle.otf",
       "inputText": "ab",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440617",
       "featureOrder": ["calt"],
@@ -232,7 +232,7 @@
     },
     {
       "caseId": "context-malformed-classdef",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-context-malformed-classdef.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-context-malformed-classdef.otf",
       "inputText": "abc",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440618",
       "featureOrder": ["calt"],
@@ -249,7 +249,7 @@
     },
     {
       "caseId": "coverage-malformed",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-coverage-malformed.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-coverage-malformed.otf",
       "inputText": "a",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440614",
       "featureOrder": ["ccmp"],
@@ -266,7 +266,7 @@
     },
     {
       "caseId": "ligature-bad-component",
-      "fixtureFont": "reports/font/fixtures/fonts/shaping/gsub-ligature-bad-component.otf",
+      "fixtureFont": "font/fixtures/fonts/shaping/gsub-ligature-bad-component.otf",
       "inputText": "fi",
       "typefaceId": "550e8400-e29b-41d4-a716-446655440615",
       "featureOrder": ["liga"],

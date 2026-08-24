@@ -3,7 +3,7 @@
   "dumpId": "devanagari-shaping-report",
   "ownerTickets": ["KFONT-M6-008"],
   "fixtureId": "single-ttf-noto-sans-devanagari",
-  "fixtureFont": "reports/font/fixtures/fonts/fallback/NotoSansDevanagari-Regular.ttf",
+  "fixtureFont": "font/fixtures/fonts/fallback/NotoSansDevanagari-Regular.ttf",
   "cases": [
     {
       "caseId": "prebase-matra-script-selection",

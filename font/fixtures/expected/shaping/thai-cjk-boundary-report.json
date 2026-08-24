@@ -5,11 +5,11 @@
   "fixtures": [
     {
       "fixtureId": "single-ttf-noto-sans-thai",
-      "fixtureFont": "reports/font/fixtures/fonts/fallback/NotoSansThai-Regular.ttf"
+      "fixtureFont": "font/fixtures/fonts/fallback/NotoSansThai-Regular.ttf"
     },
     {
       "fixtureId": "single-otf-noto-sans-sc",
-      "fixtureFont": "reports/font/fixtures/fonts/fallback/NotoSansSC-Regular.otf"
+      "fixtureFont": "font/fixtures/fonts/fallback/NotoSansSC-Regular.otf"
     }
   ],
   "cases": [

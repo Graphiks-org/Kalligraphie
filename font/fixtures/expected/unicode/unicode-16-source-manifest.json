@@ -17,7 +17,7 @@
     "UnicodeData.txt",
     "emoji/emoji-data.txt"
   ],
-  "checkedInSourceExtractRoot": "reports/font/fixtures/expected/unicode/source-extracts/16.0.0",
+  "checkedInSourceExtractRoot": "font/fixtures/expected/unicode/source-extracts/16.0.0",
   "downloadPolicy": "allowed-during-fixture-creation-only",
   "ordinaryValidationPolicy": "offline",
   "nonClaims": [
