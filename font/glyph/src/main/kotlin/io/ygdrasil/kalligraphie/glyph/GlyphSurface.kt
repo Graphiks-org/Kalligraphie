@@ -4637,7 +4637,10 @@ private fun packAtlasItems(
     var rowHeight = 0
     val placements = ArrayList<GlyphAtlasPlacement>(items.size)
     for (item in items) {
-        if (cursorX + item.width + padding > atlasWidth && cursorX > padding) {
+        if (
+            cursorX.toLong() + item.width.toLong() + padding.toLong() > atlasWidth.toLong() &&
+                cursorX > padding
+        ) {
             cursorX = padding
             cursorY += rowHeight + padding
             rowHeight = 0

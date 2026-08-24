@@ -682,6 +682,24 @@ class GlyphSurfaceTest {
     }
 
     @Test
+    fun rowPackerWrapsAtIntMaximumWidthWithoutPlacingOutsideAtlas() {
+        val atlasWidth = Int.MAX_VALUE
+        val placements = RowGlyphAtlasPacker(atlasWidth = atlasWidth, padding = 0).pack(
+            listOf(
+                a8Mask(glyphId = 70, width = Int.MAX_VALUE, height = 0),
+                a8Mask(glyphId = 71, width = 1, height = 0),
+            ),
+        )
+
+        assertEquals(0, placements[1].x)
+        assertTrue(
+            placements.all { placement ->
+                placement.x.toLong() + placement.width.toLong() <= atlasWidth.toLong()
+            },
+        )
+    }
+
+    @Test
     fun rowPackerPreservesDegenerateMaskPlacements() {
         val placements = RowGlyphAtlasPacker(atlasWidth = 8, padding = 1).pack(
             listOf(

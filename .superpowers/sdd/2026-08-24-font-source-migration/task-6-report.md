@@ -29,3 +29,10 @@
 - GREEN: `rtk ./gradlew --no-daemon :font:glyph:test` succeeded (154 tests).
 - GPU boundary: `! rtk rg -n 'org\\.graphiks\\.kanvas\\.glyph\\.gpu|GPUGlyphRunDescriptor|GPUTextAtlas' font/glyph --glob '*.kt'` succeeded with no matches.
 - Package-import boundary: no `package` or `import` remains under `org.graphiks.kanvas.{font,glyph,text}` in `font/glyph` Kotlin files.
+
+## P2 follow-up — safe row-cursor arithmetic
+
+- Baseline commit: `c0ab8ef`.
+- The row-wrap predicate now promotes `cursorX`, item width, padding, and atlas width to `Long`, preventing an `Int` overflow from bypassing a required wrap.
+- `rowPackerWrapsAtIntMaximumWidthWithoutPlacingOutsideAtlas` uses zero-height masks with widths `Int.MAX_VALUE` and `1`, so it allocates no giant pixel buffer. It proves the second item wraps and every placement's right edge stays inside the atlas.
+- RED: the focused regression failed with the previous `Int` addition. GREEN: the focused test and `rtk ./gradlew --no-daemon :font:glyph:test` both succeeded after the `Long` calculation.
