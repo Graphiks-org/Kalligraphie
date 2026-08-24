@@ -28,7 +28,7 @@ class SFNTTableFactDumpTest {
         assertTrue(actual.contains("\"ticketIds\": [\"KFONT-M2-004\"]"))
         assertTrue(actual.contains("\"fontSourceReportLabel\": \"bundled-fixture\""))
         assertTrue(actual.contains("\"typefaceReportLabel\": \"single-face-ttf\""))
-        assertTrue(actual.contains("\"sourceId\": \"831c03a5-238d-5b9c-93a5-90c6414ab1cd\""))
+        assertTrue(actual.contains("\"sourceId\": \"432a2cf5-370b-52f0-9dbe-74899c8c606d\""))
         assertTrue(actual.contains("\"typefaceId\": \"c98295d3-4a18-5109-a9e9-135806c2311a\""))
         assertTrue(actual.contains("\"entryId\": \"single-ttf-liberation-sans\""))
         assertTrue(actual.contains("\"tag\": \"cmap\""))
@@ -494,6 +494,6 @@ class SFNTTableFactDumpTest {
     }
 
     private companion object {
-        private val LIBERATION_SOURCE_ID = FontSourceID(Uuid.parse("831c03a5-238d-5b9c-93a5-90c6414ab1cd"))
+        private val LIBERATION_SOURCE_ID = FontSourceID(Uuid.parse("432a2cf5-370b-52f0-9dbe-74899c8c606d"))
     }
 }
