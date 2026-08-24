@@ -256,19 +256,16 @@ git add font/UPSTREAM.md font/fixtures
 git commit -m "test: vendor pinned font fixtures"
 ~~~
 
-### Task 3: Import core, SFNT, COLR and scaler
+### Task 3: Import core and SFNT
 
 **Files:**
 - Create: font/core/src/{main,test}/kotlin/io/ygdrasil/kalligraphie/font/**
 - Create: font/sfnt/src/{main,test}/kotlin/io/ygdrasil/kalligraphie/font/sfnt/**
-- Create: font/colr/src/main/kotlin/io/ygdrasil/kalligraphie/font/colr/**
-- Create: font/scaler/src/{main,test}/kotlin/io/ygdrasil/kalligraphie/font/scaler/**
-- Create: font/scaler/src/test/resources/fonts/**
-- Test: FontCoreSurfaceTest, SFNTSurfaceTest and GlyphScalerTest.
+- Test: FontCoreSurfaceTest and SFNTSurfaceTest.
 
 **Interfaces:**
 - Consumes: fixture data from font/fixtures.
-- Produces: source/typeface identity, SFNT table parsing, COLR/CPAL parsing and glyph scaling.
+- Produces: source/typeface identity and SFNT table parsing.
 
 - [ ] **Step 1: Write a failing target-namespace test, then copy sources**
 
@@ -293,11 +290,11 @@ class FontNamespaceTest {
 
 Run: rtk ./gradlew --no-daemon :font:core:test
 
-Expected: FAIL with an unresolved FontSource reference. Then copy every Kotlin source/test from upstream font/core, font/sfnt, font/colr and font/scaler, plus scaler test resources.
+Expected: FAIL with an unresolved FontSource reference. Then copy every Kotlin source/test from upstream font/core and font/sfnt.
 
 - [ ] **Step 2: Apply the mechanical font package migration**
 
-In the four copied modules replace:
+In the two copied modules replace:
 
 ~~~text
 org.graphiks.kanvas.font
@@ -308,22 +305,65 @@ Move source paths from org/graphiks/kanvas/font to io/ygdrasil/kalligraphie/font
 
 - [ ] **Step 3: Adapt the fixture root without weakening tests**
 
-Replace reports/font/fixtures with font/fixtures in FontCore.kt and every core/SFNT test. Keep scaler test resources module-local because GlyphScalerTest resolves them from the classpath.
+Replace reports/font/fixtures with font/fixtures in FontCore.kt and every core/SFNT test.
 
 - [ ] **Step 4: Run the layer tests**
 
-Run: rtk ./gradlew --no-daemon :font:core:test :font:sfnt:test :font:colr:test :font:scaler:test
+Run: rtk ./gradlew --no-daemon :font:core:test :font:sfnt:test
 
-Expected: PASS with deterministic parsing, scaling and colour-table tests.
+Expected: PASS with deterministic source identity and SFNT parsing tests.
 
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add font/core font/sfnt font/colr font/scaler
-git commit -m "feat: import OpenType font parsing and scaling"
+git add font/core font/sfnt
+git commit -m "feat: import OpenType core and SFNT parsing"
 ~~~
 
-### Task 4: Import text, shaping and Unicode data
++### Task 4: Import COLR and glyph scaling
+
+**Files:**
+- Create: font/colr/src/main/kotlin/io/ygdrasil/kalligraphie/font/colr/**
+- Create: font/scaler/src/{main,test}/kotlin/io/ygdrasil/kalligraphie/font/scaler/**
+- Create: font/scaler/src/test/resources/fonts/**
+- Test: GlyphScalerTest.
+
+**Interfaces:**
+- Consumes: :font:core and :font:sfnt for table and typeface facts.
+- Produces: COLR/CPAL parsing and scaled glyph outlines for the text and glyph layers.
+
+- [ ] **Step 1: Copy the colour and scaler source trees**
+
+Copy upstream font/colr/src and font/scaler/src, including scaler test resources. Run: rtk ./gradlew --no-daemon :font:colr:test :font:scaler:test
+
+Expected: FAIL with unresolved org.graphiks.kanvas.font references before the target package migration.
+
+- [ ] **Step 2: Rename the copied font packages**
+
+In both modules replace:
+
+~~~text
+org.graphiks.kanvas.font
+io.ygdrasil.kalligraphie.font
+~~~
+
+Move Kotlin source paths from org/graphiks/kanvas/font to io/ygdrasil/kalligraphie/font. Keep scaler test resources module-local because GlyphScalerTest resolves them from the test classpath.
+
+- [ ] **Step 3: Verify parsing and scaling behaviour**
+
+Run: rtk ./gradlew --no-daemon :font:colr:test :font:scaler:test
+
+Expected: PASS with CPAL/COLR table and glyph-scaling checks. Do not add a gpu-api dependency.
+
+- [ ] **Step 4: Commit**
+
+~~~bash
+git add font/colr font/scaler
+git commit -m "feat: import colour fonts and glyph scaling"
+~~~
+
+
+### Task 5: Import text, shaping and Unicode data
 
 **Files:**
 - Create: font/text/src/main/kotlin/io/ygdrasil/kalligraphie/text/**
@@ -400,7 +440,7 @@ git add font/text
 git commit -m "feat: import JVM text shaping and Unicode data"
 ~~~
 
-### Task 5: Import glyph and colour-glyph logic without GPU contracts
+### Task 6: Import glyph and colour-glyph logic without GPU contracts
 
 **Files:**
 - Create: font/glyph/src/main/kotlin/io/ygdrasil/kalligraphie/glyph/GlyphMaskBlur.kt
@@ -504,7 +544,7 @@ git add font/glyph
 git commit -m "feat: import glyph planning without GPU contracts"
 ~~~
 
-### Task 6: Import and de-GPU the font façade module
+### Task 7: Import and de-GPU the font façade module
 
 **Files:**
 - Create: font/src/main/kotlin/io/ygdrasil/kalligraphie/font/atlas/GlyphAtlasUploadPlan.kt
@@ -578,7 +618,7 @@ git add font/src font/build.gradle.kts
 git commit -m "feat: add renderer-neutral font atlas façade"
 ~~~
 
-### Task 7: Exercise the font stack from JVM and enforce it in CI
+### Task 8: Exercise the font stack from JVM and enforce it in CI
 
 **Files:**
 - Modify: shared/build.gradle.kts
@@ -682,7 +722,7 @@ git add shared/build.gradle.kts shared/src/jvmTest .github/workflows/ci.yml docs
 git commit -m "test: exercise imported JVM font stack in CI"
 ~~~
 
-### Task 8: Close the migration with full verification and a deferred GPU record
+### Task 9: Close the migration with full verification and a deferred GPU record
 
 **Files:**
 - Modify: CHANGELOG.md
