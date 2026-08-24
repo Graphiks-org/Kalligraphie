@@ -1,0 +1,125 @@
+{"schema":"org.graphiks.kanvas.font.TypefaceIdentityReport.v1","fixtureName":"typeface-id.json","legacyGate":"typeface","gateStatus":"open","claimPromotionAllowed":false,"dashboardRow":{"name":"TypefaceID glyph-affecting identity","classification":"tracked-gap","legacyGate":"typeface","gateStatus":"open","claimPromotionAllowed":false},"entries":[{"label":"single-face-ttf","typefaceId":"68b0cdcd-e148-5349-9dea-26cee4f35a08","preimage":{
+  "schema": "org.graphiks.kanvas.font.TypefaceIdentityPreimage.v1",
+  "sourceId": "831c03a5-238d-5b9c-93a5-90c6414ab1cd",
+  "collectionIndex": 0,
+  "postScriptName": "FixtureSans-Regular",
+  "familyName": "Fixture Sans",
+  "styleName": "Regular",
+  "style": {
+    "weight": 400,
+    "width": 5,
+    "slant": "upright"
+  },
+  "outlineFormat": "TrueTypeGlyf",
+  "selectedCMap": {
+    "platformId": 3,
+    "encodingId": 10,
+    "format": 12,
+    "language": 0,
+    "unicode": true
+  },
+  "scalerMode": "Outline",
+  "variationCoordinates": [],
+  "palette": null,
+  "fallbackCatalogGeneration": null,
+  "tableTags": ["cmap", "glyf", "head", "name"],
+  "diagnostics": []
+},"diagnostics":[],"claimPromotionAllowed":false},{"label":"ttc-face-index-variant","typefaceId":"15d1e580-c20c-5159-978d-39c9c1651cb0","preimage":{
+  "schema": "org.graphiks.kanvas.font.TypefaceIdentityPreimage.v1",
+  "sourceId": "e7fcb0f9-4a4d-5f0c-b7e8-5704535b80c8",
+  "collectionIndex": 1,
+  "postScriptName": "FixtureCollectionSans-Bold",
+  "familyName": "Fixture Collection Sans",
+  "styleName": "Bold",
+  "style": {
+    "weight": 700,
+    "width": 5,
+    "slant": "upright"
+  },
+  "outlineFormat": "TrueTypeGlyf",
+  "selectedCMap": {
+    "platformId": 3,
+    "encodingId": 10,
+    "format": 12,
+    "language": 0,
+    "unicode": true
+  },
+  "scalerMode": "Outline",
+  "variationCoordinates": [],
+  "palette": null,
+  "fallbackCatalogGeneration": null,
+  "tableTags": ["cmap", "glyf", "head", "name"],
+  "diagnostics": []
+},"diagnostics":[],"claimPromotionAllowed":false},{"label":"variable-axis-change","typefaceId":"60de42cc-542f-5198-80cd-5989f7bf1a91","preimage":{
+  "schema": "org.graphiks.kanvas.font.TypefaceIdentityPreimage.v1",
+  "sourceId": "e9993416-eb68-5deb-b99d-fd86e790e31b",
+  "collectionIndex": 0,
+  "postScriptName": "FixtureVariableSans-Regular",
+  "familyName": "Fixture Variable Sans",
+  "styleName": "Regular",
+  "style": {
+    "weight": 400,
+    "width": 5,
+    "slant": "upright"
+  },
+  "outlineFormat": "TrueTypeGlyf",
+  "selectedCMap": {
+    "platformId": 3,
+    "encodingId": 10,
+    "format": 12,
+    "language": 0,
+    "unicode": true
+  },
+  "scalerMode": "Outline",
+  "variationCoordinates": [
+    {
+      "axisTag": "wght",
+      "value": 700.0
+    }
+  ],
+  "palette": null,
+  "fallbackCatalogGeneration": null,
+  "tableTags": ["cmap", "fvar", "glyf", "gvar", "head", "name"],
+  "diagnostics": []
+},"diagnostics":[],"claimPromotionAllowed":false},{"label":"palette-change","typefaceId":"fa0c9f3d-deff-5bc8-9f2a-6bb3d10b9a8b","preimage":{
+  "schema": "org.graphiks.kanvas.font.TypefaceIdentityPreimage.v1",
+  "sourceId": "01d43785-d741-540c-8e74-69c885ec076e",
+  "collectionIndex": 0,
+  "postScriptName": "FixtureColorPalette-Regular",
+  "familyName": "Fixture Color Palette",
+  "styleName": "Regular",
+  "style": {
+    "weight": 400,
+    "width": 5,
+    "slant": "upright"
+  },
+  "outlineFormat": "TrueTypeGlyf",
+  "selectedCMap": {
+    "platformId": 3,
+    "encodingId": 10,
+    "format": 12,
+    "language": 0,
+    "unicode": true
+  },
+  "scalerMode": "Outline",
+  "variationCoordinates": [],
+  "palette": {
+    "index": 1,
+    "overrides": ["gid=42:#ff0000ff", "gid=7:#000000ff"]
+  },
+  "fallbackCatalogGeneration": null,
+  "tableTags": ["COLR", "CPAL", "cmap", "glyf", "head", "name"],
+  "diagnostics": []
+},"diagnostics":[],"claimPromotionAllowed":false},{"label":"invalid-collection-index-diagnostic","typefaceId":null,"preimage":null,"diagnostics":[{
+      "code": "font.collection-index-invalid",
+      "detail": "Requested collection index 3 but the fixture reports 2 faces."
+    },{
+      "code": "font.sfnt.identity-facts-incomplete",
+      "detail": "Collection face facts are incomplete; no TypefaceID was derived."
+    }],"claimPromotionAllowed":false},{"label":"no-usable-unicode-cmap-diagnostic","typefaceId":null,"preimage":null,"diagnostics":[{
+      "code": "font.sfnt.cmap-unusable",
+      "detail": "No usable Unicode cmap subtable was selected for this fixture face."
+    },{
+      "code": "font.sfnt.identity-facts-incomplete",
+      "detail": "Selected Unicode cmap facts are missing; no TypefaceID was derived."
+    }],"claimPromotionAllowed":false}]}

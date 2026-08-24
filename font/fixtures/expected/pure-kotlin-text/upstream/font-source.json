@@ -1,0 +1,66 @@
+{"schema":"org.graphiks.kanvas.font.FontSourceIdentityReport.v1","fixtureName":"font-source.json","entries":[{"label":"bundled-fixture","sourceId":"831c03a5-238d-5b9c-93a5-90c6414ab1cd","manifestFixtureId":"single-ttf-liberation-sans","preimage":{
+  "schema": "org.graphiks.kanvas.font.FontSourceIdentityPreimage.v1",
+  "provenance": {
+    "kind": "BundledFontSource",
+    "declaredName": "Liberation Sans Regular",
+    "licenseId": "SIL-OFL-1.1",
+    "originPath": "reports/font/fixtures/fonts/liberation/LiberationSans-Regular.ttf",
+    "hostDependent": false
+  },
+  "contentSha256": "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8",
+  "byteLength": 410712,
+  "faceCount": 1,
+  "tableTags": ["cmap", "glyf", "head", "name"],
+  "parserGeneration": 1,
+  "diagnostics": []
+},"claimPromotionAllowed":false},{"label":"generated-fixture","sourceId":"13da45b2-7cc8-5b13-a8e3-580abd758271","manifestFixtureId":null,"preimage":{
+  "schema": "org.graphiks.kanvas.font.FontSourceIdentityPreimage.v1",
+  "provenance": {
+    "kind": "GeneratedFixtureFontSource",
+    "declaredName": "Generated Minimal",
+    "licenseId": null,
+    "originPath": null,
+    "hostDependent": false
+  },
+  "contentSha256": "787c798e39a5bc1910355bae6d0cd87a36b2e10fd0202a83e3bb6b005da83472",
+  "byteLength": 3,
+  "faceCount": 1,
+  "tableTags": ["cmap", "head"],
+  "parserGeneration": 1,
+  "diagnostics": []
+},"claimPromotionAllowed":false},{"label":"user-data","sourceId":"56a200cb-35a8-5598-9279-02f4a413ee15","manifestFixtureId":null,"preimage":{
+  "schema": "org.graphiks.kanvas.font.FontSourceIdentityPreimage.v1",
+  "provenance": {
+    "kind": "UserDataFontSource",
+    "declaredName": "User Upload",
+    "licenseId": null,
+    "originPath": null,
+    "hostDependent": false
+  },
+  "contentSha256": "66a6757151f8ee55db127716c7e3dce0be8074b64e20eda542e5c1e46ca9c41e",
+  "byteLength": 3,
+  "faceCount": 1,
+  "tableTags": ["cmap"],
+  "parserGeneration": 1,
+  "diagnostics": []
+},"claimPromotionAllowed":false},{"label":"system-scanned-host-dependent","sourceId":"dadf31c7-704e-5a25-9d99-acfdbdbf18d1","manifestFixtureId":null,"preimage":{
+  "schema": "org.graphiks.kanvas.font.FontSourceIdentityPreimage.v1",
+  "provenance": {
+    "kind": "SystemScannedFontSource",
+    "declaredName": "Host Scan Sans",
+    "licenseId": null,
+    "originPath": "system-fonts/HostScanSans.ttf",
+    "hostDependent": true
+  },
+  "contentSha256": null,
+  "byteLength": null,
+  "faceCount": 0,
+  "tableTags": [],
+  "parserGeneration": 1,
+  "diagnostics": [
+    {
+      "code": "font.source.host-dependent",
+      "detail": "System scan entry has no captured fixture bytes."
+    }
+  ]
+},"claimPromotionAllowed":false}]}

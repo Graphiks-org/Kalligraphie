@@ -1,0 +1,220 @@
+{
+  "schema": "org.graphiks.kanvas.font.sfnt.MalformedSFNTFixtureSuiteReport.v1",
+  "schemaVersion": 1,
+  "ticketIds": ["KFONT-M2-005"],
+  "dashboardClassification": "fixture-gated",
+  "claimPromotionAllowed": false,
+  "nonClaims": ["fixture-suite-only", "no-parser-support-promotion", "no-malformed-recovery-support-claim", "no-scaler-support-claim", "no-shaping-support-claim", "no-color-glyph-rendering-claim", "no-gpu-support-claim"],
+  "entries": [
+    {
+      "caseId": "bad-sfnt-version",
+      "fixtureId": "malformed-sfnt-bad-version-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.bad-sfnt-version.v1",
+      "generatorParameters": ["scalerType=0x00020000", "tableCount=0"],
+      "contentSha256": "456b915ad174965e051dc1c8ea9e4f7c92cf51bd67b04cde17b4b0c6aa2bde7d",
+      "byteLength": 12,
+      "expectedDiagnostic": "font.outline-format-unsupported",
+      "expectedOutcome": "parser-refused",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-bad-sfnt-version",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-parser",
+          "code": "font.outline-format-unsupported",
+          "table": null,
+          "message": "Unsupported SFNT outline scaler type at the bounded source entry point."
+        }
+      ]
+    },
+    {
+      "caseId": "truncated-header",
+      "fixtureId": "malformed-sfnt-truncated-header-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.truncated-header.v1",
+      "generatorParameters": ["byteLength=10", "scalerType=0x00010000"],
+      "contentSha256": "86c779d69df35dd466459fa498249d58d0cff42d4a65f112842d0a81d93c3774",
+      "byteLength": 10,
+      "expectedDiagnostic": "font.sfnt.wrapper-unsupported",
+      "expectedOutcome": "parser-refused",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-truncated-sfnt-header",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-parser",
+          "code": "font.sfnt.wrapper-unsupported",
+          "table": null,
+          "message": "Unable to parse a bounded SFNT directory from the source container."
+        }
+      ]
+    },
+    {
+      "caseId": "invalid-ttc-index",
+      "fixtureId": "malformed-sfnt-invalid-ttc-index-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.invalid-ttc-index.v1",
+      "generatorParameters": ["container=ttc", "faceCount=1", "requestedIndex=3"],
+      "contentSha256": "1667e88b8c08bd8c1826e9a2a7a2f58986f22ffa0dd652a9816361294a655cd8",
+      "byteLength": 308,
+      "expectedDiagnostic": "font.collection-index-invalid",
+      "expectedOutcome": "parser-refused",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-malformed-ttc-invalid-index",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-parser",
+          "code": "font.collection-index-invalid",
+          "table": null,
+          "message": "Requested collection index 3 is invalid for a single-face SFNT source."
+        }
+      ]
+    },
+    {
+      "caseId": "out-of-bounds-table-record",
+      "fixtureId": "malformed-sfnt-table-out-of-bounds-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.out-of-bounds-table-record.v1",
+      "generatorParameters": ["record=post", "tableLength=16", "tableOffset=72"],
+      "contentSha256": "5701d241f667b75e619334d554cdcb833502897747887cfa82f37e28158ca20e",
+      "byteLength": 80,
+      "expectedDiagnostic": "font.sfnt.table-out-of-bounds",
+      "expectedOutcome": "directory-diagnostic",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-table-out-of-bounds",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-directory",
+          "code": "font.sfnt.table-out-of-bounds",
+          "table": "post",
+          "message": "Table range exceeds source length."
+        }
+      ]
+    },
+    {
+      "caseId": "overlapping-tables",
+      "fixtureId": "malformed-sfnt-overlapping-tables-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.overlapping-tables.v1",
+      "generatorParameters": ["first=name:48:16", "second=cmap:56:12"],
+      "contentSha256": "71cfe45364daaf2d3fe3403d1354e8bd948434098531329d1db943d5bc969df7",
+      "byteLength": 96,
+      "expectedDiagnostic": "font.sfnt.table-overlap",
+      "expectedOutcome": "directory-diagnostic",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-overlapping-tables",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-directory",
+          "code": "font.sfnt.table-overlap",
+          "table": "cmap",
+          "message": "Table range overlaps previous table range ending at 64."
+        }
+      ]
+    },
+    {
+      "caseId": "duplicate-tag",
+      "fixtureId": "malformed-sfnt-duplicate-tag-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.duplicate-tag.v1",
+      "generatorParameters": ["duplicateTag=name", "tableCount=2"],
+      "contentSha256": "468b7181cadc627448b1f03737d6896455ee163ee9b3232e5c69a0e131a9706f",
+      "byteLength": 96,
+      "expectedDiagnostic": "font.sfnt.table-duplicate",
+      "expectedOutcome": "directory-diagnostic",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-duplicate-tag",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-directory",
+          "code": "font.sfnt.table-duplicate",
+          "table": "name",
+          "message": "Duplicate SFNT table tag."
+        }
+      ]
+    },
+    {
+      "caseId": "missing-required-table",
+      "fixtureId": "malformed-sfnt-missing-required-table-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.missing-required-table.v1",
+      "generatorParameters": ["missing=glyf", "missing=loca", "outline=TrueType"],
+      "contentSha256": "1fd1c38493616dc6307f1a6262052547543abc07201a4af5425da7c8d954d4d8",
+      "byteLength": 302,
+      "expectedDiagnostic": "font.sfnt.required-table-missing",
+      "expectedOutcome": "directory-diagnostic",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-directory.json",
+      "linkedEvidenceEntryId": "generated-missing-required-table",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "sfnt-directory",
+          "code": "font.sfnt.required-table-missing",
+          "table": "glyf",
+          "message": "Required table is not present."
+        },
+        {
+          "source": "sfnt-directory",
+          "code": "font.sfnt.required-table-missing",
+          "table": "loca",
+          "message": "Required table is not present."
+        }
+      ]
+    },
+    {
+      "caseId": "malformed-optional-table",
+      "fixtureId": "font-source-sfnt-malformed-optional-table-diagnostic",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.malformed-optional-table.v1",
+      "generatorParameters": ["optionalTable=fvar", "payloadLength=8"],
+      "contentSha256": "6cc49b16a8ffb9e57d3a3e8e3def68fde87dc1ad1b90d5861bee0203ff62402c",
+      "byteLength": 496,
+      "expectedDiagnostic": "font.sfnt.optional-table-malformed",
+      "expectedOutcome": "optional-table-fallback-diagnostic",
+      "linkedEvidencePath": "reports/pure-kotlin-text/sfnt-tables.json",
+      "linkedEvidenceEntryId": "generated-optional-fvar-malformed",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "face-parser",
+          "code": "font.sfnt.optional-table-malformed",
+          "table": "fvar",
+          "message": "Unable to parse OpenType table fvar."
+        }
+      ]
+    },
+    {
+      "caseId": "unsupported-cmap-format",
+      "fixtureId": "malformed-sfnt-unsupported-cmap-format13-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "generatorId": "kfont.fixture.malformed-sfnt.unsupported-cmap-format.v1",
+      "generatorParameters": ["cmapFormat=13", "encodingId=10", "platformId=3"],
+      "contentSha256": "96ec0981de6df8fe977866b2547c69c1fc0acd116fc7cffdb3212da31d515e4f",
+      "byteLength": 298,
+      "expectedDiagnostic": "font.sfnt.cmap-format-unsupported",
+      "expectedOutcome": "cmap-refusal-diagnostic",
+      "linkedEvidencePath": "reports/pure-kotlin-text/cmap-map.json",
+      "linkedEvidenceEntryId": "malformed-generated-format13-refused",
+      "claimPromotionAllowed": false,
+      "diagnostics": [
+        {
+          "source": "cmap-parser",
+          "code": "font.sfnt.cmap-format-unsupported",
+          "table": "cmap",
+          "message": "Unsupported cmap format 13 is not selected for Unicode lookup."
+        },
+        {
+          "source": "cmap-parser",
+          "code": "font.sfnt.cmap-unusable",
+          "table": "cmap",
+          "message": "No usable Unicode cmap subtable was parsed."
+        }
+      ]
+    }
+  ]
+}

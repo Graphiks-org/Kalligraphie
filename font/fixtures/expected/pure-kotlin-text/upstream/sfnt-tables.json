@@ -1,0 +1,1393 @@
+{
+  "schema": "org.graphiks.kanvas.font.sfnt.OpenTypeTableFactReport.v1",
+  "schemaVersion": 1,
+  "ticketIds": ["KFONT-M2-004"],
+  "dashboardClassification": "tracked-gap",
+  "claimPromotionAllowed": false,
+  "nonClaims": ["table-presence-is-metadata-only", "no-shaping-support-claim", "no-scaler-support-claim", "no-color-glyph-rendering-claim", "no-native-engine-oracle", "no-gpu-support-claim"],
+  "cmapMapLink": {
+    "reportPath": "reports/pure-kotlin-text/cmap-map.json",
+    "linkedTicketIds": ["KFONT-M2-003"],
+    "linkedEntryIds": ["generated-format0-legacy-fallback-selected", "generated-format12-priority-with-format14", "generated-format13-refused", "generated-format4-bmp-selected", "generated-format6-legacy-fallback-selected"],
+    "linkage": "metadata-only-cmap-facts"
+  },
+  "entries": [
+    {
+      "entryId": "generated-missing-required-tables",
+      "fixtureId": "sfnt-table-facts-missing-required-generated",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "sourceId": "550e8400-e29b-41d4-a716-446655449203",
+      "typefaceId": "def980f3-80bb-525d-b822-b17e841fd0df",
+      "fontSourceReportLabel": null,
+      "typefaceReportLabel": null,
+      "sourceKind": "MEMORY",
+      "displayName": "generated-missing-required-tables",
+      "faceIndex": 0,
+      "parserGeneration": 1,
+      "sourceByteLength": 432,
+      "sourceSha256": "59ea479cf668538a4d514d81807e3cb3b75a7ffdb5e0195eb1dc1cb2b2624fe7",
+      "scalerType": "0x00010000",
+      "scalerTypeLabel": "TrueType",
+      "claimPromotionAllowed": false,
+      "tableFacts": [
+        {
+          "tag": "cmap",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 180,
+            "length": 44,
+            "endExclusive": 224,
+            "sourceLength": 432
+          },
+          "checksum": "0x00180073",
+          "rawSha256": "bb8e3f288667afcd3503b583e3f0d19f19b182bce2e986da892aa9737b50f714",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "head",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 224,
+            "length": 54,
+            "endExclusive": 278,
+            "sourceLength": 432
+          },
+          "checksum": "0x03e90654",
+          "rawSha256": "a5afb3d0e85a1b75ed25d965ebe5d2d79dbddf3b76d5689ca6390866f3832e33",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "hhea",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 278,
+            "length": 36,
+            "endExclusive": 314,
+            "sourceLength": 432
+          },
+          "checksum": "0x035cff4d",
+          "rawSha256": "ac11e4de4e9011fd7a00a9250ed8045faa9904c4122a1173a6ee0bcf58ca3977",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "hmtx",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 320,
+            "length": 4,
+            "endExclusive": 324,
+            "sourceLength": 432
+          },
+          "checksum": "0x01f40000",
+          "rawSha256": "925d19f8e3e4c7a4be1990f5e7d11c4524616f704288e0ade7a4b7d8d7d9ced5",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "maxp",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 314,
+            "length": 6,
+            "endExclusive": 320,
+            "sourceLength": 432
+          },
+          "checksum": "0x00010000",
+          "rawSha256": "186128bf8a4d60eb4b51102ae2a2cb6a0b80011977582480395a454454bec7e1",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "name",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 140,
+            "length": 40,
+            "endExclusive": 180,
+            "sourceLength": 432
+          },
+          "checksum": "0x01d6065a",
+          "rawSha256": "a67a26a89e93ba87b2d253889aa50a95ec4d4eaf4eb10250685d39a99da39df8",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "OS/2",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 324,
+            "length": 96,
+            "endExclusive": 420,
+            "sourceLength": 432
+          },
+          "checksum": "0x0548022b",
+          "rawSha256": "300ba89b17367d9d12634ee8162487569b07980772be90d2730ec523e991ab7e",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "post",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 420,
+            "length": 12,
+            "endExclusive": 432,
+            "sourceLength": 432
+          },
+          "checksum": "0xffb50032",
+          "rawSha256": "7cb536ff8c9971ffe9611779ada285b874cddf17d6fc188f18dcd7003d8316b6",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "loca",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "missing-required",
+          "claimPromotionAllowed": false,
+          "diagnostics": [
+            {
+              "source": "directory",
+              "code": "font.sfnt.required-table-missing",
+              "table": "loca",
+              "offset": null,
+              "length": null,
+              "sourceLength": 432,
+              "causeCode": null,
+              "message": "Required table is not present.",
+              "causeMessage": null
+            }
+          ]
+        },
+        {
+          "tag": "glyf",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "missing-required",
+          "claimPromotionAllowed": false,
+          "diagnostics": [
+            {
+              "source": "directory",
+              "code": "font.sfnt.required-table-missing",
+              "table": "glyf",
+              "offset": null,
+              "length": null,
+              "sourceLength": 432,
+              "causeCode": null,
+              "message": "Required table is not present.",
+              "causeMessage": null
+            }
+          ]
+        },
+        {
+          "tag": "CFF ",
+          "role": "required-cff-outline",
+          "supportClassification": "metadata-conditional-outline-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CFF2",
+          "role": "required-cff2-outline",
+          "supportClassification": "metadata-conditional-outline-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "vhea",
+          "role": "optional-vertical",
+          "supportClassification": "metadata-vertical-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "vmtx",
+          "role": "optional-vertical",
+          "supportClassification": "metadata-vertical-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GDEF",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GSUB",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GPOS",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "BASE",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "kern",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "fvar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "avar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "gvar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "HVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "VVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "MVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "COLR",
+          "role": "optional-color",
+          "supportClassification": "metadata-color-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CPAL",
+          "role": "optional-color",
+          "supportClassification": "metadata-color-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CBDT",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CBLC",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "sbix",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "SVG ",
+          "role": "optional-svg",
+          "supportClassification": "metadata-svg-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "entryId": "generated-optional-fvar-malformed",
+      "fixtureId": "font-source-sfnt-malformed-optional-table-diagnostic",
+      "fixtureKind": "GeneratedFixtureFontSource",
+      "sourceId": "550e8400-e29b-41d4-a716-446655449202",
+      "typefaceId": "827b1efc-8576-5f8d-ad7e-bd976355ed88",
+      "fontSourceReportLabel": null,
+      "typefaceReportLabel": null,
+      "sourceKind": "MEMORY",
+      "displayName": "generated-optional-fvar-malformed",
+      "faceIndex": 0,
+      "parserGeneration": 1,
+      "sourceByteLength": 496,
+      "sourceSha256": "6cc49b16a8ffb9e57d3a3e8e3def68fde87dc1ad1b90d5861bee0203ff62402c",
+      "scalerType": "0x00010000",
+      "scalerTypeLabel": "TrueType",
+      "claimPromotionAllowed": false,
+      "tableFacts": [
+        {
+          "tag": "cmap",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 228,
+            "length": 44,
+            "endExclusive": 272,
+            "sourceLength": 496
+          },
+          "checksum": "0x00180073",
+          "rawSha256": "bb8e3f288667afcd3503b583e3f0d19f19b182bce2e986da892aa9737b50f714",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "head",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 272,
+            "length": 54,
+            "endExclusive": 326,
+            "sourceLength": 496
+          },
+          "checksum": "0x03e90654",
+          "rawSha256": "a5afb3d0e85a1b75ed25d965ebe5d2d79dbddf3b76d5689ca6390866f3832e33",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "hhea",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 326,
+            "length": 36,
+            "endExclusive": 362,
+            "sourceLength": 496
+          },
+          "checksum": "0x035cff4d",
+          "rawSha256": "ac11e4de4e9011fd7a00a9250ed8045faa9904c4122a1173a6ee0bcf58ca3977",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "hmtx",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 368,
+            "length": 4,
+            "endExclusive": 372,
+            "sourceLength": 496
+          },
+          "checksum": "0x01f40000",
+          "rawSha256": "925d19f8e3e4c7a4be1990f5e7d11c4524616f704288e0ade7a4b7d8d7d9ced5",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "maxp",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 362,
+            "length": 6,
+            "endExclusive": 368,
+            "sourceLength": 496
+          },
+          "checksum": "0x00010000",
+          "rawSha256": "186128bf8a4d60eb4b51102ae2a2cb6a0b80011977582480395a454454bec7e1",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "name",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 188,
+            "length": 40,
+            "endExclusive": 228,
+            "sourceLength": 496
+          },
+          "checksum": "0x01d6065a",
+          "rawSha256": "a67a26a89e93ba87b2d253889aa50a95ec4d4eaf4eb10250685d39a99da39df8",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "OS/2",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 372,
+            "length": 96,
+            "endExclusive": 468,
+            "sourceLength": 496
+          },
+          "checksum": "0x0548022b",
+          "rawSha256": "300ba89b17367d9d12634ee8162487569b07980772be90d2730ec523e991ab7e",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "post",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 468,
+            "length": 12,
+            "endExclusive": 480,
+            "sourceLength": 496
+          },
+          "checksum": "0xffb50032",
+          "rawSha256": "7cb536ff8c9971ffe9611779ada285b874cddf17d6fc188f18dcd7003d8316b6",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "loca",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 480,
+            "length": 4,
+            "endExclusive": 484,
+            "sourceLength": 496
+          },
+          "checksum": "0x00000002",
+          "rawSha256": "433ebf5bc03dffa38536673207a21281612cef5faa9bc7a4d5b9be2fdb12cf1a",
+          "parserStatus": "metadata-only",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "glyf",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 484,
+            "length": 4,
+            "endExclusive": 488,
+            "sourceLength": 496
+          },
+          "checksum": "0x00010203",
+          "rawSha256": "054edec1d0211f624fed0cbca9d4f9400b0e491c43742af2c5b0abebf0c990d8",
+          "parserStatus": "metadata-only",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CFF ",
+          "role": "required-cff-outline",
+          "supportClassification": "metadata-conditional-outline-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CFF2",
+          "role": "required-cff2-outline",
+          "supportClassification": "metadata-conditional-outline-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "vhea",
+          "role": "optional-vertical",
+          "supportClassification": "metadata-vertical-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "vmtx",
+          "role": "optional-vertical",
+          "supportClassification": "metadata-vertical-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GDEF",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GSUB",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GPOS",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "BASE",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "kern",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "fvar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": true,
+          "byteRange": {
+            "offset": 488,
+            "length": 8,
+            "endExclusive": 496,
+            "sourceLength": 496
+          },
+          "checksum": "0x00000000",
+          "rawSha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+          "parserStatus": "malformed-optional",
+          "claimPromotionAllowed": false,
+          "diagnostics": [
+            {
+              "source": "face-parser",
+              "code": "font.sfnt.optional-table-malformed",
+              "table": "fvar",
+              "offset": null,
+              "length": null,
+              "sourceLength": null,
+              "causeCode": "font.sfnt.optional-table-malformed",
+              "message": "Unable to parse OpenType table fvar.",
+              "causeMessage": "OpenType fvar table must contain at least 16 bytes, was 8."
+            }
+          ]
+        },
+        {
+          "tag": "avar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "gvar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "HVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "VVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "MVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "COLR",
+          "role": "optional-color",
+          "supportClassification": "metadata-color-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CPAL",
+          "role": "optional-color",
+          "supportClassification": "metadata-color-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CBDT",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CBLC",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "sbix",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "SVG ",
+          "role": "optional-svg",
+          "supportClassification": "metadata-svg-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        }
+      ]
+    },
+    {
+      "entryId": "single-ttf-liberation-sans",
+      "fixtureId": "single-ttf-liberation-sans",
+      "fixtureKind": "BundledFontSource",
+      "sourceId": "831c03a5-238d-5b9c-93a5-90c6414ab1cd",
+      "typefaceId": "68b0cdcd-e148-5349-9dea-26cee4f35a08",
+      "fontSourceReportLabel": "bundled-fixture",
+      "typefaceReportLabel": "single-face-ttf",
+      "sourceKind": "FILE",
+      "displayName": "LiberationSans-Regular.ttf",
+      "faceIndex": 0,
+      "parserGeneration": 1,
+      "sourceByteLength": 410712,
+      "sourceSha256": "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8",
+      "scalerType": "0x00010000",
+      "scalerTypeLabel": "TrueType",
+      "claimPromotionAllowed": false,
+      "tableFacts": [
+        {
+          "tag": "cmap",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 11016,
+            "length": 1574,
+            "endExclusive": 12590,
+            "sourceLength": 410712
+          },
+          "checksum": "0x324010a5",
+          "rawSha256": "a2d9dbaa94232dbb2b811dae35320d7ba4c2bdc37d863d287c350bd0c5b5c8c5",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "head",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 316,
+            "length": 54,
+            "endExclusive": 370,
+            "sourceLength": 410712
+          },
+          "checksum": "0x0b008bb1",
+          "rawSha256": "f81cbb165452661b398dc3ec39fb440a8fb9f2dff73abdca7392d58b1af4ec33",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "hhea",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 372,
+            "length": 36,
+            "endExclusive": 408,
+            "sourceLength": 410712
+          },
+          "checksum": "0x0d940db9",
+          "rawSha256": "e770211be3c39496f347d88e35a41f075436586aa67dac6b458d8f4e53840419",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "hmtx",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 536,
+            "length": 10480,
+            "endExclusive": 11016,
+            "sourceLength": 410712
+          },
+          "checksum": "0x7cd4d31d",
+          "rawSha256": "c9f473a8fd4df095d13fbffafccec051d1c33e69c690589dec702bdab327dda0",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "maxp",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 408,
+            "length": 32,
+            "endExclusive": 440,
+            "sourceLength": 410712
+          },
+          "checksum": "0x0dab03e4",
+          "rawSha256": "af199c256f40ded7f12f409e121dfbeb048c4ff079b31100e6f04c753423ad64",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "name",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 301356,
+            "length": 2952,
+            "endExclusive": 304308,
+            "sourceLength": 410712
+          },
+          "checksum": "0xdb3272ff",
+          "rawSha256": "403148ab3bee1c6f9930451e4ff3c40a2ce64c11cd0e822d6ed6e92d88de1e6c",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "OS/2",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 440,
+            "length": 96,
+            "endExclusive": 536,
+            "sourceLength": 410712
+          },
+          "checksum": "0x00a6cbb6",
+          "rawSha256": "0fe422f83851ef360f9212fe862777d89b62ad3f05ed78f14a5baca670d57b82",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "post",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 304308,
+            "length": 27021,
+            "endExclusive": 331329,
+            "sourceLength": 410712
+          },
+          "checksum": "0x1a1f725f",
+          "rawSha256": "c7f3bf3f3bfa31f10918088363eb99bb75ccf741d91ba414b796dfc9a877798e",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "loca",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 16048,
+            "length": 10484,
+            "endExclusive": 26532,
+            "sourceLength": 410712
+          },
+          "checksum": "0x1695060c",
+          "rawSha256": "ffc8abde0c8e93ae33d599f4da107c50a8511927f0ee1bc7024bb975b99aafe9",
+          "parserStatus": "metadata-only",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "glyf",
+          "role": "required",
+          "supportClassification": "metadata-required-table",
+          "present": true,
+          "byteRange": {
+            "offset": 26532,
+            "length": 269356,
+            "endExclusive": 295888,
+            "sourceLength": 410712
+          },
+          "checksum": "0x589cce1c",
+          "rawSha256": "907f66ed3fea9b4c6e44b5670cfb867ec31592036ae3884e3676228d51e5deab",
+          "parserStatus": "metadata-only",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CFF ",
+          "role": "required-cff-outline",
+          "supportClassification": "metadata-conditional-outline-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CFF2",
+          "role": "required-cff2-outline",
+          "supportClassification": "metadata-conditional-outline-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "vhea",
+          "role": "optional-vertical",
+          "supportClassification": "metadata-vertical-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "vmtx",
+          "role": "optional-vertical",
+          "supportClassification": "metadata-vertical-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GDEF",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": true,
+          "byteRange": {
+            "offset": 331348,
+            "length": 298,
+            "endExclusive": 331646,
+            "sourceLength": 410712
+          },
+          "checksum": "0xe23fec10",
+          "rawSha256": "1693581d503201987f32f75794b5a442346d4544b444cda06018cdc032daf307",
+          "parserStatus": "metadata-only",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GSUB",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": true,
+          "byteRange": {
+            "offset": 331648,
+            "length": 2372,
+            "endExclusive": 334020,
+            "sourceLength": 410712
+          },
+          "checksum": "0x0699c9a9",
+          "rawSha256": "6689d7e614c2070399df69f90b320c7077d1a48f01adb1e58d4a32b5e3873193",
+          "parserStatus": "metadata-only",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "GPOS",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": true,
+          "byteRange": {
+            "offset": 334020,
+            "length": 76664,
+            "endExclusive": 410684,
+            "sourceLength": 410712
+          },
+          "checksum": "0xf2e00eeb",
+          "rawSha256": "fa101b9b6874d48d3500203f8092820852178818b0fabe38776edbff97b2bb6a",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "BASE",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "kern",
+          "role": "optional-shaping",
+          "supportClassification": "metadata-shaping-table",
+          "present": true,
+          "byteRange": {
+            "offset": 295888,
+            "length": 5466,
+            "endExclusive": 301354,
+            "sourceLength": 410712
+          },
+          "checksum": "0x00421d42",
+          "rawSha256": "459c94be90c17daee93dc98d66c3b6da4ab66fc27f0323af5b35eb66eae96570",
+          "parserStatus": "parsed-current-metadata",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "fvar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "avar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "gvar",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "HVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "VVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "MVAR",
+          "role": "optional-variation",
+          "supportClassification": "metadata-variation-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "COLR",
+          "role": "optional-color",
+          "supportClassification": "metadata-color-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CPAL",
+          "role": "optional-color",
+          "supportClassification": "metadata-color-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CBDT",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "CBLC",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "sbix",
+          "role": "optional-bitmap",
+          "supportClassification": "metadata-bitmap-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        },
+        {
+          "tag": "SVG ",
+          "role": "optional-svg",
+          "supportClassification": "metadata-svg-table",
+          "present": false,
+          "byteRange": null,
+          "checksum": null,
+          "rawSha256": null,
+          "parserStatus": "not-present",
+          "claimPromotionAllowed": false,
+          "diagnostics": []
+        }
+      ]
+    }
+  ]
+}
