@@ -320,7 +320,7 @@ git add font/core font/sfnt
 git commit -m "feat: import OpenType core and SFNT parsing"
 ~~~
 
-+### Task 4: Import COLR and glyph scaling
+### Task 4: Import COLR and glyph scaling
 
 **Files:**
 - Create: font/colr/src/main/kotlin/io/ygdrasil/kalligraphie/font/colr/**
