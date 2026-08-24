@@ -34,3 +34,9 @@
 - `AtlasCursor` promotes horizontal and vertical bounds calculations to `Long` before updating coordinates.
 - `packer wraps at Int maximum width without placing outside the atlas` uses zero-height bitmaps of widths `Int.MAX_VALUE` and `1`, so it allocates no large pixel buffer. It proves the second placement wraps to `x = 0` and every region stays within the atlas.
 - RED: the focused test failed with the previous overflowing `Int` addition. GREEN: the focused test succeeded after the `Long` calculations.
+
+## Post-review follow-up — valid A8 bitmap inputs
+
+- `A8Bitmap` now rejects negative dimensions, a pixel count beyond `Int.MAX_VALUE`, and any buffer whose size differs from `width * height`; the multiplication uses `Long`.
+- Constructor invariants make an invalid `A8Bitmap` impossible to pass to `GlyphAtlasPacker`, so it cannot create a placement with negative dimensions or a short pixel buffer.
+- RED: the new negative-width, empty-`1x1`-buffer, and non-representable-buffer tests all failed before validation. GREEN: the focused `A8RasterizerTest` succeeded after validation.

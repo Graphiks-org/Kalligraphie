@@ -7,6 +7,27 @@ import org.junit.jupiter.api.Assertions.*
 class A8RasterizerTest {
 
     @Test
+    fun `A8 bitmap rejects a negative width`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            A8Bitmap(width = -1, height = 0, pixels = ByteArray(0))
+        }
+    }
+
+    @Test
+    fun `A8 bitmap rejects an empty buffer for a one pixel bitmap`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            A8Bitmap(width = 1, height = 1, pixels = ByteArray(0))
+        }
+    }
+
+    @Test
+    fun `A8 bitmap rejects dimensions whose pixel buffer is not representable`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            A8Bitmap(width = Int.MAX_VALUE, height = Int.MAX_VALUE, pixels = ByteArray(1))
+        }
+    }
+
+    @Test
     fun `A8 rasterizer produces non-empty bitmap for Liberation Sans 'A' at 32px`() {
         val fontBytes = javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf")!!
             .readBytes()

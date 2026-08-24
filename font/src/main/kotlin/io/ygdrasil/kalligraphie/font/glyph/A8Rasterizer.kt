@@ -15,6 +15,19 @@ data class A8Bitmap(
     val height: Int,
     val pixels: ByteArray,
 ) {
+    init {
+        require(width >= 0) { "A8 bitmap width must be non-negative, but was $width." }
+        require(height >= 0) { "A8 bitmap height must be non-negative, but was $height." }
+
+        val pixelCount = width.toLong() * height.toLong()
+        require(pixelCount <= Int.MAX_VALUE.toLong()) {
+            "A8 bitmap pixel count $pixelCount exceeds the maximum representable buffer size."
+        }
+        require(pixels.size == pixelCount.toInt()) {
+            "A8 bitmap pixels must exactly match width * height."
+        }
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is A8Bitmap) return false
