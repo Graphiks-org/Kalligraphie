@@ -166,18 +166,18 @@
           "reports/pure-kotlin-text/fixture-evidence-manifest.json"
         ],
         "deterministicDumps": [
-          "font/fixtures/expected/glyph/a8-glyph-mask.json",
+          "reports/font/fixtures/expected/glyph/a8-glyph-mask.json",
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/a8-glyph-mask.json"
+          "reports/font/fixtures/expected/glyph/a8-glyph-mask.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
-          "font/fixtures/expected/glyph/a8-glyph-mask.json"
+          "reports/font/fixtures/expected/glyph/a8-glyph-mask.json"
         ],
         "refusalDiagnostics": [
-          "font/fixtures/expected/glyph/a8-glyph-mask.json"
+          "reports/font/fixtures/expected/glyph/a8-glyph-mask.json"
         ]
       },
       "requiredEvidenceGates": [
@@ -211,19 +211,19 @@
           "reports/pure-kotlin-text/fixture-evidence-manifest.json"
         ],
         "deterministicDumps": [
-          "font/fixtures/expected/unicode/cluster-safety-report.json",
-          "font/fixtures/expected/unicode/unicode-segments.json",
-          "font/fixtures/expected/unicode/bidi-runs.json",
-          "font/fixtures/expected/unicode/script-runs.json",
+          "reports/font/fixtures/expected/unicode/cluster-safety-report.json",
+          "reports/font/fixtures/expected/unicode/unicode-segments.json",
+          "reports/font/fixtures/expected/unicode/bidi-runs.json",
+          "reports/font/fixtures/expected/unicode/script-runs.json",
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [],
         "gpuArtifacts": [],
         "routeDiagnostics": [
-          "font/fixtures/expected/unicode/cluster-safety-report.json"
+          "reports/font/fixtures/expected/unicode/cluster-safety-report.json"
         ],
         "refusalDiagnostics": [
-          "font/fixtures/expected/unicode/cluster-safety-report.json",
+          "reports/font/fixtures/expected/unicode/cluster-safety-report.json",
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json"
         ]
       },
@@ -259,14 +259,14 @@
         ],
         "deterministicDumps": [
           "reports/pure-kotlin-text/dump-evidence-index.json",
-          "font/fixtures/expected/shaping/feature-policy-matrix.json",
-          "font/fixtures/expected/shaping/shaping-plan.json",
-          "font/fixtures/expected/shaping/opentype-layout-contract-gsub-trace.json",
-          "font/fixtures/expected/shaping/opentype-layout-contract-gpos-trace.json",
-          "font/fixtures/expected/shaping/opentype-layout-contract-shaped-glyph-run.json",
-          "font/fixtures/expected/shaping/gsub-trace.json",
-          "font/fixtures/expected/shaping/gpos-trace.json",
-          "font/fixtures/expected/shaping/shaped-glyph-run.json"
+          "reports/font/fixtures/expected/shaping/feature-policy-matrix.json",
+          "reports/font/fixtures/expected/shaping/shaping-plan.json",
+          "reports/font/fixtures/expected/shaping/opentype-layout-contract-gsub-trace.json",
+          "reports/font/fixtures/expected/shaping/opentype-layout-contract-gpos-trace.json",
+          "reports/font/fixtures/expected/shaping/opentype-layout-contract-shaped-glyph-run.json",
+          "reports/font/fixtures/expected/shaping/gsub-trace.json",
+          "reports/font/fixtures/expected/shaping/gpos-trace.json",
+          "reports/font/fixtures/expected/shaping/shaped-glyph-run.json"
         ],
         "cpuOracle": [],
         "gpuArtifacts": [],
@@ -303,7 +303,7 @@
         "fixtureProvenance": [],
         "deterministicDumps": [
           "reports/pure-kotlin-text/dump-evidence-index.json",
-          "font/fixtures/expected/color/color-emoji-fixture-manifest.json"
+          "reports/font/fixtures/expected/color/color-emoji-fixture-manifest.json"
         ],
         "cpuOracle": [],
         "gpuArtifacts": [],
@@ -344,13 +344,13 @@
           "reports/pure-kotlin-text/fixture-evidence-manifest.json"
         ],
         "deterministicDumps": [
-          "font/fixtures/expected/fallback/fallback-decision-trace.json",
-          "font/fixtures/expected/fallback/fallback-segmentation-report.json",
-          "font/fixtures/expected/fallback/resolved-font-runs.json",
-          "font/fixtures/expected/fallback/system-font-scan.json",
-          "font/fixtures/expected/fallback/system-font-scan-font-catalog-link.json",
-          "font/fixtures/expected/fallback/system-font-scan-fallback-trace.json",
-          "font/fixtures/expected/shaping/fallback-shaped-glyph-run.json",
+          "reports/font/fixtures/expected/fallback/fallback-decision-trace.json",
+          "reports/font/fixtures/expected/fallback/fallback-segmentation-report.json",
+          "reports/font/fixtures/expected/fallback/resolved-font-runs.json",
+          "reports/font/fixtures/expected/fallback/system-font-scan.json",
+          "reports/font/fixtures/expected/fallback/system-font-scan-font-catalog-link.json",
+          "reports/font/fixtures/expected/fallback/system-font-scan-fallback-trace.json",
+          "reports/font/fixtures/expected/shaping/fallback-shaped-glyph-run.json",
           "reports/pure-kotlin-text/font-catalog-duplicate-face.json",
           "reports/pure-kotlin-text/font-catalog.json",
           "reports/pure-kotlin-text/font-source.json",
@@ -360,11 +360,11 @@
         "gpuArtifacts": [],
         "routeDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/fallback/fallback-segmentation-report.json"
+          "reports/font/fixtures/expected/fallback/fallback-segmentation-report.json"
         ],
         "refusalDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/fallback/fallback-segmentation-report.json"
+          "reports/font/fixtures/expected/fallback/fallback-segmentation-report.json"
         ]
       },
       "requiredEvidenceGates": [
@@ -521,16 +521,16 @@
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/glyph-artifact-plan.json",
-          "font/fixtures/expected/glyph/sdf-glyph-artifact.json",
-          "font/fixtures/expected/color/color-glyph-plan.json",
-          "font/fixtures/expected/color/bitmap-glyph-plan.json",
-          "font/fixtures/expected/color/svg-glyph-plan.json"
+          "reports/font/fixtures/expected/glyph/glyph-artifact-plan.json",
+          "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json",
+          "reports/font/fixtures/expected/color/color-glyph-plan.json",
+          "reports/font/fixtures/expected/color/bitmap-glyph-plan.json",
+          "reports/font/fixtures/expected/color/svg-glyph-plan.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
           "reports/pure-kotlin-text/glyph-artifact-metrics.json",
-          "font/fixtures/expected/glyph/glyph-artifact-plan.json"
+          "reports/font/fixtures/expected/glyph/glyph-artifact-plan.json"
         ],
         "refusalDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
@@ -567,16 +567,16 @@
           "reports/pure-kotlin-text/fixture-evidence-manifest.json"
         ],
         "deterministicDumps": [
-          "font/fixtures/expected/glyph/glyph-artifact-plan.json",
+          "reports/font/fixtures/expected/glyph/glyph-artifact-plan.json",
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [],
         "gpuArtifacts": [],
         "routeDiagnostics": [
-          "font/fixtures/expected/glyph/glyph-artifact-plan.json"
+          "reports/font/fixtures/expected/glyph/glyph-artifact-plan.json"
         ],
         "refusalDiagnostics": [
-          "font/fixtures/expected/glyph/glyph-artifact-plan.json"
+          "reports/font/fixtures/expected/glyph/glyph-artifact-plan.json"
         ]
       },
       "requiredEvidenceGates": [
@@ -613,21 +613,21 @@
         ],
         "deterministicDumps": [
           "reports/pure-kotlin-text/dump-evidence-index.json",
-          "font/fixtures/expected/glyph/glyph-atlas.json",
-          "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
+          "reports/font/fixtures/expected/glyph/glyph-atlas.json",
+          "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/glyph-atlas.json"
+          "reports/font/fixtures/expected/glyph/glyph-atlas.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
-          "font/fixtures/expected/glyph/glyph-atlas.json",
-          "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
+          "reports/font/fixtures/expected/glyph/glyph-atlas.json",
+          "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
         ],
         "refusalDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/glyph/glyph-atlas.json",
-          "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
+          "reports/font/fixtures/expected/glyph/glyph-atlas.json",
+          "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
         ]
       },
       "requiredEvidenceGates": [
@@ -662,8 +662,8 @@
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/glyph-atlas.json",
-          "font/fixtures/expected/glyph/glyph-cache-inventory.json"
+          "reports/font/fixtures/expected/glyph/glyph-atlas.json",
+          "reports/font/fixtures/expected/glyph/glyph-cache-inventory.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
@@ -671,7 +671,7 @@
         ],
         "refusalDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
+          "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
         ]
       },
       "requiredEvidenceGates": [
@@ -707,9 +707,9 @@
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/glyph-cache-inventory.json",
-          "font/fixtures/expected/glyph/glyph-cache-telemetry.json",
-          "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
+          "reports/font/fixtures/expected/glyph/glyph-cache-inventory.json",
+          "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json",
+          "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
@@ -751,20 +751,20 @@
         ],
         "deterministicDumps": [
           "reports/pure-kotlin-text/dump-evidence-index.json",
-          "font/fixtures/expected/glyph/glyph-cache-inventory.json",
-          "font/fixtures/expected/glyph/glyph-cache-telemetry.json"
+          "reports/font/fixtures/expected/glyph/glyph-cache-inventory.json",
+          "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/glyph-cache-inventory.json",
-          "font/fixtures/expected/glyph/glyph-cache-telemetry.json"
+          "reports/font/fixtures/expected/glyph/glyph-cache-inventory.json",
+          "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
-          "font/fixtures/expected/glyph/glyph-cache-telemetry.json"
+          "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json"
         ],
         "refusalDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/glyph/glyph-cache-telemetry.json"
+          "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json"
         ]
       },
       "requiredEvidenceGates": [
@@ -796,7 +796,7 @@
           "reports/pure-kotlin-text/fixture-evidence-manifest.json"
         ],
         "deterministicDumps": [
-          "font/fixtures/expected/glyph/glyph-strike-key.json",
+          "reports/font/fixtures/expected/glyph/glyph-strike-key.json",
           "reports/pure-kotlin-text/dump-evidence-index.json"
         ],
         "cpuOracle": [],
@@ -805,7 +805,7 @@
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json"
         ],
         "refusalDiagnostics": [
-          "font/fixtures/expected/glyph/glyph-strike-key.json",
+          "reports/font/fixtures/expected/glyph/glyph-strike-key.json",
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json"
         ]
       },
@@ -1081,19 +1081,19 @@
         ],
         "deterministicDumps": [
           "reports/pure-kotlin-text/dump-evidence-index.json",
-          "font/fixtures/expected/glyph/sdf-glyph-artifact.json"
+          "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json"
         ],
         "cpuOracle": [
-          "font/fixtures/expected/glyph/sdf-glyph-artifact.json"
+          "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json"
         ],
         "gpuArtifacts": [],
         "routeDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/glyph/sdf-glyph-artifact.json"
+          "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json"
         ],
         "refusalDiagnostics": [
           "reports/pure-kotlin-text/font-diagnostic-taxonomy.json",
-          "font/fixtures/expected/glyph/sdf-glyph-artifact.json"
+          "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json"
         ]
       },
       "requiredEvidenceGates": [

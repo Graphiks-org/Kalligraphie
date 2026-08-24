@@ -39,7 +39,7 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/a8-glyph-mask.json",
+        "reports/font/fixtures/expected/glyph/a8-glyph-mask.json",
         "reports/pure-kotlin-text/2026-06-16-kfont-m9-003-a8-outline-rasterization.md"
       ],
       "requiredEvidenceGates": [
@@ -54,7 +54,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_fixture_manifest.py"
       ],
       "fixtureCommands": [
-        "KFONT-M9-003 A8 rasterization fixture is checked in at font/fixtures/expected/glyph/a8-glyph-mask.json and asserted by GlyphSurfaceTest."
+        "KFONT-M9-003 A8 rasterization fixture is checked in at reports/font/fixtures/expected/glyph/a8-glyph-mask.json and asserted by GlyphSurfaceTest."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -80,12 +80,12 @@
         "reports/pure-kotlin-text/font-claim-dashboard.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/a8-sdf-atlas-lifecycle.json",
-        "font/fixtures/expected/glyph/glyph-cache-inventory.json",
-        "font/fixtures/expected/glyph/glyph-cache-telemetry.json",
-        "font/fixtures/expected/glyph/glyph-atlas.json",
-        "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json",
-        "font/fixtures/expected/glyph/sdf-glyph-artifact.json",
+        "reports/font/fixtures/expected/glyph/a8-sdf-atlas-lifecycle.json",
+        "reports/font/fixtures/expected/glyph/glyph-cache-inventory.json",
+        "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json",
+        "reports/font/fixtures/expected/glyph/glyph-atlas.json",
+        "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json",
+        "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json",
         "reports/pure-kotlin-text/2026-06-16-kfont-m9-004-sdf-generator-boundaries.md",
         "reports/pure-kotlin-text/2026-06-16-kfont-m9-005-atlas-lifecycle.md",
         "reports/pure-kotlin-text/2026-06-16-kfont-m9-006-glyph-cache-telemetry.md"
@@ -120,13 +120,13 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/BidiSegmentation.kt",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/BidiSegmentationTest.kt",
-        "font/fixtures/expected/unicode/bidi-arabic-number-neutral.txt",
-        "font/fixtures/expected/unicode/bidi-embedding-override-controls.txt",
-        "font/fixtures/expected/unicode/bidi-hebrew-latin.txt",
-        "font/fixtures/expected/unicode/bidi-isolate-controls.txt",
-        "font/fixtures/expected/unicode/bidi-runs.json",
-        "font/fixtures/expected/unicode/bidi-single-run-needs-paragraph.txt",
-        "font/fixtures/expected/unicode/bidi-unbalanced-controls.txt",
+        "reports/font/fixtures/expected/unicode/bidi-arabic-number-neutral.txt",
+        "reports/font/fixtures/expected/unicode/bidi-embedding-override-controls.txt",
+        "reports/font/fixtures/expected/unicode/bidi-hebrew-latin.txt",
+        "reports/font/fixtures/expected/unicode/bidi-isolate-controls.txt",
+        "reports/font/fixtures/expected/unicode/bidi-runs.json",
+        "reports/font/fixtures/expected/unicode/bidi-single-run-needs-paragraph.txt",
+        "reports/font/fixtures/expected/unicode/bidi-unbalanced-controls.txt",
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "reports/pure-kotlin-text/dump-evidence-index.json"
       ],
@@ -140,7 +140,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_dump_index.py"
       ],
       "fixtureCommands": [
-        "KFONT-M5-003 bidi fixtures are checked in under font/fixtures/expected/unicode and asserted by BidiSegmentationTest against bidi-runs.json."
+        "KFONT-M5-003 bidi fixtures are checked in under reports/font/fixtures/expected/unicode and asserted by BidiSegmentationTest against bidi-runs.json."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -164,12 +164,12 @@
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
         "reports/pure-kotlin-text/font-fixture-inventory.json",
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
-        "font/fixtures/expected/scaler/cff-cff2-readiness.json",
-        "font/fixtures/expected/scaler/cff-index-dict.json",
-        "font/fixtures/expected/scaler/cff-charstring-trace.json",
-        "font/fixtures/expected/scaler/cff-scaler-path-output.json",
-        "font/fixtures/expected/scaler/cff-subroutine-trace.json",
-        "font/fixtures/expected/scaler/cff2-variation-trace.json",
+        "reports/font/fixtures/expected/scaler/cff-cff2-readiness.json",
+        "reports/font/fixtures/expected/scaler/cff-index-dict.json",
+        "reports/font/fixtures/expected/scaler/cff-charstring-trace.json",
+        "reports/font/fixtures/expected/scaler/cff-scaler-path-output.json",
+        "reports/font/fixtures/expected/scaler/cff-subroutine-trace.json",
+        "reports/font/fixtures/expected/scaler/cff2-variation-trace.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m4-005-cff2-variation-path-output.md"
       ],
       "requiredEvidenceGates": [
@@ -209,21 +209,21 @@
       "currentEvidencePaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ClusterSafetyReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ClusterSafetyTest.kt",
-        "font/fixtures/expected/unicode/cluster-arabic-mark.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-ivs-mixed-kana.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-ivs-supplementary.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-variation-selector.txt",
-        "font/fixtures/expected/unicode/cluster-devanagari-conjunct.txt",
-        "font/fixtures/expected/unicode/cluster-emoji-family-zwj.txt",
-        "font/fixtures/expected/unicode/cluster-emoji-skin-tone.txt",
-        "font/fixtures/expected/unicode/cluster-mixed-bidi.txt",
-        "font/fixtures/expected/unicode/cluster-negative-split.txt",
-        "font/fixtures/expected/unicode/cluster-safety-report.json",
-        "font/fixtures/expected/unicode/cluster-thai-tone.txt",
-        "font/fixtures/expected/unicode/cluster-vs15-vs16.txt",
-        "font/fixtures/expected/unicode/bidi-runs.json",
-        "font/fixtures/expected/unicode/script-runs.json",
-        "font/fixtures/expected/unicode/unicode-segments.json",
+        "reports/font/fixtures/expected/unicode/cluster-arabic-mark.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-ivs-mixed-kana.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-ivs-supplementary.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-variation-selector.txt",
+        "reports/font/fixtures/expected/unicode/cluster-devanagari-conjunct.txt",
+        "reports/font/fixtures/expected/unicode/cluster-emoji-family-zwj.txt",
+        "reports/font/fixtures/expected/unicode/cluster-emoji-skin-tone.txt",
+        "reports/font/fixtures/expected/unicode/cluster-mixed-bidi.txt",
+        "reports/font/fixtures/expected/unicode/cluster-negative-split.txt",
+        "reports/font/fixtures/expected/unicode/cluster-safety-report.json",
+        "reports/font/fixtures/expected/unicode/cluster-thai-tone.txt",
+        "reports/font/fixtures/expected/unicode/cluster-vs15-vs16.txt",
+        "reports/font/fixtures/expected/unicode/bidi-runs.json",
+        "reports/font/fixtures/expected/unicode/script-runs.json",
+        "reports/font/fixtures/expected/unicode/unicode-segments.json",
         "reports/pure-kotlin-text/2026-06-18-kfont-m5-005-cluster-safety.md",
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "reports/pure-kotlin-text/dump-evidence-index.json"
@@ -240,7 +240,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_dump_index.py"
       ],
       "fixtureCommands": [
-        "KFONT-M5-005 cluster fixtures are checked in under font/fixtures/expected/unicode and asserted by ClusterSafetyTest against cluster-safety-report.json."
+        "KFONT-M5-005 cluster fixtures are checked in under reports/font/fixtures/expected/unicode and asserted by ClusterSafetyTest against cluster-safety-report.json."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -267,17 +267,17 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-emoji-fixture-manifest.json",
-        "font/fixtures/expected/color/colrv1-fixture-manifest.json",
-        "font/fixtures/expected/color/color-glyph-composite-plan.json",
-        "font/fixtures/expected/color/color-glyph-plan.json",
-        "font/fixtures/expected/color/colrv1-paint-graph.json",
+        "reports/font/fixtures/expected/color/color-emoji-fixture-manifest.json",
+        "reports/font/fixtures/expected/color/colrv1-fixture-manifest.json",
+        "reports/font/fixtures/expected/color/color-glyph-composite-plan.json",
+        "reports/font/fixtures/expected/color/color-glyph-plan.json",
+        "reports/font/fixtures/expected/color/colrv1-paint-graph.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-001-colrv0-artifact-path.md",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-002-colrv1-solid-glyph-colr-glyph.md",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-003-colrv1-gradient-operation-group.md",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-004-colrv1-transform-composite-clip.md",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-005-colrv1-recursion-cycle-bounds-fixtures.md",
-        "font/fixtures/expected/color/color-svg-emoji-goldens.json"
+        "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json"
       ],
       "requiredEvidenceGates": [
         "KFONT-M10-001 through KFONT-M10-005 now check in typed COLRv0 plus bounded COLRv1 solid/glyph/colr-glyph, gradient, transform/composite/clip, and recursion/cycle/bounds fixture-manifest evidence with stable artifact-key, bounds, composite facts, expected dump links, and refusal diagnostics; KFONT-M10-010 now cross-links that CPU-side evidence in color-emoji-fixture-manifest.json while keeping bitmap/SVG routes, emoji sequence planning, and GPU registration on their owning M10/M11 tickets.",
@@ -295,7 +295,7 @@
         "rtk ./gradlew --no-daemon :font:glyph:test"
       ],
       "fixtureCommands": [
-        "KFONT-M10-001 through KFONT-M10-005 check in font/fixtures/expected/color/color-glyph-plan.json, font/fixtures/expected/color/colrv1-paint-graph.json, font/fixtures/expected/color/color-glyph-composite-plan.json, and font/fixtures/expected/color/colrv1-fixture-manifest.json, all asserted from ColorGlyphSurfaceTest using synthetic CPAL/COLRv0/COLRv1 table bytes with stable solid, colr-glyph, gradient, transform/composite/clip, cycle, recursion-depth, expanded-paint-budget, malformed-offset, singular-transform, unsupported-composite, and clip-budget-overflow cases."
+        "KFONT-M10-001 through KFONT-M10-005 check in reports/font/fixtures/expected/color/color-glyph-plan.json, reports/font/fixtures/expected/color/colrv1-paint-graph.json, reports/font/fixtures/expected/color/color-glyph-composite-plan.json, and reports/font/fixtures/expected/color/colrv1-fixture-manifest.json, all asserted from ColorGlyphSurfaceTest using synthetic CPAL/COLRv0/COLRv1 table bytes with stable solid, colr-glyph, gradient, transform/composite/clip, cycle, recursion-depth, expanded-paint-budget, malformed-offset, singular-transform, unsupported-composite, and clip-budget-overflow cases."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -319,15 +319,15 @@
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/DevanagariShapingFixtureTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ThaiCjkBoundaryFixtureTest.kt",
-        "font/fixtures/expected/shaping/arabic-seed-readiness.json",
-        "font/fixtures/expected/shaping/arabic-mixed-bidi.txt",
-        "font/fixtures/expected/shaping/arabic-gsub-trace.json",
-        "font/fixtures/expected/shaping/arabic-gpos-trace.json",
-        "font/fixtures/expected/shaping/arabic-shaped-glyph-run.json",
-        "font/fixtures/expected/shaping/arabic-shaping-plan.json",
-        "font/fixtures/expected/shaping/arabic-shaping-report.json",
-        "font/fixtures/expected/shaping/devanagari-shaping-report.json",
-        "font/fixtures/expected/shaping/thai-cjk-boundary-report.json",
+        "reports/font/fixtures/expected/shaping/arabic-seed-readiness.json",
+        "reports/font/fixtures/expected/shaping/arabic-mixed-bidi.txt",
+        "reports/font/fixtures/expected/shaping/arabic-gsub-trace.json",
+        "reports/font/fixtures/expected/shaping/arabic-gpos-trace.json",
+        "reports/font/fixtures/expected/shaping/arabic-shaped-glyph-run.json",
+        "reports/font/fixtures/expected/shaping/arabic-shaping-plan.json",
+        "reports/font/fixtures/expected/shaping/arabic-shaping-report.json",
+        "reports/font/fixtures/expected/shaping/devanagari-shaping-report.json",
+        "reports/font/fixtures/expected/shaping/thai-cjk-boundary-report.json",
         "reports/pure-kotlin-text/2026-06-18-kfont-m6-007-arabic-shaping-fixtures.md",
         "reports/pure-kotlin-text/2026-06-18-kfont-m6-007-arabic-runtime-traces.md",
         "reports/pure-kotlin-text/2026-06-18-kfont-m6-008-devanagari-shaping-fixtures.md",
@@ -373,9 +373,9 @@
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-emoji-fixture-manifest.json",
-        "font/fixtures/expected/color/color-svg-emoji-goldens.json",
-        "font/fixtures/expected/color/emoji-route-trace.json",
+        "reports/font/fixtures/expected/color/color-emoji-fixture-manifest.json",
+        "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json",
+        "reports/font/fixtures/expected/color/emoji-route-trace.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-009-emoji-sequence-planner.md"
       ],
       "requiredEvidenceGates": [
@@ -416,30 +416,30 @@
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/FallbackDecisionDumpTest.kt",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/FallbackSegmentationReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/FallbackSegmentationTest.kt",
-        "font/fixtures/expected/fallback/fallback-cluster-arabic-mark.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-arabic-mark.json",
-        "font/fixtures/expected/fallback/fallback-cluster-cjk-vs.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-cjk-vs.json",
-        "font/fixtures/expected/fallback/fallback-cluster-devanagari.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-devanagari.json",
-        "font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.json",
-        "font/fixtures/expected/fallback/fallback-cluster-latin-mark.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-latin-mark.json",
-        "font/fixtures/expected/fallback/fallback-cluster-negative-split.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-negative-split.json",
-        "font/fixtures/expected/fallback/fallback-cluster-skin-tone.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-skin-tone.json",
-        "font/fixtures/expected/fallback/fallback-cluster-thai.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-thai.json",
-        "font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.json",
-        "font/fixtures/expected/fallback/fallback-segmentation-report.json",
-        "font/fixtures/expected/fallback/fallback-decision-trace.json",
-        "font/fixtures/expected/fallback/resolved-font-runs.json",
-        "font/fixtures/expected/fallback/system-font-scan-fallback-trace.json",
-        "font/fixtures/expected/shaping/shaped-glyph-run.json",
-        "font/fixtures/expected/unicode/cluster-safety-report.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-arabic-mark.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-arabic-mark.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-cjk-vs.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-cjk-vs.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-devanagari.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-devanagari.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-latin-mark.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-latin-mark.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-negative-split.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-negative-split.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-skin-tone.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-skin-tone.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-thai.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-thai.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.json",
+        "reports/font/fixtures/expected/fallback/fallback-segmentation-report.json",
+        "reports/font/fixtures/expected/fallback/fallback-decision-trace.json",
+        "reports/font/fixtures/expected/fallback/resolved-font-runs.json",
+        "reports/font/fixtures/expected/fallback/system-font-scan-fallback-trace.json",
+        "reports/font/fixtures/expected/shaping/shaped-glyph-run.json",
+        "reports/font/fixtures/expected/unicode/cluster-safety-report.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m7-004-fallback-segmentation.md",
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "reports/pure-kotlin-text/dump-evidence-index.json"
@@ -455,7 +455,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_dump_index.py"
       ],
       "fixtureCommands": [
-        "KFONT-M7-004 fallback cluster fixtures are checked in under font/fixtures/expected/fallback and asserted by FallbackSegmentationTest against fallback-segmentation-report.json."
+        "KFONT-M7-004 fallback cluster fixtures are checked in under reports/font/fixtures/expected/fallback and asserted by FallbackSegmentationTest against fallback-segmentation-report.json."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -482,21 +482,21 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/FallbackShapingEvidence.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/FallbackShapingEvidenceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/VariableFallbackShapingEvidenceTest.kt",
-        "font/fixtures/expected/fallback/fallback-axis-clamped.json",
-        "font/fixtures/expected/fallback/fallback-axis-missing.json",
-        "font/fixtures/expected/fallback/fallback-decision-trace.json",
-        "font/fixtures/expected/fallback/fallback-emoji-preference.json",
-        "font/fixtures/expected/fallback/fallback-family-generic.json",
-        "font/fixtures/expected/fallback/fallback-family-unavailable.json",
-        "font/fixtures/expected/fallback/fallback-locale-serbian.json",
-        "font/fixtures/expected/fallback/fallback-metrics-variation-missing.json",
-        "font/fixtures/expected/fallback/fallback-missing-glyph.json",
-        "font/fixtures/expected/fallback/fallback-multi-axis.json",
-        "font/fixtures/expected/fallback/fallback-named-instance.json",
-        "font/fixtures/expected/fallback/fallback-script-arabic.json",
-        "font/fixtures/expected/fallback/fallback-variable-cff2.json",
-        "font/fixtures/expected/fallback/resolved-font-runs.json",
-        "font/fixtures/expected/shaping/fallback-shaped-glyph-run.json",
+        "reports/font/fixtures/expected/fallback/fallback-axis-clamped.json",
+        "reports/font/fixtures/expected/fallback/fallback-axis-missing.json",
+        "reports/font/fixtures/expected/fallback/fallback-decision-trace.json",
+        "reports/font/fixtures/expected/fallback/fallback-emoji-preference.json",
+        "reports/font/fixtures/expected/fallback/fallback-family-generic.json",
+        "reports/font/fixtures/expected/fallback/fallback-family-unavailable.json",
+        "reports/font/fixtures/expected/fallback/fallback-locale-serbian.json",
+        "reports/font/fixtures/expected/fallback/fallback-metrics-variation-missing.json",
+        "reports/font/fixtures/expected/fallback/fallback-missing-glyph.json",
+        "reports/font/fixtures/expected/fallback/fallback-multi-axis.json",
+        "reports/font/fixtures/expected/fallback/fallback-named-instance.json",
+        "reports/font/fixtures/expected/fallback/fallback-script-arabic.json",
+        "reports/font/fixtures/expected/fallback/fallback-variable-cff2.json",
+        "reports/font/fixtures/expected/fallback/resolved-font-runs.json",
+        "reports/font/fixtures/expected/shaping/fallback-shaped-glyph-run.json",
         "reports/pure-kotlin-text/font-catalog-duplicate-face.json",
         "reports/pure-kotlin-text/font-catalog.json",
         "reports/pure-kotlin-text/2026-06-16-kfont-m7-001-font-catalog.md",
@@ -522,7 +522,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_claim_dashboard.py"
       ],
       "fixtureCommands": [
-        "Fallback trace fixtures are checked in under font/fixtures/expected/fallback and asserted by FallbackDecisionDumpTest."
+        "Fallback trace fixtures are checked in under reports/font/fixtures/expected/fallback and asserted by FallbackDecisionDumpTest."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -714,8 +714,8 @@
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/FontCoreSurfaceTest.kt",
         "font/sfnt/src/main/kotlin/org/graphiks/kanvas/font/sfnt/SFNT.kt",
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
-        "font/fixtures/expected/font-source/liberation-scan-root.json",
-        "font/fixtures/expected/sfnt/sfnt-cmap-format14-readiness.json"
+        "reports/font/fixtures/expected/font-source/liberation-scan-root.json",
+        "reports/font/fixtures/expected/sfnt/sfnt-cmap-format14-readiness.json"
       ],
       "requiredEvidenceGates": [],
       "validationCommands": [
@@ -744,9 +744,9 @@
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/SystemFontScanReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/SystemFontScanTest.kt",
-        "font/fixtures/expected/fallback/system-font-scan.json",
-        "font/fixtures/expected/fallback/system-font-scan-font-catalog-link.json",
-        "font/fixtures/expected/fallback/system-font-scan-fallback-trace.json",
+        "reports/font/fixtures/expected/fallback/system-font-scan.json",
+        "reports/font/fixtures/expected/fallback/system-font-scan-font-catalog-link.json",
+        "reports/font/fixtures/expected/fallback/system-font-scan-fallback-trace.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m7-005-host-dependent-system-scan.md"
       ],
       "requiredEvidenceGates": [
@@ -823,7 +823,7 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/glyph-artifact-plan.json",
+        "reports/font/fixtures/expected/glyph/glyph-artifact-plan.json",
         "reports/pure-kotlin-text/2026-06-16-kfont-m9-002-glyph-artifact-plan-taxonomy.md",
         "reports/pure-kotlin-text/2026-06-16-kfont-m9-003-a8-outline-rasterization.md"
       ],
@@ -838,7 +838,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_fixture_manifest.py"
       ],
       "fixtureCommands": [
-        "KFONT-M9-002 route taxonomy fixture is checked in at font/fixtures/expected/glyph/glyph-artifact-plan.json and asserted by GlyphSurfaceTest."
+        "KFONT-M9-002 route taxonomy fixture is checked in at reports/font/fixtures/expected/glyph/glyph-artifact-plan.json and asserted by GlyphSurfaceTest."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -864,7 +864,7 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphStrikeKeyContractTest.kt",
-        "font/fixtures/expected/glyph/glyph-strike-key.json"
+        "reports/font/fixtures/expected/glyph/glyph-strike-key.json"
       ],
       "requiredEvidenceGates": [
         "Keep this as KFONT-M9-001 contract evidence; KFONT-M9-003 now lands A8 raster evidence, but KFONT-M9-004 SDF boundaries and KFONT-M9-005 atlas lifecycle evidence still gate broader artifact promotion.",
@@ -877,7 +877,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_fixture_manifest.py"
       ],
       "fixtureCommands": [
-        "KFONT-M9-001 strike-key fixture is checked in at font/fixtures/expected/glyph/glyph-strike-key.json and asserted by GlyphStrikeKeyContractTest."
+        "KFONT-M9-001 strike-key fixture is checked in at reports/font/fixtures/expected/glyph/glyph-strike-key.json and asserted by GlyphStrikeKeyContractTest."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -978,17 +978,17 @@
       "currentEvidencePaths": [
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "reports/pure-kotlin-text/dump-evidence-index.json",
-        "font/fixtures/provenance/index.json",
+        "reports/font/fixtures/provenance/index.json",
         "font/sfnt/src/main/kotlin/org/graphiks/kanvas/font/sfnt/SFNT.kt",
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ExtensionLookupFixtureTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/shaping/latin-gsub-gpos-goldens.json",
-        "font/fixtures/expected/shaping/gsub-trace.json",
-        "font/fixtures/expected/shaping/gpos-trace.json",
-        "font/fixtures/expected/shaping/extension-lookup-report.json",
-        "font/fixtures/expected/shaping/shaped-glyph-run.json",
+        "reports/font/fixtures/expected/shaping/latin-gsub-gpos-goldens.json",
+        "reports/font/fixtures/expected/shaping/gsub-trace.json",
+        "reports/font/fixtures/expected/shaping/gpos-trace.json",
+        "reports/font/fixtures/expected/shaping/extension-lookup-report.json",
+        "reports/font/fixtures/expected/shaping/shaped-glyph-run.json",
         "scripts/generate_pure_kotlin_text_m6_shaping_fixtures.main.kts",
         "reports/pure-kotlin-text/2026-06-18-kfont-m6-002-004-latin-layout-fixtures.md",
         "reports/pure-kotlin-text/2026-06-17-kfont-m6-003-gsub-contextual-lookups.md",
@@ -1014,7 +1014,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_fixture_manifest.py"
       ],
       "fixtureCommands": [
-        "KFONT-M6-002, KFONT-M6-003, KFONT-M6-004, and KFONT-M6-005 fixture fonts are checked in under font/fixtures/fonts/shaping and asserted by SFNTSurfaceTest/TextStackSurfaceTest against gsub-trace.json, gpos-trace.json, and shaped-glyph-run.json.",
+        "KFONT-M6-002, KFONT-M6-003, KFONT-M6-004, and KFONT-M6-005 fixture fonts are checked in under reports/font/fixtures/fonts/shaping and asserted by SFNTSurfaceTest/TextStackSurfaceTest against gsub-trace.json, gpos-trace.json, and shaped-glyph-run.json.",
         "KFONT-M6-010 partial checked-in fixtures are now generated by scripts/generate_pure_kotlin_text_m6_shaping_fixtures.main.kts and asserted by ExtensionLookupFixtureTest plus SFNTSurfaceTest against extension-lookup-report.json.",
         "The remaining named KFONT-M6-010 resources are now checked in as reviewed seed files, but they are not yet promoted as runtime/parser closeout evidence."
       ],
@@ -1042,8 +1042,8 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/OpenTypeLayoutContract.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/OpenTypeLayoutEngineContractTest.kt",
-        "font/fixtures/expected/shaping/feature-policy-matrix.json",
-        "font/fixtures/expected/shaping/shaping-plan.json"
+        "reports/font/fixtures/expected/shaping/feature-policy-matrix.json",
+        "reports/font/fixtures/expected/shaping/shaping-plan.json"
       ],
       "requiredEvidenceGates": [
         "Keep this row limited to contract-level shaping-plan and feature-policy evidence; fixture-backed GSUB/GPOS traces now live on the Latin fixture row and do not by themselves promote complex shaping support.",
@@ -1056,7 +1056,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_dump_index.py"
       ],
       "fixtureCommands": [
-        "KFONT-M6-001 contract goldens remain checked in under font/fixtures/expected/shaping/shaping-plan.json and font/fixtures/expected/shaping/feature-policy-matrix.json, both asserted by OpenTypeLayoutEngineContractTest."
+        "KFONT-M6-001 contract goldens remain checked in under reports/font/fixtures/expected/shaping/shaping-plan.json and reports/font/fixtures/expected/shaping/feature-policy-matrix.json, both asserted by OpenTypeLayoutEngineContractTest."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -1084,13 +1084,13 @@
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphStyleContractTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphShapingSegmentationTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/paragraph/hit-test-map.json",
-        "font/fixtures/expected/paragraph/paragraph-layout.json",
-        "font/fixtures/expected/paragraph/paragraph-input.json",
-        "font/fixtures/expected/paragraph/paragraph-input-goldens.json",
-        "font/fixtures/expected/paragraph/placeholder-layout.json",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests.json",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests-goldens.json",
+        "reports/font/fixtures/expected/paragraph/hit-test-map.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-layout.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-input.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-input-goldens.json",
+        "reports/font/fixtures/expected/paragraph/placeholder-layout.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests-goldens.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m8-001-textstyle-paragraph-contracts.md",
         "reports/pure-kotlin-text/2026-06-18-kfont-m8-002-paragraph-shaping-segmentation.md",
         "reports/pure-kotlin-text/2026-06-19-kfont-m8-004-ellipsis-layout.md",
@@ -1140,14 +1140,14 @@
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphStyleContractTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphShapingSegmentationTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/paragraph/hit-test-map.json",
-        "font/fixtures/expected/paragraph/line-breaks.json",
-        "font/fixtures/expected/paragraph/paragraph-layout.json",
-        "font/fixtures/expected/paragraph/paragraph-input.json",
-        "font/fixtures/expected/paragraph/paragraph-input-goldens.json",
-        "font/fixtures/expected/paragraph/placeholder-layout.json",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests.json",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests-goldens.json",
+        "reports/font/fixtures/expected/paragraph/hit-test-map.json",
+        "reports/font/fixtures/expected/paragraph/line-breaks.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-layout.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-input.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-input-goldens.json",
+        "reports/font/fixtures/expected/paragraph/placeholder-layout.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests-goldens.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m8-001-textstyle-paragraph-contracts.md",
         "reports/pure-kotlin-text/2026-06-18-kfont-m8-002-paragraph-shaping-segmentation.md",
         "reports/pure-kotlin-text/2026-06-18-kfont-m8-003-uax14-line-breaker.md",
@@ -1194,9 +1194,9 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-emoji-fixture-manifest.json",
-        "font/fixtures/expected/color/bitmap-glyph-plan.json",
-        "font/fixtures/expected/color/color-svg-emoji-goldens.json",
+        "reports/font/fixtures/expected/color/color-emoji-fixture-manifest.json",
+        "reports/font/fixtures/expected/color/bitmap-glyph-plan.json",
+        "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-006-png-bitmap-glyph-artifacts.md"
       ],
       "requiredEvidenceGates": [
@@ -1234,7 +1234,7 @@
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/MalformedSFNTFixtureSuiteTest.kt",
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
         "reports/pure-kotlin-text/malformed-sfnt-fixtures.json",
-        "font/fixtures/expected/sfnt/sfnt-cmap-format14-readiness.json"
+        "reports/font/fixtures/expected/sfnt/sfnt-cmap-format14-readiness.json"
       ],
       "requiredEvidenceGates": [
         "Add cmap format 14 positive variation-selector fixture rows.",
@@ -1269,19 +1269,19 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ScriptItemizationTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/unicode/script-ambiguous-extension.txt",
-        "font/fixtures/expected/unicode/script-arabic-extension-ambiguous.txt",
-        "font/fixtures/expected/unicode/script-arabic-marks.txt",
-        "font/fixtures/expected/unicode/script-cjk-vs.txt",
-        "font/fixtures/expected/unicode/script-conflicting-context.txt",
-        "font/fixtures/expected/unicode/script-devanagari-matra.txt",
-        "font/fixtures/expected/unicode/script-emoji-zwj.txt",
-        "font/fixtures/expected/unicode/script-greek-polytonic.txt",
-        "font/fixtures/expected/unicode/script-hebrew-niqqud.txt",
-        "font/fixtures/expected/unicode/script-latin-combining.txt",
-        "font/fixtures/expected/unicode/script-runs.json",
-        "font/fixtures/expected/unicode/script-thai-tone.txt",
-        "font/fixtures/expected/unicode/script-unsupported.txt"
+        "reports/font/fixtures/expected/unicode/script-ambiguous-extension.txt",
+        "reports/font/fixtures/expected/unicode/script-arabic-extension-ambiguous.txt",
+        "reports/font/fixtures/expected/unicode/script-arabic-marks.txt",
+        "reports/font/fixtures/expected/unicode/script-cjk-vs.txt",
+        "reports/font/fixtures/expected/unicode/script-conflicting-context.txt",
+        "reports/font/fixtures/expected/unicode/script-devanagari-matra.txt",
+        "reports/font/fixtures/expected/unicode/script-emoji-zwj.txt",
+        "reports/font/fixtures/expected/unicode/script-greek-polytonic.txt",
+        "reports/font/fixtures/expected/unicode/script-hebrew-niqqud.txt",
+        "reports/font/fixtures/expected/unicode/script-latin-combining.txt",
+        "reports/font/fixtures/expected/unicode/script-runs.json",
+        "reports/font/fixtures/expected/unicode/script-thai-tone.txt",
+        "reports/font/fixtures/expected/unicode/script-unsupported.txt"
       ],
       "requiredEvidenceGates": [
         "KFONT-M5-004 provides bounded script itemization fixtures and script-run diagnostics only; GSUB/GPOS shaping dumps with feature order, fallback runs, and glyph output remain gated on later shaping tickets.",
@@ -1294,7 +1294,7 @@
         "rtk python3 scripts/validate_pure_kotlin_text_dump_index.py"
       ],
       "fixtureCommands": [
-        "KFONT-M5-004 script itemization fixtures are checked in under font/fixtures/expected/unicode and asserted by ScriptItemizationTest against script-runs.json."
+        "KFONT-M5-004 script itemization fixtures are checked in under reports/font/fixtures/expected/unicode and asserted by ScriptItemizationTest against script-runs.json."
       ],
       "nonClaims": [
         "no-complete-target-support-claim",
@@ -1319,10 +1319,10 @@
         "reports/pure-kotlin-text/dump-evidence-index.json",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-emoji-fixture-manifest.json",
-        "font/fixtures/expected/color/color-svg-emoji-goldens.json",
-        "font/fixtures/expected/color/svg-glyph-fixture-manifest.json",
-        "font/fixtures/expected/color/svg-glyph-plan.json",
+        "reports/font/fixtures/expected/color/color-emoji-fixture-manifest.json",
+        "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json",
+        "reports/font/fixtures/expected/color/svg-glyph-fixture-manifest.json",
+        "reports/font/fixtures/expected/color/svg-glyph-plan.json",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-007-bounded-svg-glyph-primitives.md",
         "reports/pure-kotlin-text/2026-06-17-kfont-m10-008-svg-refusal-bounds-fixtures.md"
       ],
@@ -1399,14 +1399,14 @@
         "reports/pure-kotlin-text/coverage-ticket-matrix.md",
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/truetype-composite-glyphs.json",
-        "font/fixtures/expected/scaler/truetype-gvar-iup.json",
-        "font/fixtures/expected/scaler/truetype-malformed-glyf-isolation.json",
-        "font/fixtures/expected/scaler/truetype-vertical-metrics.json",
+        "reports/font/fixtures/expected/scaler/truetype-composite-glyphs.json",
+        "reports/font/fixtures/expected/scaler/truetype-gvar-iup.json",
+        "reports/font/fixtures/expected/scaler/truetype-malformed-glyf-isolation.json",
+        "reports/font/fixtures/expected/scaler/truetype-vertical-metrics.json",
         "reports/pure-kotlin-text/2026-06-16-kfont-m3-004-vertical-metrics.md",
         "reports/pure-kotlin-text/2026-06-16-kfont-m3-003-phantom-metrics.md",
         "reports/pure-kotlin-text/2026-06-16-kfont-m3-005-malformed-glyf-isolation.md",
-        "font/fixtures/expected/scaler/truetype-variation-readiness.json"
+        "reports/font/fixtures/expected/scaler/truetype-variation-readiness.json"
       ],
       "requiredEvidenceGates": [],
       "validationCommands": [
@@ -1442,18 +1442,18 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/UnicodeDataGeneration.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/UnicodeDataGenerationTest.kt",
-        "font/fixtures/expected/unicode/unicode-16-source-manifest.json",
-        "font/fixtures/expected/unicode/unicode-data-manifest.json",
-        "font/fixtures/expected/unicode/unicode-data-tables.json",
-        "font/fixtures/expected/unicode/unicode-data-version-mismatch-diagnostic.json",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/DerivedCoreProperties.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/GraphemeBreakProperty.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/LineBreak.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/PropList.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/ScriptExtensions.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/Scripts.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/UnicodeData.txt",
-        "font/fixtures/expected/unicode/source-extracts/16.0.0/emoji/emoji-data.txt"
+        "reports/font/fixtures/expected/unicode/unicode-16-source-manifest.json",
+        "reports/font/fixtures/expected/unicode/unicode-data-manifest.json",
+        "reports/font/fixtures/expected/unicode/unicode-data-tables.json",
+        "reports/font/fixtures/expected/unicode/unicode-data-version-mismatch-diagnostic.json",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/DerivedCoreProperties.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/GraphemeBreakProperty.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/LineBreak.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/PropList.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/ScriptExtensions.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/Scripts.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/UnicodeData.txt",
+        "reports/font/fixtures/expected/unicode/source-extracts/16.0.0/emoji/emoji-data.txt"
       ],
       "requiredEvidenceGates": [
         "Keep generated seed data as bounded fixture evidence for the reviewed M5 rows; full Unicode data remains gated on future source extract expansion.",
@@ -1500,17 +1500,17 @@
         "font/text/src/main/resources/org/graphiks/kanvas/text/unicode/16.0.0/emoji/emoji-data.txt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/GraphemeSegmentationTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/UnicodeDataGenerationTest.kt",
-        "font/fixtures/expected/unicode/grapheme-crlf-control.txt",
-        "font/fixtures/expected/unicode/grapheme-devanagari-virama.txt",
-        "font/fixtures/expected/unicode/grapheme-emoji-zwj.txt",
-        "font/fixtures/expected/unicode/grapheme-isolated-surrogate.txt",
-        "font/fixtures/expected/unicode/grapheme-latin-combining.txt",
-        "font/fixtures/expected/unicode/grapheme-prepend.txt",
-        "font/fixtures/expected/unicode/grapheme-regional-indicators.txt",
-        "font/fixtures/expected/unicode/grapheme-variation-selector.txt",
-        "font/fixtures/expected/unicode/unicode-segments.json",
-        "font/fixtures/expected/unicode/unicode-data-manifest.json",
-        "font/fixtures/expected/unicode/unicode-data-tables.json"
+        "reports/font/fixtures/expected/unicode/grapheme-crlf-control.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-devanagari-virama.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-emoji-zwj.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-isolated-surrogate.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-latin-combining.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-prepend.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-regional-indicators.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-variation-selector.txt",
+        "reports/font/fixtures/expected/unicode/unicode-segments.json",
+        "reports/font/fixtures/expected/unicode/unicode-data-manifest.json",
+        "reports/font/fixtures/expected/unicode/unicode-data-tables.json"
       ],
       "requiredEvidenceGates": [
         "Keep KFONT-M5-002 grapheme segmentation coverage bounded to the checked fixture matrix until a future reviewed full UAX #29 source expansion exists.",

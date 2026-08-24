@@ -268,10 +268,10 @@ class OpenTypeLayoutEngineContractTest {
         assertTrue(dumpIndex.contains("\"dumpId\": \"feature-policy-matrix\""))
 
         val manifest = readProjectFile("font/fixtures/expected/pure-kotlin-text/fixture-evidence-manifest.json")
-        assertTrue(manifest.contains("\"font/fixtures/expected/shaping/feature-policy-matrix.json\""))
+        assertTrue(manifest.contains("\"reports/font/fixtures/expected/shaping/feature-policy-matrix.json\""))
 
         val dashboard = readProjectFile("font/fixtures/expected/pure-kotlin-text/font-claim-dashboard.json")
-        assertTrue(dashboard.contains("\"font/fixtures/expected/shaping/feature-policy-matrix.json\""))
+        assertTrue(dashboard.contains("\"reports/font/fixtures/expected/shaping/feature-policy-matrix.json\""))
     }
 
     @Test
@@ -298,7 +298,7 @@ class OpenTypeLayoutEngineContractTest {
         val dumpIndex = readProjectFile("font/fixtures/expected/pure-kotlin-text/dump-evidence-index.json")
         assertTrue(dumpIndex.contains("\"dumpId\": \"shaping-plan\""))
         assertTrue(dumpIndex.contains("\"ownerTicket\": \"KFONT-M6-001\""))
-        assertTrue(dumpIndex.contains("\"font/fixtures/expected/shaping/opentype-layout-contract-shaped-glyph-run.json\""))
+        assertTrue(dumpIndex.contains("\"reports/font/fixtures/expected/shaping/opentype-layout-contract-shaped-glyph-run.json\""))
 
         val manifest = readProjectFile("font/fixtures/expected/pure-kotlin-text/fixture-evidence-manifest.json")
         assertTrue(manifest.contains("\"familyId\": \"opentype-layout-contract\""))
@@ -306,7 +306,7 @@ class OpenTypeLayoutEngineContractTest {
 
         val dashboard = readProjectFile("font/fixtures/expected/pure-kotlin-text/font-claim-dashboard.json")
         assertTrue(dashboard.contains("\"surfaceId\": \"complex-shaping\""))
-        assertTrue(dashboard.contains("\"font/fixtures/expected/shaping/shaping-plan.json\""))
+        assertTrue(dashboard.contains("\"reports/font/fixtures/expected/shaping/shaping-plan.json\""))
         assertTrue(dashboard.contains("\"claimPromotionAllowed\": false"))
     }
 

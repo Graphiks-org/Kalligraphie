@@ -64,7 +64,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/a8-glyph-mask.json"
+        "reports/font/fixtures/expected/glyph/a8-glyph-mask.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -104,7 +104,7 @@
       },
       "producerPaths": [
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/a8-sdf-atlas-lifecycle.json"
+        "reports/font/fixtures/expected/glyph/a8-sdf-atlas-lifecycle.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -144,7 +144,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ArabicShapingFixtureTest.kt",
-        "font/fixtures/expected/shaping/arabic-gpos-trace.json"
+        "reports/font/fixtures/expected/shaping/arabic-gpos-trace.json"
       ],
       "expectedFields": [
         "cases",
@@ -178,7 +178,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ArabicShapingFixtureTest.kt",
-        "font/fixtures/expected/shaping/arabic-gsub-trace.json"
+        "reports/font/fixtures/expected/shaping/arabic-gsub-trace.json"
       ],
       "expectedFields": [
         "cases",
@@ -211,7 +211,7 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/shaping/arabic-seed-readiness.json"
+        "reports/font/fixtures/expected/shaping/arabic-seed-readiness.json"
       ],
       "expectedFields": [
         "cases",
@@ -245,7 +245,7 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ArabicShapingFixtureTest.kt",
-        "font/fixtures/expected/shaping/arabic-shaped-glyph-run.json"
+        "reports/font/fixtures/expected/shaping/arabic-shaped-glyph-run.json"
       ],
       "expectedFields": [
         "cases",
@@ -278,7 +278,7 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ArabicShapingFixtureTest.kt",
-        "font/fixtures/expected/shaping/arabic-shaping-plan.json"
+        "reports/font/fixtures/expected/shaping/arabic-shaping-plan.json"
       ],
       "expectedFields": [
         "bidi",
@@ -330,8 +330,8 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ArabicShapingFixtureTest.kt",
-        "font/fixtures/expected/shaping/arabic-mixed-bidi.txt",
-        "font/fixtures/expected/shaping/arabic-shaping-report.json"
+        "reports/font/fixtures/expected/shaping/arabic-mixed-bidi.txt",
+        "reports/font/fixtures/expected/shaping/arabic-shaping-report.json"
       ],
       "expectedFields": [
         "cases",
@@ -370,13 +370,13 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/BidiSegmentation.kt",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/BidiSegmentationTest.kt",
-        "font/fixtures/expected/unicode/bidi-arabic-number-neutral.txt",
-        "font/fixtures/expected/unicode/bidi-embedding-override-controls.txt",
-        "font/fixtures/expected/unicode/bidi-hebrew-latin.txt",
-        "font/fixtures/expected/unicode/bidi-isolate-controls.txt",
-        "font/fixtures/expected/unicode/bidi-runs.json",
-        "font/fixtures/expected/unicode/bidi-single-run-needs-paragraph.txt",
-        "font/fixtures/expected/unicode/bidi-unbalanced-controls.txt"
+        "reports/font/fixtures/expected/unicode/bidi-arabic-number-neutral.txt",
+        "reports/font/fixtures/expected/unicode/bidi-embedding-override-controls.txt",
+        "reports/font/fixtures/expected/unicode/bidi-hebrew-latin.txt",
+        "reports/font/fixtures/expected/unicode/bidi-isolate-controls.txt",
+        "reports/font/fixtures/expected/unicode/bidi-runs.json",
+        "reports/font/fixtures/expected/unicode/bidi-single-run-needs-paragraph.txt",
+        "reports/font/fixtures/expected/unicode/bidi-unbalanced-controls.txt"
       ],
       "expectedFields": [
         "balanced",
@@ -442,7 +442,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/bitmap-glyph-plan.json"
+        "reports/font/fixtures/expected/color/bitmap-glyph-plan.json"
       ],
       "expectedFields": [
         "cases",
@@ -477,7 +477,7 @@
       },
       "producerPaths": [
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/cff-cff2-readiness.json"
+        "reports/font/fixtures/expected/scaler/cff-cff2-readiness.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -512,7 +512,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/cff-charstring-trace.json"
+        "reports/font/fixtures/expected/scaler/cff-charstring-trace.json"
       ],
       "expectedFields": [
         "diagnosticSnapshots",
@@ -550,7 +550,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/cff-index-dict.json"
+        "reports/font/fixtures/expected/scaler/cff-index-dict.json"
       ],
       "expectedFields": [
         "diagnostics",
@@ -588,7 +588,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/cff-scaler-path-output.json"
+        "reports/font/fixtures/expected/scaler/cff-scaler-path-output.json"
       ],
       "expectedFields": [
         "diagnosticSnapshots",
@@ -630,7 +630,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/cff-subroutine-trace.json"
+        "reports/font/fixtures/expected/scaler/cff-subroutine-trace.json"
       ],
       "expectedFields": [
         "diagnosticSnapshots",
@@ -669,7 +669,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/cff2-variation-trace.json"
+        "reports/font/fixtures/expected/scaler/cff2-variation-trace.json"
       ],
       "expectedFields": [
         "diagnosticSnapshots",
@@ -713,19 +713,19 @@
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/GraphemeSegmentationTest.kt",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ClusterSafetyReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ClusterSafetyTest.kt",
-        "font/fixtures/expected/unicode/cluster-arabic-mark.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-ivs-han.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-ivs-isolated.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-ivs-mixed-script.txt",
-        "font/fixtures/expected/unicode/cluster-cjk-variation-selector.txt",
-        "font/fixtures/expected/unicode/cluster-devanagari-conjunct.txt",
-        "font/fixtures/expected/unicode/cluster-emoji-family-zwj.txt",
-        "font/fixtures/expected/unicode/cluster-emoji-skin-tone.txt",
-        "font/fixtures/expected/unicode/cluster-mixed-bidi.txt",
-        "font/fixtures/expected/unicode/cluster-negative-split.txt",
-        "font/fixtures/expected/unicode/cluster-safety-report.json",
-        "font/fixtures/expected/unicode/cluster-thai-tone.txt",
-        "font/fixtures/expected/unicode/cluster-vs15-vs16.txt"
+        "reports/font/fixtures/expected/unicode/cluster-arabic-mark.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-ivs-han.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-ivs-isolated.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-ivs-mixed-script.txt",
+        "reports/font/fixtures/expected/unicode/cluster-cjk-variation-selector.txt",
+        "reports/font/fixtures/expected/unicode/cluster-devanagari-conjunct.txt",
+        "reports/font/fixtures/expected/unicode/cluster-emoji-family-zwj.txt",
+        "reports/font/fixtures/expected/unicode/cluster-emoji-skin-tone.txt",
+        "reports/font/fixtures/expected/unicode/cluster-mixed-bidi.txt",
+        "reports/font/fixtures/expected/unicode/cluster-negative-split.txt",
+        "reports/font/fixtures/expected/unicode/cluster-safety-report.json",
+        "reports/font/fixtures/expected/unicode/cluster-thai-tone.txt",
+        "reports/font/fixtures/expected/unicode/cluster-vs15-vs16.txt"
       ],
       "expectedFields": [
         "cases",
@@ -811,8 +811,8 @@
       },
       "producerPaths": [
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/provenance/index.json",
-        "font/fixtures/expected/color/color-emoji-fixture-manifest.json"
+        "reports/font/fixtures/provenance/index.json",
+        "reports/font/fixtures/expected/color/color-emoji-fixture-manifest.json"
       ],
       "expectedFields": [
         "cases",
@@ -865,7 +865,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-glyph-composite-plan.json"
+        "reports/font/fixtures/expected/color/color-glyph-composite-plan.json"
       ],
       "expectedFields": [
         "cases",
@@ -900,7 +900,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-glyph-plan.json"
+        "reports/font/fixtures/expected/color/color-glyph-plan.json"
       ],
       "expectedFields": [
         "cases",
@@ -937,7 +937,7 @@
       },
       "producerPaths": [
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/color-svg-emoji-goldens.json"
+        "reports/font/fixtures/expected/color/color-svg-emoji-goldens.json"
       ],
       "expectedFields": [
         "colorFamilies",
@@ -976,7 +976,7 @@
       },
       "producerPaths": [
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/colrv1-fixture-manifest.json"
+        "reports/font/fixtures/expected/color/colrv1-fixture-manifest.json"
       ],
       "expectedFields": [
         "cases",
@@ -1012,7 +1012,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/colrv1-paint-graph.json"
+        "reports/font/fixtures/expected/color/colrv1-paint-graph.json"
       ],
       "expectedFields": [
         "cases",
@@ -1047,7 +1047,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/DevanagariShapingFixtureTest.kt",
-        "font/fixtures/expected/shaping/devanagari-shaping-report.json"
+        "reports/font/fixtures/expected/shaping/devanagari-shaping-report.json"
       ],
       "expectedFields": [
         "cases",
@@ -1140,7 +1140,7 @@
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/emoji-route-trace.json"
+        "reports/font/fixtures/expected/color/emoji-route-trace.json"
       ],
       "expectedFields": [
         "cases",
@@ -1179,10 +1179,10 @@
       },
       "producerPaths": [
         "scripts/generate_pure_kotlin_text_m6_shaping_fixtures.main.kts",
-        "font/fixtures/provenance/index.json",
+        "reports/font/fixtures/provenance/index.json",
         "font/sfnt/src/main/kotlin/org/graphiks/kanvas/font/sfnt/SFNT.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ExtensionLookupFixtureTest.kt",
-        "font/fixtures/expected/shaping/extension-lookup-report.json"
+        "reports/font/fixtures/expected/shaping/extension-lookup-report.json"
       ],
       "expectedFields": [
         "cases",
@@ -1293,8 +1293,8 @@
         "font/core/src/main/kotlin/org/graphiks/kanvas/font/FontCore.kt",
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/FallbackDecisionDumpTest.kt",
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/VariableFallbackEvidenceTest.kt",
-        "font/fixtures/expected/fallback/fallback-decision-trace.json",
-        "font/fixtures/expected/fallback/system-font-scan-fallback-trace.json"
+        "reports/font/fixtures/expected/fallback/fallback-decision-trace.json",
+        "reports/font/fixtures/expected/fallback/system-font-scan-fallback-trace.json"
       ],
       "expectedFields": [
         "candidateFamilies",
@@ -1358,27 +1358,27 @@
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/FallbackDecisionDumpTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/FallbackSegmentationTest.kt",
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/VariableFallbackEvidenceTest.kt",
-        "font/fixtures/expected/fallback/fallback-axis-clamped.json",
-        "font/fixtures/expected/fallback/fallback-axis-missing.json",
-        "font/fixtures/expected/fallback/fallback-cluster-arabic-mark.json",
-        "font/fixtures/expected/fallback/fallback-cluster-cjk-vs.json",
-        "font/fixtures/expected/fallback/fallback-cluster-devanagari.json",
-        "font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.json",
-        "font/fixtures/expected/fallback/fallback-cluster-latin-mark.json",
-        "font/fixtures/expected/fallback/fallback-cluster-negative-split.json",
-        "font/fixtures/expected/fallback/fallback-cluster-skin-tone.json",
-        "font/fixtures/expected/fallback/fallback-cluster-thai.json",
-        "font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.json",
-        "font/fixtures/expected/fallback/fallback-emoji-preference.json",
-        "font/fixtures/expected/fallback/fallback-family-generic.json",
-        "font/fixtures/expected/fallback/fallback-family-unavailable.json",
-        "font/fixtures/expected/fallback/fallback-locale-serbian.json",
-        "font/fixtures/expected/fallback/fallback-metrics-variation-missing.json",
-        "font/fixtures/expected/fallback/fallback-missing-glyph.json",
-        "font/fixtures/expected/fallback/fallback-multi-axis.json",
-        "font/fixtures/expected/fallback/fallback-named-instance.json",
-        "font/fixtures/expected/fallback/fallback-script-arabic.json",
-        "font/fixtures/expected/fallback/fallback-variable-cff2.json"
+        "reports/font/fixtures/expected/fallback/fallback-axis-clamped.json",
+        "reports/font/fixtures/expected/fallback/fallback-axis-missing.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-arabic-mark.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-cjk-vs.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-devanagari.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-latin-mark.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-negative-split.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-skin-tone.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-thai.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.json",
+        "reports/font/fixtures/expected/fallback/fallback-emoji-preference.json",
+        "reports/font/fixtures/expected/fallback/fallback-family-generic.json",
+        "reports/font/fixtures/expected/fallback/fallback-family-unavailable.json",
+        "reports/font/fixtures/expected/fallback/fallback-locale-serbian.json",
+        "reports/font/fixtures/expected/fallback/fallback-metrics-variation-missing.json",
+        "reports/font/fixtures/expected/fallback/fallback-missing-glyph.json",
+        "reports/font/fixtures/expected/fallback/fallback-multi-axis.json",
+        "reports/font/fixtures/expected/fallback/fallback-named-instance.json",
+        "reports/font/fixtures/expected/fallback/fallback-script-arabic.json",
+        "reports/font/fixtures/expected/fallback/fallback-variable-cff2.json"
       ],
       "expectedFields": [
         "candidateFamilies",
@@ -1447,26 +1447,26 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ClusterSafetyReport.kt",
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/FallbackSegmentationReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/FallbackSegmentationTest.kt",
-        "font/fixtures/expected/fallback/fallback-cluster-arabic-mark.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-cjk-vs.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-devanagari.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-latin-mark.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-negative-split.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-skin-tone.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-thai.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.txt",
-        "font/fixtures/expected/fallback/fallback-cluster-arabic-mark.json",
-        "font/fixtures/expected/fallback/fallback-cluster-cjk-vs.json",
-        "font/fixtures/expected/fallback/fallback-cluster-devanagari.json",
-        "font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.json",
-        "font/fixtures/expected/fallback/fallback-cluster-latin-mark.json",
-        "font/fixtures/expected/fallback/fallback-cluster-negative-split.json",
-        "font/fixtures/expected/fallback/fallback-cluster-skin-tone.json",
-        "font/fixtures/expected/fallback/fallback-cluster-thai.json",
-        "font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.json",
-        "font/fixtures/expected/fallback/fallback-segmentation-report.json",
-        "font/fixtures/expected/fallback/system-font-scan-fallback-trace.json"
+        "reports/font/fixtures/expected/fallback/fallback-cluster-arabic-mark.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-cjk-vs.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-devanagari.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-latin-mark.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-negative-split.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-skin-tone.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-thai.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.txt",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-arabic-mark.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-cjk-vs.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-devanagari.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-emoji-zwj.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-latin-mark.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-negative-split.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-skin-tone.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-thai.json",
+        "reports/font/fixtures/expected/fallback/fallback-cluster-vs15-vs16.json",
+        "reports/font/fixtures/expected/fallback/fallback-segmentation-report.json",
+        "reports/font/fixtures/expected/fallback/system-font-scan-fallback-trace.json"
       ],
       "expectedFields": [
         "cases",
@@ -1535,7 +1535,7 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/FallbackShapingEvidence.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/FallbackShapingEvidenceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/VariableFallbackShapingEvidenceTest.kt",
-        "font/fixtures/expected/shaping/fallback-shaped-glyph-run.json"
+        "reports/font/fixtures/expected/shaping/fallback-shaped-glyph-run.json"
       ],
       "expectedFields": [
         "advanceX",
@@ -1598,7 +1598,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/OpenTypeLayoutContract.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/OpenTypeLayoutEngineContractTest.kt",
-        "font/fixtures/expected/shaping/feature-policy-matrix.json"
+        "reports/font/fixtures/expected/shaping/feature-policy-matrix.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -1679,7 +1679,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/SystemFontScanReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/SystemFontScanTest.kt",
-        "font/fixtures/expected/fallback/system-font-scan-font-catalog-link.json"
+        "reports/font/fixtures/expected/fallback/system-font-scan-font-catalog-link.json"
       ],
       "expectedFields": [
         "catalogId",
@@ -1717,7 +1717,7 @@
       },
       "producerPaths": [
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/FontCoreSurfaceTest.kt",
-        "font/fixtures/expected/font-source/liberation-scan-root.json"
+        "reports/font/fixtures/expected/font-source/liberation-scan-root.json"
       ],
       "expectedFields": [
         "acceptedFamilies",
@@ -1941,7 +1941,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
+        "reports/font/fixtures/expected/glyph/glyph-atlas-eviction-trace.json"
       ],
       "expectedFields": [
         "artifactType",
@@ -1988,7 +1988,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/glyph-atlas.json"
+        "reports/font/fixtures/expected/glyph/glyph-atlas.json"
       ],
       "expectedFields": [
         "artifactCount",
@@ -2073,7 +2073,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/glyph-cache-inventory.json"
+        "reports/font/fixtures/expected/glyph/glyph-cache-inventory.json"
       ],
       "expectedFields": [
         "budgetBytes",
@@ -2174,7 +2174,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/glyph-cache-telemetry.json"
+        "reports/font/fixtures/expected/glyph/glyph-cache-telemetry.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -2213,7 +2213,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphStrikeKeyContractTest.kt",
-        "font/fixtures/expected/glyph/glyph-strike-key.json"
+        "reports/font/fixtures/expected/glyph/glyph-strike-key.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -2297,7 +2297,7 @@
       "producerPaths": [
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/shaping/gpos-trace.json"
+        "reports/font/fixtures/expected/shaping/gpos-trace.json"
       ],
       "expectedFields": [
         "cases",
@@ -2901,7 +2901,7 @@
       "producerPaths": [
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/shaping/gsub-trace.json"
+        "reports/font/fixtures/expected/shaping/gsub-trace.json"
       ],
       "expectedFields": [
         "cases",
@@ -2936,7 +2936,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/paragraph/ParagraphTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphHitTestMapTest.kt",
-        "font/fixtures/expected/paragraph/hit-test-map.json"
+        "reports/font/fixtures/expected/paragraph/hit-test-map.json"
       ],
       "expectedFields": [
         "cases",
@@ -2967,7 +2967,7 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/shaping/latin-gsub-gpos-goldens.json"
+        "reports/font/fixtures/expected/shaping/latin-gsub-gpos-goldens.json"
       ],
       "expectedFields": [
         "cases",
@@ -3001,7 +3001,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/paragraph/ParagraphLineBreaking.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphLineBreakingTest.kt",
-        "font/fixtures/expected/paragraph/line-breaks.json"
+        "reports/font/fixtures/expected/paragraph/line-breaks.json"
       ],
       "expectedFields": [
         "cases",
@@ -3069,7 +3069,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/OpenTypeLayoutContract.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/OpenTypeLayoutEngineContractTest.kt",
-        "font/fixtures/expected/shaping/opentype-layout-contract-gpos-trace.json"
+        "reports/font/fixtures/expected/shaping/opentype-layout-contract-gpos-trace.json"
       ],
       "expectedFields": [
         "decision",
@@ -3120,7 +3120,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/OpenTypeLayoutContract.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/OpenTypeLayoutEngineContractTest.kt",
-        "font/fixtures/expected/shaping/opentype-layout-contract-gsub-trace.json"
+        "reports/font/fixtures/expected/shaping/opentype-layout-contract-gsub-trace.json"
       ],
       "expectedFields": [
         "decision",
@@ -3171,7 +3171,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/OpenTypeLayoutContract.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/OpenTypeLayoutEngineContractTest.kt",
-        "font/fixtures/expected/shaping/opentype-layout-contract-shaped-glyph-run.json"
+        "reports/font/fixtures/expected/shaping/opentype-layout-contract-shaped-glyph-run.json"
       ],
       "expectedFields": [
         "clusters",
@@ -3220,7 +3220,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/paragraph/ParagraphTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphStyleContractTest.kt",
-        "font/fixtures/expected/paragraph/paragraph-input.json"
+        "reports/font/fixtures/expected/paragraph/paragraph-input.json"
       ],
       "expectedFields": [
         "diagnostics",
@@ -3256,8 +3256,8 @@
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphStyleContractTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/paragraph/paragraph-input-goldens.json",
-        "font/fixtures/expected/paragraph/paragraph-input.json"
+        "reports/font/fixtures/expected/paragraph/paragraph-input-goldens.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-input.json"
       ],
       "expectedFields": [
         "cases",
@@ -3293,7 +3293,7 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/paragraph/ParagraphTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphEllipsisLayoutTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/paragraph/paragraph-layout.json"
+        "reports/font/fixtures/expected/paragraph/paragraph-layout.json"
       ],
       "expectedFields": [
         "cases",
@@ -3408,7 +3408,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/paragraph/ParagraphShapingSegmentation.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphShapingSegmentationTest.kt",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests.json"
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests.json"
       ],
       "expectedFields": [
         "diagnostics",
@@ -3441,8 +3441,8 @@
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphShapingSegmentationTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests-goldens.json",
-        "font/fixtures/expected/paragraph/paragraph-shaping-requests.json"
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests-goldens.json",
+        "reports/font/fixtures/expected/paragraph/paragraph-shaping-requests.json"
       ],
       "expectedFields": [
         "cases",
@@ -3533,7 +3533,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/paragraph/ParagraphTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ParagraphPlaceholderLayoutTest.kt",
-        "font/fixtures/expected/paragraph/placeholder-layout.json"
+        "reports/font/fixtures/expected/paragraph/placeholder-layout.json"
       ],
       "expectedFields": [
         "cases",
@@ -3598,7 +3598,7 @@
         "font/core/src/main/kotlin/org/graphiks/kanvas/font/FontCore.kt",
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/FallbackDecisionDumpTest.kt",
         "font/core/src/test/kotlin/org/graphiks/kanvas/font/VariableFallbackEvidenceTest.kt",
-        "font/fixtures/expected/fallback/resolved-font-runs.json"
+        "reports/font/fixtures/expected/fallback/resolved-font-runs.json"
       ],
       "expectedFields": [
         "cases",
@@ -3704,19 +3704,19 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ScriptItemization.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ScriptItemizationTest.kt",
-        "font/fixtures/expected/unicode/script-ambiguous-extension.txt",
-        "font/fixtures/expected/unicode/script-arabic-extension-ambiguous.txt",
-        "font/fixtures/expected/unicode/script-arabic-marks.txt",
-        "font/fixtures/expected/unicode/script-cjk-vs.txt",
-        "font/fixtures/expected/unicode/script-conflicting-context.txt",
-        "font/fixtures/expected/unicode/script-devanagari-matra.txt",
-        "font/fixtures/expected/unicode/script-emoji-zwj.txt",
-        "font/fixtures/expected/unicode/script-greek-polytonic.txt",
-        "font/fixtures/expected/unicode/script-hebrew-niqqud.txt",
-        "font/fixtures/expected/unicode/script-latin-combining.txt",
-        "font/fixtures/expected/unicode/script-runs.json",
-        "font/fixtures/expected/unicode/script-thai-tone.txt",
-        "font/fixtures/expected/unicode/script-unsupported.txt"
+        "reports/font/fixtures/expected/unicode/script-ambiguous-extension.txt",
+        "reports/font/fixtures/expected/unicode/script-arabic-extension-ambiguous.txt",
+        "reports/font/fixtures/expected/unicode/script-arabic-marks.txt",
+        "reports/font/fixtures/expected/unicode/script-cjk-vs.txt",
+        "reports/font/fixtures/expected/unicode/script-conflicting-context.txt",
+        "reports/font/fixtures/expected/unicode/script-devanagari-matra.txt",
+        "reports/font/fixtures/expected/unicode/script-emoji-zwj.txt",
+        "reports/font/fixtures/expected/unicode/script-greek-polytonic.txt",
+        "reports/font/fixtures/expected/unicode/script-hebrew-niqqud.txt",
+        "reports/font/fixtures/expected/unicode/script-latin-combining.txt",
+        "reports/font/fixtures/expected/unicode/script-runs.json",
+        "reports/font/fixtures/expected/unicode/script-thai-tone.txt",
+        "reports/font/fixtures/expected/unicode/script-unsupported.txt"
       ],
       "expectedFields": [
         "clusterRange",
@@ -3806,7 +3806,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/GlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/GlyphSurfaceTest.kt",
-        "font/fixtures/expected/glyph/sdf-glyph-artifact.json"
+        "reports/font/fixtures/expected/glyph/sdf-glyph-artifact.json"
       ],
       "expectedFields": [
         "artifactCount",
@@ -3846,7 +3846,7 @@
       },
       "producerPaths": [
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
-        "font/fixtures/expected/sfnt/sfnt-cmap-format14-readiness.json"
+        "reports/font/fixtures/expected/sfnt/sfnt-cmap-format14-readiness.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -3914,7 +3914,7 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
-        "font/fixtures/expected/shaping/shaped-glyph-run.json"
+        "reports/font/fixtures/expected/shaping/shaped-glyph-run.json"
       ],
       "expectedFields": [
         "cases",
@@ -3995,7 +3995,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/OpenTypeLayoutContract.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/OpenTypeLayoutEngineContractTest.kt",
-        "font/fixtures/expected/shaping/shaping-plan.json"
+        "reports/font/fixtures/expected/shaping/shaping-plan.json"
       ],
       "expectedFields": [
         "bidi",
@@ -4071,7 +4071,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/svg-glyph-fixture-manifest.json"
+        "reports/font/fixtures/expected/color/svg-glyph-fixture-manifest.json"
       ],
       "expectedFields": [
         "cases",
@@ -4110,7 +4110,7 @@
       "producerPaths": [
         "font/glyph/src/main/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurface.kt",
         "font/glyph/src/test/kotlin/org/graphiks/kanvas/glyph/color/ColorGlyphSurfaceTest.kt",
-        "font/fixtures/expected/color/svg-glyph-plan.json"
+        "reports/font/fixtures/expected/color/svg-glyph-plan.json"
       ],
       "expectedFields": [
         "cases",
@@ -4146,7 +4146,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/SystemFontScanReport.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/SystemFontScanTest.kt",
-        "font/fixtures/expected/fallback/system-font-scan.json"
+        "reports/font/fixtures/expected/fallback/system-font-scan.json"
       ],
       "expectedFields": [
         "byteLength",
@@ -4360,7 +4360,7 @@
       },
       "producerPaths": [
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/ThaiCjkBoundaryFixtureTest.kt",
-        "font/fixtures/expected/shaping/thai-cjk-boundary-report.json"
+        "reports/font/fixtures/expected/shaping/thai-cjk-boundary-report.json"
       ],
       "expectedFields": [
         "cases",
@@ -4400,7 +4400,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/truetype-composite-glyphs.json"
+        "reports/font/fixtures/expected/scaler/truetype-composite-glyphs.json"
       ],
       "expectedFields": [
         "diagnosticSnapshots",
@@ -4447,7 +4447,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/truetype-gvar-iup.json"
+        "reports/font/fixtures/expected/scaler/truetype-gvar-iup.json"
       ],
       "expectedFields": [
         "avarMappedCase",
@@ -4495,7 +4495,7 @@
       "producerPaths": [
         "font/scaler/src/main/kotlin/org/graphiks/kanvas/font/scaler/FontScaler.kt",
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/truetype-malformed-glyf-isolation.json"
+        "reports/font/fixtures/expected/scaler/truetype-malformed-glyf-isolation.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -4538,7 +4538,7 @@
       },
       "producerPaths": [
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
-        "font/fixtures/expected/scaler/truetype-variation-readiness.json"
+        "reports/font/fixtures/expected/scaler/truetype-variation-readiness.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -4574,7 +4574,7 @@
         "font/scaler/src/test/kotlin/org/graphiks/kanvas/font/scaler/FontScalerSurfaceTest.kt",
         "font/sfnt/src/main/kotlin/org/graphiks/kanvas/font/sfnt/SFNT.kt",
         "font/sfnt/src/test/kotlin/org/graphiks/kanvas/font/sfnt/SFNTSurfaceTest.kt",
-        "font/fixtures/expected/scaler/truetype-vertical-metrics.json"
+        "reports/font/fixtures/expected/scaler/truetype-vertical-metrics.json"
       ],
       "expectedFields": [
         "diagnosticSnapshots",
@@ -4617,7 +4617,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/UnicodeDataGeneration.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/UnicodeDataGenerationTest.kt",
-        "font/fixtures/expected/unicode/unicode-data-manifest.json"
+        "reports/font/fixtures/expected/unicode/unicode-data-manifest.json"
       ],
       "expectedFields": [
         "dumpId",
@@ -4662,7 +4662,7 @@
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/ShapingTypes.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/TextStackSurfaceTest.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/UnicodeDataGenerationTest.kt",
-        "font/fixtures/expected/unicode/unicode-data-tables.json"
+        "reports/font/fixtures/expected/unicode/unicode-data-tables.json"
       ],
       "expectedFields": [
         "bidiClass",
@@ -4714,7 +4714,7 @@
       "producerPaths": [
         "font/text/src/main/kotlin/org/graphiks/kanvas/text/shaping/UnicodeDataGeneration.kt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/UnicodeDataGenerationTest.kt",
-        "font/fixtures/expected/unicode/unicode-data-version-mismatch-diagnostic.json"
+        "reports/font/fixtures/expected/unicode/unicode-data-version-mismatch-diagnostic.json"
       ],
       "expectedFields": [
         "diagnostic",
@@ -4760,15 +4760,15 @@
         "font/text/src/main/resources/org/graphiks/kanvas/text/unicode/16.0.0/UnicodeData.txt",
         "font/text/src/main/resources/org/graphiks/kanvas/text/unicode/16.0.0/emoji/emoji-data.txt",
         "font/text/src/test/kotlin/org/graphiks/kanvas/text/GraphemeSegmentationTest.kt",
-        "font/fixtures/expected/unicode/grapheme-crlf-control.txt",
-        "font/fixtures/expected/unicode/grapheme-devanagari-virama.txt",
-        "font/fixtures/expected/unicode/grapheme-emoji-zwj.txt",
-        "font/fixtures/expected/unicode/grapheme-isolated-surrogate.txt",
-        "font/fixtures/expected/unicode/grapheme-latin-combining.txt",
-        "font/fixtures/expected/unicode/grapheme-prepend.txt",
-        "font/fixtures/expected/unicode/grapheme-regional-indicators.txt",
-        "font/fixtures/expected/unicode/grapheme-variation-selector.txt",
-        "font/fixtures/expected/unicode/unicode-segments.json"
+        "reports/font/fixtures/expected/unicode/grapheme-crlf-control.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-devanagari-virama.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-emoji-zwj.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-isolated-surrogate.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-latin-combining.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-prepend.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-regional-indicators.txt",
+        "reports/font/fixtures/expected/unicode/grapheme-variation-selector.txt",
+        "reports/font/fixtures/expected/unicode/unicode-segments.json"
       ],
       "expectedFields": [
         "boundaries",

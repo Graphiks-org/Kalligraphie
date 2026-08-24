@@ -201,7 +201,7 @@ class ScriptItemizationTest {
                     "\"dumpId\": \"script-runs\"",
                     "\"ownerTicket\": \"KFONT-M5-004\"",
                     "\"classification\": \"golden-gated\"",
-                    "\"font/fixtures/expected/unicode/script-runs.json\"",
+                    "\"reports/font/fixtures/expected/unicode/script-runs.json\"",
                     "\"producer-only\"",
                 ),
             ),
@@ -212,7 +212,7 @@ class ScriptItemizationTest {
             manifest.containsInOrder(
                 listOf(
                     "\"familyId\": \"shaping-scripts\"",
-                    "\"font/fixtures/expected/unicode/script-runs.json\"",
+                    "\"reports/font/fixtures/expected/unicode/script-runs.json\"",
                     "\"no-complete-gsub-gpos-claim\"",
                 ),
             ),
