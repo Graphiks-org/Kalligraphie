@@ -42,8 +42,8 @@ Le répertoire font/ amont contient un module agrégateur et huit composants :
 | colr | tables COLR/CPAL de polices couleur | core, sfnt | 3 |
 | scaler | métriques, contours et variations | core, sfnt, colr | 2 |
 | text | texte simple, glyphes et frontières de shaping | core, sfnt, scaler | 2 |
-| gpu-api | contrats de remise de glyphes au GPU | core | 3 |
-| glyph | représentations de glyphes et routes de rendu | core, text, scaler, colr, gpu-api | 3 |
+| gpu-api | contrats de données entre glyphes et renderer GPU, sans backend GPU | core | différé |
+| glyph | représentations de glyphes et routes de rendu | core, text, scaler, colr, gpu-api | 3, sans l’adaptateur GPU |
 | font | façade agrégatrice Gradle | tous les précédents sauf COLR direct | 3 |
 
 Les sources sont aujourd’hui compilées comme bibliothèques Kotlin/JVM et
@@ -61,13 +61,27 @@ un déplacement brut dans commonMain.
         ▼
     :font-scaler ── :font-text
         ▼
-    :font-colr / :font-glyph / :font-gpu-api     [jalon ultérieur]
+    :font-colr / :font-glyph                     [jalon ultérieur]
+
+    :font-gpu-contracts                           [seulement avec un renderer GPU]
+        ▲                              ▲
+        │                              │
+    adaptateur de glyphes        :renderer-gpu
 
 Le premier jalon peut livrer les modules JVM sous des noms Gradle cohérents
 avec ce graphe, même lorsque la partie commune reste volontairement minimale.
 Les abstractions KMP seront introduites uniquement autour des capacités qui
 ont réellement besoin de plateformes distinctes : lecture de bytes, accès aux
 assets et inventaire de polices système.
+
+Le module amont gpu-api ne constitue pas une abstraction de backend GPU. Il
+porte des valeurs de transfert et de diagnostic consommées à la fois par
+font/glyph et gpu-renderer (atlas, payloads, ordre de rendu et refus). Il ne
+doit donc pas être fondu dans font-glyph. Pour Kalligraphie, il est renommé
+font-gpu-contracts et reste exclu du premier import. Il ne sera créé que si un
+renderer GPU est effectivement ajouté ; ce choix évite de rapatrier une API
+inutilisée tout en préservant une frontière saine entre producteur et
+consommateur quand ce renderer existera.
 
 ## Flux fonctionnel initial
 
@@ -114,17 +128,21 @@ essentielles sont lisibles sur JVM.
 **Sortie :** un texte latin simple produit des glyphes positionnés et des
 contours déterministes pour le rendu Desktop/JVM.
 
-### Jalon 3 — couleurs et interfaces de rendu
+### Jalon 3 — polices couleur et préparation d’un renderer
 
-- Ajouter :font-colr, :font-gpu-api et :font-glyph seulement après la
-  stabilisation des contrats des deux premiers jalons.
+- Ajouter :font-colr et les représentations de glyphes sans dépendance GPU
+  seulement après la stabilisation des contrats des deux premiers jalons.
 - Commencer par COLR/CPAL v0 ; toute prise en charge de COLR v1 doit être
   démontrée par des tests de graphes de peintures et des fixtures licenciées.
-- Brancher les glyphes sur le renderer existant sans introduire de dépendance
-  du noyau des polices vers Compose ou une API GPU particulière.
+- Laisser les adaptateurs provenant de font/glyph vers GPU hors du module de
+  glyphes. Si Kalligraphie adopte un renderer GPU, créer alors
+  :font-gpu-contracts comme contrat commun entre cet adaptateur et le renderer.
+- Ne pas introduire de dépendance du noyau des polices vers Compose ou une API
+  GPU particulière.
 
-**Sortie :** les polices couleur et le rendu GPU disposent de contrats séparés
-et peuvent rester explicitement indisponibles sur les plateformes non prouvées.
+**Sortie :** les polices couleur disposent de contrats de glyphes indépendants
+du renderer. Une intégration GPU reste explicitement différée et ne devient
+possible qu’au travers de contrats séparés.
 
 ### Jalon 4 — portage KMP progressif
 
