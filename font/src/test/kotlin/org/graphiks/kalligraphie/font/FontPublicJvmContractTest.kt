@@ -12,10 +12,15 @@ class FontPublicJvmContractTest {
         val bytes = ByteArray(32).apply {
             this[1] = 1
             this[5] = 1
+            this[7] = 16
             this[12] = 'n'.code.toByte()
             this[13] = 'a'.code.toByte()
             this[14] = 'm'.code.toByte()
             this[15] = 'e'.code.toByte()
+            this[16] = 'K'.code.toByte()
+            this[17] = 'A'.code.toByte()
+            this[18] = 'L'.code.toByte()
+            this[19] = 'L'.code.toByte()
             this[23] = 28
             this[27] = 4
             this[28] = 'K'.code.toByte()
