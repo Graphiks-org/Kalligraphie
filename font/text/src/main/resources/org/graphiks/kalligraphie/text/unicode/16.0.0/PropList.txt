@@ -1,0 +1,4 @@
+# Bounded Unicode 16.0.0 seed extract for KFONT-M5-001.
+# This is not a complete PropList.txt file.
+FE00..FE0F ; Variation_Selector
+E0100..E01EF ; Variation_Selector
