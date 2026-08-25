@@ -18,9 +18,11 @@ val copyFontDokkaIntoMkDocs = tasks.register<Sync>("copyFontDokkaIntoMkDocs") {
     dependsOn(fontModules.map { it.tasks.named("dokkaGenerateModuleMkdocs") })
     dependsOn(tasks.named("dokkaCopyIntoMkDocs"))
 
+    into(layout.projectDirectory.dir("docs/api"))
+
     fontModules.forEach { fontModule ->
         from(fontModule.layout.buildDirectory.dir("dokka-module/mkdocs/module")) {
-            into("api/${fontModule.path.removePrefix(":").replace(':', '/')}")
+            into(fontModule.path.removePrefix(":").replace(':', '/'))
         }
     }
 }
