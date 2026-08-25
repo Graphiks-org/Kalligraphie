@@ -1,4 +1,4 @@
-package io.ygdrasil.kalligraphie.font
+package org.graphiks.kalligraphie.font
 
 /**
  * Font-domain refusal codes shared by core diagnostics and GPU consumers.

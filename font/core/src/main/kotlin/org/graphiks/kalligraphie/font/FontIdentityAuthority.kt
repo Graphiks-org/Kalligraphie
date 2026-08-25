@@ -1,4 +1,4 @@
-package io.ygdrasil.kalligraphie.font
+package org.graphiks.kalligraphie.font
 
 /**
  * Canonical authority for identities derived from caller-owned font bytes.

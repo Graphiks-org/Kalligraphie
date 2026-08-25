@@ -1,13 +1,13 @@
-package io.ygdrasil.kalligraphie.font.sfnt
+package org.graphiks.kalligraphie.font.sfnt
 
-import io.ygdrasil.kalligraphie.font.FontSource
-import io.ygdrasil.kalligraphie.font.FontSourceDiagnostic
-import io.ygdrasil.kalligraphie.font.FontSourceID
-import io.ygdrasil.kalligraphie.font.FontSourceKind
-import io.ygdrasil.kalligraphie.font.FontSlant
-import io.ygdrasil.kalligraphie.font.FontStyle
-import io.ygdrasil.kalligraphie.font.TypefaceData
-import io.ygdrasil.kalligraphie.font.TypefaceID
+import org.graphiks.kalligraphie.font.FontSource
+import org.graphiks.kalligraphie.font.FontSourceDiagnostic
+import org.graphiks.kalligraphie.font.FontSourceID
+import org.graphiks.kalligraphie.font.FontSourceKind
+import org.graphiks.kalligraphie.font.FontSlant
+import org.graphiks.kalligraphie.font.FontStyle
+import org.graphiks.kalligraphie.font.TypefaceData
+import org.graphiks.kalligraphie.font.TypefaceID
 import java.security.MessageDigest
 import kotlin.uuid.Uuid
 

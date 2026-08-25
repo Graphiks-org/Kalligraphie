@@ -1,4 +1,4 @@
-package io.ygdrasil.kalligraphie.font
+package org.graphiks.kalligraphie.font
 
 import java.io.IOException
 import java.io.UncheckedIOException
