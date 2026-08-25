@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JVM font module graph (`:font`, `:font:core`, `:font:sfnt`, `:font:colr`, `:font:scaler`, `:font:text`, and `:font:glyph`)
 - OpenType core and SFNT parsing sources for the JVM font stack.
 - COLR/CPAL parsing, glyph scaling, and text shaping sources for the JVM font stack.
+- Glyph surfaces, glyph cache primitives, A8 rasterization, and renderer-neutral atlas upload planning.
 - Multilingual docs (EN/FR) MkDocs + Dokka
 - GitHub templates (issues, PR)
 - Code of Conduct, CONTRIBUTING, SECURITY, SUPPORT, CHANGELOG
