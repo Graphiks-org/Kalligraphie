@@ -35,6 +35,7 @@ class SFNTReaderBoundaryContractTest {
     private fun singleTableSfnt(tableLength: Int): ByteArray = ByteArray(32).apply {
         this[1] = 1
         this[5] = 1
+        this[7] = 16
         this[12] = 'n'.code.toByte()
         this[13] = 'a'.code.toByte()
         this[14] = 'm'.code.toByte()
