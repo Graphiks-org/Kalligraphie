@@ -12,4 +12,5 @@ dependencies {
     implementation("com.android.tools.build:gradle:${libs.versions.agp.get()}")
     implementation("org.jetbrains.dokka:dokka-gradle-plugin:${libs.versions.dokka.get()}")
     implementation("com.vanniktech:gradle-maven-publish-plugin:${libs.versions.maven.publish.get()}")
+    implementation("dev.opensavvy.dokka.mkdocs:dokka-mkdocs:0.6.3")
 }

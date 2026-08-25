@@ -4,7 +4,7 @@
 
 ### 📖 Documentation
 Consultez d'abord notre documentation :
-- [Documentation en ligne](https://ygdrasil-io.github.io/project-template/)
+- [Documentation en ligne](https://graphiks-org.github.io/Kalligraphie/)
 
 ### 🐞 Issues GitHub
 Utilisez GitHub Issues pour :
@@ -12,7 +12,7 @@ Utilisez GitHub Issues pour :
 - Demandes de fonctionnalités
 - Questions techniques
 
-https://github.com/ygdrasil-io/project-template/issues
+https://github.com/Graphiks-org/Kalligraphie/issues
 
 ### 💬 Discussions GitHub
 Utilisez GitHub Discussions pour :
@@ -20,7 +20,7 @@ Utilisez GitHub Discussions pour :
 - Idées et suggestions
 - Retours d'expérience
 
-https://github.com/ygdrasil-io/project-template/discussions
+https://github.com/Graphiks-org/Kalligraphie/discussions
 
 ### 📧 Email
 Pour les questions sensibles :
