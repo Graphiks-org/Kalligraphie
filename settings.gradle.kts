@@ -20,8 +20,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "kmp-starter-pack"
-include(":shared")
+rootProject.name = "Kalligraphie"
 include(":docs")
 include(":font")
 include(":font:core")

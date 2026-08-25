@@ -1,8 +1,8 @@
-site_name: KMP Starter Pack
-site_description: API & Technical Documentation for KMP Starter Pack
-site_url: https://ygdrasil-io.github.io/project-template/
-repo_url: https://github.com/ygdrasil-io/project-template
-repo_name: ygdrasil-io/project-template
+site_name: Kalligraphie
+site_description: API and technical documentation for Kalligraphie
+site_url: https://graphiks-org.github.io/Kalligraphie/
+repo_url: https://github.com/Graphiks-org/Kalligraphie
+repo_name: Graphiks-org/Kalligraphie
 
 docs_dir: docs
 site_dir: ../_site
@@ -64,5 +64,5 @@ plugins:
         - locale: fr
           name: Français
           build: true
-          site_name: Starter Pack KMP
-          site_description: Documentation Technique pour KMP Starter Pack
+          site_name: Kalligraphie
+          site_description: Documentation technique pour Kalligraphie

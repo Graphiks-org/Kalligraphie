@@ -2,9 +2,9 @@ name: Deploy docs (Dokka MkDocs → MkDocs Material → Pages)
 
 on:
   push:
-    branches: [master, init] # Trigger on master or init for testing
+    branches: [master]
     paths:
-      - 'shared/src/commonMain/**'
+      - 'font/**'
       - 'docs/**'
       - 'docs/mkdocs.yml'
       - '.github/workflows/docs.yml'

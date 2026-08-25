@@ -38,7 +38,7 @@ These are the checks that must pass before merge. They are enforced by the PR po
 - Keep history linear: rebase on the latest `master`, do not introduce merge commits, and keep the branch ancestry aligned with `master`.
 - Use Conventional Commits for the PR title and every commit subject: `<type>(<scope>): <description>`.
 - Allowed PR and commit types are `feat`, `fix`, `build`, `chore`, `ci`, `docs`, `perf`, `refactor`, `test`, and `style`.
-- Allowed scopes are `shared`, `buildSrc`, `docs`, and `release`.
+- Allowed scopes are `font`, `buildSrc`, `docs`, and `release`.
 - Use the exact [PR template](.github/PULL_REQUEST_TEMPLATE.md) headings: `Description`, `Type of Change`, `Checklist`, `Screenshots (if applicable)`, and `Additional Notes`.
 - Select exactly one change type checkbox in the PR body.
 - Record the changelog decision explicitly in the PR checklist:
@@ -56,7 +56,7 @@ Repository settings automatically delete head branches after successful merges.
 These items are reviewed by maintainers when applicable; they are not automatically enforced by CI or the branch ruleset.
 
 - Keep commits atomic when practical.
-- Run local verification before requesting review: `./gradlew :shared:jvmTest`.
+- Run local verification before requesting review: `./gradlew :font:fontTest`.
 - Reference the related issue in the PR description when relevant.
 - Add screenshots when relevant.
 - Keep the `Screenshots (if applicable)` and `Additional Notes` sections when relevant.
@@ -78,7 +78,7 @@ Before submitting a PR, make sure:
 
 **Maintainer-reviewed expectations**
 
-- [ ] Tests pass locally (`./gradlew :shared:jvmTest`)
+- [ ] Tests pass locally (`./gradlew :font:fontTest`)
 - [ ] Commits are atomic when practical
 - [ ] The PR description references the related issue when relevant
 - [ ] Screenshots are included when relevant
@@ -88,7 +88,7 @@ Before submitting a PR, make sure:
 
 ```bash
 # Fast JVM tests
-./gradlew :shared:jvmTest
+./gradlew :font:fontTest
 
 # All tests
 ./gradlew allTests
@@ -118,11 +118,11 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/).
 | `test`    | Adding or fixing tests                             |
 | `style`   | Code style (formatting, imports ordering)          |
 
-**Scopes:** `shared`, `buildSrc`, `docs`, `release`
+**Scopes:** `font`, `buildSrc`, `docs`, `release`
 
 **Examples:**
 ```
-feat(shared): add caching layer to PlatformRepository
+feat(font): add glyph parser
 fix(buildSrc): resolve AGP compatibility issue
 docs: update README with new badges
 ```

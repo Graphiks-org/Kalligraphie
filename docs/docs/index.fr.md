@@ -1,54 +1,26 @@
-# Bienvenue sur la Documentation du KMP Starter Pack
+# Documentation de Kalligraphie
 
-Ce site regroupe l'ensemble des documentations techniques, des guides d'architecture et de la référence API du **Starter Pack Kotlin Multiplatform (KMP)**.
+Kalligraphie est une bibliothèque JVM de gestion de polices. Son API est répartie en modules Gradle ciblés afin de faire évoluer indépendamment le parsing, le shaping, la mise à l’échelle et l’accès aux glyphes.
 
----
+## Modules
 
-## 🚀 Fonctionnalités Clés
+- `:font:core` fournit les primitives communes aux polices.
+- `:font:sfnt` analyse les données SFNT et OpenType.
+- `:font:colr` gère les tables de polices couleur COLR.
+- `:font:scaler` met à l’échelle et rasterise les glyphes.
+- `:font:text` réalise le shaping (mise en forme typographique) du texte.
+- `:font:glyph` expose l’API orientée glyphes.
+- `:font` agrège les modules publics destinés aux consommateurs.
 
-*   **Multiplateforme Complet** : Partage de code ciblant **Android**, **iOS** et **Desktop (JVM)**.
-*   **Architecture Guidée (Clean Architecture / DDD)** : Séparation stricte de la logique métier (Domaine), de l'infrastructure (Données) et de l'interface (Présentation).
-*   **Pile Technique Moderne** : **Kotlin 2.4.0**, **Gradle 9.5.0**, **AGP 9.0.0** et **Java 25**.
-*   **Intégration Continue Conditionnelle** : Un workflow CI/CD à double-vitesse (JVM Fast-Track de 10 secondes vs Deep-Testing complet avant merge sur `master`).
-*   **Moteur de Documentation API** : Génération automatisée de la documentation d'API via **Dokka v2** et rendu via **MkDocs Material**.
+## Commandes utiles
 
----
-
-## 🧱 Organisation Architecturales du Projet
-
-Le module partagé `:shared` suit les directives fournies par le skill **Architecte Kotlin** :
-
-1.  **Couche Domaine (Domain)** :
-    *   Écrite en Kotlin pur (sans dépendance).
-    *   Contient les UseCases autonomes modélisant les cas d'utilisation métier.
-    *   Modèles de données robustes auto-validés (utilisation de `value class` inline).
-2.  **Couche Données (Data)** :
-    *   Implémentation des dépôts et communication de bas niveau (réseau via Ktor, persistance).
-    *   Gestion d'exceptions Flow transparente (garantissant que `AbortFlowException` n'est pas intercepté accidentellement).
-3.  **Couche Présentation (Presentation)** :
-    *   Interface réactive basée sur des `StateFlow` immuables.
-    *   Scopes coroutines proprement gérés et ViewModels autonomes.
-
----
-
-## 💻 Commandes Utiles
-
-### Exécuter la suite de tests (Fast-Track JVM)
 ```bash
-./gradlew :shared:jvmTest
-```
+# Exécuter tous les tests JVM de la pile de polices.
+./gradlew :font:fontTest
 
-### Lancer tous les tests (Toutes cibles)
-```bash
-./gradlew allTests
-```
-
-### Générer et intégrer localement la documentation de l'API (Dokka → MkDocs)
-```bash
+# Générer et intégrer la référence API (Dokka → MkDocs).
 ./gradlew :docs:embedDokkaIntoMkDocs
-```
 
-### Compiler localement le site MkDocs
-```bash
+# Construire le site localement.
 mkdocs build -f docs/mkdocs.yml
 ```

@@ -22,7 +22,7 @@ Relates to #(issue)
 Before submitting this PR:
 
 - [ ] Title follows Conventional Commits format
-- [ ] Tests pass locally (`./gradlew :shared:jvmTest`)
+- [ ] Tests pass locally (`./gradlew :font:fontTest`)
 - [ ] CHANGELOG.md has been updated
 - [ ] No changelog update needed: explain why no changelog entry is required
 - [ ] Documentation updated if needed

@@ -5,6 +5,9 @@ from pathlib import Path
 from validate_pr_policy import validate_policy
 
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
 ALLOWED_TYPES = [
     "feat",
     "fix",
@@ -149,6 +152,32 @@ class ValidatePrPolicyTests(unittest.TestCase):
             merge_commits=0,
         )
         self.assertEqual(errors, [])
+
+    def test_repository_policy_allows_font_scope(self) -> None:
+        errors = validate_policy(
+            policy_path=REPOSITORY_ROOT / ".github/contributing-policy.toml",
+            title="feat(font): add glyph parser",
+            body_file=write_text_file(self.root, "font-body.md", make_body()),
+            branch="feat/font-parser",
+            changed_files_file=write_lines_file(self.root, "font-files.txt", ["font/core/src/main/kotlin/Parser.kt", "CHANGELOG.md"]),
+            commit_subjects_file=write_lines_file(self.root, "font-commits.txt", ["feat(font): add glyph parser"]),
+            base_ancestor=True,
+            merge_commits=0,
+        )
+        self.assertEqual(errors, [])
+
+    def test_repository_policy_rejects_retired_shared_scope(self) -> None:
+        errors = validate_policy(
+            policy_path=REPOSITORY_ROOT / ".github/contributing-policy.toml",
+            title="feat(shared): add glyph parser",
+            body_file=write_text_file(self.root, "shared-body.md", make_body()),
+            branch="feat/font-parser",
+            changed_files_file=write_lines_file(self.root, "shared-files.txt", ["font/core/src/main/kotlin/Parser.kt", "CHANGELOG.md"]),
+            commit_subjects_file=write_lines_file(self.root, "shared-commits.txt", ["feat(shared): add glyph parser"]),
+            base_ancestor=True,
+            merge_commits=0,
+        )
+        self.assertInvalid(errors, "scope")
 
     def test_invalid_title_is_rejected(self) -> None:
         errors = self.validate(

@@ -5,6 +5,7 @@ import org.gradle.api.tasks.testing.Test
 plugins {
     kotlin("jvm")
     id("java-library")
+    id("dev.opensavvy.dokka-mkdocs")
 }
 
 kotlin {
