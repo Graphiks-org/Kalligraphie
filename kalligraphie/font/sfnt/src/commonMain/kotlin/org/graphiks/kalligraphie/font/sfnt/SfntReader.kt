@@ -136,22 +136,23 @@ public object SfntReader {
         var cursor = 6
         repeat(count) {
             val platformId = readUInt16(table, cursor)?.toInt() ?: return null
+            val encodingId = readUInt16(table, cursor + 2)?.toInt() ?: return null
             val languageId = readUInt16(table, cursor + 4)?.toInt() ?: return null
             val nameId = readUInt16(table, cursor + 6)?.toInt() ?: return null
             val length = readUInt16(table, cursor + 8)?.toInt() ?: return null
             val offset = readUInt16(table, cursor + 10)?.toInt() ?: return null
-            if (platformId == 0 || platformId == 3) {
+            if (isUnicodeNameRecord(platformId, encodingId)) {
                 val bytesStart = stringOffset + offset
                 val bytesEnd = checkedRangeEnd(bytesStart, length, table.size) ?: return@repeat
                 val value = decodeUtf16Be(table, bytesStart, bytesEnd) ?: return@repeat
                 if (nameId == 1) {
-                    if (languageId == 0x0409 || (platformId == 0 && languageId == 0)) {
+                    if (isEnglishUnicodeNameRecord(platformId, languageId)) {
                         familyEnglish = familyEnglish ?: value
                     }
                     familyFallback = familyFallback ?: value
                 }
                 if (nameId == 2) {
-                    if (languageId == 0x0409 || (platformId == 0 && languageId == 0)) {
+                    if (isEnglishUnicodeNameRecord(platformId, languageId)) {
                         styleEnglish = styleEnglish ?: value
                     }
                     styleFallback = styleFallback ?: value
@@ -179,6 +180,20 @@ public object SfntReader {
         }
         return chars.concatToString()
     }
+
+    private fun isUnicodeNameRecord(platformId: Int, encodingId: Int): Boolean =
+        when (platformId) {
+            0 -> encodingId in 0..6
+            3 -> encodingId == 1 || encodingId == 10
+            else -> false
+        }
+
+    private fun isEnglishUnicodeNameRecord(platformId: Int, languageId: Int): Boolean =
+        when (platformId) {
+            0 -> languageId == 0
+            3 -> languageId == 0x0409
+            else -> false
+        }
 
     private fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
         val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null

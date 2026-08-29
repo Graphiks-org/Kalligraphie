@@ -114,30 +114,30 @@ public sealed interface FontError {
 }
 
 public sealed interface FontOperationResult<out T> {
-    public data class Success<T>(
-        val value: T,
-        val diagnostics: List<FontDiagnostic> = emptyList(),
+    public class Success<T>(
+        public val value: T,
+        diagnostics: List<FontDiagnostic> = emptyList(),
     ) : FontOperationResult<T> {
-        public constructor(
-            value: T,
-            diagnostics: Iterable<FontDiagnostic>,
-        ) : this(value, diagnostics.sortedDiagnostics())
+        public val diagnostics: List<FontDiagnostic> = diagnostics.canonicalDiagnostics()
+
+        public constructor(value: T, diagnostics: Iterable<FontDiagnostic>) : this(value, diagnostics.toList())
     }
 
-    public data class Failure(
-        val error: FontError,
-        val diagnostics: List<FontDiagnostic> = emptyList(),
+    public class Failure(
+        public val error: FontError,
+        diagnostics: List<FontDiagnostic> = emptyList(),
     ) : FontOperationResult<Nothing> {
-        public constructor(
-            error: FontError,
-            diagnostics: Iterable<FontDiagnostic>,
-        ) : this(error, diagnostics.sortedDiagnostics())
+        public val diagnostics: List<FontDiagnostic> = diagnostics.canonicalDiagnostics()
+
+        public constructor(error: FontError, diagnostics: Iterable<FontDiagnostic>) : this(error, diagnostics.toList())
     }
 
-    public data class Cancelled(
-        val diagnostics: List<FontDiagnostic> = emptyList(),
+    public class Cancelled(
+        diagnostics: List<FontDiagnostic> = emptyList(),
     ) : FontOperationResult<Nothing> {
-        public constructor(diagnostics: Iterable<FontDiagnostic>) : this(diagnostics.sortedDiagnostics())
+        public val diagnostics: List<FontDiagnostic> = diagnostics.canonicalDiagnostics()
+
+        public constructor(diagnostics: Iterable<FontDiagnostic>) : this(diagnostics.toList())
     }
 }
 
@@ -158,6 +158,8 @@ public fun Iterable<FontDiagnostic>.sortedDiagnostics(): List<FontDiagnostic> =
             { it.message },
         ),
     )
+
+private fun List<FontDiagnostic>.canonicalDiagnostics(): List<FontDiagnostic> = toList().sortedDiagnostics()
 
 private fun FontDiagnosticLocation.sortKey(): String =
     when (this) {

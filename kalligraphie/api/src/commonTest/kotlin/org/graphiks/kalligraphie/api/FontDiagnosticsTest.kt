@@ -1,0 +1,59 @@
+package org.graphiks.kalligraphie.api
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+class FontDiagnosticsTest {
+    @Test
+    fun successDefensivelyCopiesAndSortsPublishedDiagnostics() {
+        val published = mutableListOf(
+            diagnostic(code = "font.z", message = "later"),
+            diagnostic(code = "font.a", message = "first"),
+        )
+
+        val result = FontOperationResult.Success(value = "ok", diagnostics = published)
+        published.clear()
+        published += diagnostic(code = "font.mutated", message = "mutated")
+
+        assertEquals(listOf("font.a", "font.z"), result.diagnostics.map { it.code })
+        assertEquals(listOf("first", "later"), result.diagnostics.map { it.message })
+    }
+
+    @Test
+    fun failureDefensivelyCopiesAndSortsPublishedDiagnostics() {
+        val published = mutableListOf(
+            diagnostic(code = "font.z", message = "later"),
+            diagnostic(code = "font.a", message = "first"),
+        )
+
+        val result = FontOperationResult.Failure(
+            error = FontError.InvalidFontData("bad font"),
+            diagnostics = published,
+        )
+        published.removeAt(0)
+
+        assertEquals(listOf("font.a", "font.z"), result.diagnostics.map { it.code })
+        assertEquals(2, result.diagnostics.size)
+    }
+
+    @Test
+    fun cancelledDefensivelyCopiesAndSortsPublishedDiagnostics() {
+        val published = mutableListOf(
+            diagnostic(code = "font.z", message = "later"),
+            diagnostic(code = "font.a", message = "first"),
+        )
+
+        val result = FontOperationResult.Cancelled(diagnostics = published)
+        published.clear()
+
+        assertEquals(listOf("font.a", "font.z"), result.diagnostics.map { it.code })
+        assertEquals(2, result.diagnostics.size)
+    }
+
+    private fun diagnostic(code: String, message: String) = FontDiagnostic(
+        code = code,
+        severity = FontDiagnosticSeverity.ERROR,
+        location = FontDiagnosticLocation.Source,
+        message = message,
+    )
+}
