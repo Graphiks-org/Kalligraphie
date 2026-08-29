@@ -23,7 +23,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
-class J14DetachedAssetContractTest {
+class DetachedRenderAssetContractTest {
     @Test
     fun detachedAssetResolvesAfterResolverAndAttachedHandleClose() {
         val catalog = catalogFor(fixtureBytes())
@@ -114,7 +114,7 @@ class J14DetachedAssetContractTest {
         assertEquals("font.resource-limit-exceeded", failure.diagnostics.single().code)
     }
 
-    private fun openRenderableFont(bytes: ByteArray, size: Float): J14RenderableFont {
+    private fun openRenderableFont(bytes: ByteArray, size: Float): DetachedFontResources {
         val catalog = catalogFor(bytes)
         val resolver = success(catalog.openAssetResolver())
         val face = success(catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.renderable(outlineProfile())))
@@ -122,7 +122,7 @@ class J14DetachedAssetContractTest {
         val asset = success(
             instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, FontAccessRequirementsSnapshot.renderable(outlineProfile())),
         )
-        return J14RenderableFont(resolver, instance, asset)
+        return DetachedFontResources(resolver, instance, asset)
     }
 
     private fun faceFor(bytes: ByteArray): FontFace =
@@ -155,7 +155,7 @@ class J14DetachedAssetContractTest {
         assertIs<FontOperationResult.Success<T>>(result).value
 }
 
-private data class J14RenderableFont(
+private data class DetachedFontResources(
     val resolver: FontAssetResolverHandle,
     val instance: FontInstance,
     val asset: FontRenderAssetHandle,

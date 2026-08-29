@@ -6,7 +6,7 @@ import kotlin.test.assertIs
 
 class FontContractsCompatibilityTest {
     @Test
-    fun fontGlyphRequestKeepsTheJ11IntContract() {
+    fun fontGlyphRequestKeepsTheIntContract() {
         val legacy = FontGlyphRequest(glyphId = 36)
         val typed = FontGlyphRequest(GlyphId(36))
 
@@ -15,7 +15,7 @@ class FontContractsCompatibilityTest {
     }
 
     @Test
-    fun glyphOutlineKeepsTheJ11FlatCommandContract() {
+    fun glyphOutlineKeepsTheFlatCommandContract() {
         val commands = listOf<GlyphOutlineIR.Command>(
             GlyphOutlineIR.Command.MoveTo(4, 0),
             GlyphOutlineIR.Command.LineTo(10, 20),
@@ -43,8 +43,8 @@ class FontContractsCompatibilityTest {
     }
 
     @Test
-    fun j13RenderAssetImplementationsRetainTheirSingleArgumentResolveContract() {
-        val asset: FontRenderAssetHandle = J13CompatibleRenderAsset()
+    fun renderAssetImplementationsRetainTheirSingleArgumentResolveContract() {
+        val asset: FontRenderAssetHandle = CompatibleRenderAsset()
 
         assertIs<FontOperationResult.Success<GlyphRepresentation>>(
             asset.resolveGlyph(FontGlyphRequest(0), CancellationToken.none),
@@ -53,7 +53,7 @@ class FontContractsCompatibilityTest {
     }
 }
 
-private class J13CompatibleRenderAsset : FontRenderAssetHandle {
+private class CompatibleRenderAsset : FontRenderAssetHandle {
     override val faceId: FontFaceId = FontFaceId("legacy-face")
 
     override fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation> =

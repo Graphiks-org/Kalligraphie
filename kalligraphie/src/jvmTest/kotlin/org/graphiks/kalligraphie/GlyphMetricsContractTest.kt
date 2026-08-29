@@ -17,7 +17,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class J12GlyphMetricsContractTest {
+class GlyphMetricsContractTest {
     @Test
     fun resolvesAndMeasuresAuditedGlyphs() {
         val instance = openInstance(size = 2048f)

@@ -11,7 +11,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class J11FontFaceContractTest {
+class EmbeddedFontFaceContractTest {
     @Test
     fun opensTheAuditedTrueTypeFaceThroughThePublishedFacade() {
         val result = Kalligraphie.embedded(

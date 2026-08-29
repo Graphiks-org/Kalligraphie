@@ -21,7 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-class J13GlyphOutlineContractTest {
+class GlyphOutlineContractTest {
     @Test
     fun materializesAuditedSimpleGlyphAInDesignUnits() {
         val font = openRenderableFont(fixtureBytes())
@@ -112,7 +112,7 @@ class J13GlyphOutlineContractTest {
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
             Kalligraphie.embedded(
                 sourceBytes = bytes,
-                provenance = FontSourceProvenance(declaredName = "J1.3 test font"),
+                provenance = FontSourceProvenance(declaredName = "Composite outline contract test font"),
             ),
         ).value
         val resolver = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontAssetResolverHandle>>(
