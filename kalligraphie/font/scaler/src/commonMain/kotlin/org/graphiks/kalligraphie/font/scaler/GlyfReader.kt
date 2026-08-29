@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.font.scaler
 
 import kotlin.math.roundToInt
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -22,20 +23,25 @@ public object GlyfReader {
         parsedFont: ParsedTrueTypeFont,
         glyphId: GlyphId,
         profile: OutlineProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<ScalerGlyphOutline> {
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
         val glyfRecord = parsedFont.tableRecords["glyf"] ?: return failure(FontError.MissingRequiredTable("glyf"))
         val glyf = slice(sourceBytes, glyfRecord)
             ?: return failure(fontFailure("font.glyf.truncated", "Table glyf exceeds source length.", tableLocation("glyf")))
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         val loca = when (val result = LocaReader.readLoca(sourceBytes, parsedFont, glyf.size)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         val maxp = readMaxpLimits(sourceBytes, parsedFont)
-        return GlyphResolver(glyf, loca, parsedFont.metadata.glyphCount, parsedFont.metadata.unitsPerEm, profile, maxp)
+        if (cancellationToken.isCancellationRequested()) return cancelled()
+        return GlyphResolver(glyf, loca, parsedFont.metadata.glyphCount, parsedFont.metadata.unitsPerEm, profile, maxp, cancellationToken)
             .resolveRoot(glyphId)
     }
 }
@@ -56,6 +62,7 @@ private class GlyphResolver(
     private val unitsPerEm: Int,
     private val profile: OutlineProfile,
     private val maxp: MaxpLimits,
+    private val cancellationToken: CancellationToken,
 ) {
     private var componentCount = 0
 
@@ -68,6 +75,7 @@ private class GlyphResolver(
         depth: Int,
         publishDirectComponents: Boolean,
     ): FontOperationResult<ScalerGlyphOutline> {
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         if (glyphId.value in path) {
             return failure(fontFailure("font.glyf.composite-cycle", "Composite glyph re-enters the active path.", glyphLocation(glyphId.value)))
         }
@@ -79,6 +87,7 @@ private class GlyphResolver(
             is FontOperationResult.Failure -> return rangeResult
             is FontOperationResult.Cancelled -> return rangeResult
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         if (range.start == range.endExclusive) {
             return FontOperationResult.Success(emptyOutline(glyphId.value))
         }
@@ -97,6 +106,7 @@ private class GlyphResolver(
             maxX = reader.readInt16() ?: return truncated(glyphId.value),
             maxY = reader.readInt16() ?: return truncated(glyphId.value),
         )
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         return if (contourCount >= 0) {
             readSimple(glyphId.value, contourCount, bounds, reader)
         } else {
@@ -110,6 +120,7 @@ private class GlyphResolver(
         bounds: DesignBounds,
         reader: GlyphByteReader,
     ): FontOperationResult<ScalerGlyphOutline> {
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         if (contourCount > profile.maxContours || contourCount > maxp.maxContours) {
             return failure(FontError.ResourceLimitExceeded("Simple glyph contour limit exceeded.", glyphLocation(glyphId)))
         }
@@ -132,16 +143,19 @@ private class GlyphResolver(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         val xs = when (val result = readCoordinates(reader, flags, CoordinateAxis.X, glyphId)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         val ys = when (val result = readCoordinates(reader, flags, CoordinateAxis.Y, glyphId)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         val points = flags.indices.map { index ->
             GlyphPoint(xs[index], ys[index], flags[index] and FLAG_ON_CURVE != 0)
         }
@@ -151,6 +165,7 @@ private class GlyphResolver(
             contours += GlyphContour(commandsForContour(points.subList(start, end + 1)))
             start = end + 1
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         return FontOperationResult.Success(
             ScalerGlyphOutline(
                 glyphId = glyphId,
@@ -177,6 +192,7 @@ private class GlyphResolver(
         var componentElementCount = 0
         var flags: Int
         do {
+            if (cancellationToken.isCancellationRequested()) return cancelled()
             componentCount += 1
             if (componentCount > profile.maxCompositeComponents) {
                 return failure(FontError.ResourceLimitExceeded("Composite glyph component limit exceeded.", glyphLocation(glyphId.value)))
@@ -213,6 +229,7 @@ private class GlyphResolver(
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
             }
+            if (cancellationToken.isCancellationRequested()) return cancelled()
             contours += child.contours.map { contour -> transformContour(contour, transform) }
             pointCount += child.pointCount
             if (pointCount > profile.maxPoints || pointCount > maxp.maxCompositePoints) {
@@ -227,6 +244,7 @@ private class GlyphResolver(
         if (contours.size > profile.maxContours || contours.size > maxp.maxCompositeContours) {
             return failure(FontError.ResourceLimitExceeded("Composite glyph contour limit exceeded.", glyphLocation(glyphId.value)))
         }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         return FontOperationResult.Success(
             ScalerGlyphOutline(
                 glyphId = glyphId.value,
@@ -519,6 +537,8 @@ private data class GlyphPoint(
 
 private fun truncated(glyphId: Int): FontOperationResult.Failure =
     failure(fontFailure("font.glyf.truncated", "Glyph data is truncated.", glyphLocation(glyphId)))
+
+private fun cancelled(): FontOperationResult.Cancelled = FontOperationResult.Cancelled()
 
 private fun glyphLocation(glyphId: Int): FontDiagnosticLocation = FontDiagnosticLocation.Glyph(glyphId)
 

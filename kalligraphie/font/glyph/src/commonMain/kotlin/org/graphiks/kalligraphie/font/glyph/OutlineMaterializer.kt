@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.font.glyph
 
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -16,7 +17,11 @@ public object OutlineMaterializer {
     public fun materialize(
         outline: ScalerGlyphOutline,
         profile: OutlineProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<GlyphRepresentation> {
+        if (cancellationToken.isCancellationRequested()) {
+            return FontOperationResult.Cancelled()
+        }
         if (outline.contours.isEmpty() || outline.pointCount == 0) {
             return FontOperationResult.Success(GlyphRepresentation.Empty)
         }
@@ -33,6 +38,9 @@ public object OutlineMaterializer {
         }
         if (byteBudget > profile.maxBytes) {
             return limitFailure("Outline byte limit exceeded.", outline.glyphId)
+        }
+        if (cancellationToken.isCancellationRequested()) {
+            return FontOperationResult.Cancelled()
         }
         return FontOperationResult.Success(
             GlyphRepresentation.Outline(

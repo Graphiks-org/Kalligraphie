@@ -15,6 +15,8 @@ import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 public class EmbeddedFontCatalog(
     private val source: FontSource,
@@ -69,12 +71,74 @@ public class EmbeddedFontCatalog(
 internal class EmbeddedFontAssetResolver(
     override val sourceId: FontSourceId,
 ) : FontAssetResolverHandle {
-    private var closed: Boolean = false
+    private val lifecycle = FontHandleLifecycle()
+
     val isClosed: Boolean
-        get() = closed
+        get() = !lifecycle.isOpenForNewOperations()
+
+    fun acquireLease(): FontHandleLease? = lifecycle.acquireLease()
 
     override fun close(): FontOperationResult<Unit> {
-        closed = true
+        lifecycle.close()
         return FontOperationResult.Success(Unit)
+    }
+}
+
+@OptIn(ExperimentalAtomicApi::class)
+internal class FontHandleLifecycle {
+    private val state = AtomicInt(0)
+
+    fun isOpenForNewOperations(): Boolean = state.load() >= 0
+
+    fun acquireLease(): FontHandleLease? {
+        while (true) {
+            val current = state.load()
+            if (current < 0) {
+                return null
+            }
+            if (state.compareAndSet(current, current + 1)) {
+                return FontHandleLease(this)
+            }
+        }
+    }
+
+    fun close() {
+        while (true) {
+            val current = state.load()
+            if (current < 0) {
+                return
+            }
+            val next = Int.MIN_VALUE + current
+            if (state.compareAndSet(current, next)) {
+                return
+            }
+        }
+    }
+
+    internal fun releaseLease() {
+        while (true) {
+            val current = state.load()
+            val next = when {
+                current > 0 -> current - 1
+                current > Int.MIN_VALUE -> current - 1
+                else -> return
+            }
+            if (state.compareAndSet(current, next)) {
+                return
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalAtomicApi::class)
+internal class FontHandleLease(
+    private val lifecycle: FontHandleLifecycle,
+) {
+    private val released = AtomicInt(0)
+
+    fun release() {
+        if (released.compareAndSet(0, 1)) {
+            lifecycle.releaseLease()
+        }
     }
 }

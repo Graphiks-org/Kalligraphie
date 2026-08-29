@@ -105,6 +105,13 @@ public sealed interface FontError {
         override val code: String = "font.geometry-overflow"
     }
 
+    public data class InvalidInstanceDescriptor(
+        override val message: String,
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source,
+    ) : FontError {
+        override val code: String = "font.invalid-instance-descriptor"
+    }
+
     public data class FontDataFailure(
         override val code: String,
         override val message: String,

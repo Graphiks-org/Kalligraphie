@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - KMP project template (Android, iOS, Desktop)
 - Clean Architecture / DDD
+- Autonomous embedded TrueType catalog support through `org.graphiks:kalligraphie`, including immutable source/face/instance data, cmap and metrics, design-unit outlines, and detached render assets.
 - Maven Central publishing via Vanniktech
 - JVM font module graph (`:font`, `:font:core`, `:font:sfnt`, `:font:colr`, `:font:scaler`, `:font:text`, and `:font:glyph`)
 - OpenType core and SFNT parsing sources for the JVM font stack.

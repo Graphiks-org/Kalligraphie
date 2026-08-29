@@ -12,6 +12,7 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.LayoutUnit
@@ -28,7 +29,7 @@ class J13GlyphOutlineContractTest {
         assertEquals(36, a.glyphId.value)
 
         val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
-            font.asset.resolveGlyph(FontGlyphRequest(a.glyphId.value)),
+            font.asset.resolveGlyph(FontGlyphRequest(a.glyphId)),
         ).value
         val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
 
@@ -46,7 +47,7 @@ class J13GlyphOutlineContractTest {
         assertEquals(134, adieresis.glyphId.value)
 
         val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
-            font.asset.resolveGlyph(FontGlyphRequest(adieresis.glyphId.value)),
+            font.asset.resolveGlyph(FontGlyphRequest(adieresis.glyphId)),
         ).value
         val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
 
@@ -67,7 +68,7 @@ class J13GlyphOutlineContractTest {
         )
         val font = openRenderableFont(bytes)
 
-        val result = font.asset.resolveGlyph(FontGlyphRequest(0))
+        val result = font.asset.resolveGlyph(FontGlyphRequest(GlyphId(0)))
 
         val failure = assertIs<FontOperationResult.Failure>(result)
         assertEquals("font.glyf.truncated", failure.error.code)
@@ -84,7 +85,7 @@ class J13GlyphOutlineContractTest {
         )
         val font = openRenderableFont(bytes)
 
-        val result = font.asset.resolveGlyph(FontGlyphRequest(0))
+        val result = font.asset.resolveGlyph(FontGlyphRequest(GlyphId(0)))
 
         val failure = assertIs<FontOperationResult.Failure>(result)
         assertEquals("font.loca.out-of-range", failure.error.code)
@@ -101,7 +102,7 @@ class J13GlyphOutlineContractTest {
         )
         val font = openRenderableFont(bytes)
 
-        val result = font.asset.resolveGlyph(FontGlyphRequest(0))
+        val result = font.asset.resolveGlyph(FontGlyphRequest(GlyphId(0)))
 
         val failure = assertIs<FontOperationResult.Failure>(result)
         assertEquals("font.glyf.composite-cycle", failure.error.code)

@@ -86,10 +86,15 @@ public data class FontRenderVariantKey(
 }
 
 public data class FontGlyphRequest(
-    public val glyphId: Int,
-) {
-    init {
-        require(glyphId >= 0) { "glyphId must be non-negative." }
+    public val glyphId: GlyphId,
+)
+
+public fun interface CancellationToken {
+    public fun isCancellationRequested(): Boolean
+
+    public companion object {
+        public val none: CancellationToken = CancellationToken { false }
+        public val cancelled: CancellationToken = CancellationToken { true }
     }
 }
 
@@ -100,7 +105,11 @@ public interface FontAssetResolverHandle {
 
 public interface FontRenderAssetHandle {
     public val faceId: FontFaceId
-    public fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation>
+    public fun detach(): FontOperationResult<FontRenderAssetHandle>
+    public fun resolveGlyph(
+        request: FontGlyphRequest,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): FontOperationResult<GlyphRepresentation>
     public fun close(): FontOperationResult<Unit>
 }
 
