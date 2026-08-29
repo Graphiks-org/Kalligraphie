@@ -1,13 +1,13 @@
 # Font Management
 
-Kalligraphie J1 exposes an embedded TrueType path through
+Kalligraphie exposes an embedded TrueType path through
 `org.graphiks:kalligraphie` on the JVM reference target only. The public
-contracts stay portable, but this first executable route is JVM-only. A
+contracts stay portable, but this executable route is JVM-only. A
 consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
 resolves face `0`, creates a font instance, and uses a render asset handle to
 materialize `GlyphOutlineIR` outlines.
 
-The supported J1 route is intentionally narrow:
+The supported functional scope is intentionally narrow:
 
 - JVM reference target only;
 - static SFNT TrueType only: `0x00010000` and `true`;
@@ -31,6 +31,6 @@ resolver or render asset is idempotent. New acquisitions after closure return
 `font.resource-closed`; a detached asset owns the immutable data required for
 `resolveGlyph(...)`.
 
-Excluded from J1: TTC/OTC, CFF/CFF2, variations, synthetic styles, COLR, SVG,
+Out of scope: TTC/OTC, CFF/CFF2, variations, synthetic styles, COLR, SVG,
 bitmap glyphs, system fonts, shaping, layout, hinting, rasterization, native
 font engines, and platform font handles.

@@ -1,14 +1,14 @@
 # Gestion des fontes
 
-Kalligraphie J1 expose un chemin TrueType embarqué via
+Kalligraphie expose un chemin TrueType embarqué via
 `org.graphiks:kalligraphie` sur la cible JVM de référence uniquement. Les
-contrats publics restent portables, mais cette première route exécutable est
+contrats publics restent portables, mais cette route exécutable est
 JVM-only (limitée à la JVM). Un consommateur fournit des octets SFNT capturés à
 `Kalligraphie.embedded(...)`, résout la face `0`, crée une instance de fonte,
 puis utilise un handle d’asset de rendu pour matérialiser des outlines
 `GlyphOutlineIR`.
 
-Le périmètre J1 supporté est volontairement étroit :
+Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;
 - TrueType SFNT statique uniquement : `0x00010000` et `true` ;
@@ -32,7 +32,7 @@ resolver ou un asset de rendu est idempotent. Les nouvelles acquisitions après
 fermeture retournent `font.resource-closed`; un asset détaché possède les
 données immuables requises pour `resolveGlyph(...)`.
 
-Exclus de J1 : TTC/OTC, CFF/CFF2, variations, styles synthétiques, COLR, SVG,
+Hors périmètre : TTC/OTC, CFF/CFF2, variations, styles synthétiques, COLR, SVG,
 glyphes bitmap, fontes système, shaping (composition contextuelle), layout
 (mise en page), hinting (ajustement aux pixels), rasterization (rastérisation),
 moteurs de fontes natifs et handles de fonte plateforme.
