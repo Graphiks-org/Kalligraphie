@@ -121,6 +121,22 @@ public sealed interface FontOperationResult<out T> {
         public val diagnostics: List<FontDiagnostic> = diagnostics.canonicalDiagnostics()
 
         public constructor(value: T, diagnostics: Iterable<FontDiagnostic>) : this(value, diagnostics.toList())
+
+        public operator fun component1(): T = value
+
+        public operator fun component2(): List<FontDiagnostic> = diagnostics
+
+        public fun copy(
+            value: T = this.value,
+            diagnostics: List<FontDiagnostic> = this.diagnostics,
+        ): Success<T> = Success(value, diagnostics)
+
+        override fun equals(other: Any?): Boolean =
+            this === other || other is Success<*> && value == other.value && diagnostics == other.diagnostics
+
+        override fun hashCode(): Int = 31 * value.hashCode() + diagnostics.hashCode()
+
+        override fun toString(): String = "Success(value=$value, diagnostics=$diagnostics)"
     }
 
     public class Failure(
@@ -130,6 +146,22 @@ public sealed interface FontOperationResult<out T> {
         public val diagnostics: List<FontDiagnostic> = diagnostics.canonicalDiagnostics()
 
         public constructor(error: FontError, diagnostics: Iterable<FontDiagnostic>) : this(error, diagnostics.toList())
+
+        public operator fun component1(): FontError = error
+
+        public operator fun component2(): List<FontDiagnostic> = diagnostics
+
+        public fun copy(
+            error: FontError = this.error,
+            diagnostics: List<FontDiagnostic> = this.diagnostics,
+        ): Failure = Failure(error, diagnostics)
+
+        override fun equals(other: Any?): Boolean =
+            this === other || other is Failure && error == other.error && diagnostics == other.diagnostics
+
+        override fun hashCode(): Int = 31 * error.hashCode() + diagnostics.hashCode()
+
+        override fun toString(): String = "Failure(error=$error, diagnostics=$diagnostics)"
     }
 
     public class Cancelled(
@@ -138,6 +170,19 @@ public sealed interface FontOperationResult<out T> {
         public val diagnostics: List<FontDiagnostic> = diagnostics.canonicalDiagnostics()
 
         public constructor(diagnostics: Iterable<FontDiagnostic>) : this(diagnostics.toList())
+
+        public operator fun component1(): List<FontDiagnostic> = diagnostics
+
+        public fun copy(
+            diagnostics: List<FontDiagnostic> = this.diagnostics,
+        ): Cancelled = Cancelled(diagnostics)
+
+        override fun equals(other: Any?): Boolean =
+            this === other || other is Cancelled && diagnostics == other.diagnostics
+
+        override fun hashCode(): Int = diagnostics.hashCode()
+
+        override fun toString(): String = "Cancelled(diagnostics=$diagnostics)"
     }
 }
 
