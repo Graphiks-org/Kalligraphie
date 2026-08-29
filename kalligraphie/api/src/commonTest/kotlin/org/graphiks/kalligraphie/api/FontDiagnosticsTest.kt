@@ -74,6 +74,18 @@ class FontDiagnosticsTest {
         )
     }
 
+    @Test
+    fun successHashCodeMatchesDataClassSemanticsForNullablePayloads() {
+        val diagnostics = listOf(
+            diagnostic(code = "font.z", message = "later"),
+            diagnostic(code = "font.a", message = "first"),
+        )
+
+        val result = FontOperationResult.Success<String?>(value = null, diagnostics = diagnostics)
+
+        assertEquals(31 * 0 + diagnostics.sortedDiagnostics().hashCode(), result.hashCode())
+    }
+
     private fun diagnostic(code: String, message: String) = FontDiagnostic(
         code = code,
         severity = FontDiagnosticSeverity.ERROR,

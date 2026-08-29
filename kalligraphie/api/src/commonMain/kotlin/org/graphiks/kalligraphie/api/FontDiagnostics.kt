@@ -134,7 +134,7 @@ public sealed interface FontOperationResult<out T> {
         override fun equals(other: Any?): Boolean =
             this === other || other is Success<*> && value == other.value && diagnostics == other.diagnostics
 
-        override fun hashCode(): Int = 31 * value.hashCode() + diagnostics.hashCode()
+        override fun hashCode(): Int = 31 * (value?.hashCode() ?: 0) + diagnostics.hashCode()
 
         override fun toString(): String = "Success(value=$value, diagnostics=$diagnostics)"
     }
