@@ -1,22 +1,22 @@
 # Kalligraphie documentation
 
-Kalligraphie is a JVM font library. Its API is split into focused Gradle modules so parsing, shaping, scaling, and glyph access can evolve independently.
+Kalligraphie is a portable KMP font library. Its API is split into focused Gradle modules so font contracts, SFNT parsing, metrics, and glyph access can evolve independently.
 
 ## Modules
 
-- `:font:core` provides the common font primitives.
-- `:font:sfnt` parses SFNT and OpenType data.
-- `:font:colr` handles COLR color-font tables.
-- `:font:scaler` scales and rasterizes glyphs.
-- `:font:text` shapes text.
-- `:font:glyph` exposes the glyph-oriented API.
-- `:font` aggregates the public modules for consumers.
+- `:kalligraphie` is the public facade consumed by applications.
+- `:kalligraphie:api` contains the portable public contracts and immutable value types.
+- `:kalligraphie:unicode` contains the portable Unicode contracts.
+- `:kalligraphie:font:core` provides font sources, faces, and instances.
+- `:kalligraphie:font:sfnt` parses bounded SFNT and OpenType data.
+- `:kalligraphie:font:scaler` resolves metrics and TrueType outlines.
+- `:kalligraphie:font:glyph` materializes detached render assets.
 
 ## Useful commands
 
 ```bash
 # Run all JVM tests for the font stack.
-./gradlew :font:fontTest
+./gradlew :kalligraphie:fontTest
 
 # Generate and embed the API reference (Dokka → MkDocs).
 ./gradlew :docs:embedDokkaIntoMkDocs

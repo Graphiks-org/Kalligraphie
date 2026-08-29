@@ -5,6 +5,7 @@ import org.gradle.api.publish.maven.MavenPublication
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
     id("maven-publish")
+    id("dev.opensavvy.dokka-mkdocs")
 }
 
 group = "org.graphiks"
