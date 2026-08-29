@@ -155,7 +155,7 @@ private class GlyphResolver(
             ScalerGlyphOutline(
                 glyphId = glyphId,
                 unitsPerEm = unitsPerEm,
-                bounds = bounds,
+                bounds = boundsForPoints(points) ?: bounds,
                 contours = contours,
                 pointCount = pointCount,
                 components = emptyList(),
@@ -174,11 +174,16 @@ private class GlyphResolver(
         val contours = mutableListOf<GlyphContour>()
         val directComponents = mutableListOf<GlyphComponentReference>()
         var pointCount = 0
+        var componentElementCount = 0
         var flags: Int
         do {
             componentCount += 1
             if (componentCount > profile.maxCompositeComponents) {
                 return failure(FontError.ResourceLimitExceeded("Composite glyph component limit exceeded.", glyphLocation(glyphId.value)))
+            }
+            componentElementCount += 1
+            if (componentElementCount > maxp.maxComponentElements) {
+                return failure(FontError.ResourceLimitExceeded("Composite glyph component element limit exceeded.", glyphLocation(glyphId.value)))
             }
             flags = reader.readUInt16() ?: return truncated(glyphId.value)
             if (flags and SUPPORTED_COMPOSITE_FLAGS.inv() != 0) {
@@ -441,6 +446,21 @@ private fun boundsForContours(contours: List<GlyphContour>): DesignBounds? {
     return if (hasPoint) DesignBounds(minX, minY, maxX, maxY) else null
 }
 
+private fun boundsForPoints(points: List<GlyphPoint>): DesignBounds? {
+    if (points.isEmpty()) return null
+    var minX = Int.MAX_VALUE
+    var minY = Int.MAX_VALUE
+    var maxX = Int.MIN_VALUE
+    var maxY = Int.MIN_VALUE
+    for (point in points) {
+        minX = minOf(minX, point.x)
+        minY = minOf(minY, point.y)
+        maxX = maxOf(maxX, point.x)
+        maxY = maxOf(maxY, point.y)
+    }
+    return DesignBounds(minX, minY, maxX, maxY)
+}
+
 private fun midpoint(a: GlyphPoint, b: GlyphPoint): GlyphPoint =
     GlyphPoint((a.x + b.x) / 2, (a.y + b.y) / 2, onCurve = true)
 
@@ -451,7 +471,8 @@ private fun readMaxpLimits(sourceBytes: ByteArray, parsedFont: ParsedTrueTypeFon
         maxContours = readUInt16(maxp, 8)?.toInt()?.takeIf { it > 0 } ?: Int.MAX_VALUE,
         maxCompositePoints = readUInt16(maxp, 10)?.toInt()?.takeIf { it > 0 } ?: Int.MAX_VALUE,
         maxCompositeContours = readUInt16(maxp, 12)?.toInt()?.takeIf { it > 0 } ?: Int.MAX_VALUE,
-        maxComponentDepth = readUInt16(maxp, 28)?.toInt()?.takeIf { it > 0 } ?: Int.MAX_VALUE,
+        maxComponentElements = readUInt16(maxp, 28)?.toInt()?.takeIf { it > 0 } ?: Int.MAX_VALUE,
+        maxComponentDepth = readUInt16(maxp, 30)?.toInt()?.takeIf { it > 0 } ?: Int.MAX_VALUE,
     )
 }
 
@@ -460,6 +481,7 @@ private data class MaxpLimits(
     val maxContours: Int = Int.MAX_VALUE,
     val maxCompositePoints: Int = Int.MAX_VALUE,
     val maxCompositeContours: Int = Int.MAX_VALUE,
+    val maxComponentElements: Int = Int.MAX_VALUE,
     val maxComponentDepth: Int = Int.MAX_VALUE,
 )
 
