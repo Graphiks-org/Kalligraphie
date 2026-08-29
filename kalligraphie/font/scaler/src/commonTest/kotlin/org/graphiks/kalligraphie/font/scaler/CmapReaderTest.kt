@@ -10,6 +10,65 @@ import kotlin.test.assertTrue
 
 class CmapReaderTest {
     @Test
+    fun prefersPlatform310Format12OverAllOtherSupportedUnicodeSubtables() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(
+                format4Subtable(delta = 100, platformId = 0, encodingId = 3),
+                format4Subtable(delta = 50, platformId = 3, encodingId = 1),
+                format12Subtable(startCharCode = 0x41, endCharCode = 0x41, startGlyphId = 300, platformId = 0, encodingId = 4),
+                format12Subtable(startCharCode = 0x41, endCharCode = 0x41, startGlyphId = 400, platformId = 3, encodingId = 10),
+            ),
+            codePoint = 0x41,
+        )
+
+        val success = assertIs<FontOperationResult.Success<GlyphLookupResult>>(result)
+        assertEquals(400, success.value.glyphId.value)
+    }
+
+    @Test
+    fun prefersPlatform0Format12OverFormat4WhenPlatform310IsAbsent() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(
+                format4Subtable(delta = 100, platformId = 0, encodingId = 3),
+                format4Subtable(delta = 50, platformId = 3, encodingId = 1),
+                format12Subtable(startCharCode = 0x41, endCharCode = 0x41, startGlyphId = 300, platformId = 0, encodingId = 4),
+            ),
+            codePoint = 0x41,
+        )
+
+        val success = assertIs<FontOperationResult.Success<GlyphLookupResult>>(result)
+        assertEquals(300, success.value.glyphId.value)
+    }
+
+    @Test
+    fun prefersPlatform31Format4OverPlatform0Format4WhenNoFormat12Exists() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(
+                format4Subtable(delta = 100, platformId = 0, encodingId = 3),
+                format4Subtable(delta = 50, platformId = 3, encodingId = 1),
+            ),
+            codePoint = 0x41,
+        )
+
+        val success = assertIs<FontOperationResult.Success<GlyphLookupResult>>(result)
+        assertEquals(115, success.value.glyphId.value)
+    }
+
+    @Test
+    fun prefersLowerOffsetWhenTwoSubtablesHaveTheSamePriority() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(
+                format12Subtable(startCharCode = 0x41, endCharCode = 0x41, startGlyphId = 300, platformId = 0, encodingId = 4),
+                format12Subtable(startCharCode = 0x41, endCharCode = 0x41, startGlyphId = 301, platformId = 0, encodingId = 6),
+            ),
+            codePoint = 0x41,
+        )
+
+        val success = assertIs<FontOperationResult.Success<GlyphLookupResult>>(result)
+        assertEquals(300, success.value.glyphId.value)
+    }
+
+    @Test
     fun resolvesFormat4GlyphUsingDeltaSegment() {
         val result = CmapReader.resolveGlyphId(cmapTable = cmapTable(format4Subtable(delta = -29)), codePoint = 0x41)
 
@@ -80,7 +139,7 @@ private fun cmapTable(vararg subtables: CmapSubtable): ByteArray {
     return bytes
 }
 
-private fun format4Subtable(delta: Int): CmapSubtable {
+private fun format4Subtable(delta: Int, platformId: Int = 3, encodingId: Int = 1): CmapSubtable {
     val segCount = 2
     val length = 16 + segCount * 8
     val bytes = ByteArray(length)
@@ -100,7 +159,7 @@ private fun format4Subtable(delta: Int): CmapSubtable {
     bytes.writeInt16(26, 1)
     bytes.writeUInt16(28, 0)
     bytes.writeUInt16(30, 0)
-    return CmapSubtable(platformId = 3, encodingId = 1, bytes = bytes)
+    return CmapSubtable(platformId = platformId, encodingId = encodingId, bytes = bytes)
 }
 
 private fun format4SubtableWithRangeOffset(startCode: Int, endCode: Int, glyphId: Int): CmapSubtable {
@@ -154,7 +213,13 @@ private fun format4SubtableWithUnsortedSegments(): CmapSubtable {
     return CmapSubtable(platformId = 3, encodingId = 1, bytes = bytes)
 }
 
-private fun format12Subtable(startCharCode: Int, endCharCode: Int, startGlyphId: Int): CmapSubtable {
+private fun format12Subtable(
+    startCharCode: Int,
+    endCharCode: Int,
+    startGlyphId: Int,
+    platformId: Int = 3,
+    encodingId: Int = 10,
+): CmapSubtable {
     val length = 28
     val bytes = ByteArray(length)
     bytes.writeUInt16(0, 12)
@@ -165,7 +230,7 @@ private fun format12Subtable(startCharCode: Int, endCharCode: Int, startGlyphId:
     bytes.writeUInt32(16, startCharCode)
     bytes.writeUInt32(20, endCharCode)
     bytes.writeUInt32(24, startGlyphId)
-    return CmapSubtable(platformId = 3, encodingId = 10, bytes = bytes)
+    return CmapSubtable(platformId = platformId, encodingId = encodingId, bytes = bytes)
 }
 
 private data class CmapSubtable(
