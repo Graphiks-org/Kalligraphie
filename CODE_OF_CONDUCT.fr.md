@@ -14,7 +14,7 @@ Dans l'intérêt de favoriser un environnement ouvert et accueillant, nous nous 
 
 **Comportements inacceptables :**
 - Tout langage ou imagerie sexualisés
-- Trolling, insultes, attaques personnelles
+- Provocations délibérées, insultes ou attaques personnelles
 - Harcèlement public ou privé
 - Publication d'informations privées
 
