@@ -339,4 +339,3 @@ glyph ID → métriques → `GlyphOutlineIR` fonctionne via l’artefact princip
 sur la vraie fixture auditée et sur les fixtures de sécurité, avec des
 diagnostics structurés, des limites observables, des identités fondées sur le
 contenu et un asset détaché utilisable après fermeture de son propriétaire.
-

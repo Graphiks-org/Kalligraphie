@@ -7,7 +7,10 @@ import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 
 class SfntReaderBoundaryTest {
     @Test
@@ -65,6 +68,86 @@ class SfntReaderBoundaryTest {
 
         assertEquals("Right Family", result.value.metadata.familyName)
         assertEquals("Right Style", result.value.metadata.styleName)
+    }
+
+    @Test
+    fun fixedWidthReadsRejectExtremeOffsetsWithoutIndexingTheArray() {
+        val bytes = ByteArray(8)
+
+        assertNull(readUInt16(bytes, Int.MAX_VALUE))
+        assertNull(readUInt32(bytes, Int.MAX_VALUE))
+        assertEquals("", bytes.decodeAsciiTag(Int.MAX_VALUE))
+    }
+
+    @Test
+    fun rejectsZeroUnitsPerEmAsLocalizedInvalidFontData() {
+        val bytes = minimalTrueTypeFont(
+            overrides = mapOf(
+                "head" to TableBytes(headTable(unitsPerEm = 0, indexToLocFormat = 0)),
+            ),
+        )
+
+        val result = SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("zero-upem.ttf")))
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+        assertEquals(FontDiagnosticLocation.Table("head"), failure.error.location)
+        assertEquals(0L, failure.diagnostics.single().data.observedValue)
+    }
+
+    @Test
+    fun rejectsBlankRequiredNamesAsLocalizedInvalidFontData() {
+        val bytes = minimalTrueTypeFont(
+            nameRecords = listOf(
+                nameRecord(platformId = 3, encodingId = 1, languageId = 0x0409, nameId = 1, text = ""),
+                nameRecord(platformId = 3, encodingId = 1, languageId = 0x0409, nameId = 2, text = "   "),
+            ),
+        )
+
+        val result = SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("blank-names.ttf")))
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+        assertEquals(FontDiagnosticLocation.Table("name"), failure.error.location)
+    }
+
+    @Test
+    fun rejectsTruncatedTrueTypeMaxpProfile() {
+        val bytes = minimalTrueTypeFont(
+            overrides = mapOf("maxp" to TableBytes(ByteArray(6).also { it.writeUInt16(4, 1) })),
+        )
+
+        val result = SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("truncated-maxp.ttf")))
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+        assertEquals(FontDiagnosticLocation.Table("maxp"), failure.error.location)
+    }
+
+    @Test
+    fun rejectsZeroGlyphCountBeforeConstructingPublicMetadata() {
+        val bytes = minimalTrueTypeFont(
+            overrides = mapOf("maxp" to TableBytes(maxpTable(glyphCount = 0))),
+        )
+
+        val result = SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("zero-glyphs.ttf")))
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+        assertEquals(0L, failure.diagnostics.single().data.observedValue)
+    }
+
+    @Test
+    fun parsedTableRecordsRejectMutationThroughMutableMapCast() {
+        val parsed = assertIs<FontOperationResult.Success<ParsedTrueTypeFont>>(
+            SfntReader.readMetadata(FontSource(minimalTrueTypeFont(), FontSourceProvenance("immutable.ttf"))),
+        ).value
+
+        assertFailsWith<UnsupportedOperationException> {
+            @Suppress("UNCHECKED_CAST")
+            (parsed.tableRecords as MutableMap<String, TableRecord>).clear()
+        }
+        assertNotNull(parsed.tableRecords["head"])
     }
 }
 
@@ -154,8 +237,15 @@ private fun headTable(unitsPerEm: Int, indexToLocFormat: Int): ByteArray =
     }
 
 private fun maxpTable(glyphCount: Int): ByteArray =
-    ByteArray(6).also { bytes ->
+    ByteArray(32).also { bytes ->
+        bytes.writeUInt32(0, 0x00010000)
         bytes.writeUInt16(4, glyphCount)
+        bytes.writeUInt16(6, 128)
+        bytes.writeUInt16(8, 16)
+        bytes.writeUInt16(10, 128)
+        bytes.writeUInt16(12, 16)
+        bytes.writeUInt16(28, 8)
+        bytes.writeUInt16(30, 8)
     }
 
 private fun nameTable(records: List<NameRecord>): ByteArray {

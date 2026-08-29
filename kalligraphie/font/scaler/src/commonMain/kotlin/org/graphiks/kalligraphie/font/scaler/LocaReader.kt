@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.FontDiagnostic
+import org.graphiks.kalligraphie.api.FontDiagnosticData
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -21,7 +22,7 @@ public object LocaReader {
         val locaRecord = parsedFont.tableRecords["loca"] ?: return failure(missingTable("loca"))
         val loca = slice(sourceBytes, locaRecord)
             ?: return failure(fontFailure("font.loca.out-of-range", "Table loca exceeds source length.", tableLocation("loca")))
-        val entryCount = parsedFont.metadata.glyphCount + 1
+        val entryCount = parsedFont.metadata.glyphCount.toLong() + 1L
         val entrySize = when (parsedFont.indexToLocFormat) {
             0 -> 2
             1 -> 4
@@ -33,16 +34,16 @@ public object LocaReader {
                 ),
             )
         }
-        val expectedLength = entryCount * entrySize
-        if (loca.size < expectedLength) {
+        val expectedLength = entryCount * entrySize.toLong()
+        if (loca.size.toLong() < expectedLength) {
             return failure(fontFailure("font.loca.truncated", "loca table is truncated.", tableLocation("loca")))
         }
-        if (loca.size != expectedLength) {
+        if (loca.size.toLong() != expectedLength) {
             return failure(fontFailure("font.loca.invalid-length", "loca table length does not match glyph count.", tableLocation("loca")))
         }
 
-        val offsets = ArrayList<Int>(entryCount)
-        repeat(entryCount) { index ->
+        val offsets = ArrayList<Int>(entryCount.toInt())
+        repeat(entryCount.toInt()) { index ->
             val offset = when (parsedFont.indexToLocFormat) {
                 0 -> {
                     val value = readUInt16(loca, index * 2)?.toInt()
@@ -73,9 +74,13 @@ public object LocaReader {
     private fun missingTable(tag: String): FontError.MissingRequiredTable = FontError.MissingRequiredTable(tag)
 }
 
-public data class LocaTable(
-    public val offsets: List<Int>,
-) {
+public class LocaTable(offsets: List<Int>) {
+    public val offsets: List<Int> = offsets.immutableListSnapshot()
+
+    public operator fun component1(): List<Int> = offsets
+
+    public fun copy(offsets: List<Int> = this.offsets): LocaTable = LocaTable(offsets)
+
     public fun rangeForGlyph(glyphId: GlyphId): FontOperationResult<GlyphDataRange> {
         if (glyphId.value !in 0 until offsets.lastIndex) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
@@ -87,6 +92,12 @@ public data class LocaTable(
             ),
         )
     }
+
+    override fun equals(other: Any?): Boolean = this === other || other is LocaTable && offsets == other.offsets
+
+    override fun hashCode(): Int = offsets.hashCode()
+
+    override fun toString(): String = "LocaTable(offsets=$offsets)"
 }
 
 public data class GlyphDataRange(
@@ -106,3 +117,6 @@ internal fun tableLocation(tag: String): FontDiagnosticLocation = FontDiagnostic
 
 internal fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
     FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
+
+internal fun failure(error: FontError, data: FontDiagnosticData): FontOperationResult.Failure =
+    failure(error, listOf(error.toDiagnostic(data)))

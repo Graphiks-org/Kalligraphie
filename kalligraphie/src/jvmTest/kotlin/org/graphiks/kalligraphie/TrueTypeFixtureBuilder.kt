@@ -88,6 +88,7 @@ private fun maxpTable(glyphCount: Int): ByteArray =
         bytes.writeUInt16(12, 16)
         bytes.writeUInt16(14, 2)
         bytes.writeUInt16(28, 8)
+        bytes.writeUInt16(30, 8)
     }
 
 private fun hheaTable(numberOfHMetrics: Int): ByteArray =

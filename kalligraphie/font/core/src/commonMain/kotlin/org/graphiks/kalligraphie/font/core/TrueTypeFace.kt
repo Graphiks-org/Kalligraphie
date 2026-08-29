@@ -76,7 +76,13 @@ private data class TrueTypeFontInstance(
 ) : FontInstance {
     override fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution> {
         val cmapTable = sourceBytes.sliceFor(parsedFont, "cmap") ?: return missingTable("cmap")
-        return when (val result = CmapReader.resolveGlyphId(cmapTable, codePoint)) {
+        return when (
+            val result = CmapReader.resolveGlyphId(
+                cmapTable = cmapTable,
+                codePoint = codePoint,
+                numGlyphs = parsedFont.metadata.glyphCount,
+            )
+        ) {
             is FontOperationResult.Success -> FontOperationResult.Success(
                 GlyphResolution(codePoint = codePoint, glyphId = result.value.glyphId),
                 result.diagnostics,
@@ -165,6 +171,9 @@ private class TrueTypeRenderAssetHandle(
         }
     }
 
+    override fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation> =
+        resolveGlyph(request, CancellationToken.none)
+
     override fun resolveGlyph(
         request: FontGlyphRequest,
         cancellationToken: CancellationToken,
@@ -175,7 +184,15 @@ private class TrueTypeRenderAssetHandle(
             if (cancellationToken.isCancellationRequested()) {
                 return FontOperationResult.Cancelled()
             }
-            val outline = when (val result = GlyfReader.readGlyphOutline(sourceBytes, parsedFont, request.glyphId, profile, cancellationToken)) {
+            val outline = when (
+                val result = GlyfReader.readGlyphOutline(
+                    sourceBytes,
+                    parsedFont,
+                    GlyphId(request.glyphId),
+                    profile,
+                    cancellationToken,
+                )
+            ) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result

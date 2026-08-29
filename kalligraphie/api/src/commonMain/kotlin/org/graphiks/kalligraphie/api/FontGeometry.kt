@@ -33,4 +33,13 @@ public data class LayoutBounds(
     public val minY: LayoutUnit,
     public val maxX: LayoutUnit,
     public val maxY: LayoutUnit,
-)
+) {
+    public companion object {
+        public val empty: LayoutBounds = LayoutBounds(
+            minX = LayoutUnit(0f),
+            minY = LayoutUnit(0f),
+            maxX = LayoutUnit(0f),
+            maxY = LayoutUnit(0f),
+        )
+    }
+}

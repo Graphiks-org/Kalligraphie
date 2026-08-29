@@ -6,6 +6,23 @@ public enum class FontDiagnosticSeverity {
     ERROR,
 }
 
+public data class FontDiagnosticData(
+    public val offset: Long? = null,
+    public val length: Long? = null,
+    public val observedValue: Long? = null,
+    public val limit: Long? = null,
+) {
+    init {
+        require(offset == null || offset >= 0L) { "Diagnostic offset must be non-negative." }
+        require(length == null || length >= 0L) { "Diagnostic length must be non-negative." }
+        require(limit == null || limit >= 0L) { "Diagnostic limit must be non-negative." }
+    }
+
+    public companion object {
+        public val empty: FontDiagnosticData = FontDiagnosticData()
+    }
+}
+
 public sealed interface FontDiagnosticLocation {
     public data object Source : FontDiagnosticLocation
 
@@ -33,6 +50,7 @@ public data class FontDiagnostic(
     public val severity: FontDiagnosticSeverity,
     public val location: FontDiagnosticLocation,
     public val message: String,
+    public val data: FontDiagnosticData = FontDiagnosticData.empty,
 )
 
 public sealed interface FontError {
@@ -205,25 +223,32 @@ public sealed interface FontOperationResult<out T> {
     }
 }
 
-public fun FontError.toDiagnostic(): FontDiagnostic =
+public fun FontError.toDiagnostic(
+    data: FontDiagnosticData = FontDiagnosticData.empty,
+): FontDiagnostic =
     FontDiagnostic(
         code = code,
         severity = FontDiagnosticSeverity.ERROR,
         location = location,
         message = message,
+        data = data,
     )
 
 public fun Iterable<FontDiagnostic>.sortedDiagnostics(): List<FontDiagnostic> =
     toList().sortedWith(
         compareBy<FontDiagnostic>(
             { it.code },
-            { it.severity.ordinal },
             { it.location.sortKey() },
+            { it.data.offset },
+            { it.data.length },
+            { it.data.observedValue },
+            { it.data.limit },
+            { it.severity.ordinal },
             { it.message },
         ),
-    )
+    ).immutableListSnapshot()
 
-private fun List<FontDiagnostic>.canonicalDiagnostics(): List<FontDiagnostic> = toList().sortedDiagnostics()
+private fun List<FontDiagnostic>.canonicalDiagnostics(): List<FontDiagnostic> = sortedDiagnostics()
 
 private fun FontDiagnosticLocation.sortKey(): String =
     when (this) {

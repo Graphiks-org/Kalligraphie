@@ -11,6 +11,7 @@ import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class GlyfReaderTest {
@@ -136,6 +137,241 @@ class GlyfReaderTest {
         assertEquals("font.glyf.composite-cycle", failure.error.code)
     }
 
+    @Test
+    fun rejectsSimpleGlyphWhenMaxpMaxPointsIsZero() {
+        val glyph = simpleGlyphWithFalseHeaderBounds()
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 1,
+                maxPoints = 0,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, glyph.size),
+                    "glyf" to glyph,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.ResourceLimitExceeded>(failure.error)
+        assertEquals(3L, failure.diagnostics.single().data.observedValue)
+        assertEquals(0L, failure.diagnostics.single().data.limit)
+    }
+
+    @Test
+    fun rejectsGlyphBytesBeforeParsingWhenProfileByteBudgetIsExceeded() {
+        val glyph = simpleGlyphWithFalseHeaderBounds()
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 1,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, glyph.size),
+                    "glyf" to glyph,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(
+            parsed.bytes,
+            parsed.font,
+            GlyphId(0),
+            outlineProfile(maxBytes = 16),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.ResourceLimitExceeded>(failure.error)
+        assertEquals(glyph.size.toLong(), failure.diagnostics.single().data.observedValue)
+        assertEquals(16L, failure.diagnostics.single().data.limit)
+    }
+
+    @Test
+    fun rejectsCompositeWhenMaxpComponentElementsIsZero() {
+        val parent = compositeGlyph(componentGlyphIds = listOf(1))
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                maxComponentElements = 0,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.ResourceLimitExceeded>(failure.error)
+        assertEquals(1L, failure.diagnostics.single().data.observedValue)
+        assertEquals(0L, failure.diagnostics.single().data.limit)
+    }
+
+    @Test
+    fun rejectsCompositeWhenMaxpComponentDepthIsZero() {
+        val parent = compositeGlyph(componentGlyphIds = listOf(1))
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                maxComponentDepth = 0,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.ResourceLimitExceeded>(failure.error)
+        assertEquals(1L, failure.diagnostics.single().data.observedValue)
+        assertEquals(0L, failure.diagnostics.single().data.limit)
+    }
+
+    @Test
+    fun locaOffsetsAndScalerOutlineListsRejectMutableCasts() {
+        val glyph = simpleGlyphWithFalseHeaderBounds()
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 1,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, glyph.size),
+                    "glyf" to glyph,
+                ),
+            ),
+        )
+        val loca = assertIs<FontOperationResult.Success<LocaTable>>(
+            LocaReader.readLoca(parsed.bytes, parsed.font, glyph.size),
+        ).value
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile()),
+        ).value
+
+        assertFailsWith<UnsupportedOperationException> {
+            @Suppress("UNCHECKED_CAST")
+            (loca.offsets as MutableList<Int>)[0] = 2
+        }
+        assertFailsWith<UnsupportedOperationException> {
+            @Suppress("UNCHECKED_CAST")
+            (outline.contours as MutableList<org.graphiks.kalligraphie.api.GlyphContour>)[0] = outline.contours[0]
+        }
+        assertFailsWith<UnsupportedOperationException> {
+            @Suppress("UNCHECKED_CAST")
+            (outline.components as MutableList<org.graphiks.kalligraphie.api.GlyphComponentReference>).add(
+                org.graphiks.kalligraphie.api.GlyphComponentReference(
+                    0,
+                    org.graphiks.kalligraphie.api.GlyphComponentTransform(0, 0),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun appliesVersionedUniformScaleToCompositeContours() {
+        val parent = compositeGlyphWithUniformScale(componentGlyphId = 1, scale = 8_192)
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(result).value
+        assertEquals(DesignBounds(5, 8, 25, 20), outline.bounds)
+    }
+
+    @Test
+    fun appliesVersionedTwoByTwoTransformToCompositeContours() {
+        val parent = compositeGlyphWithTwoByTwo(
+            componentGlyphId = 1,
+            xx = 0,
+            yx = 16_384,
+            xy = -16_384,
+            yy = 0,
+        )
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(result).value
+        assertEquals(DesignBounds(-40, 10, -15, 50), outline.bounds)
+    }
+
+    @Test
+    fun rejectsMutuallyExclusiveScaledAndUnscaledOffsetFlags() {
+        val parent = compositeGlyphWithOffsetFlags(
+            componentGlyphId = 1,
+            offsetFlags = 0x0800 or 0x1000,
+        )
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertEquals("font.glyf.invalid-component-flags", failure.error.code)
+    }
+
+    @Test
+    fun compositeTransformOverflowReturnsGeometryOverflowInsteadOfSaturating() {
+        val parent = compositeGlyphWithUniformScale(componentGlyphId = 1, scale = 32_767)
+        val child = simpleGlyphWithRepeatedXDelta(pointCount = 32_771, delta = 32_767)
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                maxPoints = 40_000,
+                maxCompositePoints = 40_000,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(
+            parsed.bytes,
+            parsed.font,
+            GlyphId(0),
+            outlineProfile(maxBytes = 200_000, maxPoints = 40_000),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.GeometryOverflow>(failure.error)
+        assertEquals("font.geometry-overflow", failure.diagnostics.single().code)
+    }
+
     private fun parseFont(bytes: ByteArray): ParsedFont =
         ParsedFont(
             bytes = bytes,
@@ -144,11 +380,14 @@ class GlyfReaderTest {
             ).value,
         )
 
-    private fun outlineProfile(): OutlineProfile =
+    private fun outlineProfile(
+        maxBytes: Int = 4_096,
+        maxPoints: Int = 256,
+    ): OutlineProfile =
         OutlineProfile(
-            maxBytes = 4096,
+            maxBytes = maxBytes,
             maxContours = 32,
-            maxPoints = 256,
+            maxPoints = maxPoints,
             maxCompositeDepth = 4,
             maxCompositeComponents = 16,
         )
@@ -162,6 +401,10 @@ private data class ParsedFont(
 private fun minimalTrueTypeFont(
     glyphCount: Int,
     indexToLocFormat: Int = 0,
+    maxPoints: Int = 128,
+    maxContours: Int = 16,
+    maxCompositePoints: Int = 128,
+    maxCompositeContours: Int = 16,
     maxComponentElements: Int = 8,
     maxComponentDepth: Int = 8,
     tables: Map<String, ByteArray>,
@@ -170,6 +413,10 @@ private fun minimalTrueTypeFont(
         "head" to headTable(unitsPerEm = 2048, indexToLocFormat = indexToLocFormat),
         "maxp" to maxpTable(
             glyphCount = glyphCount,
+            maxPoints = maxPoints,
+            maxContours = maxContours,
+            maxCompositePoints = maxCompositePoints,
+            maxCompositeContours = maxCompositeContours,
             maxComponentElements = maxComponentElements,
             maxComponentDepth = maxComponentDepth,
         ),
@@ -231,6 +478,44 @@ private fun compositeGlyph(componentGlyphIds: List<Int>): ByteArray {
     return bytes
 }
 
+private fun compositeGlyphWithUniformScale(componentGlyphId: Int, scale: Int): ByteArray =
+    ByteArray(20).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0003 or 0x0008)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+        bytes.writeInt16(18, scale)
+    }
+
+private fun compositeGlyphWithTwoByTwo(
+    componentGlyphId: Int,
+    xx: Int,
+    yx: Int,
+    xy: Int,
+    yy: Int,
+): ByteArray =
+    ByteArray(26).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0003 or 0x0080)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+        bytes.writeInt16(18, xx)
+        bytes.writeInt16(20, yx)
+        bytes.writeInt16(22, xy)
+        bytes.writeInt16(24, yy)
+    }
+
+private fun compositeGlyphWithOffsetFlags(componentGlyphId: Int, offsetFlags: Int): ByteArray =
+    ByteArray(18).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0003 or offsetFlags)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+    }
+
 private fun simpleGlyphWithFalseHeaderBounds(): ByteArray =
     ByteArray(30).also { bytes ->
         bytes.writeInt16(0, 1)
@@ -251,6 +536,22 @@ private fun simpleGlyphWithFalseHeaderBounds(): ByteArray =
         bytes.writeInt16(27, -25)
     }
 
+private fun simpleGlyphWithRepeatedXDelta(pointCount: Int, delta: Int): ByteArray {
+    require(pointCount in 1..65_536)
+    val unpaddedSize = 14 + pointCount + pointCount * 2
+    return ByteArray(if (unpaddedSize % 2 == 0) unpaddedSize else unpaddedSize + 1).also { bytes ->
+        bytes.writeInt16(0, 1)
+        bytes.writeUInt16(10, pointCount - 1)
+        bytes.writeUInt16(12, 0)
+        repeat(pointCount) { index -> bytes[14 + index] = 0x21 }
+        var coordinateOffset = 14 + pointCount
+        repeat(pointCount) {
+            bytes.writeInt16(coordinateOffset, delta)
+            coordinateOffset += 2
+        }
+    }
+}
+
 private fun headTable(unitsPerEm: Int, indexToLocFormat: Int): ByteArray =
     ByteArray(54).also { bytes ->
         bytes.writeUInt16(18, unitsPerEm)
@@ -259,16 +560,20 @@ private fun headTable(unitsPerEm: Int, indexToLocFormat: Int): ByteArray =
 
 private fun maxpTable(
     glyphCount: Int,
+    maxPoints: Int,
+    maxContours: Int,
+    maxCompositePoints: Int,
+    maxCompositeContours: Int,
     maxComponentElements: Int,
     maxComponentDepth: Int,
 ): ByteArray =
     ByteArray(32).also { bytes ->
         bytes.writeUInt32(0, 0x00010000)
         bytes.writeUInt16(4, glyphCount)
-        bytes.writeUInt16(6, 128)
-        bytes.writeUInt16(8, 16)
-        bytes.writeUInt16(10, 128)
-        bytes.writeUInt16(12, 16)
+        bytes.writeUInt16(6, maxPoints)
+        bytes.writeUInt16(8, maxContours)
+        bytes.writeUInt16(10, maxCompositePoints)
+        bytes.writeUInt16(12, maxCompositeContours)
         bytes.writeUInt16(14, 2)
         bytes.writeUInt16(28, maxComponentElements)
         bytes.writeUInt16(30, maxComponentDepth)

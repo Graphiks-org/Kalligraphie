@@ -118,6 +118,59 @@ class CmapReaderTest {
         val failure = assertIs<FontOperationResult.Failure>(result)
         assertIs<FontError.InvalidFontData>(failure.error)
     }
+
+    @Test
+    fun hostileSubtableOffsetReturnsTypedFailureWithoutIndexException() {
+        val cmap = ByteArray(12).also { bytes ->
+            bytes.writeUInt16(0, 0)
+            bytes.writeUInt16(2, 1)
+            bytes.writeUInt16(4, 3)
+            bytes.writeUInt16(6, 10)
+            bytes.writeUInt32(8, Int.MAX_VALUE)
+        }
+
+        val result = CmapReader.resolveGlyphId(cmap, 0x41)
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+        assertEquals(Int.MAX_VALUE.toLong(), failure.diagnostics.single().data.offset)
+    }
+
+    @Test
+    fun validatesTrailingFormat4SegmentsBeforePublishingQueriedMapping() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(format4SubtableWithMalformedTrailingSegment()),
+            codePoint = 0x41,
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+    }
+
+    @Test
+    fun format4DeltaUsesUnsignedSixteenBitModuloArithmetic() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(format4Subtable(delta = -66)),
+            codePoint = 0x41,
+        )
+
+        val success = assertIs<FontOperationResult.Success<GlyphLookupResult>>(result)
+        assertEquals(0xFFFF, success.value.glyphId.value)
+    }
+
+    @Test
+    fun rejectsGlyphIdAtOrBeyondMaxpGlyphCount() {
+        val result = CmapReader.resolveGlyphId(
+            cmapTable = cmapTable(format12Subtable(0x41, 0x41, 5)),
+            codePoint = 0x41,
+            numGlyphs = 5,
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidFontData>(failure.error)
+        assertEquals(5L, failure.diagnostics.single().data.observedValue)
+        assertEquals(5L, failure.diagnostics.single().data.limit)
+    }
 }
 
 private fun cmapTable(vararg subtables: CmapSubtable): ByteArray {
@@ -205,6 +258,33 @@ private fun format4SubtableWithUnsortedSegments(): CmapSubtable {
     bytes.writeUInt16(24, 0x0041)
     bytes.writeUInt16(26, 0xFFFF)
     bytes.writeInt16(28, 0)
+    bytes.writeInt16(30, 0)
+    bytes.writeInt16(32, 1)
+    bytes.writeUInt16(34, 0)
+    bytes.writeUInt16(36, 0)
+    bytes.writeUInt16(38, 0)
+    return CmapSubtable(platformId = 3, encodingId = 1, bytes = bytes)
+}
+
+private fun format4SubtableWithMalformedTrailingSegment(): CmapSubtable {
+    val segCount = 3
+    val length = 16 + segCount * 8
+    val bytes = ByteArray(length)
+    bytes.writeUInt16(0, 4)
+    bytes.writeUInt16(2, length)
+    bytes.writeUInt16(4, 0)
+    bytes.writeUInt16(6, segCount * 2)
+    bytes.writeUInt16(8, 0)
+    bytes.writeUInt16(10, 0)
+    bytes.writeUInt16(12, 0)
+    bytes.writeUInt16(14, 0x0041)
+    bytes.writeUInt16(16, 0x0030)
+    bytes.writeUInt16(18, 0xFFFF)
+    bytes.writeUInt16(20, 0)
+    bytes.writeUInt16(22, 0x0041)
+    bytes.writeUInt16(24, 0x0030)
+    bytes.writeUInt16(26, 0xFFFF)
+    bytes.writeInt16(28, -29)
     bytes.writeInt16(30, 0)
     bytes.writeInt16(32, 1)
     bytes.writeUInt16(34, 0)
