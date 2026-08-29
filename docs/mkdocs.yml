@@ -49,6 +49,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Font Management: font-management.md
 
 # !!! EMBEDDED DOKKA START, DO NOT COMMIT !!! #
 # !!! EMBEDDED DOKKA END, DO NOT COMMIT !!! #
