@@ -30,9 +30,9 @@ This project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, 
 
 Every pull request must satisfy the repository contract below before it can merge.
 
-### Machine-enforced blocking rules
+### Pull request requirements
 
-These are the checks that must pass before merge. They are enforced by the PR policy, CI, or the protected `master` branch ruleset.
+These are the repository requirements for pull requests. Applicable checks are enforced by CI or the protected `master` branch ruleset.
 
 - Open the PR from a branch prefixed with `feat/`, `fix/`, or `chore/`.
 - Keep branch ancestry aligned with the latest `master`; the final merge into `master` is squash-only.
@@ -45,7 +45,6 @@ These are the checks that must pass before merge. They are enforced by the PR po
   - check `CHANGELOG.md has been updated`, or
   - check `No changelog update needed:` and provide a justification.
 - Record the documentation decision explicitly by checking or leaving unchecked `Documentation updated if needed`.
-- The blocking GitHub check is `PR policy`.
 - The `master` branch ruleset requires no direct pushes, one approval, resolved review conversations, branches up to date with `master`, and squash-only merges.
 - Maintainer-only exceptions must stay limited to the bypass configuration of the GitHub repository ruleset.
 
@@ -152,7 +151,6 @@ docs: update README with new badges
 
 2. **Review**
    - At least 1 approval is required
-   - `PR policy` must pass as the blocking check
    - All review conversations must be resolved
    - The branch must be up to date with `master`
 
