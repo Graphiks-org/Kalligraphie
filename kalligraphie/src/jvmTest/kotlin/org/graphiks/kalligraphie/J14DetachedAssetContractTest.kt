@@ -97,6 +97,23 @@ class J14DetachedAssetContractTest {
         assertIs<FontOperationResult.Cancelled>(result)
     }
 
+    @Test
+    fun restrictiveOutlineProfileReturnsTypedLimitFailureThroughPublicRoute() {
+        val catalog = catalogFor(fixtureBytes())
+        val resolver = success(catalog.openAssetResolver())
+        val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile(maxContours = 1))
+        val face = success(catalog.resolveFace(FontFaceRequest(0), requirements))
+        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
+        val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+
+        val result = asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none)
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.ResourceLimitExceeded>(failure.error)
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+        assertEquals("font.resource-limit-exceeded", failure.diagnostics.single().code)
+    }
+
     private fun openRenderableFont(bytes: ByteArray, size: Float): J14RenderableFont {
         val catalog = catalogFor(bytes)
         val resolver = success(catalog.openAssetResolver())
@@ -114,13 +131,19 @@ class J14DetachedAssetContractTest {
     private fun catalogFor(bytes: ByteArray): FontCatalogSnapshot =
         success(Kalligraphie.embedded(bytes, FontSourceProvenance(declaredName = "Liberation Sans Regular")))
 
-    private fun outlineProfile(): OutlineProfile =
+    private fun outlineProfile(
+        maxBytes: Int = 1_000_000,
+        maxContours: Int = 256,
+        maxPoints: Int = 16_384,
+        maxCompositeDepth: Int = 8,
+        maxCompositeComponents: Int = 256,
+    ): OutlineProfile =
         OutlineProfile(
-            maxBytes = 1_000_000,
-            maxContours = 256,
-            maxPoints = 16_384,
-            maxCompositeDepth = 8,
-            maxCompositeComponents = 256,
+            maxBytes = maxBytes,
+            maxContours = maxContours,
+            maxPoints = maxPoints,
+            maxCompositeDepth = maxCompositeDepth,
+            maxCompositeComponents = maxCompositeComponents,
         )
 
     private fun fixtureBytes(): ByteArray =
