@@ -18,7 +18,9 @@ import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
 
+/** Reads horizontal metrics and glyph bounds from a TrueType font. */
 public object MetricsReader {
+    /** Reads and scales the metrics of [glyphId] to [layoutSize]. */
     public fun readGlyphMetrics(
         sourceBytes: ByteArray,
         parsedFont: ParsedTrueTypeFont,

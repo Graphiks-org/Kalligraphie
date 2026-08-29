@@ -18,7 +18,9 @@ import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
 
+/** Decodes TrueType `glyf` data into bounded scaler outlines. */
 public object GlyfReader {
+    /** Reads one glyph outline while enforcing resource limits and cancellation. */
     public fun readGlyphOutline(
         sourceBytes: ByteArray,
         parsedFont: ParsedTrueTypeFont,
@@ -51,29 +53,45 @@ public object GlyfReader {
     }
 }
 
+/** Immutable outline produced directly by the TrueType scaler. */
 public class ScalerGlyphOutline(
+    /** Numeric glyph identifier. */
     public val glyphId: Int,
+    /** Design units in one em. */
     public val unitsPerEm: Int,
+    /** Bounds declared by the decoded glyph. */
     public val bounds: DesignBounds,
+    /** Decoded simple-glyph contours. */
     contours: List<GlyphContour>,
+    /** Number of decoded points. */
     public val pointCount: Int,
+    /** Direct composite component references. */
     components: List<GlyphComponentReference>,
 ) {
+    /** Immutable contour snapshot. */
     public val contours: List<GlyphContour> = contours.immutableListSnapshot()
+    /** Immutable component snapshot. */
     public val components: List<GlyphComponentReference> = components.immutableListSnapshot()
 
+    /** Returns the glyph identifier. */
     public operator fun component1(): Int = glyphId
 
+    /** Returns the units-per-em value. */
     public operator fun component2(): Int = unitsPerEm
 
+    /** Returns the glyph bounds. */
     public operator fun component3(): DesignBounds = bounds
 
+    /** Returns the contours. */
     public operator fun component4(): List<GlyphContour> = contours
 
+    /** Returns the point count. */
     public operator fun component5(): Int = pointCount
 
+    /** Returns the component references. */
     public operator fun component6(): List<GlyphComponentReference> = components
 
+    /** Copies this scaler outline with selected fields changed. */
     public fun copy(
         glyphId: Int = this.glyphId,
         unitsPerEm: Int = this.unitsPerEm,

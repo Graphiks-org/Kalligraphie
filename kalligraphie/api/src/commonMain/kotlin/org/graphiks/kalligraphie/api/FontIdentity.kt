@@ -1,41 +1,62 @@
 package org.graphiks.kalligraphie.api
 
+import kotlin.jvm.JvmInline
+
+/** Describes the name declared by the system or package that supplied a font. */
 public data class FontSourceProvenance(
+    /** The source name used for diagnostics and provenance tracking. */
     public val declaredName: String,
 )
 
 @JvmInline
-public value class FontSourceId(public val value: String) {
+/** Stable content-derived identifier for a font source. */
+public value class FontSourceId(
+    /** Stable identifier value. */
+    public val value: String,
+) {
     init {
         require(value.isNotBlank()) { "FontSourceId value must not be blank." }
     }
 }
 
 @JvmInline
-public value class FontFaceId(public val value: String) {
+/** Stable identifier for a face within a font source. */
+public value class FontFaceId(
+    /** Stable identifier value. */
+    public val value: String,
+) {
     init {
         require(value.isNotBlank()) { "FontFaceId value must not be blank." }
     }
 }
 
 @JvmInline
-public value class FontInstanceKey(public val value: String) {
+/** Stable identifier for a concrete font instance. */
+public value class FontInstanceKey(
+    /** Stable identifier value. */
+    public val value: String,
+) {
     init {
         require(value.isNotBlank()) { "FontInstanceKey value must not be blank." }
     }
 }
 
+/** Immutable byte-backed font source used by the loading pipeline. */
 public class FontSource(
     sourceBytes: ByteArray,
+    /** Provenance supplied by the caller for diagnostics and inspection. */
     public val provenance: FontSourceProvenance,
 ) {
     private val capturedBytes: ByteArray = sourceBytes.copyOf()
 
+    /** Identifier derived from the captured bytes. */
     public val id: FontSourceId = FontSourceId(capturedBytes.sha256Hex())
 
+    /** Number of bytes captured from the source. */
     public val sizeInBytes: Int
         get() = capturedBytes.size
 
+    /** Returns a defensive copy of the captured font bytes. */
     public fun copyBytes(): ByteArray = capturedBytes.copyOf()
 }
 

@@ -14,10 +14,15 @@ import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
 
+/** Resolves Unicode code points through validated TrueType `cmap` tables. */
 public object CmapReader {
+    /** Resolves a code point using the maximum representable glyph range. */
     public fun resolveGlyphId(cmapTable: ByteArray, codePoint: Int): FontOperationResult<GlyphLookupResult> =
         resolveGlyphId(cmapTable, codePoint, MAX_GLYPH_ID_EXCLUSIVE)
 
+    /**
+     * Resolves a code point while validating all published glyph identifiers against [numGlyphs].
+     */
     public fun resolveGlyphId(
         cmapTable: ByteArray,
         codePoint: Int,
@@ -345,7 +350,9 @@ public object CmapReader {
 
 }
 
+/** Result of resolving a Unicode code point through a `cmap` table. */
 public data class GlyphLookupResult(
+    /** Resolved glyph identifier; zero denotes the missing-glyph glyph. */
     public val glyphId: GlyphId,
 )
 

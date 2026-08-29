@@ -7,7 +7,13 @@ import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 
+/** Entry point for loading supported font sources. */
 public object Kalligraphie {
+    /**
+     * Loads a single-face TrueType font from an in-memory byte array.
+     *
+     * The bytes are copied before parsing, so the returned catalog is independent from the caller's buffer.
+     */
     public fun embedded(
         sourceBytes: ByteArray,
         provenance: FontSourceProvenance,

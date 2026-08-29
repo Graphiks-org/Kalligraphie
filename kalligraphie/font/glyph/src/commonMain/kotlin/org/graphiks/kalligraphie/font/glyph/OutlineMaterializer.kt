@@ -14,7 +14,9 @@ import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.api.toGlyphOutlineLimits
 import org.graphiks.kalligraphie.font.scaler.ScalerGlyphOutline
 
+/** Converts scaler output into the public bounded outline representation. */
 public object OutlineMaterializer {
+    /** Materializes [outline] while enforcing [profile] and cooperative cancellation. */
     public fun materialize(
         outline: ScalerGlyphOutline,
         profile: OutlineProfile,

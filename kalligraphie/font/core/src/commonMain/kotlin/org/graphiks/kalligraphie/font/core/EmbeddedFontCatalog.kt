@@ -18,15 +18,19 @@ import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
+/** Catalog implementation for an immutable embedded TrueType source. */
 public class EmbeddedFontCatalog(
     private val source: FontSource,
     private val parsedFont: ParsedTrueTypeFont,
 ) : FontCatalogSnapshot {
+    /** Identifier of the embedded source. */
     override val sourceId: FontSourceId = source.id
 
+    /** Opens a resolver backed by the embedded source. */
     override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> =
         FontOperationResult.Success(EmbeddedFontAssetResolver(source.id))
 
+    /** Resolves face zero when the requested access profile is supported. */
     override fun resolveFace(
         request: FontFaceRequest,
         requirements: FontAccessRequirementsSnapshot,

@@ -4,7 +4,7 @@ plugins {
     id("com.vanniktech.maven.publish")
 }
 
-group = "io.ygdrasil.shared"
+group = "org.graphiks"
 version = (project.findProperty("releaseVersion") as? String)
     ?.takeIf { it.isNotBlank() }
     ?: "1.0.0-SNAPSHOT"
@@ -17,17 +17,17 @@ mavenPublishing {
         publishToMavenCentral()
         signAllPublications()
     }
-    coordinates(group.toString(), "shared", version.toString())
+    coordinates(group.toString(), project.name, version.toString())
 
     pom {
-        name.set("KMP Starter Pack Shared Library")
-        description.set("Shared library logic for KMP Starter Pack")
-        url.set("https://github.com/ygdrasil-io/project-template")
+        name.set(project.name)
+        description.set("Kalligraphie portable font pipeline")
+        url.set("https://github.com/Graphiks-org/Kalligraphie")
 
         licenses {
             license {
-                name.set("The Apache License, Version 2.0")
-                url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
+                name.set("The MIT License")
+                url.set("https://opensource.org/license/mit/")
             }
         }
 
@@ -40,9 +40,9 @@ mavenPublishing {
         }
 
         scm {
-            connection.set("scm:git:git://github.com/ygdrasil-io/project-template.git")
-            developerConnection.set("scm:git:ssh://github.com/ygdrasil-io/project-template.git")
-            url.set("https://github.com/ygdrasil-io/project-template")
+            connection.set("scm:git:git://github.com/Graphiks-org/Kalligraphie.git")
+            developerConnection.set("scm:git:ssh://github.com/Graphiks-org/Kalligraphie.git")
+            url.set("https://github.com/Graphiks-org/Kalligraphie")
         }
     }
 }

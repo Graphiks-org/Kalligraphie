@@ -11,9 +11,11 @@ import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 
+/** Reads the structural metadata of a supported TrueType SFNT font. */
 public object SfntReader {
     private val requiredTables = setOf("head", "maxp", "name", "cmap", "hhea", "hmtx", "loca", "glyf")
 
+    /** Parses table records and face metadata from [source]. */
     public fun readMetadata(source: FontSource): FontOperationResult<ParsedTrueTypeFont> {
         val bytes = source.copyBytes()
         if (bytes.size < 12) {
@@ -257,19 +259,27 @@ public object SfntReader {
         failure(error, listOf(error.toDiagnostic(data)))
 }
 
+/** Immutable structural representation of a parsed TrueType font. */
 public class ParsedTrueTypeFont(
     tableRecords: Map<String, TableRecord>,
+    /** Face metadata read from the font tables. */
     public val metadata: FontFaceMetadata,
+    /** `head.indexToLocFormat` used to decode the `loca` table. */
     public val indexToLocFormat: Int,
 ) {
+    /** Immutable map of SFNT table records keyed by tag. */
     public val tableRecords: Map<String, TableRecord> = ImmutableSnapshotMap(tableRecords)
 
+    /** Returns the table records for destructuring. */
     public operator fun component1(): Map<String, TableRecord> = tableRecords
 
+    /** Returns the face metadata for destructuring. */
     public operator fun component2(): FontFaceMetadata = metadata
 
+    /** Returns the location format for destructuring. */
     public operator fun component3(): Int = indexToLocFormat
 
+    /** Copies this parsed font with selected fields changed. */
     public fun copy(
         tableRecords: Map<String, TableRecord> = this.tableRecords,
         metadata: FontFaceMetadata = this.metadata,
@@ -293,9 +303,13 @@ public class ParsedTrueTypeFont(
         "ParsedTrueTypeFont(tableRecords=$tableRecords, metadata=$metadata, indexToLocFormat=$indexToLocFormat)"
 }
 
+/** Location and size of one SFNT table in the source bytes. */
 public data class TableRecord(
+    /** Four-character table tag. */
     public val tag: String,
+    /** Absolute byte offset in the source. */
     public val offset: Long,
+    /** Table length in bytes. */
     public val length: Long,
 )
 
@@ -304,15 +318,18 @@ private data class ParsedNames(
     val styleName: String,
 )
 
+/** Returns a defensive copy of a table's bytes, or `null` for an invalid range. */
 public fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
     val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null
     return bytes.copyOfRange(record.offset.toInt(), end)
 }
 
+/** Safely computes an exclusive range end for 32-bit range values. */
 public fun checkedRangeEnd(offset: Int, length: Int, sourceSize: Int): Int? {
     return checkedRangeEnd(offset.toLong(), length.toLong(), sourceSize)
 }
 
+/** Safely computes an exclusive range end without overflow. */
 public fun checkedRangeEnd(offset: Long, length: Long, sourceSize: Int): Int? {
     if (offset < 0L || length < 0L || offset > sourceSize.toLong()) {
         return null
@@ -327,13 +344,16 @@ public fun checkedRangeEnd(offset: Long, length: Long, sourceSize: Int): Int? {
     return end.toInt()
 }
 
+/** Reads one big-endian unsigned 16-bit value, or `null` if truncated. */
 public fun readUInt16(bytes: ByteArray, offset: Int): UInt? {
     checkedRangeEnd(offset.toLong(), 2L, bytes.size) ?: return null
     return (((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)).toUInt()
 }
 
+/** Reads one big-endian signed 16-bit value, or `null` if truncated. */
 public fun readInt16(bytes: ByteArray, offset: Int): Int? = readUInt16(bytes, offset)?.toShort()?.toInt()
 
+/** Reads one big-endian unsigned 32-bit value, or `null` if truncated. */
 public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
     checkedRangeEnd(offset.toLong(), 4L, bytes.size) ?: return null
     return (((bytes[offset].toUInt() and 0xFFu) shl 24) or
@@ -342,6 +362,7 @@ public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
         (bytes[offset + 3].toUInt() and 0xFFu))
 }
 
+/** Decodes four bytes as an ASCII SFNT tag, or returns an empty string if truncated. */
 public fun ByteArray.decodeAsciiTag(offset: Int): String {
     checkedRangeEnd(offset.toLong(), 4L, size) ?: return ""
     return CharArray(4) { index -> (this[offset + index].toInt() and 0xFF).toChar() }.concatToString()
