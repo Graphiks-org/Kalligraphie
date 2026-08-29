@@ -100,6 +100,7 @@ public interface FontAssetResolverHandle {
 
 public interface FontRenderAssetHandle {
     public val faceId: FontFaceId
+    public fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation>
     public fun close(): FontOperationResult<Unit>
 }
 
@@ -111,6 +112,11 @@ public interface FontInstance {
     public val key: FontInstanceKey
     public fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution>
     public fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics>
+    public fun acquireRenderAsset(
+        resolver: FontAssetResolverHandle,
+        variant: FontRenderVariantKey,
+        requirements: FontAccessRequirementsSnapshot,
+    ): FontOperationResult<FontRenderAssetHandle>
 }
 
 @JvmInline
@@ -145,28 +151,85 @@ public data class GlyphOutlineIR(
     public val glyphId: Int,
     public val unitsPerEm: Int,
     public val bounds: DesignBounds,
-    public val commands: List<Command>,
+    public val contours: List<GlyphContour>,
+    public val pointCount: Int,
+    public val components: List<GlyphComponentReference> = emptyList(),
+    public val limits: GlyphOutlineLimits,
     public val fillRule: FillRule = FillRule.NON_ZERO,
 ) {
     init {
         require(glyphId >= 0) { "glyphId must be non-negative." }
         require(unitsPerEm > 0) { "unitsPerEm must be positive." }
+        require(pointCount >= 0) { "pointCount must be non-negative." }
     }
 
     public enum class FillRule {
         NON_ZERO,
     }
+}
 
-    public sealed interface Command {
-        public data class MoveTo(public val x: Int, public val y: Int) : Command
-        public data class LineTo(public val x: Int, public val y: Int) : Command
-        public data class QuadraticTo(
-            public val controlX: Int,
-            public val controlY: Int,
-            public val endX: Int,
-            public val endY: Int,
-        ) : Command
-
-        public data object Close : Command
+public data class GlyphContour(
+    public val commands: List<GlyphOutlineCommand>,
+) {
+    init {
+        require(commands.isNotEmpty()) { "GlyphContour commands must not be empty." }
+        require(commands.first() is GlyphOutlineCommand.MoveTo) { "GlyphContour must start with MoveTo." }
+        require(commands.last() is GlyphOutlineCommand.Close) { "GlyphContour must end with Close." }
     }
 }
+
+public sealed interface GlyphOutlineCommand {
+    public data class MoveTo(public val x: Int, public val y: Int) : GlyphOutlineCommand
+    public data class LineTo(public val x: Int, public val y: Int) : GlyphOutlineCommand
+    public data class QuadraticTo(
+        public val controlX: Int,
+        public val controlY: Int,
+        public val endX: Int,
+        public val endY: Int,
+    ) : GlyphOutlineCommand
+
+    public data object Close : GlyphOutlineCommand
+}
+
+public data class GlyphComponentReference(
+    public val glyphId: Int,
+    public val transform: GlyphComponentTransform,
+) {
+    init {
+        require(glyphId >= 0) { "Component glyphId must be non-negative." }
+    }
+}
+
+public data class GlyphComponentTransform(
+    public val translationX: Int,
+    public val translationY: Int,
+    public val xxF2Dot14: Int = 16_384,
+    public val yxF2Dot14: Int = 0,
+    public val xyF2Dot14: Int = 0,
+    public val yyF2Dot14: Int = 16_384,
+)
+
+public data class GlyphOutlineLimits(
+    public val maxBytes: Int,
+    public val maxContours: Int,
+    public val maxPoints: Int,
+    public val maxCompositeDepth: Int,
+    public val maxCompositeComponents: Int,
+) {
+    init {
+        require(maxBytes > 0) { "maxBytes must be positive." }
+        require(maxContours > 0) { "maxContours must be positive." }
+        require(maxPoints > 0) { "maxPoints must be positive." }
+        require(maxCompositeDepth > 0) { "maxCompositeDepth must be positive." }
+        require(maxCompositeComponents > 0) { "maxCompositeComponents must be positive." }
+    }
+}
+
+public fun OutlineProfile.toGlyphOutlineLimits(): GlyphOutlineLimits =
+    GlyphOutlineLimits(
+        maxBytes = maxBytes,
+        maxContours = maxContours,
+        maxPoints = maxPoints,
+        maxCompositeDepth = maxCompositeDepth,
+        maxCompositeComponents = maxCompositeComponents,
+    )

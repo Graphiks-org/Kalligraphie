@@ -105,6 +105,18 @@ public sealed interface FontError {
         override val code: String = "font.geometry-overflow"
     }
 
+    public data class FontDataFailure(
+        override val code: String,
+        override val message: String,
+        override val location: FontDiagnosticLocation,
+    ) : FontError {
+        init {
+            require(code.startsWith("font.")) { "Font data failure code must start with font." }
+            require(code.isNotBlank()) { "Font data failure code must not be blank." }
+            require(message.isNotBlank()) { "Font data failure message must not be blank." }
+        }
+    }
+
     public data class Cancelled(
         override val message: String = "Operation cancelled.",
         override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source,

@@ -25,6 +25,8 @@ tasks.register("fontTest") {
     dependsOn(
         ":kalligraphie:api:jvmTest",
         ":kalligraphie:font:sfnt:jvmTest",
+        ":kalligraphie:font:scaler:jvmTest",
+        ":kalligraphie:font:glyph:jvmTest",
         ":kalligraphie:jvmTest",
     )
 }

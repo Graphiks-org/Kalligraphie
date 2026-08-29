@@ -66,10 +66,12 @@ public class EmbeddedFontCatalog(
         FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
 }
 
-private class EmbeddedFontAssetResolver(
+internal class EmbeddedFontAssetResolver(
     override val sourceId: FontSourceId,
 ) : FontAssetResolverHandle {
     private var closed: Boolean = false
+    val isClosed: Boolean
+        get() = closed
 
     override fun close(): FontOperationResult<Unit> {
         closed = true
