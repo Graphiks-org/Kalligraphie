@@ -35,8 +35,8 @@ Every pull request must satisfy the repository contract below before it can merg
 These are the checks that must pass before merge. They are enforced by the PR policy, CI, or the protected `master` branch ruleset.
 
 - Open the PR from a branch prefixed with `feat/`, `fix/`, or `chore/`.
-- Keep history linear: rebase on the latest `master`, do not introduce merge commits, and keep the branch ancestry aligned with `master`.
-- Use Conventional Commits for the PR title and every commit subject: `<type>(<scope>): <description>`.
+- Keep branch ancestry aligned with the latest `master`; the final merge into `master` is squash-only.
+- Use Conventional Commits for the PR title and every non-merge commit subject: `<type>(<scope>): <description>`.
 - Allowed PR and commit types are `feat`, `fix`, `build`, `chore`, `ci`, `docs`, `perf`, `refactor`, `test`, and `style`.
 - Allowed scopes are `font`, `buildSrc`, `docs`, and `release`.
 - Use the exact [PR template](.github/PULL_REQUEST_TEMPLATE.md) headings: `Description`, `Type of Change`, `Checklist`, `Screenshots (if applicable)`, and `Additional Notes`.
@@ -46,7 +46,7 @@ These are the checks that must pass before merge. They are enforced by the PR po
   - check `No changelog update needed:` and provide a justification.
 - Record the documentation decision explicitly by checking or leaving unchecked `Documentation updated if needed`.
 - The blocking GitHub check is `PR policy`.
-- The `master` branch ruleset requires no direct pushes, one approval, resolved review conversations, branches up to date with `master`, linear history, and squash-only merges.
+- The `master` branch ruleset requires no direct pushes, one approval, resolved review conversations, branches up to date with `master`, and squash-only merges.
 - Maintainer-only exceptions must stay limited to the bypass configuration of the GitHub repository ruleset.
 
 Repository settings automatically delete head branches after successful merges.
@@ -72,7 +72,7 @@ Before submitting a PR, make sure:
 - [ ] PR body uses the required template headings and exactly one change type
 - [ ] `CHANGELOG.md` is updated, or the PR body justifies why no changelog update is needed
 - [ ] Documentation decision is recorded in the PR body
-- [ ] Branch is rebased on `master` with no merge commits
+- [ ] Branch is based on the latest `master`
 - [ ] Branch uses a permitted prefix: `feat/`, `fix/`, or `chore/`
 - [ ] The PR targets a branch that satisfies the protected `master` ruleset
 
@@ -137,8 +137,7 @@ docs: update README with new badges
 
 **Rules:**
 - No direct commits to `master`
-- Branches must be rebased on `master` before PR
-- Merge commits are not allowed
+- Branches must be based on the latest `master` before PR
 - Commits should be atomic (one change per commit)
 
 ### Review Process

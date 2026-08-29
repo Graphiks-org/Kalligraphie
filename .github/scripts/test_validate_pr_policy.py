@@ -115,7 +115,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
         changed_files: list[str],
         commit_subjects: list[str],
         base_ancestor: bool,
-        merge_commits: int,
     ) -> list[str]:
         body_file = write_text_file(self.root, "body.md", body)
         changed_files_file = write_lines_file(self.root, "changed-files.txt", changed_files)
@@ -128,7 +127,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files_file=changed_files_file,
             commit_subjects_file=commit_subjects_file,
             base_ancestor=base_ancestor,
-            merge_commits=merge_commits,
         )
 
     def assertInvalid(self, errors: list[str], expected_fragment: str) -> None:
@@ -146,7 +144,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["feat(shared): add policy validation", "docs: update release notes"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertEqual(errors, [])
 
@@ -158,7 +155,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "title")
 
@@ -170,7 +166,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "branch")
 
@@ -211,7 +206,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "Screenshots (if applicable)")
 
@@ -223,7 +217,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "exactly one")
 
@@ -235,7 +228,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "CHANGELOG.md")
 
@@ -247,7 +239,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "justification")
 
@@ -259,7 +250,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["docs/guide.md"],
             commit_subjects=["docs(shared): update user guide"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "documentation")
 
@@ -271,7 +261,6 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["add policy validation"],
             base_ancestor=True,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "commit")
 
@@ -283,22 +272,8 @@ class ValidatePrPolicyTests(unittest.TestCase):
             changed_files=["src/main.py", "CHANGELOG.md"],
             commit_subjects=["feat(shared): add policy validation"],
             base_ancestor=False,
-            merge_commits=0,
         )
         self.assertInvalid(errors, "ancestor")
-
-    def test_merge_commits_are_rejected(self) -> None:
-        errors = self.validate(
-            title="feat(shared): add policy validation",
-            body=make_body(),
-            branch="feat/add-policy-validation",
-            changed_files=["src/main.py", "CHANGELOG.md"],
-            commit_subjects=["feat(shared): add policy validation"],
-            base_ancestor=True,
-            merge_commits=1,
-        )
-        self.assertInvalid(errors, "merge")
-
 
 if __name__ == "__main__":
     unittest.main()
