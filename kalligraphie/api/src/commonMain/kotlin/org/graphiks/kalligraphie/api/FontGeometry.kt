@@ -22,7 +22,11 @@ public data class DesignBounds(
     public val minY: Int,
     public val maxX: Int,
     public val maxY: Int,
-)
+) {
+    public companion object {
+        public val empty: DesignBounds = DesignBounds(0, 0, 0, 0)
+    }
+}
 
 public data class LayoutBounds(
     public val minX: LayoutUnit,

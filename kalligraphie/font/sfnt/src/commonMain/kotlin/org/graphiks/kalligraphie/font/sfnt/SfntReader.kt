@@ -195,48 +195,6 @@ public object SfntReader {
             else -> false
         }
 
-    private fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
-        val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null
-        return bytes.copyOfRange(record.offset, end)
-    }
-
-    private fun checkedRangeEnd(offset: Int, length: Int, sourceSize: Int): Int? {
-        if (offset < 0 || length < 0 || offset > sourceSize) {
-            return null
-        }
-        val end = offset.toLong() + length.toLong()
-        if (end > sourceSize.toLong()) {
-            return null
-        }
-        return end.toInt()
-    }
-
-    private fun readUInt16(bytes: ByteArray, offset: Int): UInt? {
-        if (offset < 0 || offset + 1 >= bytes.size) {
-            return null
-        }
-        return (((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)).toUInt()
-    }
-
-    private fun readInt16(bytes: ByteArray, offset: Int): Int? = readUInt16(bytes, offset)?.toShort()?.toInt()
-
-    private fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
-        if (offset < 0 || offset + 3 >= bytes.size) {
-            return null
-        }
-        return (((bytes[offset].toUInt() and 0xFFu) shl 24) or
-            ((bytes[offset + 1].toUInt() and 0xFFu) shl 16) or
-            ((bytes[offset + 2].toUInt() and 0xFFu) shl 8) or
-            (bytes[offset + 3].toUInt() and 0xFFu))
-    }
-
-    private fun ByteArray.decodeAsciiTag(offset: Int): String {
-        if (offset < 0 || offset + 3 >= size) {
-            return ""
-        }
-        return CharArray(4) { index -> (this[offset + index].toInt() and 0xFF).toChar() }.concatToString()
-    }
-
     private fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
         FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
 }
@@ -257,3 +215,45 @@ private data class ParsedNames(
     val familyName: String,
     val styleName: String,
 )
+
+public fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
+    val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null
+    return bytes.copyOfRange(record.offset, end)
+}
+
+public fun checkedRangeEnd(offset: Int, length: Int, sourceSize: Int): Int? {
+    if (offset < 0 || length < 0 || offset > sourceSize) {
+        return null
+    }
+    val end = offset.toLong() + length.toLong()
+    if (end > sourceSize.toLong()) {
+        return null
+    }
+    return end.toInt()
+}
+
+public fun readUInt16(bytes: ByteArray, offset: Int): UInt? {
+    if (offset < 0 || offset + 1 >= bytes.size) {
+        return null
+    }
+    return (((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)).toUInt()
+}
+
+public fun readInt16(bytes: ByteArray, offset: Int): Int? = readUInt16(bytes, offset)?.toShort()?.toInt()
+
+public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
+    if (offset < 0 || offset + 3 >= bytes.size) {
+        return null
+    }
+    return (((bytes[offset].toUInt() and 0xFFu) shl 24) or
+        ((bytes[offset + 1].toUInt() and 0xFFu) shl 16) or
+        ((bytes[offset + 2].toUInt() and 0xFFu) shl 8) or
+        (bytes[offset + 3].toUInt() and 0xFFu))
+}
+
+public fun ByteArray.decodeAsciiTag(offset: Int): String {
+    if (offset < 0 || offset + 3 >= size) {
+        return ""
+    }
+    return CharArray(4) { index -> (this[offset + index].toInt() and 0xFF).toChar() }.concatToString()
+}

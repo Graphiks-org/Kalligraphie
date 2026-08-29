@@ -53,7 +53,7 @@ public class EmbeddedFontCatalog(
                 ),
             )
         }
-        return FontOperationResult.Success(TrueTypeFace(source.id, parsedFont.metadata))
+        return FontOperationResult.Success(TrueTypeFace(source.id, source.copyBytes(), parsedFont))
     }
 
     private fun FontAccessRequirementsSnapshot.isSupportedForJ1(): Boolean =

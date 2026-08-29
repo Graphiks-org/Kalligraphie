@@ -109,7 +109,29 @@ public data class FontInstanceDescriptor(
 
 public interface FontInstance {
     public val key: FontInstanceKey
+    public fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution>
+    public fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics>
 }
+
+@JvmInline
+public value class GlyphId(public val value: Int) {
+    init {
+        require(value >= 0) { "GlyphId value must be non-negative." }
+    }
+}
+
+public data class GlyphResolution(
+    public val codePoint: Int,
+    public val glyphId: GlyphId,
+)
+
+public data class GlyphMetrics(
+    public val advanceWidthDesignUnits: Int,
+    public val leftSideBearingDesignUnits: Int,
+    public val advanceWidth: LayoutUnit,
+    public val leftSideBearing: LayoutUnit,
+    public val bounds: DesignBounds = DesignBounds.empty,
+)
 
 public sealed interface GlyphRepresentation {
     public data object Empty : GlyphRepresentation
