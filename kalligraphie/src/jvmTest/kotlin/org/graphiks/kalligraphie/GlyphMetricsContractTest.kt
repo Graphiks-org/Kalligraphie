@@ -3,8 +3,12 @@ package org.graphiks.kalligraphie
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.DesignBounds
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFaceRequest
+import org.graphiks.kalligraphie.api.FontGeometryParameters
+import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphId
@@ -19,6 +23,40 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class GlyphMetricsContractTest {
+    @Test
+    fun rejectsUnsupportedVariationAxesAtInstanceCreation() {
+        val face = openFace(fixtureBytes())
+
+        val result = face.instantiate(
+            FontInstanceDescriptor(
+                layoutSize = LayoutUnit(2048f),
+                geometry = FontGeometryParameters(
+                    normalizedAxes = listOf(FontAxisCoordinate(tag = "wght", value = 700f)),
+                ),
+            ),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidInstanceDescriptor>(failure.error)
+        assertEquals("font.invalid-instance-descriptor", failure.error.code)
+    }
+
+    @Test
+    fun rejectsUnsupportedSyntheticGeometryAtInstanceCreation() {
+        val face = openFace(fixtureBytes())
+
+        val result = face.instantiate(
+            FontInstanceDescriptor(
+                layoutSize = LayoutUnit(2048f),
+                geometry = FontGeometryParameters(syntheticBold = true, syntheticItalic = true),
+            ),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertIs<FontError.InvalidInstanceDescriptor>(failure.error)
+        assertEquals("font.invalid-instance-descriptor", failure.error.code)
+    }
+
     @Test
     fun compositeMetricsUseTheComponentMarkedWithUseMyMetrics() {
         val composite = compositeGlyphWithUseMyMetrics(firstComponentGlyphId = 1, metricsComponentGlyphId = 2)
@@ -41,6 +79,31 @@ class GlyphMetricsContractTest {
 
         assertEquals(900, metrics.advanceWidthDesignUnits)
         assertEquals(0, metrics.leftSideBearingDesignUnits)
+        assertEquals(900f, metrics.advanceWidth.value)
+    }
+
+    @Test
+    fun compositeMetricsFollowNestedUseMyMetricsDelegation() {
+        val root = compositeGlyphWithSingleUseMyMetricsComponent(componentGlyphId = 1)
+        val intermediate = compositeGlyphWithSingleUseMyMetricsComponent(componentGlyphId = 2)
+        val bytes = minimalTrueTypeFont(
+            glyphCount = 3,
+            tables = mapOf(
+                "hmtx" to hmtxTableForMetrics(
+                    700 to 10,
+                    500 to 20,
+                    900 to 30,
+                ),
+                "loca" to locaFormat0(0, root.size, root.size + intermediate.size, root.size + intermediate.size),
+                "glyf" to root + intermediate,
+            ),
+        )
+
+        val instance = openInstance(size = 2048f, bytes = bytes)
+        val metrics = assertIs<FontOperationResult.Success<GlyphMetrics>>(instance.metrics(GlyphId(0))).value
+
+        assertEquals(900, metrics.advanceWidthDesignUnits)
+        assertEquals(30, metrics.leftSideBearingDesignUnits)
         assertEquals(900f, metrics.advanceWidth.value)
     }
 
@@ -110,6 +173,10 @@ class GlyphMetricsContractTest {
     }
 
     private fun openInstance(size: Float, bytes: ByteArray = fixtureBytes()) =
+        openFace(bytes).instantiate(FontInstanceDescriptor(LayoutUnit(size)))
+            .let { assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontInstance>>(it).value }
+
+    private fun openFace(bytes: ByteArray): FontFace =
         assertIs<FontOperationResult.Success<FontFace>>(
             assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
                 Kalligraphie.embedded(
@@ -117,8 +184,7 @@ class GlyphMetricsContractTest {
                     provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
                 ),
             ).value.resolveFace(FontFaceRequest(faceIndex = 0), FontAccessRequirementsSnapshot.layoutOnly()),
-        ).value.instantiate(org.graphiks.kalligraphie.api.FontInstanceDescriptor(org.graphiks.kalligraphie.api.LayoutUnit(size)))
-            .let { assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontInstance>>(it).value }
+        ).value
 
     private fun fixtureBytes(): ByteArray =
         checkNotNull(javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf")) {

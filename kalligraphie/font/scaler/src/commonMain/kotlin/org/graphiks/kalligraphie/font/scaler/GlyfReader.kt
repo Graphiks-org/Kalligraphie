@@ -100,7 +100,7 @@ internal object GlyfReader {
         prepared: PreparedGlyphData,
         glyphId: GlyphId,
     ): FontOperationResult<GlyphId> =
-        readHorizontalMetricsGlyphId(prepared, glyphId)
+        readHorizontalMetricsGlyphId(prepared, glyphId, emptySet(), 0)
 
     /** Reads one outline from prepared immutable glyph tables. */
     internal fun readGlyphOutline(
@@ -128,9 +128,22 @@ internal object GlyfReader {
     private fun readHorizontalMetricsGlyphId(
         prepared: PreparedGlyphData,
         glyphId: GlyphId,
+        path: Set<Int>,
+        depth: Int,
     ): FontOperationResult<GlyphId> {
         if (glyphId.value !in 0 until prepared.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        if (glyphId.value in path) {
+            return failure(fontFailure("font.glyf.composite-cycle", "Composite glyph re-enters the active path.", glyphLocation(glyphId.value)))
+        }
+        if (depth > prepared.maxp.maxComponentDepth) {
+            return limitFailure(
+                "Composite glyph depth limit exceeded.",
+                glyphLocation(glyphId.value),
+                depth.toLong(),
+                prepared.maxp.maxComponentDepth.toLong(),
+            )
         }
         val range = when (val result = prepared.loca.rangeForGlyph(glyphId)) {
             is FontOperationResult.Success -> result.value
@@ -152,6 +165,7 @@ internal object GlyfReader {
         var metricsGlyphId = glyphId
         var flags: Int
         var componentCount = 0
+        val activePath = path + glyphId.value
         do {
             if (componentCount >= prepared.maxp.maxComponentElements) {
                 return limitFailure(
@@ -190,7 +204,18 @@ internal object GlyfReader {
             }
             componentCount += 1
             if (flags and COMPOSITE_USE_MY_METRICS != 0) {
-                metricsGlyphId = GlyphId(componentGlyphId)
+                metricsGlyphId = when (
+                    val result = readHorizontalMetricsGlyphId(
+                        prepared = prepared,
+                        glyphId = GlyphId(componentGlyphId),
+                        path = activePath,
+                        depth = depth + 1,
+                    )
+                ) {
+                    is FontOperationResult.Success -> result.value
+                    is FontOperationResult.Failure -> return result
+                    is FontOperationResult.Cancelled -> return result
+                }
             }
         } while (flags and COMPOSITE_MORE_COMPONENTS != 0)
         if (flags and COMPOSITE_WE_HAVE_INSTRUCTIONS != 0) {

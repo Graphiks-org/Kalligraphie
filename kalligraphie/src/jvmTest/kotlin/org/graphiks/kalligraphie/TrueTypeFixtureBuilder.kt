@@ -89,6 +89,20 @@ internal fun compositeGlyphWithUseMyMetrics(firstComponentGlyphId: Int, metricsC
         bytes.writeInt16(24, 0)
     }
 
+internal fun compositeGlyphWithSingleUseMyMetricsComponent(componentGlyphId: Int): ByteArray =
+    ByteArray(20).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeInt16(2, 0)
+        bytes.writeInt16(4, 0)
+        bytes.writeInt16(6, 0)
+        bytes.writeInt16(8, 0)
+        bytes.writeUInt16(10, 0x0203)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+        bytes.writeInt16(18, 0)
+    }
+
 internal fun hmtxTableForMetrics(vararg metrics: Pair<Int, Int>): ByteArray =
     ByteArray(metrics.size * 4).also { bytes ->
         metrics.forEachIndexed { index, (advanceWidth, leftSideBearing) ->

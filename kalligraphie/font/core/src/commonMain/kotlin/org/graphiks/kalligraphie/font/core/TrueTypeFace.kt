@@ -44,6 +44,18 @@ internal class TrueTypeFace(
                 ),
             )
         }
+        if (
+            descriptor.geometry.normalizedAxes.isNotEmpty() ||
+            descriptor.geometry.syntheticBold ||
+            descriptor.geometry.syntheticItalic
+        ) {
+            return failure(
+                FontError.InvalidInstanceDescriptor(
+                    message = "Variation axes and synthetic geometry are not supported by this TrueType face.",
+                    location = FontDiagnosticLocation.Face(0),
+                ),
+            )
+        }
         return FontOperationResult.Success(
             TrueTypeFontInstance(
                 key = instanceKey(descriptor),
