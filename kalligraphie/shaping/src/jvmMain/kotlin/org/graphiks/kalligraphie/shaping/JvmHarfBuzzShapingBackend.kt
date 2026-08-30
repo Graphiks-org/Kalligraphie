@@ -12,10 +12,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.absolutePathString
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontInstanceKey
 import org.graphiks.kalligraphie.api.GdefLigatureCaretFact
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.GlyphId
@@ -67,6 +69,7 @@ private class HarfBuzzJvmBackend(
     private val nativeLibrary: HarfBuzzNativeLibrary,
 ) : ShapingBackend {
     override val identity: ShapingBackendIdentity = nativeLibrary.identity
+    private val preparedFonts: ConcurrentHashMap<FontInstanceKey, PreparedHarfBuzzFont> = ConcurrentHashMap()
 
     override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
         if (request.featurePolicy != identity.featurePolicy) {
@@ -82,18 +85,6 @@ private class HarfBuzzJvmBackend(
             )
         }
 
-        val fontData = when (val result = request.font.copyOpenTypeData()) {
-            is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return result
-            is FontOperationResult.Cancelled -> return result
-        }
-        if (fontData.face != request.font.key.face) {
-            return shapingFailure(
-                code = "font.shaping-font-data-mismatch",
-                message = "The OpenType bytes do not identify the requested font instance face.",
-            )
-        }
-
         val layoutSize = request.font.key.layoutSize.value
         if (!layoutSize.isFinite() || layoutSize <= 0f) {
             return shapingFailure(
@@ -103,13 +94,17 @@ private class HarfBuzzJvmBackend(
         }
 
         return try {
+            val prepared = preparedFonts[request.font.key] ?: prepareFont(request, layoutSize)
             FontOperationResult.Success(
                 nativeLibrary.shape(
                     request = request,
-                    fontBytes = fontData.copyBytes(),
-                    layoutSize = layoutSize,
+                    preparedFont = prepared,
                 ),
             )
+        } catch (failure: PreparedFontFailure) {
+            failure.result
+        } catch (cancelled: PreparedFontCancelled) {
+            cancelled.result
         } catch (error: Throwable) {
             shapingFailure(
                 code = "font.shaping-native-failure",
@@ -117,7 +112,40 @@ private class HarfBuzzJvmBackend(
             )
         }
     }
+
+    private fun prepareFont(request: ShapingRequest, layoutSize: Float): PreparedHarfBuzzFont {
+        val existing = preparedFonts[request.font.key]
+        if (existing != null) return existing
+        val fontData = when (val result = request.font.copyOpenTypeData()) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> throw PreparedFontFailure(result)
+            is FontOperationResult.Cancelled -> throw PreparedFontCancelled(result)
+        }
+        if (fontData.face != request.font.key.face) {
+            throw PreparedFontFailure(
+                shapingFailure(
+                    code = "font.shaping-font-data-mismatch",
+                    message = "The OpenType bytes do not identify the requested font instance face.",
+                ),
+            )
+        }
+        val prepared = nativeLibrary.prepare(fontData.copyBytes(), layoutSize)
+        val raced = preparedFonts.putIfAbsent(request.font.key, prepared)
+        if (raced != null) {
+            prepared.close()
+            return raced
+        }
+        return prepared
+    }
 }
+
+private class PreparedFontFailure(
+    val result: FontOperationResult.Failure,
+) : RuntimeException()
+
+private class PreparedFontCancelled(
+    val result: FontOperationResult.Cancelled,
+) : RuntimeException()
 
 internal data class HarfBuzzPlatform(
     val osName: String,
@@ -393,41 +421,45 @@ internal class HarfBuzzNativeLibrary(
 
     fun versionString(): String = address(versionString).reinterpret(MAX_VERSION_BYTES).getString(0)
 
-    fun shape(request: ShapingRequest, fontBytes: ByteArray, layoutSize: Float): ShapedGlyphRun = Arena.ofConfined().use { arena ->
-        val copiedFont = arena.allocate(fontBytes.size.toLong(), 1)
-        copiedFont.copyFrom(MemorySegment.ofArray(fontBytes))
-        val blob = requireNativeHandle(address(blobCreate, copiedFont, fontBytes.size, HB_MEMORY_MODE_READONLY, MemorySegment.NULL, MemorySegment.NULL), "blob")
+    fun prepare(fontBytes: ByteArray, layoutSize: Float): PreparedHarfBuzzFont {
+        val arena = Arena.ofShared()
+        var blob: MemorySegment = MemorySegment.NULL
+        var face: MemorySegment = MemorySegment.NULL
+        var font: MemorySegment = MemorySegment.NULL
         try {
-            val face = requireNativeHandle(address(faceCreate, blob, 0), "face")
-            try {
-                val designToLayout = DesignToLayoutScale.create(layoutSize, int(faceGetUpem, face))
-                val font = requireNativeHandle(address(fontCreate, face), "font")
-                try {
-                    callVoid(otFontSetFuncs, font)
-                    callVoid(fontSetScale, font, designToLayout.unitsPerEm, designToLayout.unitsPerEm)
-                    val buffer = requireNativeHandle(address(bufferCreate), "buffer")
-                    try {
-                        configureBuffer(arena, buffer, request)
-                        val scalarRanges = request.snapshot.scalarRanges(request.range)
-                        request.snapshot.scalarValues(request.range).forEachIndexed { tokenValue, scalar ->
-                            callVoid(bufferAdd, buffer, scalar, tokenValue)
-                        }
-                        val features = featureArray(arena, request.features)
-                        check(shapeWithExplicitOpenTypeShaper(arena, font, buffer, features, request.features.size)) {
-                            "HarfBuzz did not accept the explicit OpenType shaper configuration."
-                        }
-                        shapedRun(arena, request, font, buffer, scalarRanges, designToLayout)
-                    } finally {
-                        callVoid(bufferDestroy, buffer)
-                    }
-                } finally {
-                    callVoid(fontDestroy, font)
-                }
-            } finally {
-                callVoid(faceDestroy, face)
+            val copiedFont = arena.allocate(fontBytes.size.toLong(), 1)
+            copiedFont.copyFrom(MemorySegment.ofArray(fontBytes))
+            blob = requireNativeHandle(address(blobCreate, copiedFont, fontBytes.size, HB_MEMORY_MODE_READONLY, MemorySegment.NULL, MemorySegment.NULL), "blob")
+            face = requireNativeHandle(address(faceCreate, blob, 0), "face")
+            val designToLayout = DesignToLayoutScale.create(layoutSize, int(faceGetUpem, face))
+            font = requireNativeHandle(address(fontCreate, face), "font")
+            callVoid(otFontSetFuncs, font)
+            callVoid(fontSetScale, font, designToLayout.unitsPerEm, designToLayout.unitsPerEm)
+            return PreparedHarfBuzzFont(this, arena, blob, face, font, designToLayout)
+        } catch (error: Throwable) {
+            if (font != MemorySegment.NULL) callVoid(fontDestroy, font)
+            if (face != MemorySegment.NULL) callVoid(faceDestroy, face)
+            if (blob != MemorySegment.NULL) callVoid(blobDestroy, blob)
+            arena.close()
+            throw error
+        }
+    }
+
+    fun shape(request: ShapingRequest, preparedFont: PreparedHarfBuzzFont): ShapedGlyphRun = Arena.ofConfined().use { arena ->
+        val buffer = requireNativeHandle(address(bufferCreate), "buffer")
+        try {
+            configureBuffer(arena, buffer, request)
+            val scalarRanges = request.snapshot.scalarRanges(request.range)
+            request.snapshot.scalarValues(request.range).forEachIndexed { tokenValue, scalar ->
+                callVoid(bufferAdd, buffer, scalar, tokenValue)
             }
+            val features = featureArray(arena, request.features)
+            check(shapeWithExplicitOpenTypeShaper(arena, preparedFont.font, buffer, features, request.features.size)) {
+                "HarfBuzz did not accept the explicit OpenType shaper configuration."
+            }
+            shapedRun(arena, request, preparedFont.font, buffer, scalarRanges, preparedFont.designToLayout)
         } finally {
-            callVoid(blobDestroy, blob)
+            callVoid(bufferDestroy, buffer)
         }
     }
 
@@ -622,6 +654,26 @@ internal class HarfBuzzNativeLibrary(
 
     private fun handle(lookup: SymbolLookup, name: String, descriptor: FunctionDescriptor): MethodHandle =
         linker.downcallHandle(lookup.findOrThrow(name), descriptor)
+
+    fun release(preparedFont: PreparedHarfBuzzFont) {
+        callVoid(fontDestroy, preparedFont.font)
+        callVoid(faceDestroy, preparedFont.face)
+        callVoid(blobDestroy, preparedFont.blob)
+        preparedFont.arena.close()
+    }
+}
+
+internal class PreparedHarfBuzzFont(
+    private val nativeLibrary: HarfBuzzNativeLibrary,
+    internal val arena: Arena,
+    internal val blob: MemorySegment,
+    internal val face: MemorySegment,
+    internal val font: MemorySegment,
+    internal val designToLayout: DesignToLayoutScale,
+) {
+    fun close() {
+        nativeLibrary.release(this)
+    }
 }
 
 private data class NativeGlyphRecord(
@@ -712,7 +764,7 @@ private fun advancesMatch(shapedAdvance: Int, unshapedAdvance: Int): Boolean =
 private fun absoluteMagnitude(value: Int): Long =
     value.toLong().let { if (it < 0L) -it else it }
 
-private class DesignToLayoutScale private constructor(
+internal class DesignToLayoutScale private constructor(
     private val layoutSize: Double,
     val unitsPerEm: Int,
 ) {
