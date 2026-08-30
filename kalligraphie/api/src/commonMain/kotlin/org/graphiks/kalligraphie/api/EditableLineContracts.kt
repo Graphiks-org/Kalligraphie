@@ -111,6 +111,15 @@ public enum class CaretBoundaryEdge {
     INTERNAL,
 }
 
+/** Classifies a concrete BiDi caret candidate against the line's explicit base direction. */
+public enum class CaretStrength {
+    /** The owning run has the same direction as the editable line's base direction. */
+    STRONG,
+
+    /** The owning run has the opposite direction from the editable line's base direction. */
+    WEAK,
+}
+
 /**
  * One concrete, layout-local caret geometry.
  *
@@ -125,22 +134,32 @@ public class CaretCandidate(
     public val geometry: LayoutSegment,
     /** Zero-based visual traversal order within the line. */
     public val visualOrder: Int,
-    /** Visual positioned-run order that owns this candidate. */
+    /** Visual positioned-run order that owns this candidate, or [NO_POSITIONED_RUN] for an empty line. */
     public val visualRunOrder: Int,
     /** UAX #9 embedding level of the owning shaped run. */
     public val bidiLevel: Int,
     /** Explicit shaping direction of the owning shaped run. */
     public val direction: ShapingDirection,
+    /** Strong or weak role determined from the line's explicit base direction. */
+    public val strength: CaretStrength,
     /** Source-boundary relationship of this candidate within the owning run. */
     public val edge: CaretBoundaryEdge,
 ) {
     init {
         require(visualOrder >= 0) { "Caret visual order must be non-negative." }
-        require(visualRunOrder >= 0) { "Caret visual run order must be non-negative." }
+        require(visualRunOrder >= NO_POSITIONED_RUN) {
+            "Caret visual run order must identify a positioned run or the documented empty-line sentinel."
+        }
         require(bidiLevel in 0..126) { "Caret BiDi level must be between 0 and 126." }
         require(direction.matchesBidiLevel(bidiLevel)) { "Caret direction must agree with its BiDi level." }
         require(geometry.start.x == geometry.end.x) { "Editable-line carets must be vertical segments." }
         require(geometry.start.y <= geometry.end.y) { "Caret geometry must progress from line top to bottom." }
+    }
+
+    /** Sentinel values used when no positioned run can own a candidate. */
+    public companion object {
+        /** Visual run order used by both candidates of an explicitly empty line. */
+        public const val NO_POSITIONED_RUN: Int = -1
     }
 }
 
@@ -172,21 +191,18 @@ public enum class GlyphMaterializationRoute {
 }
 
 /**
- * Immutable proof that one final positioned glyph passed the requested outline route.
+ * Immutable record that one final positioned glyph passed the requested outline route.
  *
  * A certificate contains no render asset, outline payload, native handle, or borrowed resource.
- * Its validity is limited to the exact [fontInstanceKey], [glyphId], [variant], and outline
- * profile that were synchronously inspected while the borrowed resolver was open.
+ * Its validity is limited to the exact [assetKey] and [glyphId] synchronously inspected while
+ * the borrowed resolver was open. This public value records a trusted layouter result; its
+ * constructor is not a cryptographic authenticity mechanism for manually constructed values.
  */
 public data class GlyphMaterializationCertificate(
-    /** Concrete font instance used by the final positioned glyph. */
-    public val fontInstanceKey: FontInstanceKey,
+    /** Exact font instance, variant, and outline profile used for validation. */
+    public val assetKey: FontRenderAssetKey,
     /** Final glyph identifier whose route was validated. */
     public val glyphId: GlyphId,
-    /** Render variant selected during validation. */
-    public val variant: FontRenderVariantKey,
-    /** Bounded outline profile accepted during validation. */
-    public val outlineProfile: OutlineProfile,
     /** Successfully validated route. */
     public val route: GlyphMaterializationRoute,
 )
@@ -206,7 +222,9 @@ public class PositionedGlyph(
     public val origin: LayoutPoint,
     /** Final glyph advance in the physical horizontal coordinate system. */
     public val advance: LayoutVector,
-    /** Outline-route proof in renderable mode, or `null` in layout-only mode. */
+    /** Exact render asset key in renderable mode, or `null` in layout-only mode. */
+    public val renderAssetKey: FontRenderAssetKey?,
+    /** Trusted outline-route validation record in renderable mode, or `null` in layout-only mode. */
     public val materializationCertificate: GlyphMaterializationCertificate?,
 ) {
     /** Immutable source clusters directly related to [shapedGlyph]. */
@@ -216,8 +234,17 @@ public class PositionedGlyph(
         require(this.sourceClusters.map(ShaperCluster::token) == shapedGlyph.clusterTokens) {
             "Positioned glyph clusters must match the shaped glyph relation exactly."
         }
+        require(advance == LayoutVector(shapedGlyph.xAdvance, shapedGlyph.yAdvance)) {
+            "A positioned glyph must preserve its shaped horizontal and vertical advances exactly."
+        }
         require(materializationCertificate == null || materializationCertificate.glyphId == shapedGlyph.glyphId) {
             "A glyph materialization certificate must name the positioned glyph."
+        }
+        require((renderAssetKey == null) == (materializationCertificate == null)) {
+            "A positioned glyph must carry both its render asset key and certificate, or neither."
+        }
+        require(materializationCertificate == null || materializationCertificate.assetKey == renderAssetKey) {
+            "A positioned glyph certificate must use its exact render asset key."
         }
     }
 }
@@ -233,6 +260,8 @@ public class PositionedGlyphRun(
     public val sourceRun: ShapedGlyphRun,
     /** Zero-based visual order of this run in its line. */
     public val visualOrder: Int,
+    /** Exact render asset key shared by every glyph in renderable mode, otherwise `null`. */
+    public val renderAssetKey: FontRenderAssetKey?,
     glyphs: List<PositionedGlyph>,
 ) {
     /** Immutable final glyphs in this run's produced visual glyph order. */
@@ -245,6 +274,20 @@ public class PositionedGlyphRun(
         }
         require(this.glyphs.map(PositionedGlyph::shapedGlyph) == sourceRun.glyphs) {
             "Positioned glyph order must preserve the shaped run output order."
+        }
+        require(this.glyphs.all { glyph ->
+            val expectedClusters = glyph.shapedGlyph.clusterTokens.map { token ->
+                sourceRun.clusters.single { cluster -> cluster.token == token }
+            }
+            glyph.sourceClusters == expectedClusters
+        }) {
+            "Positioned glyph relations must retain the exact source clusters owned by the shaped run."
+        }
+        require(renderAssetKey == null || renderAssetKey.fontInstanceKey == sourceRun.fontInstanceKey) {
+            "A positioned run render asset must use the shaped run font instance."
+        }
+        require(this.glyphs.all { it.renderAssetKey == renderAssetKey }) {
+            "Every positioned glyph must use exactly its positioned run render asset key."
         }
     }
 }
@@ -307,6 +350,15 @@ public sealed interface EditableLineError {
         override val code: String = "layout.font-materialization-failure"
         override val message: String = fontError.message
     }
+
+    /** The JVM reference shaper could not open or produce a complete relative glyph run. */
+    public data class ShapingFailure(
+        /** Underlying typed font or native-shaping failure. */
+        public val fontError: FontError,
+    ) : EditableLineError {
+        override val code: String = "layout.shaping-failure"
+        override val message: String = fontError.message
+    }
 }
 
 /** Result of synchronously positioning and optionally certifying one editable line. */
@@ -361,17 +413,19 @@ public sealed interface EditableLineMaterialization {
  * Complete portable input to one horizontal, non-wrapped editable-line operation.
  *
  * The analysis must cover its entire snapshot range. Runs must be contiguous in logical source
- * order and share [font]'s exact key; their direction, level, script, and language stay explicit
- * rather than inferred from text or a left-to-right default. The request retains no resource
- * except the borrowed resolver named by [materialization].
+ * order, preserve exactly the analyzed extended-grapheme partition, have zero vertical advance,
+ * and share [font]'s exact key. Their direction, level, script, language, and the line's
+ * [baseDirection] stay explicit rather than inferred from text or a left-to-right default. The
+ * request retains no resource except the borrowed resolver named by [materialization]. Contract
+ * incompatibilities are programming errors reported by construction preconditions.
  */
 public class EditableLineRequest(
     /** Complete immutable Unicode analysis for the line's snapshot revision. */
     public val unicodeAnalysis: UnicodeAnalysis,
     shapedGlyphRuns: List<ShapedGlyphRun>,
-    /** Explicit direction for an empty line, which has no shaped run from which to obtain one. */
-    public val emptyLineDirection: ShapingDirection? = null,
-    /** Explicit UAX #9 level paired with [emptyLineDirection] for an empty line. */
+    /** Explicit base direction used to classify strong and weak BiDi caret candidates. */
+    public val baseDirection: ShapingDirection,
+    /** Explicit UAX #9 level paired with [baseDirection] for an empty line. */
     public val emptyLineBidiLevel: Int? = null,
     /** Concrete single-font instance used by every shaped run. */
     public val font: FontInstance,
@@ -390,20 +444,23 @@ public class EditableLineRequest(
             "A non-empty editable line requires shaped glyph runs."
         }
         if (this.shapedGlyphRuns.isEmpty()) {
-            require(emptyLineDirection != null && emptyLineBidiLevel != null) {
-                "An empty editable line requires explicit direction and BiDi level."
+            require(emptyLineBidiLevel != null) {
+                "An empty editable line requires an explicit BiDi level."
             }
-            require(emptyLineDirection.matchesBidiLevel(emptyLineBidiLevel)) {
-                "Empty line direction must agree with its explicit BiDi level."
+            require(baseDirection.matchesBidiLevel(emptyLineBidiLevel)) {
+                "Empty line base direction must agree with its explicit BiDi level."
             }
         } else {
-            require(emptyLineDirection == null && emptyLineBidiLevel == null) {
-                "Explicit empty-line direction and BiDi level are valid only for an empty line."
+            require(emptyLineBidiLevel == null) {
+                "An explicit empty-line BiDi level is valid only for an empty line."
             }
         }
         requireContiguousRunPartition(unicodeAnalysis.range, this.shapedGlyphRuns)
         require(this.shapedGlyphRuns.all { it.fontInstanceKey == font.key }) {
             "Every shaped run must use the request font instance key."
+        }
+        require(this.shapedGlyphRuns.all { run -> run.glyphs.all { glyph -> glyph.yAdvance.value == 0f } }) {
+            "Horizontal editable lines reject non-zero vertical glyph advances."
         }
         require(this.shapedGlyphRuns.all { run -> unicodeAnalysis.logicalBidiRuns.any { bidi ->
             containsRange(bidi.range, run.range) && bidi.level == run.bidiLevel
@@ -415,13 +472,11 @@ public class EditableLineRequest(
         } }) {
             "Every shaped run must stay within one analyzed script-language run with the same script and language."
         }
-        val graphemeBoundaries = unicodeAnalysis.graphemeClusters.flatMap { cluster ->
-            listOf(cluster.start, cluster.endExclusive)
-        }.toSet()
         require(this.shapedGlyphRuns.all { run ->
-            run.range.start in graphemeBoundaries && run.range.endExclusive in graphemeBoundaries
+            val analyzedPartition = unicodeAnalysis.graphemeClusters.filter { cluster -> containsRange(run.range, cluster) }
+            run.graphemeClusters == analyzedPartition
         }) {
-            "Shaped runs must start and end at analyzed grapheme boundaries."
+            "Every shaped run must preserve exactly the analyzed grapheme partition restricted to its source range."
         }
     }
 }
@@ -449,6 +504,8 @@ public interface EditableLineLayouter {
 public class EditableLine(
     /** Complete snapshot-bound source range covered by this line. */
     public val range: TextRange,
+    /** Explicit base direction used to classify its concrete BiDi caret candidates. */
+    public val baseDirection: ShapingDirection,
     /** Explicit line-box metrics used by carets and selections. */
     public val verticalMetrics: LineVerticalMetrics,
     positionedGlyphRuns: List<PositionedGlyphRun>,
@@ -471,15 +528,60 @@ public class EditableLine(
         require(this.positionedGlyphRuns.all { containsRange(range, it.sourceRun.range) }) {
             "Positioned glyph runs must stay within the editable line range."
         }
+        requireContiguousPositionedRunPartition(range, this.positionedGlyphRuns)
+        require(this.positionedGlyphRuns.map(PositionedGlyphRun::renderAssetKey).distinct().size <= 1) {
+            "All positioned runs in one editable line must share one render asset key or remain layout-only."
+        }
         require(this.allCaretCandidates.isNotEmpty()) { "Editable lines must publish at least one caret candidate." }
         require(this.allCaretCandidates.map(CaretCandidate::visualOrder) == this.allCaretCandidates.indices.toList()) {
             "Caret candidates must use contiguous visual order."
         }
+        require(this.allCaretCandidates.zipWithNext().all { (left, right) -> compareCaretVisualPosition(left, right) <= 0 }) {
+            "Caret candidates must be published in deterministic physical visual order."
+        }
+        val expectedCaretTop = LayoutUnit(-verticalMetrics.ascent.value)
+        val expectedCaretBottom = verticalMetrics.descent
+        require(this.allCaretCandidates.all { candidate ->
+            candidate.geometry.start.y == expectedCaretTop && candidate.geometry.end.y == expectedCaretBottom
+        }) { "Every caret geometry must span exactly the editable line vertical metrics." }
         require(this.allCaretCandidates.all { candidate ->
             candidate.position.index.sharesVersionWith(range.start) &&
                 candidate.position.index.compareTo(range.start) >= 0 &&
                 candidate.position.index.compareTo(range.endExclusive) <= 0
         }) { "Caret candidates must stay within the editable line range." }
+        require(this.allCaretCandidates.all { candidate ->
+            candidate.strength == if (candidate.direction == baseDirection) CaretStrength.STRONG else CaretStrength.WEAK
+        }) { "Caret strength must be derived from the editable line base direction." }
+        if (this.positionedGlyphRuns.isEmpty()) {
+            require(range.start == range.endExclusive) { "Only an empty source range may omit positioned runs." }
+            require(this.allCaretCandidates.all { it.visualRunOrder == CaretCandidate.NO_POSITIONED_RUN }) {
+                "Empty-line caret candidates must use the documented no-run sentinel."
+            }
+        } else {
+            require(this.allCaretCandidates.all { candidate -> candidate.visualRunOrder in this.positionedGlyphRuns.indices }) {
+                "Every caret candidate must identify an existing positioned run."
+            }
+            require(this.allCaretCandidates.all { candidate ->
+                val run = this.positionedGlyphRuns[candidate.visualRunOrder].sourceRun
+                candidate.bidiLevel == run.bidiLevel &&
+                    candidate.direction == run.direction &&
+                    candidate.position.index >= run.range.start &&
+                    candidate.position.index <= run.range.endExclusive &&
+                    when (candidate.edge) {
+                        CaretBoundaryEdge.LOGICAL_START -> candidate.position.index == run.range.start
+                        CaretBoundaryEdge.LOGICAL_END -> candidate.position.index == run.range.endExclusive
+                        CaretBoundaryEdge.INTERNAL ->
+                            candidate.position.index > run.range.start && candidate.position.index < run.range.endExclusive
+                    }
+            }) { "Caret candidates must agree with their owning positioned run and source edge." }
+            require(this.allCaretCandidates.groupBy { it.visualRunOrder to it.position.index }.values.all { it.size == 1 }) {
+                "A positioned run must not publish duplicate candidates for one source boundary."
+            }
+            require(this.positionedGlyphRuns.all { run ->
+                this.allCaretCandidates.any { it.visualRunOrder == run.visualOrder && it.edge == CaretBoundaryEdge.LOGICAL_START } &&
+                    this.allCaretCandidates.any { it.visualRunOrder == run.visualOrder && it.edge == CaretBoundaryEdge.LOGICAL_END }
+            }) { "Every positioned run must publish both logical endpoint candidates." }
+        }
     }
 
     /** Returns all concrete geometries valid at [index], in physical visual order. */
@@ -593,6 +695,25 @@ private fun requireContiguousRunPartition(range: TextRange, runs: List<ShapedGly
     require(next == range.endExclusive) { "Shaped runs must cover the complete analysis range." }
 }
 
+private fun requireContiguousPositionedRunPartition(range: TextRange, runs: List<PositionedGlyphRun>) {
+    if (range.start == range.endExclusive) {
+        require(runs.isEmpty()) { "An empty editable line must not contain positioned runs." }
+        return
+    }
+    val logicalRuns = runs.sortedWith { left, right -> left.sourceRun.range.start.compareTo(right.sourceRun.range.start) }
+    require(logicalRuns.isNotEmpty()) { "A non-empty editable line requires positioned runs." }
+    var next = range.start
+    logicalRuns.forEach { run ->
+        require(run.sourceRun.range.start == next) {
+            "Positioned runs must form one complete, non-overlapping logical source partition."
+        }
+        next = run.sourceRun.range.endExclusive
+    }
+    require(next == range.endExclusive) {
+        "Positioned runs must cover the complete editable line source range."
+    }
+}
+
 private fun containsRange(owner: TextRange, item: TextRange): Boolean =
     item.start.sharesVersionWith(owner.start) &&
         item.start >= owner.start &&
@@ -607,6 +728,16 @@ private fun ShapingDirection.matchesBidiLevel(level: Int): Boolean =
 private fun affinityRank(affinity: CaretAffinity): Int = when (affinity) {
     CaretAffinity.DOWNSTREAM -> 0
     CaretAffinity.UPSTREAM -> 1
+}
+
+private fun compareCaretVisualPosition(left: CaretCandidate, right: CaretCandidate): Int {
+    val x = left.geometry.start.x.compareTo(right.geometry.start.x)
+    if (x != 0) return x
+    val run = left.visualRunOrder.compareTo(right.visualRunOrder)
+    if (run != 0) return run
+    val index = left.position.index.compareTo(right.position.index)
+    if (index != 0) return index
+    return affinityRank(left.position.affinity).compareTo(affinityRank(right.position.affinity))
 }
 
 private fun squaredDistanceToSegment(point: LayoutPoint, segment: LayoutSegment): Double {

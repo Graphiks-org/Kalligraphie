@@ -4,6 +4,7 @@ import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.CaretBoundaryEdge
 import org.graphiks.kalligraphie.api.CaretCandidate
 import org.graphiks.kalligraphie.api.CaretPosition
+import org.graphiks.kalligraphie.api.CaretStrength
 import org.graphiks.kalligraphie.api.EditableLine
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
 import org.graphiks.kalligraphie.api.EditableLineDiagnosticSeverity
@@ -15,6 +16,7 @@ import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
+import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.GlyphMaterializationCertificate
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
@@ -54,8 +56,8 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         placements.forEach { placement ->
             placement.caretPositions.putAll(resolveInternalLigatureCarets(request, placement, diagnostics))
         }
-        val certificates = when (val result = certifyFinalGlyphs(request, placements)) {
-            is CertificationResult.Success -> result.certificates
+        val certification = when (val result = certifyFinalGlyphs(request, placements)) {
+            is CertificationResult.Success -> result
             is CertificationResult.Failure -> return EditableLineResult.Failure(result.error, diagnostics + result.diagnostics)
             is CertificationResult.Cancelled -> return EditableLineResult.Cancelled(diagnostics + result.diagnostics)
         }
@@ -64,13 +66,15 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             PositionedGlyphRun(
                 sourceRun = placement.sourceRun,
                 visualOrder = placement.visualOrder,
+                renderAssetKey = certification.assetKey,
                 glyphs = placement.glyphs.mapIndexed { glyphIndex, glyph ->
                     PositionedGlyph(
                         shapedGlyph = glyph.shapedGlyph,
                         sourceClusters = glyph.sourceClusters,
                         origin = glyph.origin,
                         advance = glyph.advance,
-                        materializationCertificate = certificates[GlyphPosition(placement.visualOrder, glyphIndex)],
+                        renderAssetKey = certification.assetKey,
+                        materializationCertificate = certification.certificates[GlyphPosition(placement.visualOrder, glyphIndex)],
                     )
                 },
             )
@@ -79,6 +83,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         return EditableLineResult.Success(
             EditableLine(
                 range = request.unicodeAnalysis.range,
+                baseDirection = request.baseDirection,
                 verticalMetrics = request.verticalMetrics,
                 positionedGlyphRuns = positionedRuns,
                 caretCandidates = candidates,
@@ -91,6 +96,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         val visualRuns = visualRuns(request)
         var pen = 0.0
         return visualRuns.mapIndexed { visualOrder, sourceRun ->
+            val initialPen = finiteUnit(pen, "run initial pen")
             val glyphs = sourceRun.glyphs.map { glyph ->
                 val penStart = finiteUnit(pen, "glyph pen")
                 val origin = LayoutPoint(
@@ -109,19 +115,14 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     penEnd = penEnd,
                 )
             }
-            val xStart = glyphs.minOfOrNull { glyph -> minOf(glyph.penStart.value, glyph.penEnd.value) }
-                ?.let { value -> LayoutUnit(value) }
-                ?: finiteUnit(pen, "empty run origin")
-            val xEnd = glyphs.maxOfOrNull { glyph -> maxOf(glyph.penStart.value, glyph.penEnd.value) }
-                ?.let { value -> LayoutUnit(value) }
-                ?: xStart
+            val finalPen = finiteUnit(pen, "run final pen")
             RunPlacement(
                 sourceRun = sourceRun,
                 visualOrder = visualOrder,
                 glyphs = glyphs,
-                xStart = xStart,
-                xEnd = xEnd,
-                caretPositions = endpointCarets(sourceRun, xStart, xEnd),
+                xStart = initialPen,
+                xEnd = finalPen,
+                caretPositions = endpointCarets(sourceRun, initialPen, finalPen),
             )
         }
     }
@@ -167,15 +168,12 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             .toSet()
         placement.sourceRun.ligatureCaretFacts.forEach { fact ->
             val glyph = placement.glyphs[fact.glyphIndex]
-            val boundaries = fact.logicalSourceBoundaries.filter(analysisBoundaries::contains)
-            if (boundaries.isEmpty()) return@forEach
+            val boundaries = fact.logicalSourceBoundaries
             val supplied = fact.takeIf { it.state == GdefLigatureCaretState.AVAILABLE }
                 ?.let { availableGdefCarets(placement.sourceRun, glyph, it) }
             if (supplied != null) {
                 supplied.forEach { (boundary, x) ->
-                    if (boundary in analysisBoundaries) {
-                        values[boundary] = CaretLocation(x, CaretAffinity.DOWNSTREAM, CaretBoundaryEdge.INTERNAL)
-                    }
+                    values[boundary] = CaretLocation(x, CaretAffinity.DOWNSTREAM, CaretBoundaryEdge.INTERNAL)
                 }
             } else {
                 if (fact.state != GdefLigatureCaretState.ABSENT) {
@@ -216,14 +214,17 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     ): Map<TextIndex, LayoutUnit>? {
         if (fact.positions.size != fact.logicalSourceBoundaries.size) return null
         val advance = glyph.shapedGlyph.xAdvance.value
-        if (advance <= 0f) return null
-        val strictOrder = fact.positions.zipWithNext().all { (left, right) ->
-            when (run.direction) {
-                org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT -> left < right
-                org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT -> left > right
-            }
+        if (advance == 0f) return null
+        val logicalDelta = when (run.direction) {
+            org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT -> advance
+            org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT -> -advance
         }
-        if (!strictOrder || fact.positions.any { it.value <= 0f || it.value >= advance }) return null
+        val strictOrder = fact.positions.zipWithNext().all { (left, right) ->
+            (right.value - left.value) * logicalDelta > 0f
+        }
+        val lower = minOf(0f, advance)
+        val upper = maxOf(0f, advance)
+        if (!strictOrder || fact.positions.any { it.value <= lower || it.value >= upper }) return null
         return fact.logicalSourceBoundaries.zip(fact.positions).associate { (boundary, position) ->
             boundary to finiteUnit(glyph.origin.x.value.toDouble() + position.value.toDouble(), "GDEF caret")
         }
@@ -234,14 +235,13 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         relatedGlyphs: List<GlyphPlacement>,
         boundaries: List<TextIndex>,
     ): List<Pair<TextIndex, LayoutUnit>> {
-        val left = relatedGlyphs.minOfOrNull { glyph -> minOf(glyph.penStart.value, glyph.penEnd.value) } ?: return emptyList()
-        val right = relatedGlyphs.maxOfOrNull { glyph -> maxOf(glyph.penStart.value, glyph.penEnd.value) } ?: return emptyList()
-        val width = right.toDouble() - left.toDouble()
+        val pathStart = relatedGlyphs.firstOrNull()?.penStart?.value?.toDouble() ?: return emptyList()
+        val pathEnd = relatedGlyphs.last().penEnd.value.toDouble()
         return boundaries.mapIndexed { index, boundary ->
             val fraction = (index + 1).toDouble() / (boundaries.size + 1).toDouble()
             val coordinate = when (run.direction) {
-                org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT -> left.toDouble() + width * fraction
-                org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT -> right.toDouble() - width * fraction
+                org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT -> pathStart + (pathEnd - pathStart) * fraction
+                org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT -> pathEnd + (pathStart - pathEnd) * fraction
             }
             boundary to finiteUnit(coordinate, "interpolated ligature caret")
         }
@@ -259,11 +259,11 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             val beforeGlyphs = placement.glyphs.filter { before.token in it.shapedGlyph.clusterTokens }
             val afterGlyphs = placement.glyphs.filter { after.token in it.shapedGlyph.clusterTokens }
             val coordinate = when (placement.sourceRun.direction) {
-                org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT -> beforeGlyphs.maxOfOrNull { it.penEnd.value }
-                    ?: afterGlyphs.minOfOrNull { it.penStart.value }
+                org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT -> beforeGlyphs.lastOrNull()?.penEnd?.value
+                    ?: afterGlyphs.firstOrNull()?.penStart?.value
 
-                org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT -> beforeGlyphs.minOfOrNull { it.penStart.value }
-                    ?: afterGlyphs.maxOfOrNull { it.penEnd.value }
+                org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT -> beforeGlyphs.firstOrNull()?.penStart?.value
+                    ?: afterGlyphs.lastOrNull()?.penEnd?.value
             } ?: return@forEach
             values[boundary] = CaretLocation(LayoutUnit(coordinate), CaretAffinity.DOWNSTREAM, CaretBoundaryEdge.INTERNAL)
         }
@@ -274,7 +274,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         placements: List<RunPlacement>,
     ): CertificationResult {
         return when (val materialization = request.materialization) {
-            EditableLineMaterialization.LayoutOnly -> CertificationResult.Success(emptyMap())
+            EditableLineMaterialization.LayoutOnly -> CertificationResult.Success(null, emptyMap())
             is EditableLineMaterialization.Renderable -> {
                 if (request.cancellationToken.isCancellationRequested()) return CertificationResult.Cancelled(emptyList())
             when (
@@ -302,22 +302,51 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         asset: FontRenderAssetHandle,
         materialization: EditableLineMaterialization.Renderable,
     ): CertificationResult {
-        var result: CertificationResult = CertificationResult.Success(emptyMap())
+        val expectedAssetKey = FontRenderAssetKey(
+            fontInstanceKey = request.font.key,
+            variant = materialization.variant,
+            outlineProfile = materialization.outlineProfile,
+        )
+        var result: CertificationResult = if (asset.key == expectedAssetKey) {
+            CertificationResult.Success(asset.key, emptyMap())
+        } else {
+            CertificationResult.Failure(
+                EditableLineError.FontMaterializationFailure(
+                    org.graphiks.kalligraphie.api.FontError.InvalidFontData(
+                        "Acquired render asset key does not match the requested font instance, variant, and outline profile.",
+                    ),
+                ),
+                emptyList(),
+            )
+        }
         try {
             val certificates = mutableMapOf<GlyphPosition, GlyphMaterializationCertificate>()
-            placements.forEach { placement ->
-                placement.glyphs.forEachIndexed { glyphIndex, glyph ->
+            certification@ for (placement in placements) {
+                if (result !is CertificationResult.Success) break
+                for ((glyphIndex, glyph) in placement.glyphs.withIndex()) {
                     when (val representation = asset.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(glyph.shapedGlyph.glyphId), request.cancellationToken)) {
                         is FontOperationResult.Success -> {
-                            val route = when (representation.value) {
+                            val resolvedGlyph = representation.value
+                            val route = when (resolvedGlyph) {
                                 GlyphRepresentation.Empty -> GlyphMaterializationRoute.EMPTY
-                                is GlyphRepresentation.Outline -> GlyphMaterializationRoute.OUTLINE
+                                is GlyphRepresentation.Outline -> {
+                                    if (resolvedGlyph.outline.glyphId != glyph.shapedGlyph.glyphId.value) {
+                                        result = CertificationResult.Failure(
+                                            EditableLineError.FontMaterializationFailure(
+                                                org.graphiks.kalligraphie.api.FontError.InvalidFontData(
+                                                    "Resolved outline glyph identifier does not match the requested final glyph.",
+                                                ),
+                                            ),
+                                            emptyList(),
+                                        )
+                                        break@certification
+                                    }
+                                    GlyphMaterializationRoute.OUTLINE
+                                }
                             }
                             certificates[GlyphPosition(placement.visualOrder, glyphIndex)] = GlyphMaterializationCertificate(
-                                fontInstanceKey = request.font.key,
+                                assetKey = asset.key,
                                 glyphId = glyph.shapedGlyph.glyphId,
-                                variant = materialization.variant,
-                                outlineProfile = materialization.outlineProfile,
                                 route = route,
                             )
                         }
@@ -327,18 +356,17 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                                 EditableLineError.FontMaterializationFailure(representation.error),
                                 representation.diagnostics.map(::fontDiagnostic),
                             )
-                            return@forEachIndexed
+                            break@certification
                         }
 
                         is FontOperationResult.Cancelled -> {
                             result = CertificationResult.Cancelled(representation.diagnostics.map(::fontDiagnostic))
-                            return@forEachIndexed
+                            break@certification
                         }
                     }
                 }
-                if (result !is CertificationResult.Success) return@forEach
             }
-            if (result is CertificationResult.Success) result = CertificationResult.Success(certificates)
+            if (result is CertificationResult.Success) result = CertificationResult.Success(asset.key, certificates)
         } finally {
             when (val close = asset.close()) {
                 is FontOperationResult.Failure -> if (result is CertificationResult.Success) {
@@ -367,18 +395,18 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     index = request.unicodeAnalysis.range.start,
                     affinity = CaretAffinity.DOWNSTREAM,
                     x = LayoutUnit(0f),
-                    visualRunOrder = 0,
+                    visualRunOrder = CaretCandidate.NO_POSITIONED_RUN,
                     bidiLevel = checkNotNull(request.emptyLineBidiLevel),
-                    direction = checkNotNull(request.emptyLineDirection),
+                    direction = request.baseDirection,
                     edge = CaretBoundaryEdge.LOGICAL_START,
                 ),
                 CandidateDraft(
                     index = request.unicodeAnalysis.range.endExclusive,
                     affinity = CaretAffinity.UPSTREAM,
                     x = LayoutUnit(0f),
-                    visualRunOrder = 0,
+                    visualRunOrder = CaretCandidate.NO_POSITIONED_RUN,
                     bidiLevel = checkNotNull(request.emptyLineBidiLevel),
-                    direction = checkNotNull(request.emptyLineDirection),
+                    direction = request.baseDirection,
                     edge = CaretBoundaryEdge.LOGICAL_END,
                 ),
             )
@@ -412,6 +440,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     visualRunOrder = draft.visualRunOrder,
                     bidiLevel = draft.bidiLevel,
                     direction = draft.direction,
+                    strength = if (draft.direction == request.baseDirection) CaretStrength.STRONG else CaretStrength.WEAK,
                     edge = draft.edge,
                 )
             }
@@ -419,7 +448,10 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
 }
 
 private sealed interface CertificationResult {
-    data class Success(val certificates: Map<GlyphPosition, GlyphMaterializationCertificate>) : CertificationResult
+    data class Success(
+        val assetKey: org.graphiks.kalligraphie.api.FontRenderAssetKey?,
+        val certificates: Map<GlyphPosition, GlyphMaterializationCertificate>,
+    ) : CertificationResult
     data class Failure(val error: EditableLineError, val diagnostics: List<EditableLineDiagnostic>) : CertificationResult
     data class Cancelled(val diagnostics: List<EditableLineDiagnostic>) : CertificationResult
 }

@@ -17,6 +17,7 @@ import org.graphiks.kalligraphie.api.FontInstanceKey
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.OpenTypeFontData
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
+import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.GlyphId
@@ -131,7 +132,11 @@ private data class TrueTypeFontInstance(
             val handle = TrueTypeRenderAssetHandle(
                 faceId = faceId,
                 resourceLease = lease,
-                profile = outlineProfile,
+                key = FontRenderAssetKey(
+                    fontInstanceKey = key,
+                    variant = variant,
+                    outlineProfile = outlineProfile,
+                ),
             )
             FontOperationResult.Success(handle)
         } catch (throwable: Throwable) {
@@ -145,8 +150,9 @@ private data class TrueTypeFontInstance(
 private class TrueTypeRenderAssetHandle(
     override val faceId: FontFaceId,
     private var resourceLease: PreparedFontResourceLease?,
-    private val profile: org.graphiks.kalligraphie.api.OutlineProfile,
+    override val key: FontRenderAssetKey,
 ) : FontRenderAssetHandle {
+    private val profile: org.graphiks.kalligraphie.api.OutlineProfile = key.outlineProfile
     private val lifecycle = FontHandleLifecycle(::releaseResourceLease)
 
     override fun detach(): FontOperationResult<FontRenderAssetHandle> {
@@ -159,7 +165,7 @@ private class TrueTypeRenderAssetHandle(
                 TrueTypeRenderAssetHandle(
                     faceId = faceId,
                     resourceLease = detachedResourceLease,
-                    profile = profile.copy(),
+                    key = key.copy(outlineProfile = profile.copy()),
                 ),
             )
         } finally {

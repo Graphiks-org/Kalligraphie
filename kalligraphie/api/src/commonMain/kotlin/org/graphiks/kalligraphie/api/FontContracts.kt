@@ -162,6 +162,22 @@ public data class FontRenderVariantKey(
     }
 }
 
+/**
+ * Portable identity of one acquired render asset.
+ *
+ * The key binds the exact font instance, render variant, and immutable outline profile used by
+ * an asset. It owns only portable values, carries no native handle, and is safe to retain or
+ * share between threads after the corresponding asset has been closed.
+ */
+public data class FontRenderAssetKey(
+    /** Exact font instance served by the asset. */
+    public val fontInstanceKey: FontInstanceKey,
+    /** Render variant selected when the asset was acquired. */
+    public val variant: FontRenderVariantKey,
+    /** Outline representation profile enforced by the asset. */
+    public val outlineProfile: OutlineProfile,
+)
+
 /** Selects a glyph by its numeric identifier. */
 public data class FontGlyphRequest(
     /** Non-negative glyph identifier. */
@@ -229,6 +245,9 @@ public interface FontAssetResolverHandle {
  * successful detached handle and must close both handles independently.
  */
 public interface FontRenderAssetHandle {
+    /** Portable identity of this exact instance, variant, and outline profile. */
+    public val key: FontRenderAssetKey
+
     /** Identifier of the face served by this asset. */
     public val faceId: FontFaceId
 
