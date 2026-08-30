@@ -25,6 +25,7 @@ tasks.register("fontTest") {
         ":kalligraphie:font:sfnt:jvmTest",
         ":kalligraphie:font:scaler:jvmTest",
         ":kalligraphie:font:glyph:jvmTest",
+        ":kalligraphie:shaping:jvmTest",
         ":kalligraphie:jvmTest",
     )
 }

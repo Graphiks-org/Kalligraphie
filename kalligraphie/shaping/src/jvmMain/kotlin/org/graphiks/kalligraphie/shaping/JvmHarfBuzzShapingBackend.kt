@@ -28,6 +28,8 @@ import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingBackendIdentity
 import org.graphiks.kalligraphie.api.ShapingDirection
+import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
+import org.graphiks.kalligraphie.api.ShapingFeaturePolicyApplication
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapingSafetyFlags
 import org.graphiks.kalligraphie.api.TextRange
@@ -42,6 +44,16 @@ import org.graphiks.kalligraphie.api.toDiagnostic
  * JVM launchers must enable native access with `--enable-native-access=ALL-UNNAMED`.
  */
 public object JvmHarfBuzzShapingBackend {
+    /**
+     * Explicit baseline feature policy implemented by the pinned HarfBuzz reference backend.
+     *
+     * The policy delegates baseline selection to HarfBuzz 14.3.0 and therefore does not claim
+     * to enumerate choices that HarfBuzz derives from font tables or segment properties.
+     * Callers must place this policy in every [ShapingRequest] sent to this backend; individual
+     * [OpenTypeFeature] values remain explicit request overrides.
+     */
+    public val pinnedFeaturePolicy: ShapingFeaturePolicy = PINNED_FEATURE_POLICY
+
     /** Opens and validates the pinned HarfBuzz library before exposing a backend. */
     public fun open(): FontOperationResult<ShapingBackend> =
         when (val loaded = HarfBuzzNativeLoader.load()) {
@@ -57,6 +69,12 @@ private class HarfBuzzJvmBackend(
     override val identity: ShapingBackendIdentity = nativeLibrary.identity
 
     override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
+        if (request.featurePolicy != identity.featurePolicy) {
+            return shapingFailure(
+                code = "font.shaping-feature-policy-unsupported",
+                message = "The requested OpenType feature policy is not implemented by this pinned HarfBuzz backend.",
+            )
+        }
         if (request.features.any { feature -> feature.tag in NON_DETERMINISTIC_FEATURES }) {
             return shapingFailure(
                 code = "font.shaping-feature-not-deterministic",
@@ -248,6 +266,7 @@ internal class HarfBuzzNativeLibrary(
         nativeSourceRevision = HARFBUZZ_SOURCE_REVISION,
         nativeArtifactId = target.nativeArtifactId,
         nativeArtifactSha256 = target.librarySha256,
+        featurePolicy = PINNED_FEATURE_POLICY,
         configurationFingerprint = CONFIGURATION_FINGERPRINT,
     )
 
@@ -464,7 +483,7 @@ internal class HarfBuzzNativeLibrary(
         }
         val caretFacts = glyphRecords.mapIndexedNotNull { glyphIndex, record ->
             val cluster = clustersByToken.getValue(ShaperClusterToken(record.tokenValue))
-            if (cluster.scalarRanges.size <= 1) {
+            if (cluster.internalAdmissibleGraphemeBoundaries().isEmpty()) {
                 null
             } else {
                 ligatureCaretFact(
@@ -473,7 +492,7 @@ internal class HarfBuzzNativeLibrary(
                     request.direction,
                     record.glyphId,
                     glyphIndex,
-                    cluster.scalarRanges.size - 1,
+                    cluster,
                     designToLayout,
                 )
             }
@@ -488,6 +507,7 @@ internal class HarfBuzzNativeLibrary(
             bidiLevel = request.bidiLevel,
             bot = request.bot,
             eot = request.eot,
+            featurePolicy = request.featurePolicy,
             features = request.features,
             graphemeClusters = request.graphemeClusters,
             glyphs = glyphs,
@@ -531,12 +551,13 @@ internal class HarfBuzzNativeLibrary(
         direction: ShapingDirection,
         glyphId: Int,
         glyphIndex: Int,
-        expectedCaretCount: Int,
+        cluster: ShaperCluster,
         designToLayout: DesignToLayoutScale,
     ): GdefLigatureCaretFact {
+        val expectedCaretCount = cluster.internalAdmissibleGraphemeBoundaries().size
         val count = arena.allocateFrom(ValueLayout.JAVA_INT, expectedCaretCount)
         val positions = arena.allocate(ValueLayout.JAVA_INT, expectedCaretCount.toLong())
-        val reportedCount = int(
+        val totalCount = int(
             ligatureCarets,
             font,
             direction.toHarfBuzzDirection(),
@@ -545,20 +566,20 @@ internal class HarfBuzzNativeLibrary(
             count,
             positions,
         )
-        val availableCount = minOf(reportedCount, count.get(ValueLayout.JAVA_INT, 0), expectedCaretCount)
-        return if (availableCount == 0) {
-            GdefLigatureCaretFact(glyphIndex, GdefLigatureCaretState.ABSENT)
-        } else if (availableCount != expectedCaretCount) {
-            GdefLigatureCaretFact(glyphIndex, GdefLigatureCaretState.INCONSISTENT)
-        } else {
-            GdefLigatureCaretFact(
-                glyphIndex = glyphIndex,
-                state = GdefLigatureCaretState.AVAILABLE,
-                positions = List(availableCount) { index ->
+        val copiedCount = count.get(ValueLayout.JAVA_INT, 0)
+        val safelyReadableCount = copiedCount.coerceIn(0, expectedCaretCount)
+        return LigatureCaretFactInterpreter.fromNativeResponse(
+            glyphIndex = glyphIndex,
+            direction = direction,
+            cluster = cluster,
+            response = NativeLigatureCaretResponse(
+                totalCount = totalCount,
+                copiedCount = copiedCount,
+                positions = List(safelyReadableCount) { index ->
                     designToLayout.convert(positions.getAtIndex(ValueLayout.JAVA_INT, index.toLong()))
                 },
-            )
-        }
+            ),
+        )
     }
 
     private fun handle(lookup: SymbolLookup, name: String, descriptor: FunctionDescriptor): MethodHandle =
@@ -574,6 +595,75 @@ private data class NativeGlyphRecord(
     val xOffset: Int,
     val yOffset: Int,
 )
+
+/**
+ * Direct result of the native `hb_ot_layout_get_ligature_carets` ABI call.
+ *
+ * [totalCount] is the function return value and [copiedCount] is the in/out count after the
+ * call. They are deliberately retained separately so the portable interpretation can reject a
+ * truncated or otherwise inconsistent native response. Tests may construct this value to audit
+ * the ABI boundary without using a second live HarfBuzz invocation as an oracle.
+ */
+internal data class NativeLigatureCaretResponse(
+    val totalCount: Int,
+    val copiedCount: Int,
+    val positions: List<LayoutUnit>,
+)
+
+/** Interprets an audited native GDEF response against a cluster's editable grapheme boundaries. */
+internal object LigatureCaretFactInterpreter {
+    /**
+     * Returns a fact whose boundaries are logical-source ordered, independently of glyph output
+     * order. HarfBuzz exposes GDEF carets in increasing glyph-coordinate order; that order is
+     * reversed for right-to-left source text while each signed position remains relative to the
+     * same glyph origin and baseline.
+     */
+    fun fromNativeResponse(
+        glyphIndex: Int,
+        direction: ShapingDirection,
+        cluster: ShaperCluster,
+        response: NativeLigatureCaretResponse,
+    ): GdefLigatureCaretFact {
+        val logicalSourceBoundaries = cluster.internalAdmissibleGraphemeBoundaries()
+        require(logicalSourceBoundaries.isNotEmpty()) {
+            "GDEF caret interpretation requires an editable internal grapheme boundary."
+        }
+        val expectedCount = logicalSourceBoundaries.size
+        return when {
+            response.totalCount == 0 && response.copiedCount == 0 ->
+                GdefLigatureCaretFact(
+                    glyphIndex = glyphIndex,
+                    state = GdefLigatureCaretState.ABSENT,
+                    logicalSourceBoundaries = logicalSourceBoundaries,
+                )
+
+            response.totalCount != expectedCount ||
+                response.copiedCount != expectedCount ||
+                response.positions.size != expectedCount ->
+                GdefLigatureCaretFact(
+                    glyphIndex = glyphIndex,
+                    state = GdefLigatureCaretState.INCONSISTENT,
+                    logicalSourceBoundaries = logicalSourceBoundaries,
+                )
+
+            else ->
+                GdefLigatureCaretFact(
+                    glyphIndex = glyphIndex,
+                    state = GdefLigatureCaretState.AVAILABLE,
+                    logicalSourceBoundaries = logicalSourceBoundaries,
+                    positions = if (direction == ShapingDirection.RIGHT_TO_LEFT) {
+                        response.positions.asReversed()
+                    } else {
+                        response.positions
+                    },
+                )
+        }
+    }
+}
+
+private fun ShaperCluster.internalAdmissibleGraphemeBoundaries() = admissibleGraphemeBoundaries.filter { boundary ->
+    boundary.compareTo(sourceRange.start) > 0 && boundary.compareTo(sourceRange.endExclusive) < 0
+}
 
 private class DesignToLayoutScale private constructor(
     private val layoutSize: Double,
@@ -633,9 +723,14 @@ private fun shapingFailure(code: String, message: String): FontOperationResult.F
 
 private const val HARFBUZZ_VERSION: String = "14.3.0"
 private const val HARFBUZZ_SOURCE_REVISION: String = "9f2f03173b7fee860cc00d999857d09fa4a362e2"
+private val PINNED_FEATURE_POLICY: ShapingFeaturePolicy = ShapingFeaturePolicy(
+    policyId = "harfbuzz-defaults",
+    version = HARFBUZZ_VERSION,
+    application = ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
+)
 private const val CONFIGURATION_FINGERPRINT: String =
     "harfbuzz-14.3.0;ot-font-funcs;scale=face-upem;layout-conversion=layout-size-over-upem;explicit-direction-script-language-bot-eot;" +
-        "cluster-level=monotone-characters;flags=produce-unsafe-to-concat;features=explicit"
+        "cluster-level=monotone-characters;flags=produce-unsafe-to-concat;feature-policy=harfbuzz-defaults@14.3.0;feature-overrides=explicit"
 private val NON_DETERMINISTIC_FEATURES: Set<String> = setOf("rand")
 private const val HB_MEMORY_MODE_READONLY: Int = 1
 private const val HB_DIRECTION_LTR: Int = 4

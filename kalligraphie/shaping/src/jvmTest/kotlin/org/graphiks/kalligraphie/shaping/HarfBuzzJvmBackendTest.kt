@@ -13,6 +13,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
+import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
@@ -20,6 +21,7 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
+import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.unicode.TextSnapshots
@@ -30,6 +32,28 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class HarfBuzzJvmBackendTest {
+    @Test
+    fun explicitPinnedDefaultFeaturePolicyShapesTheAuditedDefaultLigature() {
+        val backend = backend()
+        val policy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy
+
+        val shaped = shape(
+            backend = backend,
+            text = "fi",
+            font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            script = OpenTypeScript("Latn"),
+            language = "en",
+            bidiLevel = 0,
+            featurePolicy = policy,
+        )
+
+        assertEquals(policy, backend.identity.featurePolicy)
+        assertEquals(policy, shaped.featurePolicy)
+        assertEquals(emptyList(), shaped.features)
+        assertEquals(listOf(GlyphId(5042)), shaped.glyphs.map { it.glyphId })
+    }
+
     @Test
     fun directBackendReportsItsPinnedIdentityAndShapesAnAuditedLatinLigature() {
         val backend = backend()
@@ -59,6 +83,7 @@ class HarfBuzzJvmBackendTest {
 
     @Test
     fun disabledStandardLigatureUsesTheFrozenSeparateGlyphsAndAdvances() {
+        val policy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy
         val shaped = shape(
             backend = backend(),
             text = "fi",
@@ -67,9 +92,11 @@ class HarfBuzzJvmBackendTest {
             script = OpenTypeScript("Latn"),
             language = "en",
             bidiLevel = 0,
+            featurePolicy = policy,
             features = listOf(OpenTypeFeature("liga", 0)),
         )
 
+        assertEquals(policy, shaped.featurePolicy)
         assertEquals(listOf(GlyphId(73), GlyphId(76)), shaped.glyphs.map { it.glyphId })
         assertEquals(listOf(LayoutUnit(721f), LayoutUnit(569f)), shaped.glyphs.map { it.xAdvance })
         assertEquals(listOf(ShaperClusterToken(0), ShaperClusterToken(1)), shaped.glyphs.map { it.clusterToken })
@@ -161,15 +188,17 @@ class HarfBuzzJvmBackendTest {
     fun explicitRtlRunRetainsFrozenGlyphOrderFlagsLevelAndDirection() {
         val backend = backend()
         val font = fontInstance("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans")
-        val shaped = shape(
-            backend = backend,
-            text = "שלום",
-            font = font,
-            direction = ShapingDirection.RIGHT_TO_LEFT,
-            script = OpenTypeScript("Hebr"),
-            language = "he",
-            bidiLevel = 1,
-        )
+        val prepared = text("שלום")
+        val shaped = backend.shape(
+            request(
+                prepared = prepared,
+                font = font,
+                direction = ShapingDirection.RIGHT_TO_LEFT,
+                script = OpenTypeScript("Hebr"),
+                language = "he",
+                bidiLevel = 1,
+            ),
+        ).successValue()
 
         assertEquals(ShapingDirection.RIGHT_TO_LEFT, shaped.direction)
         assertEquals(1, shaped.bidiLevel)
@@ -182,6 +211,78 @@ class HarfBuzzJvmBackendTest {
         assertEquals(listOf(1293, 1285, 1292, 1305), shaped.glyphs.map { it.glyphId.value })
         assertEquals(listOf(3, 2, 1, 0), shaped.glyphs.map { it.clusterToken.value })
         assertEquals(listOf(0, 2, 2, 2), shaped.glyphs.map { glyph -> glyph.safetyFlags.mask() })
+        assertEquals(listOf(range(prepared, 0, 1)), shaped.mappings.sourcesForCluster(ShaperClusterToken(0)))
+        assertEquals(listOf(range(prepared, 3, 4)), shaped.mappings.sourcesForCluster(ShaperClusterToken(3)))
+        assertEquals(listOf(ShaperClusterToken(0)), shaped.mappings.clustersForSource(range(prepared, 0, 1)))
+        assertEquals(listOf(ShaperClusterToken(3)), shaped.mappings.clustersForSource(range(prepared, 3, 4)))
+    }
+
+    @Test
+    fun gdefUsesOnlyInternalAdmissibleGraphemeBoundariesForItsExpectedCount() {
+        val prepared = text("f\u0301i")
+        val fact = LigatureCaretFactInterpreter.fromNativeResponse(
+            glyphIndex = 0,
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            cluster = cluster(
+                prepared = prepared,
+                scalarRanges = listOf(range(prepared, 0, 1), range(prepared, 1, 2), range(prepared, 2, 3)),
+                admissibleBoundaries = listOf(index(prepared, 0), index(prepared, 2), index(prepared, 3)),
+            ),
+            response = NativeLigatureCaretResponse(
+                totalCount = 1,
+                copiedCount = 1,
+                positions = listOf(LayoutUnit(600f)),
+            ),
+        )
+
+        assertEquals(GdefLigatureCaretState.AVAILABLE, fact.state)
+        assertEquals(listOf(index(prepared, 2)), fact.logicalSourceBoundaries)
+        assertEquals(listOf(LayoutUnit(600f)), fact.positions)
+    }
+
+    @Test
+    fun excessiveNativeGdefTotalIsInconsistentEvenWhenItsBufferWasFilled() {
+        val prepared = text("fi")
+        val fact = LigatureCaretFactInterpreter.fromNativeResponse(
+            glyphIndex = 0,
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            cluster = cluster(
+                prepared = prepared,
+                scalarRanges = listOf(range(prepared, 0, 1), range(prepared, 1, 2)),
+                admissibleBoundaries = listOf(index(prepared, 0), index(prepared, 1), index(prepared, 2)),
+            ),
+            response = NativeLigatureCaretResponse(
+                totalCount = 2,
+                copiedCount = 1,
+                positions = listOf(LayoutUnit(600f)),
+            ),
+        )
+
+        assertEquals(GdefLigatureCaretState.INCONSISTENT, fact.state)
+        assertEquals(emptyList(), fact.positions)
+    }
+
+    @Test
+    fun rtlGdefPositionsAreAssociatedWithLogicalSourceBoundaries() {
+        val prepared = text("אבג")
+        val fact = LigatureCaretFactInterpreter.fromNativeResponse(
+            glyphIndex = 0,
+            direction = ShapingDirection.RIGHT_TO_LEFT,
+            cluster = cluster(
+                prepared = prepared,
+                scalarRanges = listOf(range(prepared, 0, 1), range(prepared, 1, 2), range(prepared, 2, 3)),
+                admissibleBoundaries = listOf(index(prepared, 0), index(prepared, 1), index(prepared, 2), index(prepared, 3)),
+            ),
+            response = NativeLigatureCaretResponse(
+                totalCount = 2,
+                copiedCount = 2,
+                positions = listOf(LayoutUnit(100f), LayoutUnit(200f)),
+            ),
+        )
+
+        assertEquals(GdefLigatureCaretState.AVAILABLE, fact.state)
+        assertEquals(listOf(index(prepared, 1), index(prepared, 2)), fact.logicalSourceBoundaries)
+        assertEquals(listOf(LayoutUnit(200f), LayoutUnit(100f)), fact.positions)
     }
 
     @Test
@@ -239,6 +340,7 @@ class HarfBuzzJvmBackendTest {
                 bidiLevel = 0,
                 bot = true,
                 eot = true,
+                featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
                 features = emptyList(),
                 graphemeClusters = listOf(prepared.snapshot.range),
             )
@@ -268,9 +370,10 @@ class HarfBuzzJvmBackendTest {
         script: OpenTypeScript,
         language: String,
         bidiLevel: Int,
+        featurePolicy: ShapingFeaturePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
         features: List<OpenTypeFeature> = emptyList(),
     ) = backend.shape(
-        request(text(text), font, direction, script, language, bidiLevel, features = features),
+        request(text(text), font, direction, script, language, bidiLevel, featurePolicy, features),
     ).successValue()
 
     private fun request(
@@ -280,6 +383,7 @@ class HarfBuzzJvmBackendTest {
         script: OpenTypeScript,
         language: String,
         bidiLevel: Int,
+        featurePolicy: ShapingFeaturePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
         features: List<OpenTypeFeature> = emptyList(),
         graphemeRanges: List<TextRange> = prepared.scalarRanges(),
     ): ShapingRequest =
@@ -293,6 +397,7 @@ class HarfBuzzJvmBackendTest {
             bidiLevel = bidiLevel,
             bot = true,
             eot = true,
+            featurePolicy = featurePolicy,
             features = features,
             graphemeClusters = graphemeRanges,
         )
@@ -324,6 +429,17 @@ class HarfBuzzJvmBackendTest {
         TextRange(index(text, start), index(text, endExclusive))
 
     private fun index(text: PreparedText, ordinal: Int) = text.snapshot.textIndexAtScalarBoundary(ordinal)
+
+    private fun cluster(
+        prepared: PreparedText,
+        scalarRanges: List<TextRange>,
+        admissibleBoundaries: List<org.graphiks.kalligraphie.api.TextIndex>,
+    ): ShaperCluster = ShaperCluster(
+        token = ShaperClusterToken(0),
+        sourceRange = range(prepared, 0, 3.coerceAtMost(prepared.snapshot.scalars.size)),
+        scalarRanges = scalarRanges,
+        admissibleGraphemeBoundaries = admissibleBoundaries,
+    )
 
     private fun <T> FontOperationResult<T>.successValue(): T =
         assertIs<FontOperationResult.Success<T>>(this).value

@@ -14,7 +14,13 @@ native artifacts. It intentionally excludes `libharfbuzz-gpu`,
 Each selected library embeds HarfBuzz source revision
 `9f2f03173b7fee860cc00d999857d09fa4a362e2` and reports version `14.3.0`.
 
-HarfBuzz is distributed under the Old MIT license. LWJGL is distributed under
-the BSD 3-Clause license. Their authoritative license texts are available from
-the upstream projects at <https://github.com/harfbuzz/harfbuzz/blob/main/COPYING>
-and <https://github.com/LWJGL/lwjgl3/blob/master/LICENSE.md>.
+The complete offline license texts and copyright notices redistributed with this
+artifact are:
+
+* `licenses/HARFBUZZ-OLD-MIT.txt`: HarfBuzz Old MIT license and the copyright
+  notice from the pinned HarfBuzz source revision.
+* `licenses/LWJGL-BSD-3-CLAUSE.txt`: LWJGL BSD 3-Clause license and copyright
+  notice from LWJGL 3.4.3.
+
+The source copies were obtained respectively from the pinned HarfBuzz revision
+and the LWJGL 3.4.3 tag.

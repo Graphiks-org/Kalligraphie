@@ -61,6 +61,54 @@ public class OpenTypeFeature(
     override fun toString(): String = "OpenTypeFeature(tag=$tag, value=$value)"
 }
 
+/** How a versioned [ShapingFeaturePolicy] selects its baseline feature behavior. */
+public enum class ShapingFeaturePolicyApplication {
+    /**
+     * Delegates baseline feature selection to the identified, pinned shaping backend.
+     *
+     * This does not claim to enumerate choices that the shaping engine derives from its
+     * version, font tables, script, language, or text. Explicit [OpenTypeFeature] overrides
+     * remain separate and are applied to every request carrying this policy.
+     */
+    PINNED_BACKEND_DEFAULTS,
+}
+
+/**
+ * Immutable, versioned policy for baseline OpenType feature selection.
+ *
+ * A policy identifies the behavior that applies before the request's explicit
+ * [OpenTypeFeature] overrides. [policyId] and [version] are stable replay inputs: a backend
+ * must reject a policy it does not implement instead of silently substituting its own
+ * defaults. The object owns no resources and is immutable, so it is safe to share between
+ * threads.
+ */
+public class ShapingFeaturePolicy(
+    policyId: String,
+    version: String,
+    /** Baseline-selection semantics identified by this policy. */
+    public val application: ShapingFeaturePolicyApplication,
+) {
+    /** Stable, non-empty identifier for this policy family. */
+    public val policyId: String = policyId.also {
+        require(it.isNotBlank()) { "Shaping feature-policy identifiers must not be blank." }
+    }
+
+    /** Stable, non-empty version within [policyId]. */
+    public val version: String = version.also {
+        require(it.isNotBlank()) { "Shaping feature-policy versions must not be blank." }
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is ShapingFeaturePolicy &&
+            policyId == other.policyId &&
+            version == other.version &&
+            application == other.application
+
+    override fun hashCode(): Int = 31 * (31 * policyId.hashCode() + version.hashCode()) + application.hashCode()
+
+    override fun toString(): String = "ShapingFeaturePolicy($policyId@$version, $application)"
+}
+
 /** Immutable identity of a shaping implementation and its pinned native dependency. */
 public data class ShapingBackendIdentity(
     /** Stable backend implementation identifier. */
@@ -78,6 +126,8 @@ public data class ShapingBackendIdentity(
     public val nativeArtifactId: String,
     /** Lowercase SHA-256 digest of the library resource identified by [nativeArtifactId]. */
     public val nativeArtifactSha256: String,
+    /** Explicit, versioned baseline feature policy implemented by this backend. */
+    public val featurePolicy: ShapingFeaturePolicy,
     /** Versioned fingerprint of the backend's fixed shaping configuration. */
     public val configurationFingerprint: String,
 ) {
@@ -95,9 +145,9 @@ public data class ShapingBackendIdentity(
  * Fully explicit, immutable input to one relative shaping operation.
  *
  * The snapshot and every range must share one [TextVersion]. Direction, script, language,
- * resolved BiDi level, boundary flags, and features are never inferred by this contract.
- * Collections are captured immutably, so requests may be shared between threads when their
- * [font] implementation supports concurrent reads.
+ * resolved BiDi level, boundary flags, feature policy, and feature overrides are never inferred
+ * by this contract. Collections are captured immutably, so requests may be shared between
+ * threads when their [font] implementation supports concurrent reads.
  */
 public class ShapingRequest(
     /** Immutable canonical text snapshot containing [range]. */
@@ -124,10 +174,12 @@ public class ShapingRequest(
     public val bot: Boolean,
     /** Whether the range ends the text context supplied to the shaper. */
     public val eot: Boolean,
+    /** Explicit, versioned baseline feature policy the selected backend must implement. */
+    public val featurePolicy: ShapingFeaturePolicy,
     features: List<OpenTypeFeature>,
     graphemeClusters: List<TextRange>,
 ) {
-    /** Immutable feature settings in caller-specified deterministic order. */
+    /** Immutable feature overrides applied after [featurePolicy] in caller-specified deterministic order. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
     /** Immutable extended-grapheme partition of [range] in logical order. */
@@ -248,24 +300,39 @@ public enum class GdefLigatureCaretState {
 /**
  * GDEF ligature-caret fact associated with one glyph in a shaped run.
  *
- * Positions are relative layout-unit offsets in logical source-boundary order. They are
- * immutable snapshots. Consumers must use their documented deterministic fallback when
- * [state] is not [GdefLigatureCaretState.AVAILABLE].
+ * [logicalSourceBoundaries] identifies the editable internal grapheme boundaries in logical
+ * source order. [positions] is aligned index-for-index with those boundaries when [state] is
+ * [GdefLigatureCaretState.AVAILABLE]. Every position is a signed layout-unit offset from the
+ * glyph origin on the shaping baseline: its sign and origin stay in the font coordinate system,
+ * while a right-to-left backend reverses GDEF's increasing-coordinate sequence before publishing
+ * it in logical source order. Instances are immutable and safe to share between threads.
+ * Consumers must use their documented deterministic fallback when [state] is not
+ * [GdefLigatureCaretState.AVAILABLE].
  */
 public class GdefLigatureCaretFact(
     /** Zero-based glyph index in the enclosing [ShapedGlyphRun]. */
     public val glyphIndex: Int,
     /** Audited availability of font-provided caret data. */
     public val state: GdefLigatureCaretState,
+    logicalSourceBoundaries: List<TextIndex>,
     positions: List<LayoutUnit> = emptyList(),
 ) {
+    /** Immutable editable internal grapheme boundaries, in logical source order. */
+    public val logicalSourceBoundaries: List<TextIndex> = logicalSourceBoundaries.immutableListSnapshot()
+
     /** Immutable positions supplied by GDEF when they are complete and valid. */
     public val positions: List<LayoutUnit> = positions.immutableListSnapshot()
 
     init {
         require(glyphIndex >= 0) { "Ligature caret glyph index must be non-negative." }
-        require(state != GdefLigatureCaretState.AVAILABLE || this.positions.isNotEmpty()) {
-            "Available GDEF caret data must contain at least one position."
+        require(this.logicalSourceBoundaries.isNotEmpty()) {
+            "Ligature caret facts must identify at least one editable internal grapheme boundary."
+        }
+        require(this.logicalSourceBoundaries.zipWithNext().all { (left, right) -> left.compareTo(right) < 0 }) {
+            "Ligature caret source boundaries must be strictly increasing in logical order."
+        }
+        require(state != GdefLigatureCaretState.AVAILABLE || this.positions.size == this.logicalSourceBoundaries.size) {
+            "Available GDEF caret data must provide exactly one position per editable internal grapheme boundary."
         }
         require(state == GdefLigatureCaretState.AVAILABLE || this.positions.isEmpty()) {
             "Unavailable or inconsistent GDEF caret data must not publish positions."
@@ -320,8 +387,8 @@ public class ShapingMappings internal constructor(
  *
  * The run has no final line coordinates and can therefore be positioned only by a later
  * layout layer. Its clusters partition [range], preserve source-to-cluster-to-glyph
- * relations, retain the request's true grapheme partition, and carry no native resource; it
- * is safe to share across threads indefinitely.
+ * relations, retain the request's true grapheme partition and explicit feature replay inputs,
+ * and carry no native resource; it is safe to share across threads indefinitely.
  */
 public class ShapedGlyphRun(
     /** Source range shaped by this run. */
@@ -342,13 +409,15 @@ public class ShapedGlyphRun(
     public val bot: Boolean,
     /** Whether the shaped context ended at the supplied text boundary. */
     public val eot: Boolean,
+    /** Explicit, versioned baseline feature policy used by the backend. */
+    public val featurePolicy: ShapingFeaturePolicy,
     features: List<OpenTypeFeature>,
     graphemeClusters: List<TextRange>,
     glyphs: List<ShapedGlyph>,
     clusters: List<ShaperCluster>,
     ligatureCaretFacts: List<GdefLigatureCaretFact> = emptyList(),
 ) {
-    /** Immutable deterministic feature settings used by the backend. */
+    /** Immutable feature overrides used by the backend after [featurePolicy]. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
     /** Immutable true extended-grapheme partition supplied with the request. */
@@ -380,11 +449,39 @@ public class ShapedGlyphRun(
             "Cluster grapheme boundaries must come from the run grapheme partition."
         }
         val definedTokens = this.clusters.map(ShaperCluster::token).toSet()
+        require(definedTokens.size == this.clusters.size) {
+            "Shaping clusters must not repeat a local token."
+        }
         require(this.glyphs.all { glyph -> glyph.clusterTokens.all(definedTokens::contains) }) {
             "Every glyph cluster token must be declared by the shaped run."
         }
         require(this.ligatureCaretFacts.map(GdefLigatureCaretFact::glyphIndex).all(this.glyphs.indices::contains)) {
             "Ligature caret facts must identify glyphs in the shaped run."
+        }
+        require(this.ligatureCaretFacts.map(GdefLigatureCaretFact::glyphIndex).distinct().size == this.ligatureCaretFacts.size) {
+            "A shaped glyph must have at most one ligature caret fact."
+        }
+        val clustersByToken = this.clusters.associateBy(ShaperCluster::token)
+        this.ligatureCaretFacts.forEach { fact ->
+            val relatedClusters = this.glyphs[fact.glyphIndex].clusterTokens.map(clustersByToken::getValue)
+            val firstSourceBoundary = relatedClusters.minWith { left, right ->
+                left.sourceRange.start.compareTo(right.sourceRange.start)
+            }.sourceRange.start
+            val lastSourceBoundary = relatedClusters.maxWith { left, right ->
+                left.sourceRange.endExclusive.compareTo(right.sourceRange.endExclusive)
+            }.sourceRange.endExclusive
+            val expectedBoundaries = relatedClusters
+                .flatMap(ShaperCluster::admissibleGraphemeBoundaries)
+                .filter { boundary ->
+                    boundary.sharesVersionWith(firstSourceBoundary) &&
+                        boundary.compareTo(firstSourceBoundary) > 0 &&
+                        boundary.compareTo(lastSourceBoundary) < 0
+                }
+                .distinct()
+                .sortedWith { left, right -> left.compareTo(right) }
+            require(fact.logicalSourceBoundaries == expectedBoundaries) {
+                "Ligature caret facts must identify exactly the internal grapheme boundaries of their glyph clusters."
+            }
         }
     }
 }
