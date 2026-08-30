@@ -407,8 +407,11 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 ),
             )
         } else {
+            val legalBoundaries = request.unicodeAnalysis.graphemeClusters
+                .flatMap { cluster -> listOf(cluster.start, cluster.endExclusive) }
+                .toSet()
             placements.flatMap { placement ->
-                placement.caretPositions.map { (index, location) ->
+                placement.caretPositions.filter { (index, _) -> index in legalBoundaries }.map { (index, location) ->
                     CandidateDraft(
                         index = index,
                         affinity = location.affinity,

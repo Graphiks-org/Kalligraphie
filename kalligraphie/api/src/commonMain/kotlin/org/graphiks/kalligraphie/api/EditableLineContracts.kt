@@ -476,10 +476,10 @@ public class EditableLineRequest(
             "Every shaped run must stay within one analyzed script-language run with the same script and language."
         }
         require(this.shapedGlyphRuns.all { run ->
-            val analyzedPartition = unicodeAnalysis.graphemeClusters.filter { cluster -> containsRange(run.range, cluster) }
+            val analyzedPartition = graphemeFragments(run.range, unicodeAnalysis.graphemeClusters)
             run.graphemeClusters == analyzedPartition
         }) {
-            "Every shaped run must preserve exactly the analyzed grapheme partition restricted to its source range."
+            "Every shaped run must preserve the analyzed grapheme-fragment partition restricted to its source range."
         }
     }
 }
@@ -580,10 +580,22 @@ public class EditableLine(
             require(this.allCaretCandidates.groupBy { it.visualRunOrder to it.position.index }.values.all { it.size == 1 }) {
                 "A positioned run must not publish duplicate candidates for one source boundary."
             }
+            val publishedBoundaries = this.allCaretCandidates.map { it.position.index }.toSet()
             require(this.positionedGlyphRuns.all { run ->
-                this.allCaretCandidates.any { it.visualRunOrder == run.visualOrder && it.edge == CaretBoundaryEdge.LOGICAL_START } &&
-                    this.allCaretCandidates.any { it.visualRunOrder == run.visualOrder && it.edge == CaretBoundaryEdge.LOGICAL_END }
-            }) { "Every positioned run must publish both logical endpoint candidates." }
+                endpointCandidateIsPublishedWhenLegal(
+                    run = run,
+                    edge = CaretBoundaryEdge.LOGICAL_START,
+                    publishedBoundaries = publishedBoundaries,
+                    candidates = this.allCaretCandidates,
+                ) && endpointCandidateIsPublishedWhenLegal(
+                    run = run,
+                    edge = CaretBoundaryEdge.LOGICAL_END,
+                    publishedBoundaries = publishedBoundaries,
+                    candidates = this.allCaretCandidates,
+                )
+            }) {
+                "Every positioned run must publish each of its legal logical endpoint candidates."
+            }
         }
     }
 
@@ -652,8 +664,9 @@ public class EditableLine(
     /**
      * Returns non-empty selection rectangles in physical visual-run order.
      *
-     * [anchor] and [focus] must be valid line-local caret positions. Geometry uses line metrics
-     * and caret boundaries only; it never queries glyph ink bounds or renderer state.
+     * [anchor] and [focus] must be valid line-local caret positions. Geometry uses line metrics,
+     * legal caret boundaries, and the signed glyph pen path when a run has no two legal caret
+     * boundaries. It never queries glyph ink bounds or renderer state.
      */
     public fun selectionGeometry(anchor: CaretPosition, focus: CaretPosition): List<LayoutRect> {
         require(allCaretCandidates.any { it.position == anchor }) { "Selection anchor must be a line-local caret position." }
@@ -665,18 +678,26 @@ public class EditableLine(
             val selectedStart = maxIndex(start, run.sourceRun.range.start)
             val selectedEnd = minIndex(endExclusive, run.sourceRun.range.endExclusive)
             if (selectedStart >= selectedEnd) return@mapNotNull null
-            val from = candidateForRun(run.visualOrder, selectedStart)
-            val until = candidateForRun(run.visualOrder, selectedEnd)
-            val left = minOf(from.geometry.start.x, until.geometry.start.x)
-            val right = maxOf(from.geometry.start.x, until.geometry.start.x)
+            val caretCoordinates = allCaretCandidates.asSequence()
+                .filter { candidate ->
+                    candidate.visualRunOrder == run.visualOrder &&
+                        candidate.position.index >= selectedStart &&
+                        candidate.position.index <= selectedEnd
+                }
+                .map { candidate -> candidate.geometry.start.x }
+                .toList()
+            val coordinates = if (caretCoordinates.size >= 2) {
+                caretCoordinates
+            } else {
+                caretCoordinates + run.glyphs.flatMap { glyph ->
+                    listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+                }
+            }
+            val left = coordinates.minOrNull() ?: return@mapNotNull null
+            val right = coordinates.maxOrNull() ?: return@mapNotNull null
             if (left == right) null else LayoutRect(left, lineTop(), right, lineBottom())
         }.immutableListSnapshot()
     }
-
-    private fun candidateForRun(visualRunOrder: Int, index: TextIndex): CaretCandidate =
-        allCaretCandidates.firstOrNull { candidate ->
-            candidate.visualRunOrder == visualRunOrder && candidate.position.index == index
-        } ?: throw IllegalArgumentException("Selection boundary is not represented by its visual run.")
 
     private fun lineTop(): LayoutUnit = LayoutUnit(-verticalMetrics.ascent.value)
 
@@ -721,6 +742,29 @@ private fun containsRange(owner: TextRange, item: TextRange): Boolean =
     item.start.sharesVersionWith(owner.start) &&
         item.start >= owner.start &&
         item.endExclusive <= owner.endExclusive
+
+private fun graphemeFragments(range: TextRange, clusters: List<TextRange>): List<TextRange> =
+    clusters.mapNotNull { cluster ->
+        val start = maxIndex(range.start, cluster.start)
+        val end = minIndex(range.endExclusive, cluster.endExclusive)
+        if (start < end) TextRange(start, end) else null
+    }
+
+private fun endpointCandidateIsPublishedWhenLegal(
+    run: PositionedGlyphRun,
+    edge: CaretBoundaryEdge,
+    publishedBoundaries: Set<TextIndex>,
+    candidates: List<CaretCandidate>,
+): Boolean {
+    val index = when (edge) {
+        CaretBoundaryEdge.LOGICAL_START -> run.sourceRun.range.start
+        CaretBoundaryEdge.LOGICAL_END -> run.sourceRun.range.endExclusive
+        CaretBoundaryEdge.INTERNAL -> error("Only positioned-run endpoints are supported.")
+    }
+    return index !in publishedBoundaries || candidates.any { candidate ->
+        candidate.visualRunOrder == run.visualOrder && candidate.edge == edge
+    }
+}
 
 private fun ShapingDirection.matchesBidiLevel(level: Int): Boolean =
     when (this) {

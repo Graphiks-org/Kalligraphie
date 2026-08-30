@@ -181,6 +181,33 @@ class EditableLineTest {
     }
 
     @Test
+    fun selectionEnvelopsEveryCaretOnANonMonotoneGlyphPenPath() {
+        val prepared = text("ab")
+        val font = fontFixture().instance
+        val line = layout(
+            analysis = analysis(prepared, listOf(0), listOf(0)),
+            font = font,
+            runs = listOf(
+                shapedRun(
+                    prepared = prepared,
+                    font = font,
+                    direction = ShapingDirection.LEFT_TO_RIGHT,
+                    level = 0,
+                    glyphs = listOf(glyph(14, 10f, 0), glyph(15, -20f, 1)),
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(-10f to 10f),
+            line.selectionGeometry(
+                CaretPosition(index(prepared, 0), CaretAffinity.DOWNSTREAM),
+                CaretPosition(index(prepared, 2), CaretAffinity.UPSTREAM),
+            ).map { it.left.value to it.right.value },
+        )
+    }
+
+    @Test
     fun rightToLeftLineAnchorsLogicalStartAtTheRightGlyphEdge() {
         val prepared = text("אב")
         val font = fontFixture().instance

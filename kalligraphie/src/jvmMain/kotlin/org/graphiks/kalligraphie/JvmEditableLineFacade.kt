@@ -181,7 +181,7 @@ public object JvmEditableLineFacade {
             val end = earlierBoundary(script.range.endExclusive, bidi.range.endExclusive)
             if (start < end) {
                 val range = TextRange(start, end)
-                val graphemeClusters = analysis.graphemeClusters.filter { cluster -> contains(range, cluster) }
+                val graphemeClusters = graphemeFragments(range, analysis.graphemeClusters)
                 requirePartition(range, graphemeClusters)
                 plans += ShapingPlan(
                     range = range,
@@ -250,17 +250,29 @@ private fun earlierBoundary(first: TextIndex, second: TextIndex): TextIndex = if
 private fun contains(owner: TextRange, item: TextRange): Boolean =
     item.start >= owner.start && item.endExclusive <= owner.endExclusive
 
+/**
+ * Builds the contiguous fragment partition induced when an itemization range crosses an extended
+ * grapheme cluster. The fragments are shaping boundaries only: consumers must still use the
+ * complete analyzed clusters as their legal editing boundaries.
+ */
+private fun graphemeFragments(range: TextRange, clusters: List<TextRange>): List<TextRange> =
+    clusters.mapNotNull { cluster ->
+        val start = laterBoundary(range.start, cluster.start)
+        val end = earlierBoundary(range.endExclusive, cluster.endExclusive)
+        if (start < end) TextRange(start, end) else null
+    }
+
 private fun requirePartition(range: TextRange, clusters: List<TextRange>) {
-    require(clusters.isNotEmpty()) { "Shaping plans must be partitioned into extended grapheme clusters." }
+    require(clusters.isNotEmpty()) { "Shaping plans must be partitioned into grapheme fragments." }
     var next = range.start
     clusters.forEach { cluster ->
         require(cluster.start == next && cluster.start < cluster.endExclusive) {
-            "Unicode script and BiDi intersections must preserve complete extended grapheme clusters."
+            "Unicode script and BiDi intersections must preserve a contiguous grapheme-fragment partition."
         }
         next = cluster.endExclusive
     }
     require(next == range.endExclusive) {
-        "Unicode script and BiDi intersections must preserve complete extended grapheme clusters."
+        "Unicode script and BiDi intersections must preserve a contiguous grapheme-fragment partition."
     }
 }
 

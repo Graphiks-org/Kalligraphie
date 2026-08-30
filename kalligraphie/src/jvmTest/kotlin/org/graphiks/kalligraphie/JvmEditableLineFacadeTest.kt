@@ -1,6 +1,8 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CaretAffinity
+import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
@@ -27,6 +29,41 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class JvmEditableLineFacadeTest {
+    @Test
+    fun acceptsAGraphemeClusterThatSpansAnalyzedBidiLevels() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("\u0600a".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val result = JvmEditableLineFacade.layout(
+                JvmEditableLineFacadeRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    features = emptyList(),
+                    verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                ),
+            )
+
+            val line = assertIs<EditableLineResult.Success>(result).line
+            assertEquals(snapshot.range, line.range)
+            assertTrue(line.caretCandidates(snapshot.textIndexAtScalarBoundary(1)).isEmpty())
+            assertTrue(
+                line.selectionGeometry(
+                    CaretPosition(snapshot.range.start, CaretAffinity.DOWNSTREAM),
+                    CaretPosition(snapshot.range.endExclusive, CaretAffinity.UPSTREAM),
+                ).isNotEmpty(),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
     @Test
     fun resolvesMixedBidiRunsWithoutAnImplicitLeftToRightShapingDirection() {
         val snapshot = Kalligraphie.decodeUtf16(

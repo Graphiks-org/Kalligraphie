@@ -191,7 +191,13 @@ public class ShapingRequest(
     /** Immutable feature overrides applied after [featurePolicy] in caller-specified deterministic order. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
-    /** Immutable extended-grapheme partition of [range] in logical order. */
+    /**
+     * Immutable logical partition of [range] induced by its extended grapheme clusters.
+     *
+     * A script or BiDi itemization boundary can divide an extended grapheme cluster, so an entry
+     * may be only a fragment of that cluster. Such a fragment is a shaping boundary only and
+     * never authorizes a consumer caret inside the complete extended grapheme cluster.
+     */
     public val graphemeClusters: List<TextRange> = graphemeClusters.immutableListSnapshot()
 
     init {
@@ -429,7 +435,12 @@ public class ShapedGlyphRun(
     /** Immutable feature overrides used by the backend after [featurePolicy]. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
-    /** Immutable true extended-grapheme partition supplied with the request. */
+    /**
+     * Immutable logical partition induced by the request extended grapheme clusters.
+     *
+     * An itemization boundary may make an entry a proper fragment of an extended grapheme
+     * cluster. The original analysis remains the authority for legal editable boundaries.
+     */
     public val graphemeClusters: List<TextRange> = graphemeClusters.immutableListSnapshot()
 
     /** Immutable glyphs in shaping-engine output order. */
