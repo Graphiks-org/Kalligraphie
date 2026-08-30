@@ -31,6 +31,54 @@ resolver or render asset is idempotent. New acquisitions after closure return
 `font.resource-closed`; a detached asset owns the immutable data required for
 `resolveGlyph(...)`.
 
-Out of scope: TTC/OTC, CFF/CFF2, variations, synthetic styles, COLR, SVG,
-bitmap glyphs, system fonts, shaping, layout, hinting, rasterization, native
-font engines, and platform font handles.
+## Exact editable Unicode lines
+
+The JVM reference target also provides one complete headless route for a
+single non-wrapped editable line. `Kalligraphie.decodeUtf8(...)` or
+`Kalligraphie.decodeUtf16(...)` creates an immutable `TextSnapshot`. The
+JVM-only `JvmEditableLineFacade` then analyzes Unicode, resolves script and
+BiDi runs, shapes each run with its embedded HarfBuzz backend, and positions
+the final line.
+
+```kotlin
+val decoded = Kalligraphie.decodeUtf8(
+    version = TextVersion.create(),
+    slices = listOf(TextSlice.Utf8(editorBytes)),
+)
+val result = JvmEditableLineFacade.layout(
+    JvmEditableLineFacadeRequest(
+        snapshot = decoded.snapshot,
+        font = instance,
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "en",
+        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        features = emptyList(),
+        verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+        materialization = EditableLineMaterialization.LayoutOnly,
+    ),
+)
+```
+
+Direction, language, feature policy, feature overrides, line metrics, and
+publication mode are required inputs. Script and resolved run direction are
+produced by the pinned Unicode analysis and passed explicitly to every shaping
+request. The result is `EditableLineResult`: on success it contains shaped and
+positioned glyphs, text-to-cluster-to-glyph mappings, logical and visual caret
+navigation, selection geometry, and deterministic hit testing.
+
+For `RENDERABLE` output, replace `LayoutOnly` with
+`EditableLineMaterialization.Renderable` and provide an open resolver, a
+variant, and an `OutlineProfile`. Every published final glyph then carries an
+outline-route certificate tied to its exact `FontRenderAssetKey`. The resolver
+remains caller-owned; the facade borrows it only during the synchronous call.
+
+The embedded HarfBuzz 14.3.0 backend is the JVM reference implementation. Its
+Linux and macOS x64/arm64 resources are pinned, hash-verified, and never found
+through a system-library search. Public contracts contain no JNI or native
+types. Android and Apple do not yet provide executable shaping adapters, so
+this route must not be treated as conformant on those platforms.
+
+Out of scope: wrapping, paragraphs, fallback across fonts, hyphenation,
+justification, vertical writing, rendering pixels, GPU APIs, TTC/OTC,
+CFF/CFF2, variations, synthetic styles, COLR, SVG, bitmap glyphs, and system
+fonts.

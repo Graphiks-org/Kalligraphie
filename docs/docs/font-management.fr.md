@@ -36,7 +36,65 @@ fermeture renvoient `font.resource-closed` ; une ressource détachée conserve l
 données immuables requises par `resolveGlyph(...)`.
 
 Hors périmètre : TTC/OTC, CFF/CFF2, variations, styles synthétiques, COLR, SVG,
-glyphes sous forme d’images matricielles, fontes système, composition
-contextuelle, mise en page, ajustement des contours aux pixels (hinting),
-rastérisation, moteurs natifs de gestion des fontes et descripteurs de fonte
-propres à la plateforme.
+glyphes sous forme d’images matricielles, fontes système, ajustement des
+contours aux pixels (hinting), rastérisation, moteurs natifs de gestion des
+fontes et descripteurs de fonte propres à la plateforme.
+
+## Lignes Unicode éditables exactes
+
+La cible JVM de référence fournit aussi un parcours sans interface graphique
+pour une seule ligne éditable non renvoyée à la ligne. `Kalligraphie.decodeUtf8(...)`
+ou `Kalligraphie.decodeUtf16(...)` crée un `TextSnapshot` immuable.
+`JvmEditableLineFacade`, disponible uniquement sur la JVM, analyse ensuite
+Unicode, résout les runs (séquences homogènes) de script et BiDi
+(bidirectionnel), compose chaque run avec son backend (moteur d’exécution)
+HarfBuzz embarqué, puis positionne la ligne finale.
+
+```kotlin
+val decoded = Kalligraphie.decodeUtf8(
+    version = TextVersion.create(),
+    slices = listOf(TextSlice.Utf8(editorBytes)),
+)
+val result = JvmEditableLineFacade.layout(
+    JvmEditableLineFacadeRequest(
+        snapshot = decoded.snapshot,
+        font = instance,
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "en",
+        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        features = emptyList(),
+        verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+        materialization = EditableLineMaterialization.LayoutOnly,
+    ),
+)
+```
+
+La direction, la langue, la politique de fonctionnalités OpenType (features),
+les surcharges de fonctionnalités, les métriques de ligne et le mode de
+publication sont des entrées obligatoires. Le script et la direction résolue
+de chaque run proviennent de l’analyse Unicode épinglée et sont transmis
+explicitement à chaque demande de composition. Le résultat est un
+`EditableLineResult` : en cas de succès, il contient les glyphes composés et
+positionnés, les relations texte-vers-clusters-vers-glyphes, la navigation de
+caret (repère d’insertion) logique et visuelle, la géométrie de sélection et
+le hit-testing (test de point) déterministe.
+
+Pour obtenir `RENDERABLE`, remplacez `LayoutOnly` par
+`EditableLineMaterialization.Renderable` et fournissez un gestionnaire ouvert,
+une variante et un `OutlineProfile`. Chaque glyphe final publié porte alors un
+certificat de route outline (contour) lié à son `FontRenderAssetKey` exact. Le
+gestionnaire reste la propriété de l’appelant ; la façade ne l’emprunte que
+pendant l’appel synchrone.
+
+Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence JVM. Ses
+ressources Linux et macOS x64/arm64 sont épinglées, vérifiées par hash
+(empreinte cryptographique) et jamais recherchées dans les bibliothèques du
+système. Les contrats publics ne contiennent ni type JNI ni type natif.
+Android et Apple ne possèdent pas encore d’adapter (adaptateur de plateforme)
+de composition exécutable : ce parcours ne doit donc pas être considéré comme
+conforme sur ces plateformes.
+
+Hors périmètre : renvoi à la ligne, paragraphes, repli entre fontes, césure,
+justification, écriture verticale, rendu en pixels, API GPU, TTC/OTC,
+CFF/CFF2, variations, styles synthétiques, COLR, SVG, glyphes matriciels et
+fontes système.
