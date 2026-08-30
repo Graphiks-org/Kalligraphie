@@ -168,7 +168,6 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             .toSet()
         placement.sourceRun.ligatureCaretFacts.forEach { fact ->
             val glyph = placement.glyphs[fact.glyphIndex]
-            val boundaries = fact.logicalSourceBoundaries
             val supplied = fact.takeIf { it.state == GdefLigatureCaretState.AVAILABLE }
                 ?.let { availableGdefCarets(placement.sourceRun, glyph, it) }
             if (supplied != null) {
@@ -184,9 +183,6 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                         sourceRange = glyph.sourceClusters.first().sourceRange,
                         glyphId = glyph.shapedGlyph.glyphId,
                     )
-                }
-                fallbackCarets(placement.sourceRun, listOf(glyph), boundaries).forEach { (boundary, x) ->
-                    values[boundary] = CaretLocation(x, CaretAffinity.DOWNSTREAM, CaretBoundaryEdge.INTERNAL)
                 }
             }
         }

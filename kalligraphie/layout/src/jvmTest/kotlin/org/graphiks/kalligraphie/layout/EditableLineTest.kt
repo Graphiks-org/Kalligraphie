@@ -406,6 +406,40 @@ class EditableLineTest {
     }
 
     @Test
+    fun missingGdefAcrossMultipleGlyphsOfOneClusterInterpolatesAcrossTheCompleteCluster() {
+        val prepared = text("ffi")
+        val font = fontFixture().instance
+        val line = layout(
+            analysis = analysis(prepared, listOf(0), listOf(0)),
+            font = font,
+            runs = listOf(
+                shapedRun(
+                    prepared = prepared,
+                    font = font,
+                    direction = ShapingDirection.LEFT_TO_RIGHT,
+                    level = 0,
+                    glyphs = listOf(glyph(46, 10f, 0), glyph(47, 20f, 0)),
+                    clusters = listOf(cluster(prepared, 0, 3, 0)),
+                    ligatureFacts = listOf(
+                        GdefLigatureCaretFact(
+                            glyphIndex = 0,
+                            state = GdefLigatureCaretState.ABSENT,
+                            logicalSourceBoundaries = listOf(index(prepared, 1), index(prepared, 2)),
+                        ),
+                        GdefLigatureCaretFact(
+                            glyphIndex = 1,
+                            state = GdefLigatureCaretState.ABSENT,
+                            logicalSourceBoundaries = listOf(index(prepared, 1), index(prepared, 2)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(0f, 10f, 20f, 30f), caretXs(line, prepared, 0, 1, 2, 3))
+    }
+
+    @Test
     fun gdefCaretsKeepTheirLogicalBoundaryAssociationAcrossMultipleClustersOfOneGlyph() {
         val prepared = text("afi")
         val font = fontFixture().instance
