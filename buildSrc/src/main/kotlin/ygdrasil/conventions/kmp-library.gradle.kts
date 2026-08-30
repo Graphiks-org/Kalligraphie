@@ -23,7 +23,7 @@ extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
     finalizeDsl(
         org.gradle.api.Action<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
             namespace = "io.ygdrasil.shared"
-            compileSdk = 37
+            compileSdk = 36
             minSdk = 24
         }
     )
