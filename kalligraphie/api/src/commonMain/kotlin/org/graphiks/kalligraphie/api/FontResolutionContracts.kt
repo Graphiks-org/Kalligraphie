@@ -1,0 +1,157 @@
+package org.graphiks.kalligraphie.api
+
+import kotlin.jvm.JvmInline
+
+/**
+ * Opaque identity of an immutable catalogue generation.
+ *
+ * A generation identifies the exact set of face records and provider state captured by a
+ * [FontCatalogSnapshot]. It is equality-comparable but intentionally has no ordering. Asset
+ * keys may be reopened only through a live resolver carrying the same generation.
+ *
+ * @param value provider-defined, non-empty generation token.
+ */
+@JvmInline
+public value class FontCatalogGeneration(
+    /** Provider-defined generation token. */
+    public val value: String,
+) {
+    init {
+        require(value.isNotBlank()) { "Font catalog generation must not be blank." }
+    }
+}
+
+/**
+ * Capabilities declared by one stable face record.
+ *
+ * These values are a conservative eligibility prefilter. They never replace shaping or final
+ * materialization validation, because an OpenType substitution can produce a glyph whose route
+ * differs from the source character mapping.
+ */
+public data class FontFaceCapabilities(
+    /** Whether the face can map Unicode scalar values to glyph identifiers. */
+    public val characterMapping: Boolean,
+    /** Whether the face supplies data usable by the selected shaping pipeline. */
+    public val shaping: Boolean,
+    /** Whether the face can produce a portable outline route. */
+    public val outline: Boolean,
+)
+
+/**
+ * Immutable record describing a face captured by a [FontCatalogSnapshot].
+ *
+ * [id] is stable for the face's source and index, while [capabilities] describes only the
+ * capabilities the captured provider actually makes available. The record owns no resource and
+ * can be retained after resolvers and assets have closed.
+ */
+public data class FontFaceRecord(
+    /** Stable semantic identity of the face. */
+    public val id: FontFaceId,
+    /** Descriptive metadata captured with the generation. */
+    public val metadata: FontFaceMetadata,
+    /** Conservative capabilities available through this catalogue generation. */
+    public val capabilities: FontFaceCapabilities,
+)
+
+/**
+ * One policy-ordered font candidate.
+ *
+ * Candidate order is the list order in [FontResolutionPolicySnapshot]; it is consequently a
+ * total deterministic order rather than a score subject to platform-dependent tie breaking.
+ */
+public data class FontResolutionCandidate(
+    /** Face selected when every earlier candidate is unusable for one fallback unit. */
+    public val faceId: FontFaceId,
+)
+
+/**
+ * Immutable, versioned policy for resolving fallback fonts in one catalogue generation.
+ *
+ * [candidates] is the complete total order. [lastResortFace] must be its final element and is
+ * therefore explicit in both successful diagnostics and typed exhaustion results. The policy
+ * contains values only, is safe to share between threads, and never opens or retains an asset.
+ *
+ * @param generation exact catalogue generation to which all candidates belong.
+ * @param policyId stable semantic policy identifier.
+ * @param version version of the observable ordering rules.
+ * @param candidates complete non-empty candidate order.
+ * @param lastResortFace explicitly declared final candidate.
+ */
+public class FontResolutionPolicySnapshot(
+    /** Exact catalogue generation used by this policy. */
+    public val generation: FontCatalogGeneration,
+    /** Stable semantic policy identifier. */
+    public val policyId: String,
+    /** Version of the policy's observable ordering rules. */
+    public val version: String,
+    candidates: List<FontResolutionCandidate>,
+    /** Explicit final candidate used only after all preceding candidates fail. */
+    public val lastResortFace: FontFaceId,
+) {
+    /** Complete deterministic candidate order. */
+    public val candidates: List<FontResolutionCandidate> = candidates.immutableListSnapshot()
+
+    init {
+        require(policyId.isNotBlank()) { "Font resolution policy id must not be blank." }
+        require(version.isNotBlank()) { "Font resolution policy version must not be blank." }
+        require(this.candidates.isNotEmpty()) { "Font resolution policy must declare at least one candidate." }
+        require(this.candidates.map(FontResolutionCandidate::faceId).distinct().size == this.candidates.size) {
+            "Font resolution policy candidates must not repeat a face."
+        }
+        require(this.candidates.last().faceId == lastResortFace) {
+            "The explicit last-resort face must be the final candidate."
+        }
+    }
+}
+
+/**
+ * Atomic source range assigned to exactly one font during fallback.
+ *
+ * A unit is derived from Unicode analysis and therefore includes a complete extended grapheme
+ * cluster, variation sequence, and emoji ZWJ sequence. [range] is snapshot-bound and is never
+ * split between two candidates. Script, language, and BiDi level preserve the shaping context
+ * that selected the unit; they do not expose platform state.
+ */
+public data class FallbackUnit(
+    /** Complete snapshot-bound source range of the indivisible unit. */
+    public val range: TextRange,
+    /** ISO 15924 script passed to shaping. */
+    public val script: OpenTypeScript,
+    /** Explicit BCP 47 language passed to shaping. */
+    public val language: String,
+    /** UAX #9 embedding level used for shaping direction. */
+    public val bidiLevel: Int,
+) {
+    init {
+        require(language.isNotBlank()) { "Fallback unit language must not be blank." }
+        require(bidiLevel in 0..126) { "Fallback unit BiDi level must be between 0 and 126." }
+    }
+}
+
+/**
+ * Immutable resolution result for one fallback operation.
+ *
+ * Every [shapedRuns] entry was shaped with the matching instance in [instances]. In renderable
+ * mode the resolver validates final glyph routes before publishing this value, but a subsequent
+ * line-layout step creates the certificates attached to positioned glyphs. The value owns no
+ * asset or resolver and is safe to retain concurrently.
+ */
+public class FontFallbackResolution(
+    /** Atomic units in logical source order. */
+    units: List<FallbackUnit>,
+    /** Contiguous shaped runs in logical source order. */
+    shapedRuns: List<ShapedGlyphRun>,
+    /** Immutable instances actually used by [shapedRuns]. */
+    instances: List<FontInstance>,
+    /** Canonically ordered recoverable diagnostics, including last-resort selection. */
+    diagnostics: List<FontDiagnostic> = emptyList(),
+) {
+    /** Atomic units in logical source order. */
+    public val units: List<FallbackUnit> = units.immutableListSnapshot()
+    /** Contiguous shaped runs in logical source order. */
+    public val shapedRuns: List<ShapedGlyphRun> = shapedRuns.immutableListSnapshot()
+    /** Immutable font instances actually used by the resolution. */
+    public val instances: List<FontInstance> = instances.immutableListSnapshot()
+    /** Canonically ordered recoverable diagnostics. */
+    public val diagnostics: List<FontDiagnostic> = diagnostics.sortedDiagnostics()
+}

@@ -3,7 +3,7 @@ package org.graphiks.kalligraphie.api
 import kotlin.jvm.JvmInline
 
 /**
- * Parsed, immutable view of the faces available in a font source.
+ * Parsed, immutable view of the faces available in one catalog generation.
  *
  * A snapshot does not borrow mutable caller state. Consumers own every handle
  * returned by it and must close those handles when they are no longer needed.
@@ -12,8 +12,11 @@ import kotlin.jvm.JvmInline
  * than thrown for invalid or unsupported font data.
  */
 public interface FontCatalogSnapshot {
-    /** Identifier of the source from which this catalog was parsed. */
-    public val sourceId: FontSourceId
+    /** Exact immutable generation captured by this catalogue. */
+    public val generation: FontCatalogGeneration
+
+    /** Stable face records exposed by this exact generation in provider order. */
+    public val faces: List<FontFaceRecord>
 
     /**
      * Opens a resolver used to acquire render assets from this catalog.
@@ -35,7 +38,7 @@ public interface FontCatalogSnapshot {
      * is reported as a typed failure.
      */
     public fun resolveFace(
-        request: FontFaceRequest,
+        faceId: FontFaceId,
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontFace>
 }
@@ -62,16 +65,6 @@ public interface FontFace {
      * [FontError.InvalidInstanceDescriptor].
      */
     public fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance>
-}
-
-/** Selects a face within a font source. */
-public data class FontFaceRequest(
-    /** Zero-based face index. */
-    public val faceIndex: Int,
-) {
-    init {
-        require(faceIndex >= 0) { "faceIndex must be non-negative." }
-    }
 }
 
 /** Descriptive and structural metadata for a font face. */
@@ -165,9 +158,10 @@ public data class FontRenderVariantKey(
 /**
  * Portable identity of one acquired render asset.
  *
- * The key binds the exact font instance, render variant, and immutable outline profile used by
- * an asset. It owns only portable values, carries no native handle, and is safe to retain or
- * share between threads after the corresponding asset has been closed.
+ * The key binds the exact catalog generation, font instance, render variant, and immutable
+ * outline profile used by an asset. It owns only portable values, carries no native handle, and
+ * is safe to retain or share between threads after the corresponding asset has been closed. A
+ * key does not keep the catalog, resolver, or asset resource alive.
  */
 public data class FontRenderAssetKey(
     /** Exact font instance served by the asset. */
@@ -176,6 +170,8 @@ public data class FontRenderAssetKey(
     public val variant: FontRenderVariantKey,
     /** Outline representation profile enforced by the asset. */
     public val outlineProfile: OutlineProfile,
+    /** Exact immutable catalogue generation through which this asset is reopenable. */
+    public val generation: FontCatalogGeneration,
 )
 
 /** Selects a glyph by its numeric identifier. */
@@ -213,7 +209,7 @@ public fun interface CancellationToken {
 }
 
 /**
- * Lifetime handle for render assets associated with a source.
+ * Lifetime handle for render assets associated with one catalog generation.
  *
  * The resolver owns the resources needed for future acquisitions. Its
  * [close] operation is idempotent and linearizable, is safe to call from any
@@ -222,8 +218,18 @@ public fun interface CancellationToken {
  * resolver; acquisitions after closure return [FontError.ResourceClosed].
  */
 public interface FontAssetResolverHandle {
-    /** Identifier of the source served by this resolver. */
-    public val sourceId: FontSourceId
+    /** Exact immutable catalogue generation served by this resolver. */
+    public val generation: FontCatalogGeneration
+
+    /**
+     * Reopens the exact asset identified by [key].
+     *
+     * The key alone retains no resource. This operation succeeds only while this resolver is
+     * open and [key] belongs to [generation]; otherwise it returns a typed `AssetUnavailable`,
+     * `IncompatibleCatalogGeneration`, or `ResourceClosed` failure. A successful handle is
+     * owned by the caller and remains independently closable or detachable.
+     */
+    public fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle>
 
     /**
      * Closes this resolver.
@@ -353,7 +359,7 @@ public interface FontInstance {
     /**
      * Acquires a render asset for [variant] using [resolver] and [requirements].
      *
-     * The resolver must belong to the same source as this instance. A
+     * The resolver must belong to the catalog generation that contains this instance's face. A
      * successful asset is owned by the caller and must be closed; acquisition
      * failures do not transfer ownership.
      */

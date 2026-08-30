@@ -9,7 +9,6 @@ import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
-import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -146,7 +145,7 @@ class JvmEditableLineFacadeTest {
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(catalog.openAssetResolver()).value
         val requirements = FontAccessRequirementsSnapshot.renderable(OUTLINE_PROFILE)
         val face = assertIs<FontOperationResult.Success<FontFace>>(
-            catalog.resolveFace(FontFaceRequest(faceIndex = 0), requirements),
+            catalog.resolveFace(catalog.faces.single().id, requirements),
         ).value
         val font = assertIs<FontOperationResult.Success<FontInstance>>(
             face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(2048f))),

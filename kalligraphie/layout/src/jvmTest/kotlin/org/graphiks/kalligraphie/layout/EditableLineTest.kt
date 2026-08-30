@@ -12,7 +12,8 @@ import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontFaceRequest
+import org.graphiks.kalligraphie.api.FontCatalogGeneration
+import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
@@ -733,7 +734,7 @@ class EditableLineTest {
             level = 0,
             glyphs = listOf(glyph(96, 10f, 0)),
         )
-        val expectedKey = FontRenderAssetKey(font.key, FontRenderVariantKey.default, outlineProfile())
+        val expectedKey = FontRenderAssetKey(font.key, FontRenderVariantKey.default, outlineProfile(), testGeneration)
         val foreignKey = expectedKey.copy(variant = FontRenderVariantKey("foreign"))
 
         assertFailsWith<IllegalArgumentException> {
@@ -763,7 +764,7 @@ class EditableLineTest {
             level = 0,
             glyphs = listOf(glyph(97, 10f, 0)),
         )
-        val glyphKey = FontRenderAssetKey(font.key, FontRenderVariantKey.default, outlineProfile())
+        val glyphKey = FontRenderAssetKey(font.key, FontRenderVariantKey.default, outlineProfile(), testGeneration)
         val runKey = glyphKey.copy(variant = FontRenderVariantKey("foreign"))
         val positionedGlyph = PositionedGlyph(
             shapedGlyph = sourceRun.glyphs.single(),
@@ -784,48 +785,6 @@ class EditableLineTest {
                 visualOrder = 0,
                 renderAssetKey = runKey,
                 glyphs = listOf(positionedGlyph),
-            )
-        }
-    }
-
-    @Test
-    fun editableLineRejectsPositionedRunsCertifiedByDifferentRenderAssets() {
-        val prepared = text("ab")
-        val font = fontFixture().instance
-        val firstRun = shapedRun(
-            prepared,
-            font,
-            range(prepared, 0, 1),
-            ShapingDirection.LEFT_TO_RIGHT,
-            0,
-            listOf(glyph(98, 10f, 0)),
-        )
-        val secondRun = shapedRun(
-            prepared,
-            font,
-            range(prepared, 1, 2),
-            ShapingDirection.LEFT_TO_RIGHT,
-            0,
-            listOf(glyph(99, 10f, 0)),
-        )
-        val firstKey = FontRenderAssetKey(font.key, FontRenderVariantKey.default, outlineProfile())
-        val secondKey = firstKey.copy(variant = FontRenderVariantKey("foreign"))
-
-        assertFailsWith<IllegalArgumentException> {
-            EditableLine(
-                range = prepared.range,
-                baseDirection = ShapingDirection.LEFT_TO_RIGHT,
-                verticalMetrics = LineVerticalMetrics(LayoutUnit(8f), LayoutUnit(2f)),
-                positionedGlyphRuns = listOf(
-                    certifiedPositionedRun(firstRun, 0, firstKey),
-                    certifiedPositionedRun(secondRun, 1, secondKey),
-                ),
-                caretCandidates = listOf(
-                    candidate(firstRun.range.start, 0, 0f, CaretBoundaryEdge.LOGICAL_START, visualOrder = 0),
-                    candidate(firstRun.range.endExclusive, 0, 10f, CaretBoundaryEdge.LOGICAL_END, visualOrder = 1),
-                    candidate(secondRun.range.start, 1, 10f, CaretBoundaryEdge.LOGICAL_START, visualOrder = 2),
-                    candidate(secondRun.range.endExclusive, 1, 20f, CaretBoundaryEdge.LOGICAL_END, visualOrder = 3),
-                ),
             )
         }
     }
@@ -945,6 +904,7 @@ class EditableLineTest {
             fontInstanceKey = fixture.instance.key,
             variant = FontRenderVariantKey.default,
             outlineProfile = profile,
+            generation = fixture.catalog.generation,
         )
         try {
             val line = layout(
@@ -988,6 +948,7 @@ class EditableLineTest {
             fontInstanceKey = fixture.instance.key,
             variant = FontRenderVariantKey("foreign"),
             outlineProfile = profile,
+            generation = fixture.catalog.generation,
         )
         val asset = StrictRenderAsset(
             key = foreignKey,
@@ -1020,7 +981,7 @@ class EditableLineTest {
         val fixture = fontFixture()
         val prepared = text("a")
         val profile = outlineProfile()
-        val key = FontRenderAssetKey(fixture.instance.key, FontRenderVariantKey.default, profile)
+        val key = FontRenderAssetKey(fixture.instance.key, FontRenderVariantKey.default, profile, fixture.catalog.generation)
         val asset = StrictRenderAsset(
             key = key,
             scriptedResults = listOf(
@@ -1063,7 +1024,7 @@ class EditableLineTest {
         val fixture = fontFixture()
         val prepared = text("ab")
         val profile = outlineProfile()
-        val key = FontRenderAssetKey(fixture.instance.key, FontRenderVariantKey.default, profile)
+        val key = FontRenderAssetKey(fixture.instance.key, FontRenderVariantKey.default, profile, fixture.catalog.generation)
         val firstError = FontError.GlyphOutOfRange(102)
         val asset = StrictRenderAsset(key, listOf(FontOperationResult.Failure(firstError)))
         val font = AssetBackedFontInstance(fixture.instance, asset)
@@ -1097,7 +1058,7 @@ class EditableLineTest {
         val fixture = fontFixture()
         val prepared = text("ab")
         val profile = outlineProfile()
-        val key = FontRenderAssetKey(fixture.instance.key, FontRenderVariantKey.default, profile)
+        val key = FontRenderAssetKey(fixture.instance.key, FontRenderVariantKey.default, profile, fixture.catalog.generation)
         val asset = StrictRenderAsset(key, listOf(FontOperationResult.Cancelled()))
         val font = AssetBackedFontInstance(fixture.instance, asset)
         val resolver = fixture.catalog.openAssetResolver().successValue()
@@ -1382,7 +1343,7 @@ class EditableLineTest {
         val source = FontSource(fixtureBytes("/fonts/dejavu/DejaVuSans.ttf"), FontSourceProvenance("DejaVu Sans"))
         val parsed = SfntReader.readMetadata(source).successValue()
         val catalog = EmbeddedFontCatalog(source, parsed)
-        val face = catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.layoutOnly()).successValue()
+        val face = catalog.resolveFace(FontFaceId(source.id, 0), FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return FontFixture(catalog, face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(2048f))).successValue())
     }
 
@@ -1442,6 +1403,7 @@ class EditableLineTest {
     )
 
     private companion object {
+        val testGeneration: FontCatalogGeneration = FontCatalogGeneration("test-render-assets")
         val featurePolicy: ShapingFeaturePolicy = ShapingFeaturePolicy(
             policyId = "manual-audited-scenario",
             version = "1",

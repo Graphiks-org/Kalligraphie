@@ -2,7 +2,6 @@ package org.graphiks.kalligraphie.shaping
 
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -504,7 +503,7 @@ class HarfBuzzJvmBackendTest {
         val source = FontSource(fixtureBytes(resource), FontSourceProvenance(declaredName))
         val parsed = SfntReader.readMetadata(source).successValue()
         val catalog = EmbeddedFontCatalog(source, parsed)
-        val face = catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.layoutOnly()).successValue()
+        val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return face.instantiate(FontInstanceDescriptor(layoutSize = layoutSize)).successValue()
     }
 

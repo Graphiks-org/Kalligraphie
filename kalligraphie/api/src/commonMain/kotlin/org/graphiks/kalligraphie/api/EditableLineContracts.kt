@@ -267,6 +267,10 @@ public class PositionedGlyphRun(
     public val renderAssetKey: FontRenderAssetKey?,
     glyphs: List<PositionedGlyph>,
 ) {
+    /** Exact font instance that shaped every glyph in this positioned run. */
+    public val fontInstanceKey: FontInstanceKey
+        get() = sourceRun.fontInstanceKey
+
     /** Immutable final glyphs in this run's produced visual glyph order. */
     public val glyphs: List<PositionedGlyph> = glyphs.immutableListSnapshot()
 
@@ -362,6 +366,15 @@ public sealed interface EditableLineError {
         override val code: String = "layout.shaping-failure"
         override val message: String = fontError.message
     }
+
+    /** Every deterministic candidate was exhausted before a complete line could be published. */
+    public data class FontResolutionFailure(
+        /** Underlying typed fallback-resolution failure. */
+        public val fontError: FontError,
+    ) : EditableLineError {
+        override val code: String = "layout.font-resolution-failure"
+        override val message: String = fontError.message
+    }
 }
 
 /** Result of synchronously positioning and optionally certifying one editable line. */
@@ -413,11 +426,68 @@ public sealed interface EditableLineMaterialization {
 }
 
 /**
+ * Complete input for resolving and laying out one horizontal editable line from multiple fonts.
+ *
+ * The request captures one immutable catalogue generation, a policy bound to that generation,
+ * and an explicit portable shaping backend. The line resolver derives indivisible fallback units
+ * from [unicodeAnalysis], never mixes fonts within one unit, and produces a normal
+ * [EditableLineResult]. In renderable mode [materialization] must carry a live resolver for the
+ * same generation; the caller owns and closes that resolver. This value itself owns no resource
+ * and is safe to share concurrently while all referenced snapshots remain immutable.
+ */
+public class MultiFontEditableLineRequest(
+    /** Immutable source snapshot analyzed by [unicodeAnalysis]. */
+    public val snapshot: TextSnapshot,
+    /** Complete immutable Unicode analysis for the line's snapshot revision. */
+    public val unicodeAnalysis: UnicodeAnalysis,
+    /** Captured catalogue used for face records and face resolution. */
+    public val fontCatalog: FontCatalogSnapshot,
+    /** Immutable total-order policy for this catalogue generation. */
+    public val resolutionPolicy: FontResolutionPolicySnapshot,
+    /** Geometric instance parameters applied to every selected face. */
+    public val fontInstanceDescriptor: FontInstanceDescriptor,
+    /** Backend used for provisional and final shaping attempts. */
+    public val shapingBackend: ShapingBackend,
+    /** Explicit paragraph base direction. */
+    public val baseDirection: BaseDirection,
+    /** Explicit line-box metrics supplied by the consumer. */
+    public val verticalMetrics: LineVerticalMetrics,
+    /** Explicit layout-only or outline-renderable publication mode. */
+    public val materialization: EditableLineMaterialization,
+    features: List<OpenTypeFeature> = emptyList(),
+    /** Cooperative cancellation signal observed between bounded fallback attempts. */
+    public val cancellationToken: CancellationToken = CancellationToken.none,
+) {
+    /** Immutable deterministic OpenType feature overrides. */
+    public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
+
+    init {
+        require(snapshot.range == unicodeAnalysis.range) {
+            "Font fallback source snapshot and Unicode analysis must cover the same range."
+        }
+        require(fontCatalog.generation == resolutionPolicy.generation) {
+            "Font catalog and resolution policy must use the same generation."
+        }
+        require(resolutionPolicy.candidates.all { candidate -> candidate.faceId in fontCatalog.faces.map(FontFaceRecord::id) }) {
+            "Every resolution policy candidate must belong to the captured font catalog."
+        }
+        if (materialization is EditableLineMaterialization.Renderable) {
+            require(materialization.resolver.generation == fontCatalog.generation) {
+                "Renderable materialization resolver must belong to the captured font catalog generation."
+            }
+        }
+        require(features.map(OpenTypeFeature::tag).distinct().size == features.size) {
+            "OpenType features must not repeat a tag."
+        }
+    }
+}
+
+/**
  * Complete portable input to one horizontal, non-wrapped editable-line operation.
  *
  * The analysis must cover its entire snapshot range. Runs must be contiguous in logical source
  * order, preserve exactly the analyzed extended-grapheme partition, have zero vertical advance,
- * and share [font]'s exact key. Their direction, level, script, language, and the line's
+ * and use a key declared in [fontInstances]. Their direction, level, script, language, and the line's
  * [baseDirection] stay explicit rather than inferred from text or a left-to-right default. The
  * request retains no resource except the borrowed resolver named by [materialization]. Contract
  * incompatibilities are programming errors reported by construction preconditions.
@@ -430,8 +500,9 @@ public class EditableLineRequest(
     public val baseDirection: ShapingDirection,
     /** Explicit UAX #9 level paired with [baseDirection] for an empty line. */
     public val emptyLineBidiLevel: Int? = null,
-    /** Concrete single-font instance used by every shaped run. */
+    /** Compatibility primary instance; it must also appear in [fontInstances]. */
     public val font: FontInstance,
+    fontInstances: List<FontInstance> = listOf(font),
     /** Explicit line-box metrics supplied by the consumer. */
     public val verticalMetrics: LineVerticalMetrics,
     /** Explicit layout-only or outline-renderable publication mode. */
@@ -441,6 +512,9 @@ public class EditableLineRequest(
 ) {
     /** Immutable shaped runs in contiguous logical source order. */
     public val shapedGlyphRuns: List<ShapedGlyphRun> = shapedGlyphRuns.immutableListSnapshot()
+
+    /** Immutable instances used by the shaped runs in this request. */
+    public val fontInstances: List<FontInstance> = fontInstances.immutableListSnapshot()
 
     init {
         require(this.shapedGlyphRuns.isNotEmpty() || unicodeAnalysis.range.start == unicodeAnalysis.range.endExclusive) {
@@ -459,8 +533,14 @@ public class EditableLineRequest(
             }
         }
         requireContiguousRunPartition(unicodeAnalysis.range, this.shapedGlyphRuns)
-        require(this.shapedGlyphRuns.all { it.fontInstanceKey == font.key }) {
-            "Every shaped run must use the request font instance key."
+        require(this.fontInstances.map(FontInstance::key).distinct().size == this.fontInstances.size) {
+            "Editable line font instances must not repeat a key."
+        }
+        require(font.key in this.fontInstances.map(FontInstance::key)) {
+            "The compatibility primary font instance must appear in the request font instances."
+        }
+        require(this.shapedGlyphRuns.all { run -> run.fontInstanceKey in this.fontInstances.map(FontInstance::key) }) {
+            "Every shaped run must use one request font instance key."
         }
         require(this.shapedGlyphRuns.all { run -> run.glyphs.all { glyph -> glyph.yAdvance.value == 0f } }) {
             "Horizontal editable lines reject non-zero vertical glyph advances."
@@ -470,10 +550,8 @@ public class EditableLineRequest(
         } }) {
             "Every shaped run must stay within one analyzed logical BiDi run of the same level."
         }
-        require(this.shapedGlyphRuns.all { run -> unicodeAnalysis.scriptLanguageRuns.any { script ->
-            containsRange(script.range, run.range) && script.script == run.script.value && script.language == run.language
-        } }) {
-            "Every shaped run must stay within one analyzed script-language run with the same script and language."
+        require(this.shapedGlyphRuns.all { run -> scriptContextSupports(run, unicodeAnalysis.scriptLanguageRuns) }) {
+            "Every shaped run must use one analyzed script-language context, allowing only Common and Inherited scalars within an indivisible grapheme relation."
         }
         require(this.shapedGlyphRuns.all { run ->
             val analyzedPartition = graphemeFragments(run.range, unicodeAnalysis.graphemeClusters)
@@ -483,6 +561,17 @@ public class EditableLineRequest(
         }
     }
 }
+
+private fun scriptContextSupports(run: ShapedGlyphRun, scripts: List<ScriptLanguageRun>): Boolean {
+    val intersecting = scripts.filter { script -> overlapsRange(script.range, run.range) }
+    return intersecting.isNotEmpty() && intersecting.all { script ->
+        script.language == run.language &&
+            (script.script == run.script.value || script.script == COMMON_SCRIPT || script.script == INHERITED_SCRIPT)
+    }
+}
+
+private const val COMMON_SCRIPT: String = "Zyyy"
+private const val INHERITED_SCRIPT: String = "Zinh"
 
 /** Portable contract implemented by a pure editable-line layout module. */
 public interface EditableLineLayouter {
@@ -532,9 +621,6 @@ public class EditableLine(
             "Positioned glyph runs must stay within the editable line range."
         }
         requireContiguousPositionedRunPartition(range, this.positionedGlyphRuns)
-        require(this.positionedGlyphRuns.map(PositionedGlyphRun::renderAssetKey).distinct().size <= 1) {
-            "All positioned runs in one editable line must share one render asset key or remain layout-only."
-        }
         require(this.allCaretCandidates.isNotEmpty()) { "Editable lines must publish at least one caret candidate." }
         require(this.allCaretCandidates.map(CaretCandidate::visualOrder) == this.allCaretCandidates.indices.toList()) {
             "Caret candidates must use contiguous visual order."
@@ -742,6 +828,11 @@ private fun containsRange(owner: TextRange, item: TextRange): Boolean =
     item.start.sharesVersionWith(owner.start) &&
         item.start >= owner.start &&
         item.endExclusive <= owner.endExclusive
+
+private fun overlapsRange(left: TextRange, right: TextRange): Boolean =
+    left.start.sharesVersionWith(right.start) &&
+        left.start < right.endExclusive &&
+        right.start < left.endExclusive
 
 private fun graphemeFragments(range: TextRange, clusters: List<TextRange>): List<TextRange> =
     clusters.mapNotNull { cluster ->

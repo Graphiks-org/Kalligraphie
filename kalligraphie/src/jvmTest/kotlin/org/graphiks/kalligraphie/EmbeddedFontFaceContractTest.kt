@@ -3,7 +3,6 @@ package org.graphiks.kalligraphie
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
-import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -20,7 +19,7 @@ class EmbeddedFontFaceContractTest {
         )
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(result).value
         val face = assertIs<FontOperationResult.Success<FontFace>>(
-            catalog.resolveFace(FontFaceRequest(faceIndex = 0), FontAccessRequirementsSnapshot.layoutOnly()),
+            catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()),
         ).value
 
         assertEquals("Liberation Sans", face.metadata.familyName)

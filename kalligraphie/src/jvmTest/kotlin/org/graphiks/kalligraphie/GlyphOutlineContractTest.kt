@@ -4,7 +4,6 @@ import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
-import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -138,7 +137,7 @@ class GlyphOutlineContractTest {
             catalog.openAssetResolver(),
         ).value
         val face = assertIs<FontOperationResult.Success<FontFace>>(
-            catalog.resolveFace(FontFaceRequest(faceIndex = 0), FontAccessRequirementsSnapshot.renderable(outlineProfile())),
+            catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(outlineProfile())),
         ).value
         val instance = assertIs<FontOperationResult.Success<FontInstance>>(
             face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))),

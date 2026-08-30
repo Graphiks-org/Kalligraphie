@@ -25,6 +25,7 @@ import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutSegment
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LayoutVector
+import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
 import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
 import org.graphiks.kalligraphie.api.ShapedGlyph
@@ -42,6 +43,64 @@ import org.graphiks.kalligraphie.api.TextRange
  * the published line.
  */
 public object ExactEditableLineLayouter : EditableLineLayouter {
+    /**
+     * Resolves and positions one line from a captured catalogue and deterministic policy.
+     *
+     * The fallback resolver shapes every atomic Unicode unit with exactly one selected face and
+     * validates final outline routes before this method publishes an [EditableLineResult]. The
+     * supplied resolver remains borrowed by the caller; all temporary assets are closed before
+     * this method returns. Failure and cancellation never publish a partial line.
+     */
+    public fun layout(request: MultiFontEditableLineRequest): EditableLineResult {
+        return when (val resolved = FontFallbackResolver.resolve(request)) {
+            is FontOperationResult.Success -> {
+                val primaryInstance = resolved.value.instances.firstOrNull()
+                    ?: return EditableLineResult.Failure(
+                        EditableLineError.InvalidInput("A non-empty multi-font line must resolve at least one font instance."),
+                        emptyList(),
+                    )
+                when (
+                    val positioned = layout(
+                        EditableLineRequest(
+                            unicodeAnalysis = request.unicodeAnalysis,
+                            shapedGlyphRuns = resolved.value.shapedRuns,
+                            baseDirection = when (request.baseDirection) {
+                                org.graphiks.kalligraphie.api.BaseDirection.LEFT_TO_RIGHT -> org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT
+                                org.graphiks.kalligraphie.api.BaseDirection.RIGHT_TO_LEFT -> org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT
+                            },
+                            font = primaryInstance,
+                            fontInstances = resolved.value.instances,
+                            verticalMetrics = request.verticalMetrics,
+                            materialization = request.materialization,
+                            cancellationToken = request.cancellationToken,
+                        ),
+                    )
+                ) {
+                    is EditableLineResult.Success -> EditableLineResult.Success(
+                        EditableLine(
+                            range = positioned.line.range,
+                            baseDirection = positioned.line.baseDirection,
+                            verticalMetrics = positioned.line.verticalMetrics,
+                            positionedGlyphRuns = positioned.line.positionedGlyphRuns,
+                            caretCandidates = positioned.line.allCaretCandidates,
+                            diagnostics = positioned.line.diagnostics + resolved.value.diagnostics.map(::fontDiagnostic),
+                        ),
+                    )
+
+                    is EditableLineResult.Failure -> positioned
+                    is EditableLineResult.Cancelled -> positioned
+                }
+            }
+
+            is FontOperationResult.Failure -> EditableLineResult.Failure(
+                EditableLineError.FontResolutionFailure(resolved.error),
+                resolved.diagnostics.map(::fontDiagnostic),
+            )
+
+            is FontOperationResult.Cancelled -> EditableLineResult.Cancelled(resolved.diagnostics.map(::fontDiagnostic))
+        }
+    }
+
     /**
      * Produces one immutable editable line from already analyzed and shaped input.
      *
@@ -75,14 +134,14 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             PositionedGlyphRun(
                 sourceRun = placement.sourceRun,
                 visualOrder = placement.visualOrder,
-                renderAssetKey = certification.assetKey,
+                renderAssetKey = certification.assetKeys[placement.visualOrder],
                 glyphs = placement.glyphs.mapIndexed { glyphIndex, glyph ->
                     PositionedGlyph(
                         shapedGlyph = glyph.shapedGlyph,
                         sourceClusters = glyph.sourceClusters,
                         origin = glyph.origin,
                         advance = glyph.advance,
-                        renderAssetKey = certification.assetKey,
+                        renderAssetKey = certification.assetKeys[placement.visualOrder],
                         materializationCertificate = certification.certificates[GlyphPosition(placement.visualOrder, glyphIndex)],
                     )
                 },
@@ -279,24 +338,41 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         placements: List<RunPlacement>,
     ): CertificationResult {
         return when (val materialization = request.materialization) {
-            EditableLineMaterialization.LayoutOnly -> CertificationResult.Success(null, emptyMap())
+            EditableLineMaterialization.LayoutOnly -> CertificationResult.Success(emptyMap(), emptyMap())
             is EditableLineMaterialization.Renderable -> {
                 if (request.cancellationToken.isCancellationRequested()) return CertificationResult.Cancelled(emptyList())
-            when (
-                val acquired = request.font.acquireRenderAsset(
-                    resolver = materialization.resolver,
-                    variant = materialization.variant,
-                    requirements = FontAccessRequirementsSnapshot.renderable(materialization.outlineProfile),
-                )
-            ) {
-                is FontOperationResult.Success -> certifyWithAsset(request, placements, acquired.value, materialization)
-                is FontOperationResult.Failure -> CertificationResult.Failure(
-                    EditableLineError.FontMaterializationFailure(acquired.error),
-                    acquired.diagnostics.map(::fontDiagnostic),
-                )
+                val assetKeys = mutableMapOf<Int, FontRenderAssetKey>()
+                val certificates = mutableMapOf<GlyphPosition, GlyphMaterializationCertificate>()
+                placements.forEach { placement ->
+                    val instance = request.fontInstances.single { it.key == placement.sourceRun.fontInstanceKey }
+                    when (
+                        val acquired = instance.acquireRenderAsset(
+                            resolver = materialization.resolver,
+                            variant = materialization.variant,
+                            requirements = FontAccessRequirementsSnapshot.renderable(materialization.outlineProfile),
+                        )
+                    ) {
+                        is FontOperationResult.Success -> when (
+                            val certified = certifyWithAsset(request, listOf(placement), instance, acquired.value, materialization)
+                        ) {
+                            is CertificationResult.Success -> {
+                                assetKeys.putAll(certified.assetKeys)
+                                certificates.putAll(certified.certificates)
+                            }
 
-                is FontOperationResult.Cancelled -> CertificationResult.Cancelled(acquired.diagnostics.map(::fontDiagnostic))
-            }
+                            is CertificationResult.Failure -> return certified
+                            is CertificationResult.Cancelled -> return certified
+                        }
+
+                        is FontOperationResult.Failure -> return CertificationResult.Failure(
+                            EditableLineError.FontMaterializationFailure(acquired.error),
+                            acquired.diagnostics.map(::fontDiagnostic),
+                        )
+
+                        is FontOperationResult.Cancelled -> return CertificationResult.Cancelled(acquired.diagnostics.map(::fontDiagnostic))
+                    }
+                }
+                CertificationResult.Success(assetKeys, certificates)
             }
         }
     }
@@ -304,16 +380,18 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     private fun certifyWithAsset(
         request: EditableLineRequest,
         placements: List<RunPlacement>,
+        instance: org.graphiks.kalligraphie.api.FontInstance,
         asset: FontRenderAssetHandle,
         materialization: EditableLineMaterialization.Renderable,
     ): CertificationResult {
         val expectedAssetKey = FontRenderAssetKey(
-            fontInstanceKey = request.font.key,
+            fontInstanceKey = instance.key,
             variant = materialization.variant,
             outlineProfile = materialization.outlineProfile,
+            generation = materialization.resolver.generation,
         )
         var result: CertificationResult = if (asset.key == expectedAssetKey) {
-            CertificationResult.Success(asset.key, emptyMap())
+            CertificationResult.Success(emptyMap(), emptyMap())
         } else {
             CertificationResult.Failure(
                 EditableLineError.FontMaterializationFailure(
@@ -371,7 +449,12 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     }
                 }
             }
-            if (result is CertificationResult.Success) result = CertificationResult.Success(asset.key, certificates)
+            if (result is CertificationResult.Success) {
+                result = CertificationResult.Success(
+                    placements.associate { it.visualOrder to asset.key },
+                    certificates,
+                )
+            }
         } finally {
             when (val close = asset.close()) {
                 is FontOperationResult.Failure -> if (result is CertificationResult.Success) {
@@ -457,7 +540,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
 
 private sealed interface CertificationResult {
     data class Success(
-        val assetKey: org.graphiks.kalligraphie.api.FontRenderAssetKey?,
+        val assetKeys: Map<Int, org.graphiks.kalligraphie.api.FontRenderAssetKey>,
         val certificates: Map<GlyphPosition, GlyphMaterializationCertificate>,
     ) : CertificationResult
     data class Failure(val error: EditableLineError, val diagnostics: List<EditableLineDiagnostic>) : CertificationResult

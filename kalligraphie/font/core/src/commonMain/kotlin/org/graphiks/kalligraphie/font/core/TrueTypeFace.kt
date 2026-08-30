@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.font.core
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontDataInterpretationVersion
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -19,7 +20,6 @@ import org.graphiks.kalligraphie.api.OpenTypeFontData
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
-import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.GlyphRepresentation
@@ -30,19 +30,20 @@ import org.graphiks.kalligraphie.font.glyph.OutlineMaterializer
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 
 internal class TrueTypeFace(
-    private val sourceId: FontSourceId,
+    private val faceId: FontFaceId,
+    private val generation: FontCatalogGeneration,
     private val parsedFont: ParsedTrueTypeFont,
     private val resource: PreparedFontResource,
 ) : FontFace {
     override val metadata: FontFaceMetadata = parsedFont.metadata
-    override val id: FontFaceId = FontFaceId(source = sourceId, faceIndex = 0)
+    override val id: FontFaceId = faceId
 
     override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> {
         if (descriptor.layoutSize.value <= 0f) {
             return failure(
                 FontError.InvalidInstanceDescriptor(
                     message = "Font instance layout size must be finite and positive.",
-                    location = FontDiagnosticLocation.Face(0),
+                    location = FontDiagnosticLocation.FaceId(id),
                 ),
             )
         }
@@ -54,7 +55,7 @@ internal class TrueTypeFace(
             return failure(
                 FontError.InvalidInstanceDescriptor(
                     message = "Variation axes and synthetic geometry are not supported by this TrueType face.",
-                    location = FontDiagnosticLocation.Face(0),
+                    location = FontDiagnosticLocation.FaceId(id),
                 ),
             )
         }
@@ -64,7 +65,7 @@ internal class TrueTypeFace(
                 descriptor = descriptor,
                 resource = resource,
                 faceId = id,
-                sourceId = sourceId,
+                generation = generation,
             ),
         )
     }
@@ -86,7 +87,7 @@ private data class TrueTypeFontInstance(
     private val descriptor: FontInstanceDescriptor,
     private val resource: PreparedFontResource,
     private val faceId: FontFaceId,
-    private val sourceId: FontSourceId,
+    private val generation: FontCatalogGeneration,
 ) : FontInstance {
     override fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution> {
         return resource.preparedFont.resolveGlyph(codePoint)
@@ -108,7 +109,7 @@ private data class TrueTypeFontInstance(
             return failure(
                 FontError.UnsupportedRepresentationProfile(
                     "A schemaVersion=1 renderable outline profile is required.",
-                    FontDiagnosticLocation.Face(0),
+                    FontDiagnosticLocation.FaceId(faceId),
                 ),
             )
         }
@@ -116,17 +117,17 @@ private data class TrueTypeFontInstance(
             return failure(
                 FontError.UnsupportedRepresentationProfile(
                     "Variant render assets are not supported by this embedded TrueType face.",
-                    FontDiagnosticLocation.Face(0),
+                    FontDiagnosticLocation.FaceId(faceId),
                 ),
             )
         }
-        if (resolver.sourceId != sourceId) {
-            return failure(FontError.InvalidFontData("Resolver source does not match this face.", FontDiagnosticLocation.Face(0)))
-        }
         if (resolver !is EmbeddedFontAssetResolver) {
-            return failure(FontError.InvalidFontData("Resolver was not opened by the embedded TrueType catalog.", FontDiagnosticLocation.Face(0)))
+            return failure(FontError.InvalidFontData("Resolver was not opened by the embedded TrueType catalog.", FontDiagnosticLocation.FaceId(faceId)))
         }
-        val lease = resolver.acquireAssetLease()
+        if (resolver.generation != generation) {
+            return failure(FontError.IncompatibleCatalogGeneration("Resolver generation does not match the font instance generation.", FontDiagnosticLocation.FaceId(faceId)))
+        }
+        val lease = resolver.acquireAssetLease(faceId)
             ?: return failure(FontError.ResourceClosed("Asset resolver is closed."))
         return try {
             val handle = TrueTypeRenderAssetHandle(
@@ -136,6 +137,7 @@ private data class TrueTypeFontInstance(
                     fontInstanceKey = key,
                     variant = variant,
                     outlineProfile = outlineProfile,
+                    generation = resolver.generation,
                 ),
             )
             FontOperationResult.Success(handle)
@@ -147,7 +149,7 @@ private data class TrueTypeFontInstance(
 
 }
 
-private class TrueTypeRenderAssetHandle(
+internal class TrueTypeRenderAssetHandle(
     override val faceId: FontFaceId,
     private var resourceLease: PreparedFontResourceLease?,
     override val key: FontRenderAssetKey,
@@ -213,5 +215,5 @@ private class TrueTypeRenderAssetHandle(
     }
 }
 
-private fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
+internal fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
     FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
