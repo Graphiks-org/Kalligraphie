@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.unicode
 
 import org.graphiks.kalligraphie.api.SourceOffset
+import org.graphiks.kalligraphie.api.SourceEncoding
 import org.graphiks.kalligraphie.api.SourceRange
 import org.graphiks.kalligraphie.api.TextDecodingResult
 import org.graphiks.kalligraphie.api.TextDiagnostic
@@ -24,7 +25,7 @@ public object TextSnapshots {
         var offset = 0
         while (offset < bytes.size) {
             val decoded = decodeUtf8Scalar(bytes, offset)
-            val range = sourceRange(version, offset, offset + decoded.length)
+            val range = sourceRange(version, SourceEncoding.UTF8, offset, offset + decoded.length)
             scalars += decoded.scalar
             sourceRanges += range
             if (decoded.malformed) {
@@ -36,7 +37,7 @@ public object TextSnapshots {
             }
             offset += decoded.length
         }
-        return TextDecodingResult(TextSnapshot(version, scalars, sourceRanges), diagnostics)
+        return TextDecodingResult(TextSnapshot(version, SourceEncoding.UTF8, scalars, sourceRanges), diagnostics)
     }
 
     /**
@@ -57,7 +58,7 @@ public object TextSnapshots {
                 offset + 1 < codeUnits.size &&
                 codeUnits[offset + 1].code in LOW_SURROGATE_RANGE
             val length = if (hasPair) 2 else 1
-            val range = sourceRange(version, offset, offset + length)
+            val range = sourceRange(version, SourceEncoding.UTF16, offset, offset + length)
             when {
                 hasPair -> {
                     val second = codeUnits[offset + 1].code
@@ -79,7 +80,7 @@ public object TextSnapshots {
             sourceRanges += range
             offset += length
         }
-        return TextDecodingResult(TextSnapshot(version, scalars, sourceRanges), diagnostics)
+        return TextDecodingResult(TextSnapshot(version, SourceEncoding.UTF16, scalars, sourceRanges), diagnostics)
     }
 }
 
@@ -165,8 +166,15 @@ private fun checkedTotalSize(sizes: List<Int>): Int {
     return total
 }
 
-private fun sourceRange(version: TextVersion, start: Int, endExclusive: Int): SourceRange =
-    SourceRange(SourceOffset(version, start), SourceOffset(version, endExclusive))
+private fun sourceRange(
+    version: TextVersion,
+    encoding: SourceEncoding,
+    start: Int,
+    endExclusive: Int,
+): SourceRange = SourceRange(
+    SourceOffset(version, encoding, start),
+    SourceOffset(version, encoding, endExclusive),
+)
 
 private fun Byte.unsigned(): Int = toInt() and 0xFF
 

@@ -1,48 +1,79 @@
 package org.graphiks.kalligraphie.api
 
-import kotlin.jvm.JvmInline
-
-/** Identifies one immutable revision of source text and all indices derived from it. */
-@JvmInline
-public value class TextVersion(
-    /** Non-negative revision number supplied by the caller. */
-    public val value: Long,
-) {
-    init {
-        require(value >= 0L) { "Text version must be non-negative." }
+/**
+ * Opaque identity of one immutable source-text revision.
+ *
+ * Versions are equality-comparable but intentionally expose neither a numeric
+ * representation nor a caller-controlled construction value.
+ */
+public class TextVersion private constructor() {
+    public companion object {
+        /** Creates a fresh opaque text-version identity. */
+        public fun create(): TextVersion = TextVersion()
     }
 }
 
-/** Scalar boundary within a particular [TextVersion]. */
-public data class TextIndex(
-    /** Version in which this boundary is meaningful. */
-    public val version: TextVersion,
-    /** Zero-based Unicode scalar boundary. */
-    public val value: Int,
-) {
-    init {
-        require(value >= 0) { "Text index must be non-negative." }
-    }
+/** Distinguishes the source code-unit representation used by a text snapshot. */
+public enum class SourceEncoding {
+    /** Source offsets count UTF-8 bytes. */
+    UTF8,
+
+    /** Source offsets count UTF-16 code units. */
+    UTF16,
 }
 
-/** Half-open range of Unicode scalar boundaries from one text version. */
-public data class TextRange(
+/** Opaque scalar boundary belonging to one specific [TextSnapshot]. */
+public class TextIndex internal constructor(
+    private val snapshot: TextSnapshot,
+    internal val ordinal: Int,
+) {
+    /** Returns whether this index belongs to the supplied snapshot. */
+    internal fun belongsTo(candidate: TextSnapshot): Boolean = snapshot === candidate
+
+    /** Returns whether this index and [other] belong to the same snapshot. */
+    internal fun sharesSnapshotWith(other: TextIndex): Boolean = snapshot === other.snapshot
+
+    /** Compares two boundaries that belong to the same snapshot. */
+    internal fun compareTo(other: TextIndex): Int {
+        require(snapshot === other.snapshot) { "Text indices must belong to the same snapshot." }
+        return ordinal.compareTo(other.ordinal)
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is TextIndex && snapshot === other.snapshot && ordinal == other.ordinal
+
+    override fun hashCode(): Int = 31 * snapshot.hashCode() + ordinal
+
+    override fun toString(): String = "TextIndex()"
+}
+
+/** Half-open range of scalar boundaries belonging to one specific snapshot. */
+public class TextRange(
     /** Inclusive start boundary. */
     public val start: TextIndex,
     /** Exclusive end boundary. */
     public val endExclusive: TextIndex,
 ) {
     init {
-        require(start.version == endExclusive.version) { "Text range boundaries must use the same version." }
-        require(start.value <= endExclusive.value) { "Text range start must not follow its end." }
+        require(start.sharesSnapshotWith(endExclusive)) { "Text range boundaries must belong to the same snapshot." }
+        require(start.compareTo(endExclusive) <= 0) { "Text range start must not follow its end." }
     }
+
+    override fun equals(other: Any?): Boolean =
+        other is TextRange && start == other.start && endExclusive == other.endExclusive
+
+    override fun hashCode(): Int = 31 * start.hashCode() + endExclusive.hashCode()
+
+    override fun toString(): String = "TextRange(start=$start, endExclusive=$endExclusive)"
 }
 
-/** Code-unit boundary within the source representation of a particular text version. */
+/** Source code-unit boundary within one [TextVersion] and [SourceEncoding]. */
 public data class SourceOffset(
     /** Version in which this source boundary is meaningful. */
     public val version: TextVersion,
-    /** Zero-based byte or UTF-16 code-unit boundary. */
+    /** Encoding whose byte or code-unit positions this offset counts. */
+    public val encoding: SourceEncoding,
+    /** Zero-based source boundary. */
     public val value: Int,
 ) {
     init {
@@ -50,7 +81,7 @@ public data class SourceOffset(
     }
 }
 
-/** Half-open source range whose offsets belong to one text version. */
+/** Half-open source range whose offsets share one version and source encoding. */
 public data class SourceRange(
     /** Inclusive source boundary. */
     public val start: SourceOffset,
@@ -59,6 +90,7 @@ public data class SourceRange(
 ) {
     init {
         require(start.version == endExclusive.version) { "Source range boundaries must use the same version." }
+        require(start.encoding == endExclusive.encoding) { "Source range boundaries must use the same encoding." }
         require(start.value <= endExclusive.value) { "Source range start must not follow its end." }
     }
 }
@@ -72,19 +104,19 @@ public enum class SourceBias {
     AFTER,
 }
 
-/** Result of mapping a source offset to a scalar boundary. */
+/** Validated result of mapping a source offset to a scalar boundary. */
 public sealed interface SourceIndexResult {
     /** Scalar boundary selected by the mapping. */
     public val index: TextIndex
 
     /** A source offset that already lies on an exact scalar boundary. */
-    public data class Exact(
+    public class Exact internal constructor(
         /** Exact scalar boundary. */
         override val index: TextIndex,
     ) : SourceIndexResult
 
     /** A source offset inside a multi-unit scalar or malformed maximal subpart. */
-    public data class Biased(
+    public class Biased internal constructor(
         /** Boundary selected according to the requested bias. */
         override val index: TextIndex,
         /** Scalar source range containing the requested offset. */
@@ -113,19 +145,21 @@ public sealed interface TextSlice {
 
 /** Immutable Unicode scalar snapshot with reversible source-boundary mapping. */
 public class TextSnapshot(
-    /** Version shared by every index and source range in this snapshot. */
+    /** Version shared by every source offset associated with this snapshot. */
     public val version: TextVersion,
+    /** Encoding used for every source offset and range associated with this snapshot. */
+    public val sourceEncoding: SourceEncoding,
     scalars: List<Int>,
     sourceRanges: List<SourceRange>,
 ) {
     /** Unicode scalar values in logical order. */
     public val scalars: List<Int> = scalars.immutableListSnapshot()
 
-    /** Source range consumed by each scalar at the corresponding index. */
+    /** Source range consumed by each scalar at the corresponding internal index. */
     public val sourceRanges: List<SourceRange> = sourceRanges.immutableListSnapshot()
 
     /** Complete half-open scalar range of this snapshot. */
-    public val range: TextRange = TextRange(TextIndex(version, 0), TextIndex(version, this.scalars.size))
+    public val range: TextRange = TextRange(TextIndex(this, 0), TextIndex(this, this.scalars.size))
 
     private val sourceLength: Int = this.sourceRanges.lastOrNull()?.endExclusive?.value ?: 0
 
@@ -137,6 +171,7 @@ public class TextSnapshot(
         var expectedStart = 0
         this.sourceRanges.forEach { sourceRange ->
             require(sourceRange.start.version == version) { "Source ranges must use the snapshot version." }
+            require(sourceRange.start.encoding == sourceEncoding) { "Source ranges must use the snapshot encoding." }
             require(sourceRange.start.value == expectedStart) { "Source ranges must be contiguous and ordered." }
             require(sourceRange.endExclusive.value > sourceRange.start.value) { "Source ranges must not be empty." }
             expectedStart = sourceRange.endExclusive.value
@@ -146,36 +181,54 @@ public class TextSnapshot(
     /** Maps a source offset to an exact or bias-selected scalar boundary. */
     public fun sourceToTextIndex(offset: SourceOffset, bias: SourceBias): SourceIndexResult {
         require(offset.version == version) { "Source offset must use the snapshot version." }
+        require(offset.encoding == sourceEncoding) { "Source offset must use the snapshot encoding." }
         require(offset.value <= sourceLength) { "Source offset lies outside the snapshot." }
+        if (offset.value == sourceLength) return SourceIndexResult.Exact(TextIndex(this, scalars.size))
 
-        sourceRanges.forEachIndexed { scalarIndex, sourceRange ->
-            if (offset.value == sourceRange.start.value) {
-                return SourceIndexResult.Exact(TextIndex(version, scalarIndex))
-            }
-            if (offset.value < sourceRange.endExclusive.value) {
-                val boundary = if (bias == SourceBias.BEFORE) scalarIndex else scalarIndex + 1
-                return SourceIndexResult.Biased(TextIndex(version, boundary), sourceRange)
-            }
+        val scalarIndex = scalarIndexContaining(offset.value)
+        val sourceRange = sourceRanges[scalarIndex]
+        if (offset.value == sourceRange.start.value) {
+            return SourceIndexResult.Exact(TextIndex(this, scalarIndex))
         }
-        return SourceIndexResult.Exact(TextIndex(version, scalars.size))
+        val boundary = if (bias == SourceBias.BEFORE) scalarIndex else scalarIndex + 1
+        return SourceIndexResult.Biased(TextIndex(this, boundary), sourceRange)
     }
 
-    /** Maps a scalar boundary to its exact source boundary. */
+    /** Maps a scalar boundary from this snapshot to its exact source boundary. */
     public fun textIndexToSource(index: TextIndex): SourceOffset {
-        require(index.version == version) { "Text index must use the snapshot version." }
-        require(index.value <= scalars.size) { "Text index lies outside the snapshot." }
-        return if (index.value == scalars.size) {
-            SourceOffset(version, sourceLength)
+        require(index.belongsTo(this)) { "Text index must belong to this snapshot." }
+        return if (index.ordinal == scalars.size) {
+            SourceOffset(version, sourceEncoding, sourceLength)
         } else {
-            sourceRanges[index.value].start
+            sourceRanges[index.ordinal].start
         }
     }
 
     /** Returns the source range consumed by the scalar beginning at [index]. */
     public fun sourceRange(index: TextIndex): SourceRange {
-        require(index.version == version) { "Text index must use the snapshot version." }
-        require(index.value < scalars.size) { "Text index does not identify a scalar in the snapshot." }
-        return sourceRanges[index.value]
+        require(index.belongsTo(this)) { "Text index must belong to this snapshot." }
+        require(index.ordinal < scalars.size) { "Text index does not identify a scalar in the snapshot." }
+        return sourceRanges[index.ordinal]
+    }
+
+    /** Returns whether the supplied source range lies entirely within this snapshot. */
+    internal fun contains(sourceRange: SourceRange): Boolean =
+        sourceRange.start.version == version &&
+            sourceRange.start.encoding == sourceEncoding &&
+            sourceRange.endExclusive.value <= sourceLength
+
+    private fun scalarIndexContaining(sourceOffset: Int): Int {
+        var lower = 0
+        var upper = sourceRanges.size
+        while (lower < upper) {
+            val middle = (lower + upper) ushr 1
+            if (sourceRanges[middle].endExclusive.value <= sourceOffset) {
+                lower = middle + 1
+            } else {
+                upper = middle
+            }
+        }
+        return lower
     }
 }
 
@@ -194,14 +247,20 @@ public data class TextDiagnostic(
     }
 }
 
-/** Canonical decoded snapshot and its immutable diagnostics. */
+/** Canonical decoded snapshot and immutable diagnostics that belong to that snapshot. */
 public class TextDecodingResult(
     /** Scalar snapshot produced from the complete source. */
     public val snapshot: TextSnapshot,
     diagnostics: List<TextDiagnostic> = emptyList(),
 ) {
-    /** Diagnostics in source order. */
+    /** Diagnostics in source order, each constrained to this result's snapshot. */
     public val diagnostics: List<TextDiagnostic> = diagnostics.immutableListSnapshot()
+
+    init {
+        require(this.diagnostics.all { snapshot.contains(it.sourceRange) }) {
+            "Text diagnostics must belong to the decoded snapshot."
+        }
+    }
 }
 
 private fun isUnicodeScalar(value: Int): Boolean = value in 0..0x10FFFF && value !in 0xD800..0xDFFF
