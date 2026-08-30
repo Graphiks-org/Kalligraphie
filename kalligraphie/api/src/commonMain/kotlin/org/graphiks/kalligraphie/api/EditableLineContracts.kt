@@ -68,11 +68,14 @@ public class LineVerticalMetrics(
         require(height.value > 0f) { "Line height must be strictly positive." }
     }
 
+    /** Compares the explicit ascent and descent distances. */
     override fun equals(other: Any?): Boolean =
         other is LineVerticalMetrics && ascent == other.ascent && descent == other.descent
 
+    /** Returns a stable hash of the explicit vertical metrics. */
     override fun hashCode(): Int = 31 * ascent.hashCode() + descent.hashCode()
 
+    /** Returns a diagnostic form containing ascent and descent only. */
     override fun toString(): String = "LineVerticalMetrics(ascent=$ascent, descent=$descent)"
 }
 

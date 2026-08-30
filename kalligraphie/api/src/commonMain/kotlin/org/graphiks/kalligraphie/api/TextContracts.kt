@@ -7,6 +7,7 @@ package org.graphiks.kalligraphie.api
  * representation nor a caller-controlled construction value.
  */
 public class TextVersion private constructor() {
+    /** Factory for opaque immutable text-version identities. */
     public companion object {
         /** Creates a fresh opaque text-version identity. */
         public fun create(): TextVersion = TextVersion()
@@ -45,11 +46,14 @@ public class TextIndex internal constructor(
     /** Returns whether this boundary and [other] belong to the same text version. */
     public fun sharesVersionWith(other: TextIndex): Boolean = version == other.version
 
+    /** Compares the opaque version and hidden scalar-boundary ordinal. */
     override fun equals(other: Any?): Boolean =
         other is TextIndex && version == other.version && ordinal == other.ordinal
 
+    /** Returns a stable hash of the opaque version and hidden ordinal. */
     override fun hashCode(): Int = 31 * version.hashCode() + ordinal
 
+    /** Returns a diagnostic form that intentionally does not disclose the hidden ordinal. */
     override fun toString(): String = "TextIndex()"
 }
 
@@ -65,11 +69,14 @@ public class TextRange(
         require(start.compareTo(endExclusive) <= 0) { "Text range start must not follow its end." }
     }
 
+    /** Compares both snapshot-bound scalar boundaries. */
     override fun equals(other: Any?): Boolean =
         other is TextRange && start == other.start && endExclusive == other.endExclusive
 
+    /** Returns a stable hash of the two scalar boundaries. */
     override fun hashCode(): Int = 31 * start.hashCode() + endExclusive.hashCode()
 
+    /** Returns a diagnostic form containing only the opaque boundary representations. */
     override fun toString(): String = "TextRange(start=$start, endExclusive=$endExclusive)"
 }
 

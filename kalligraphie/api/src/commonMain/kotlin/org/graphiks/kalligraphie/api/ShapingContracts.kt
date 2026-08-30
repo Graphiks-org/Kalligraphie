@@ -32,10 +32,13 @@ public class OpenTypeScript(value: String) {
     /** Four ASCII letters normalized to ISO 15924 title case. */
     public val value: String = value.canonicalScriptTag()
 
+    /** Compares canonical ISO 15924 script tags. */
     override fun equals(other: Any?): Boolean = other is OpenTypeScript && value == other.value
 
+    /** Returns a stable hash of the canonical script tag. */
     override fun hashCode(): Int = value.hashCode()
 
+    /** Returns a diagnostic form containing the canonical script tag. */
     override fun toString(): String = "OpenTypeScript($value)"
 }
 
@@ -54,10 +57,13 @@ public class OpenTypeFeature(
     /** Canonical lowercase four-character OpenType feature tag. */
     public val tag: String = tag.canonicalOpenTypeTag()
 
+    /** Compares canonical feature tags and their requested values. */
     override fun equals(other: Any?): Boolean = other is OpenTypeFeature && tag == other.tag && value == other.value
 
+    /** Returns a stable hash of the feature tag and value. */
     override fun hashCode(): Int = 31 * tag.hashCode() + value
 
+    /** Returns a diagnostic form containing the canonical feature tag and value. */
     override fun toString(): String = "OpenTypeFeature(tag=$tag, value=$value)"
 }
 
@@ -98,14 +104,17 @@ public class ShapingFeaturePolicy(
         require(it.isNotBlank()) { "Shaping feature-policy versions must not be blank." }
     }
 
+    /** Compares the stable policy identifier, version, and baseline semantics. */
     override fun equals(other: Any?): Boolean =
         other is ShapingFeaturePolicy &&
             policyId == other.policyId &&
             version == other.version &&
             application == other.application
 
+    /** Returns a stable hash of the complete policy replay input. */
     override fun hashCode(): Int = 31 * (31 * policyId.hashCode() + version.hashCode()) + application.hashCode()
 
+    /** Returns a diagnostic form containing the stable policy replay input. */
     override fun toString(): String = "ShapingFeaturePolicy($policyId@$version, $application)"
 }
 
