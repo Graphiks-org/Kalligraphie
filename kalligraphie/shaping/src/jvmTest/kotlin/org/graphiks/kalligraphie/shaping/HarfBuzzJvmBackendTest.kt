@@ -60,7 +60,7 @@ class HarfBuzzJvmBackendTest {
 
         assertEquals("harfbuzz-jvm", backend.identity.backendId)
         assertEquals("14.3.0", backend.identity.nativeVersion)
-        assertEquals("9f2f03173b7fee860cc00d999857d09fa4a362e2", backend.identity.nativeSourceRevision)
+        assertEquals(expectedNativeSourceRevision(), backend.identity.nativeSourceRevision)
         assertEquals(expectedNativeArtifactId(), backend.identity.nativeArtifactId)
         assertEquals(expectedNativeArtifactSha256(), backend.identity.nativeArtifactSha256)
         assertTrue(backend.identity.configurationFingerprint.contains("monotone-characters"))
@@ -79,6 +79,16 @@ class HarfBuzzJvmBackendTest {
         assertEquals(listOf(GlyphId(5042)), shaped.glyphs.map { it.glyphId })
         assertEquals(listOf(LayoutUnit(1290f)), shaped.glyphs.map { it.xAdvance })
         assertEquals(listOf(ShaperClusterToken(0)), shaped.glyphs.map { it.clusterToken })
+    }
+
+    @Test
+    fun nativeIdentityBindsEachTargetToItsVerifiedArtifactAndOtShaper() {
+        val identity = backend().identity
+
+        assertEquals(expectedNativeSourceRevision(), identity.nativeSourceRevision)
+        assertEquals(expectedNativeArtifactId(), identity.nativeArtifactId)
+        assertEquals(expectedNativeArtifactSha256(), identity.nativeArtifactSha256)
+        assertTrue(identity.configurationFingerprint.contains("shaper=ot"))
     }
 
     @Test
@@ -472,16 +482,28 @@ class HarfBuzzJvmBackendTest {
         assertIs<FontOperationResult.Success<T>>(this).value
 
     private fun expectedNativeArtifactId(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
-        "Mac OS X" to "aarch64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-macos-arm64/libharfbuzz.dylib"
-        "Mac OS X" to "x86_64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-macos/libharfbuzz.dylib"
+        "Mac OS X" to "aarch64" -> "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-arm64/libharfbuzz.dylib"
+        "Mac OS X" to "x86_64" -> "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-x64/libharfbuzz.dylib"
         "Linux" to "aarch64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux-arm64/libharfbuzz.so"
         "Linux" to "amd64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux/libharfbuzz.so"
         else -> error("Unexpected shaping test platform.")
     }
 
+    private fun expectedNativeSourceRevision(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
+        "Mac OS X" to "aarch64",
+        "Mac OS X" to "x86_64",
+        -> "4c2aa804671d7276e8a0eb95da07202ead05c843"
+
+        "Linux" to "aarch64",
+        "Linux" to "amd64",
+        -> "9f2f03173b7fee860cc00d999857d09fa4a362e2"
+
+        else -> error("Unexpected shaping test platform.")
+    }
+
     private fun expectedNativeArtifactSha256(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
-        "Mac OS X" to "aarch64" -> "302418f6ec10fee5e69fbe8b79f3b47e008f081ee88c912d19d2a9d820e7b9da"
-        "Mac OS X" to "x86_64" -> "4f83ffccaf2a92e4658db8353ac7d529c52d5e4d34027a92cf9870487e1bc68b"
+        "Mac OS X" to "aarch64" -> "504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22"
+        "Mac OS X" to "x86_64" -> "9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c"
         "Linux" to "aarch64" -> "b1c7c67034297763e0ce46f3749c4da33a4bb4064929868446cb5a3d81dc26bc"
         "Linux" to "amd64" -> "9a5e3576912c2f8c8b2533d4a264fec1eac9667adfd64f7e71e80179ba118614"
         else -> error("Unexpected shaping test platform.")
