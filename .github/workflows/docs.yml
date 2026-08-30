@@ -4,7 +4,12 @@ on:
   push:
     branches: [master]
     paths:
-      - 'font/**'
+      - 'kalligraphie/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'buildSrc/**'
+      - 'gradle/**'
+      - 'gradlew'
       - 'docs/**'
       - 'docs/mkdocs.yml'
       - '.github/workflows/docs.yml'

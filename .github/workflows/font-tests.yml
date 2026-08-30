@@ -1,9 +1,9 @@
-name: Font business tests
+name: Kalligraphie font business tests
 
 on:
   pull_request:
     paths:
-      - 'font/**'
+      - 'kalligraphie/**'
       - 'buildSrc/**'
       - 'settings.gradle.kts'
       - 'gradle/**'
@@ -12,7 +12,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'font/**'
+      - 'kalligraphie/**'
       - 'buildSrc/**'
       - 'settings.gradle.kts'
       - 'gradle/**'
@@ -33,4 +33,4 @@ jobs:
           java-version: '25'
           cache: gradle
       - run: chmod +x gradlew
-      - run: ./gradlew --no-daemon :font:fontTest
+      - run: ./gradlew --no-daemon :kalligraphie:fontTest

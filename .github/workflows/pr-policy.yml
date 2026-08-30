@@ -38,15 +38,14 @@ jobs:
           body_file="$(mktemp)"
 
           git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_files_file"
-          git log --format=%s "$PR_BASE_SHA..$PR_HEAD_SHA" > "$commit_subjects_file"
+          # Integration branches may contain merge commits; validate authored commits only.
+          git log --no-merges --format=%s "$PR_BASE_SHA..$PR_HEAD_SHA" > "$commit_subjects_file"
 
           if git merge-base --is-ancestor "$PR_BASE_SHA" "$PR_HEAD_SHA"; then
             base_ancestor=true
           else
             base_ancestor=false
           fi
-
-          merge_commits="$(git rev-list --merges --count "$PR_BASE_SHA..$PR_HEAD_SHA")"
 
           BODY_FILE="$body_file" python3 - <<'PY'
           import json
@@ -65,5 +64,4 @@ jobs:
             --branch "$PR_BRANCH" \
             --changed-files-file "$changed_files_file" \
             --commit-subjects-file "$commit_subjects_file" \
-            --base-ancestor "$base_ancestor" \
-            --merge-commits "$merge_commits"
+            --base-ancestor "$base_ancestor"

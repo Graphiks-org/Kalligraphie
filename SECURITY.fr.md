@@ -6,7 +6,7 @@ Si vous découvrez une vulnérabilité de sécurité, merci de la signaler par e
 
 **contact@ygdrasil.com**
 
-Ne créez pas d'issue publique sur GitHub.
+Ne créez pas de ticket public sur GitHub.
 
 ### Attentes
 

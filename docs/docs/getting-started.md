@@ -5,10 +5,10 @@
 - JDK 25
 - Python 3 with MkDocs Material and `mkdocs-static-i18n` to build the site
 
-## Verify the font modules
+## Verify the Kalligraphie font modules
 
 ```bash
-./gradlew :font:fontTest
+./gradlew :kalligraphie:fontTest
 ```
 
 ## Build the API reference and site

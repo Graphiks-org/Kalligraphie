@@ -1,24 +1,24 @@
 # Documentation de Kalligraphie
 
-Kalligraphie est une bibliothèque JVM de gestion de polices. Son API est répartie en modules Gradle ciblés afin de faire évoluer indépendamment le parsing, le shaping, la mise à l’échelle et l’accès aux glyphes.
+Kalligraphie est une bibliothèque portable Kotlin Multiplatform (KMP) de gestion de polices. Son interface de programmation (API) est répartie en modules Gradle spécialisés afin de faire évoluer indépendamment les contrats, l’analyse des données SFNT et OpenType (formats binaires de fontes), les métriques et l’accès aux glyphes.
 
 ## Modules
 
-- `:font:core` fournit les primitives communes aux polices.
-- `:font:sfnt` analyse les données SFNT et OpenType.
-- `:font:colr` gère les tables de polices couleur COLR.
-- `:font:scaler` met à l’échelle et rasterise les glyphes.
-- `:font:text` réalise le shaping (mise en forme typographique) du texte.
-- `:font:glyph` expose l’API orientée glyphes.
-- `:font` agrège les modules publics destinés aux consommateurs.
+- `:kalligraphie` est la façade publique utilisée par les applications.
+- `:kalligraphie:api` contient les contrats publics portables et les types de valeur immuables.
+- `:kalligraphie:unicode` contient les contrats Unicode portables.
+- `:kalligraphie:font:core` fournit les sources, faces (variantes de fonte) et instances de polices.
+- `:kalligraphie:font:sfnt` analyse les données de fontes aux formats SFNT et OpenType dans des limites explicites.
+- `:kalligraphie:font:scaler` calcule les métriques et les contours TrueType.
+- `:kalligraphie:font:glyph` matérialise les ressources de rendu détachées.
 
 ## Commandes utiles
 
 ```bash
 # Exécuter tous les tests JVM de la pile de polices.
-./gradlew :font:fontTest
+./gradlew :kalligraphie:fontTest
 
-# Générer et intégrer la référence API (Dokka → MkDocs).
+# Générer et intégrer la documentation de l’API (Dokka → MkDocs).
 ./gradlew :docs:embedDokkaIntoMkDocs
 
 # Construire le site localement.

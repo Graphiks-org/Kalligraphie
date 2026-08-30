@@ -189,7 +189,6 @@ def validate_policy(
     changed_files_file: str | Path,
     commit_subjects_file: str | Path,
     base_ancestor: bool,
-    merge_commits: int,
 ) -> list[str]:
     policy = load_policy(policy_path)
     body = read_text(body_file)
@@ -207,9 +206,6 @@ def validate_policy(
 
     if not base_ancestor:
         errors.append("base commit is not an ancestor of the head commit")
-    if merge_commits:
-        errors.append("merge commits are not allowed")
-
     return errors
 
 
@@ -231,7 +227,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--changed-files-file", required=True)
     parser.add_argument("--commit-subjects-file", required=True)
     parser.add_argument("--base-ancestor", required=True, type=parse_bool)
-    parser.add_argument("--merge-commits", required=True, type=int)
     args = parser.parse_args(argv)
 
     errors = validate_policy(
@@ -242,7 +237,6 @@ def main(argv: list[str] | None = None) -> int:
         changed_files_file=args.changed_files_file,
         commit_subjects_file=args.commit_subjects_file,
         base_ancestor=args.base_ancestor,
-        merge_commits=args.merge_commits,
     )
     if errors:
         for error in errors:
