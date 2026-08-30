@@ -6,7 +6,6 @@ Kalligraphie is a portable KMP font library. Its API is split into focused Gradl
 
 - `:kalligraphie` is the public facade consumed by applications.
 - `:kalligraphie:api` contains the portable public contracts and immutable value types.
-- `:kalligraphie:unicode` contains the portable Unicode contracts.
 - `:kalligraphie:font:core` provides font sources, faces, and instances.
 - `:kalligraphie:font:sfnt` parses bounded SFNT and OpenType data.
 - `:kalligraphie:font:scaler` resolves metrics and TrueType outlines.

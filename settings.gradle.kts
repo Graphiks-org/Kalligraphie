@@ -24,7 +24,6 @@ rootProject.name = "Kalligraphie"
 include(":docs")
 include(":kalligraphie")
 include(":kalligraphie:api")
-include(":kalligraphie:unicode")
 include(":kalligraphie:font:core")
 include(":kalligraphie:font:sfnt")
 include(":kalligraphie:font:scaler")

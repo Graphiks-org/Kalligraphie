@@ -7,7 +7,6 @@ plugins {
 val kalligraphieModules = listOf(
     ":kalligraphie",
     ":kalligraphie:api",
-    ":kalligraphie:unicode",
     ":kalligraphie:font:core",
     ":kalligraphie:font:sfnt",
     ":kalligraphie:font:scaler",

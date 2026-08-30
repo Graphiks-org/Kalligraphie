@@ -6,7 +6,6 @@ Kalligraphie est une bibliothèque portable Kotlin Multiplatform (KMP) de gestio
 
 - `:kalligraphie` est la façade publique utilisée par les applications.
 - `:kalligraphie:api` contient les contrats publics portables et les types de valeur immuables.
-- `:kalligraphie:unicode` contient les contrats Unicode portables.
 - `:kalligraphie:font:core` fournit les sources, faces (variantes de fonte) et instances de polices.
 - `:kalligraphie:font:sfnt` analyse les données de fontes aux formats SFNT et OpenType dans des limites explicites.
 - `:kalligraphie:font:scaler` calcule les métriques et les contours TrueType.
