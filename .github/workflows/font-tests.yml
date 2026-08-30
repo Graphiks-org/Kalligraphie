@@ -109,11 +109,11 @@ jobs:
       matrix:
         include:
           - architecture: x86_64
-            runner: macos-15-intel
+            runner: macos-26-intel
             embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/x64/libharfbuzz.dylib
             embedded_sha256: 9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c
           - architecture: arm64
-            runner: macos-15
+            runner: macos-26
             embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/arm64/libharfbuzz.dylib
             embedded_sha256: 504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22
     runs-on: ${{ matrix.runner }}
@@ -133,6 +133,10 @@ jobs:
           test "$(shasum -a 256 "$cmake_archive" | awk '{ print $1 }')" = '0c5d65251c14cc884bfa16bdbed3c263ce5bffe2e21c0d0d00962cb0610464fa'
           tar -xJf "$source_archive" -C "$hb_rebuild_root"
           tar -xzf "$cmake_archive" -C "$hb_rebuild_root"
+          export DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer
+          test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = '26.6'
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          test "$(xcrun --sdk macosx --show-sdk-version)" = '26.5'
           cmake_bin="$hb_rebuild_root/cmake-4.4.3-macos-universal/CMake.app/Contents/bin/cmake"
           source_root="$hb_rebuild_root/harfbuzz-14.3.0"
 
