@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 
 class EmbeddedFontFaceContractTest {
     @Test
-    fun opensTheAuditedTrueTypeFaceThroughThePublishedFacade() {
+    fun opensTheLiberationSansTrueTypeFaceThroughThePublishedFacade() {
         val result = Kalligraphie.embedded(
             sourceBytes = fixtureBytes(),
             provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),

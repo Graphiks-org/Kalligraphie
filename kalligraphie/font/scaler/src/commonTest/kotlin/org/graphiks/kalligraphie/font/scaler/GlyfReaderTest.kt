@@ -6,6 +6,7 @@ import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
@@ -320,6 +321,100 @@ class GlyfReaderTest {
     }
 
     @Test
+    fun rejectsFirstCompositeComponentUsingPointNumbers() {
+        val parent = compositeGlyphWithFirstPointAlignment(componentGlyphId = 1)
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val failure = assertIs<FontOperationResult.Failure>(result)
+        assertEquals("font.glyf.invalid-component-placement", failure.error.code)
+    }
+
+    @Test
+    fun alignsLaterCompositeComponentUsingParentAndChildPointNumbers() {
+        val parent = compositeGlyphWithPointAlignment(
+            componentGlyphId = 1,
+            parentPoint = 1,
+            childPoint = 0,
+        )
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(result).value
+        assertEquals(DesignBounds(10, 15, 70, 60), outline.bounds)
+        assertEquals(6, outline.pointCount)
+    }
+
+    @Test
+    fun alignsLaterCompositeComponentPointsAfterTransformingTheChild() {
+        val parent = compositeGlyphWithPointAlignedSecondComponent()
+        val firstChild = simpleGlyphWithFalseHeaderBounds()
+        val nestedSecondChild = compositeGlyph(componentGlyphIds = listOf(3))
+        val secondChildLeaf = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + firstChild + nestedSecondChild + secondChildLeaf
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 4,
+                tables = mapOf(
+                    "loca" to locaFormat0(
+                        0,
+                        parent.size,
+                        parent.size + firstChild.size,
+                        parent.size + firstChild.size + nestedSecondChild.size,
+                        glyf.size,
+                    ),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
+
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(result).value
+        assertEquals(DesignBounds(110, 215, 150, 252), outline.bounds)
+        assertEquals(
+            listOf(
+                GlyphOutlineCommand.MoveTo(110, 220),
+                GlyphOutlineCommand.LineTo(130, 240),
+                GlyphOutlineCommand.LineTo(150, 215),
+                GlyphOutlineCommand.Close,
+            ),
+            outline.contours[0].commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphOutlineCommand.MoveTo(110, 242),
+                GlyphOutlineCommand.LineTo(120, 252),
+                GlyphOutlineCommand.LineTo(130, 240),
+                GlyphOutlineCommand.Close,
+            ),
+            outline.contours[1].commands,
+        )
+    }
+
+    @Test
     fun rejectsMutuallyExclusiveScaledAndUnscaledOffsetFlags() {
         val parent = compositeGlyphWithOffsetFlags(
             componentGlyphId = 1,
@@ -507,6 +602,20 @@ private fun compositeGlyphWithTwoByTwo(
         bytes.writeInt16(24, yy)
     }
 
+private fun compositeGlyphWithPointAlignedSecondComponent(): ByteArray =
+    ByteArray(28).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0001 or 0x0002 or 0x0020)
+        bytes.writeUInt16(12, 1)
+        bytes.writeInt16(14, 100)
+        bytes.writeInt16(16, 200)
+        bytes.writeUInt16(18, 0x0001 or 0x0008)
+        bytes.writeUInt16(20, 2)
+        bytes.writeUInt16(22, 1)
+        bytes.writeUInt16(24, 2)
+        bytes.writeInt16(26, 8_192)
+    }
+
 private fun compositeGlyphWithOffsetFlags(componentGlyphId: Int, offsetFlags: Int): ByteArray =
     ByteArray(18).also { bytes ->
         bytes.writeInt16(0, -1)
@@ -514,6 +623,32 @@ private fun compositeGlyphWithOffsetFlags(componentGlyphId: Int, offsetFlags: In
         bytes.writeUInt16(12, componentGlyphId)
         bytes.writeInt16(14, 0)
         bytes.writeInt16(16, 0)
+    }
+
+private fun compositeGlyphWithPointAlignment(
+    componentGlyphId: Int,
+    parentPoint: Int,
+    childPoint: Int,
+): ByteArray =
+    ByteArray(26).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0023)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+        bytes.writeUInt16(18, 0x0001)
+        bytes.writeUInt16(20, componentGlyphId)
+        bytes.writeUInt16(22, parentPoint)
+        bytes.writeUInt16(24, childPoint)
+    }
+
+private fun compositeGlyphWithFirstPointAlignment(componentGlyphId: Int): ByteArray =
+    ByteArray(18).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0001)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeUInt16(14, 0)
+        bytes.writeUInt16(16, 0)
     }
 
 private fun simpleGlyphWithFalseHeaderBounds(): ByteArray =

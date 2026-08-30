@@ -24,16 +24,13 @@ import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.glyph.OutlineMaterializer
-import org.graphiks.kalligraphie.font.scaler.CmapReader
-import org.graphiks.kalligraphie.font.scaler.GlyfReader
-import org.graphiks.kalligraphie.font.scaler.MetricsReader
+import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
-import org.graphiks.kalligraphie.font.sfnt.slice
 
 internal class TrueTypeFace(
     private val sourceId: FontSourceId,
-    private val sourceBytes: ByteArray,
     private val parsedFont: ParsedTrueTypeFont,
+    private val preparedFont: PreparedTrueTypeFont,
 ) : FontFace {
     override val metadata: FontFaceMetadata = parsedFont.metadata
     override val id: FontFaceId = FontFaceId("${sourceId.value}#0")
@@ -51,8 +48,7 @@ internal class TrueTypeFace(
             TrueTypeFontInstance(
                 key = instanceKey(descriptor),
                 descriptor = descriptor,
-                sourceBytes = sourceBytes.copyOf(),
-                parsedFont = parsedFont.detachedCopy(),
+                preparedFont = preparedFont,
                 faceId = id,
                 sourceId = sourceId,
             ),
@@ -61,7 +57,7 @@ internal class TrueTypeFace(
 
     private fun instanceKey(descriptor: FontInstanceDescriptor): FontInstanceKey =
         FontInstanceKey(
-            "ttf-j1|face=${id.value}|interpretation=static-true-type-outline-v1|" +
+            "ttf|face=${id.value}|interpretation=static-true-type-outline-v1|" +
                 "layout-size-bits=${descriptor.layoutSize.value.toRawBits()}|variations=none|synthetic=none",
         )
 }
@@ -69,31 +65,16 @@ internal class TrueTypeFace(
 private data class TrueTypeFontInstance(
     override val key: FontInstanceKey,
     private val descriptor: FontInstanceDescriptor,
-    private val sourceBytes: ByteArray,
-    private val parsedFont: ParsedTrueTypeFont,
+    private val preparedFont: PreparedTrueTypeFont,
     private val faceId: FontFaceId,
     private val sourceId: FontSourceId,
 ) : FontInstance {
     override fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution> {
-        val cmapTable = sourceBytes.sliceFor(parsedFont, "cmap") ?: return missingTable("cmap")
-        return when (
-            val result = CmapReader.resolveGlyphId(
-                cmapTable = cmapTable,
-                codePoint = codePoint,
-                numGlyphs = parsedFont.metadata.glyphCount,
-            )
-        ) {
-            is FontOperationResult.Success -> FontOperationResult.Success(
-                GlyphResolution(codePoint = codePoint, glyphId = result.value.glyphId),
-                result.diagnostics,
-            )
-            is FontOperationResult.Failure -> result
-            is FontOperationResult.Cancelled -> result
-        }
+        return preparedFont.resolveGlyph(codePoint)
     }
 
     override fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> =
-        MetricsReader.readGlyphMetrics(sourceBytes, parsedFont, glyphId, descriptor.layoutSize.value)
+        preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value)
 
     override fun acquireRenderAsset(
         resolver: FontAssetResolverHandle,
@@ -112,7 +93,7 @@ private data class TrueTypeFontInstance(
         if (variant != FontRenderVariantKey.default) {
             return failure(
                 FontError.UnsupportedRepresentationProfile(
-                    "J1 does not support variant render assets.",
+                    "Variant render assets are not supported by this embedded TrueType face.",
                     FontDiagnosticLocation.Face(0),
                 ),
             )
@@ -121,7 +102,7 @@ private data class TrueTypeFontInstance(
             return failure(FontError.InvalidFontData("Resolver source does not match this face.", FontDiagnosticLocation.Face(0)))
         }
         if (resolver !is EmbeddedFontAssetResolver) {
-            return failure(FontError.InvalidFontData("Resolver was not opened by the embedded J1 catalog.", FontDiagnosticLocation.Face(0)))
+            return failure(FontError.InvalidFontData("Resolver was not opened by the embedded TrueType catalog.", FontDiagnosticLocation.Face(0)))
         }
         val lease = resolver.acquireLease()
             ?: return failure(FontError.ResourceClosed("Asset resolver is closed."))
@@ -129,8 +110,7 @@ private data class TrueTypeFontInstance(
             FontOperationResult.Success(
                 TrueTypeRenderAssetHandle(
                     faceId = faceId,
-                    sourceBytes = sourceBytes.copyOf(),
-                    parsedFont = parsedFont.detachedCopy(),
+                    preparedFont = preparedFont,
                     profile = outlineProfile,
                 ),
             )
@@ -139,17 +119,11 @@ private data class TrueTypeFontInstance(
         }
     }
 
-    private fun missingTable(tag: String): FontOperationResult.Failure =
-        FontOperationResult.Failure(FontError.MissingRequiredTable(tag))
-
-    private fun ByteArray.sliceFor(parsedFont: ParsedTrueTypeFont, tag: String): ByteArray? =
-        parsedFont.tableRecords[tag]?.let { record -> slice(this, record) }
 }
 
 private class TrueTypeRenderAssetHandle(
     override val faceId: FontFaceId,
-    private val sourceBytes: ByteArray,
-    private val parsedFont: ParsedTrueTypeFont,
+    private val preparedFont: PreparedTrueTypeFont,
     private val profile: org.graphiks.kalligraphie.api.OutlineProfile,
 ) : FontRenderAssetHandle {
     private val lifecycle = FontHandleLifecycle()
@@ -161,8 +135,7 @@ private class TrueTypeRenderAssetHandle(
             FontOperationResult.Success(
                 TrueTypeRenderAssetHandle(
                     faceId = faceId,
-                    sourceBytes = sourceBytes.copyOf(),
-                    parsedFont = parsedFont.detachedCopy(),
+                    preparedFont = preparedFont,
                     profile = profile.copy(),
                 ),
             )
@@ -184,15 +157,7 @@ private class TrueTypeRenderAssetHandle(
             if (cancellationToken.isCancellationRequested()) {
                 return FontOperationResult.Cancelled()
             }
-            val outline = when (
-                val result = GlyfReader.readGlyphOutline(
-                    sourceBytes,
-                    parsedFont,
-                    GlyphId(request.glyphId),
-                    profile,
-                    cancellationToken,
-                )
-            ) {
+            val outline = when (val result = preparedFont.readGlyphOutline(GlyphId(request.glyphId), profile, cancellationToken)) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
@@ -211,9 +176,6 @@ private class TrueTypeRenderAssetHandle(
         return FontOperationResult.Success(Unit)
     }
 }
-
-private fun ParsedTrueTypeFont.detachedCopy(): ParsedTrueTypeFont =
-    copy(tableRecords = tableRecords.entries.associate { (tag, record) -> tag to record.copy() })
 
 private fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
     FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())

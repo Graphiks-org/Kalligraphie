@@ -13,10 +13,19 @@ import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
 import org.graphiks.kalligraphie.font.sfnt.slice
 
-/** Reads and validates glyph offsets from a TrueType `loca` table. */
-public object LocaReader {
-    /** Reads all glyph ranges described by the parsed font. */
-    public fun readLoca(
+/**
+ * Reads and validates glyph offsets from a TrueType `loca` table.
+ *
+ * The returned offset table is immutable and safe for concurrent reads. The
+ * reader rejects truncation, invalid format, non-monotonic offsets, and ranges
+ * beyond `glyf` before returning a successful result.
+ */
+internal object LocaReader {
+    /**
+     * Reads all glyph ranges described by [parsedFont] and bounded by
+     * [glyfLength]. The source bytes are read-only and are not retained.
+     */
+    internal fun readLoca(
         sourceBytes: ByteArray,
         parsedFont: ParsedTrueTypeFont,
         glyfLength: Int,
@@ -77,18 +86,18 @@ public object LocaReader {
 }
 
 /** Immutable glyph-offset table decoded from `loca`. */
-public class LocaTable(offsets: List<Int>) {
+internal class LocaTable(offsets: List<Int>) {
     /** Monotonic offsets, with one extra entry after the last glyph. */
-    public val offsets: List<Int> = offsets.immutableListSnapshot()
+    internal val offsets: List<Int> = offsets.immutableListSnapshot()
 
-    /** Returns the offsets for destructuring. */
-    public operator fun component1(): List<Int> = offsets
+    /** Returns the immutable offsets for destructuring. */
+    internal operator fun component1(): List<Int> = offsets
 
-    /** Copies this offset table with a new offset list. */
-    public fun copy(offsets: List<Int> = this.offsets): LocaTable = LocaTable(offsets)
+    /** Copies this offset table with a new immutable offset list. */
+    internal fun copy(offsets: List<Int> = this.offsets): LocaTable = LocaTable(offsets)
 
-    /** Returns the byte range occupied by [glyphId]. */
-    public fun rangeForGlyph(glyphId: GlyphId): FontOperationResult<GlyphDataRange> {
+    /** Returns the half-open byte range occupied by [glyphId], or a typed failure. */
+    internal fun rangeForGlyph(glyphId: GlyphId): FontOperationResult<GlyphDataRange> {
         if (glyphId.value !in 0 until offsets.lastIndex) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
@@ -108,11 +117,11 @@ public class LocaTable(offsets: List<Int>) {
 }
 
 /** Half-open byte range containing one glyph in the `glyf` table. */
-public data class GlyphDataRange(
+internal data class GlyphDataRange(
     /** Inclusive start offset. */
-    public val start: Int,
+    internal val start: Int,
     /** Exclusive end offset. */
-    public val endExclusive: Int,
+    internal val endExclusive: Int,
 ) {
     init {
         require(start >= 0) { "start must be non-negative." }

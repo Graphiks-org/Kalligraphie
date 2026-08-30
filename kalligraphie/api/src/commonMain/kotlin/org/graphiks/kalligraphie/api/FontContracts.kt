@@ -2,22 +2,51 @@ package org.graphiks.kalligraphie.api
 
 import kotlin.jvm.JvmInline
 
-/** Parsed, immutable view of the faces available in a font source. */
+/**
+ * Parsed, immutable view of the faces available in a font source.
+ *
+ * A snapshot does not borrow mutable caller state. Consumers own every handle
+ * returned by it and must close those handles when they are no longer needed.
+ * Implementations must make face resolution deterministic and safe to call
+ * concurrently; failures are returned as [FontOperationResult.Failure] rather
+ * than thrown for invalid or unsupported font data.
+ */
 public interface FontCatalogSnapshot {
     /** Identifier of the source from which this catalog was parsed. */
     public val sourceId: FontSourceId
 
-    /** Opens a handle used to acquire render assets from this catalog. */
+    /**
+     * Opens a resolver used to acquire render assets from this catalog.
+     *
+     * A successful result transfers ownership of the returned resolver to the
+     * caller. `close()` is idempotent and linearizable (there is one observable
+     * transition to the closed state), and may race with acquisitions. An
+     * acquisition already admitted before that transition may finish; later
+     * acquisitions fail with [FontError.ResourceClosed].
+     */
     public fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle>
 
-    /** Resolves a face while applying the caller's access requirements. */
+    /**
+     * Resolves a face while applying [requirements].
+     *
+     * The call has no ownership or lifecycle effect on the catalog. A
+     * successful face can be retained by the caller and used concurrently;
+     * malformed data, an unsupported face, or an unsupported representation
+     * is reported as a typed failure.
+     */
     public fun resolveFace(
         request: FontFaceRequest,
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontFace>
 }
 
-/** A face that can create layout or rendering instances. */
+/**
+ * A face that can create layout or rendering instances.
+ *
+ * Faces are immutable snapshots of parsed font data. Implementations must
+ * make [instantiate] safe for concurrent callers and must not retain a
+ * caller-owned mutable descriptor.
+ */
 public interface FontFace {
     /** Stable identifier of this face. */
     public val id: FontFaceId
@@ -25,7 +54,13 @@ public interface FontFace {
     /** Metadata declared by the face. */
     public val metadata: FontFaceMetadata
 
-    /** Creates an immutable instance for the requested layout size. */
+    /**
+     * Creates an immutable instance for [descriptor].
+     *
+     * The successful instance is owned by the caller and remains independent
+     * of later descriptor changes. Invalid descriptors are returned as
+     * [FontError.InvalidInstanceDescriptor].
+     */
     public fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance>
 }
 
@@ -74,6 +109,7 @@ public class FontAccessRequirementsSnapshot private constructor(
         RENDERABLE,
     }
 
+    /** Factory methods for the supported access modes. */
     public companion object {
         /** Creates requirements for layout-only access. */
         public fun layoutOnly(): FontAccessRequirementsSnapshot =
@@ -119,6 +155,7 @@ public data class FontRenderVariantKey(
         require(value.isNotBlank()) { "FontRenderVariantKey value must not be blank." }
     }
 
+    /** Factory values for render variants. */
     public companion object {
         /** Default variant used when no specialized renderer is selected. */
         public val default: FontRenderVariantKey = FontRenderVariantKey("default")
@@ -150,6 +187,7 @@ public fun interface CancellationToken {
     /** Returns whether the current operation should stop. */
     public fun isCancellationRequested(): Boolean
 
+    /** Standard cancellation tokens. */
     public companion object {
         /** Token that never requests cancellation. */
         public val none: CancellationToken = CancellationToken { false }
@@ -158,28 +196,69 @@ public fun interface CancellationToken {
     }
 }
 
-/** Lifetime handle for render assets associated with a source. */
+/**
+ * Lifetime handle for render assets associated with a source.
+ *
+ * The resolver owns the resources needed for future acquisitions. Its
+ * [close] operation is idempotent and linearizable, is safe to call from any
+ * thread, and releases ownership of resources once in-flight acquisitions
+ * have drained. Calling [close] again succeeds without reopening the
+ * resolver; acquisitions after closure return [FontError.ResourceClosed].
+ */
 public interface FontAssetResolverHandle {
     /** Identifier of the source served by this resolver. */
     public val sourceId: FontSourceId
 
-    /** Closes the resolver and releases its source resources. */
+    /**
+     * Closes this resolver.
+     *
+     * The operation is idempotent: repeated calls return success and never
+     * reopen the resolver. It may run concurrently with acquisition, with the
+     * linearization point deciding whether a new acquisition is admitted.
+     */
     public fun close(): FontOperationResult<Unit>
 }
 
-/** Handle providing glyph data for one face and render variant. */
+/**
+ * Handle providing glyph data for one face and render variant.
+ *
+ * The handle owns its render resources. Implementations must make [close],
+ * [detach], and [resolveGlyph] safe to call concurrently. [close] is
+ * idempotent and linearizable; a resolve admitted before closure may finish,
+ * while a later resolve returns [FontError.ResourceClosed]. The caller owns a
+ * successful detached handle and must close both handles independently.
+ */
 public interface FontRenderAssetHandle {
     /** Identifier of the face served by this asset. */
     public val faceId: FontFaceId
 
-    /** Detaches the asset from its resolver when the implementation supports it. */
+    /**
+     * Creates a resolver-independent handle when detachment is supported.
+     *
+     * Detachment does not close or mutate this handle. Each successful call
+     * returns a separately owned handle; callers must close every returned
+     * handle. An implementation that cannot detach returns a typed failure.
+     */
     public fun detach(): FontOperationResult<FontRenderAssetHandle> =
         unsupportedContractOperation("This render asset does not support detachment.")
 
-    /** Resolves a glyph representation. */
+    /**
+     * Resolves [request] to a glyph representation.
+     *
+     * The operation is read-only and may be invoked concurrently. It returns
+     * [FontError.GlyphOutOfRange] for an unknown glyph, a representation or
+     * resource-limit failure when the requested output cannot be produced, and
+     * [FontError.ResourceClosed] after the handle's close linearization point.
+     */
     public fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation>
 
-    /** Resolves a glyph representation while honoring cancellation. */
+    /**
+     * Resolves [request] while observing [cancellationToken] cooperatively.
+     *
+     * Cancellation is checked before work and at implementation-defined safe
+     * points during decoding. A requested cancellation returns
+     * [FontOperationResult.Cancelled] and does not transfer partial output.
+     */
     public fun resolveGlyph(
         request: FontGlyphRequest,
         cancellationToken: CancellationToken,
@@ -190,7 +269,14 @@ public interface FontRenderAssetHandle {
             resolveGlyph(request)
         }
 
-    /** Closes the asset and releases its resources. */
+    /**
+     * Closes this asset and releases its resources.
+     *
+     * The operation is idempotent, thread-safe, and linearizable. Repeated
+     * calls succeed without reopening the asset; operations admitted before
+     * closure may complete, while later operations fail with
+     * [FontError.ResourceClosed].
+     */
     public fun close(): FontOperationResult<Unit>
 }
 
@@ -200,20 +286,44 @@ public data class FontInstanceDescriptor(
     public val layoutSize: LayoutUnit = LayoutUnit(12f),
 )
 
-/** Immutable operational view of a font face at one size. */
+/**
+ * Immutable operational view of a font face at one size.
+ *
+ * Instances are owned by their caller and may be shared between threads.
+ * Implementations must not mutate the descriptor or expose mutable font
+ * storage through these operations. Unsupported capabilities are reported as
+ * typed failures rather than exceptions.
+ */
 public interface FontInstance {
     /** Stable key for this instance descriptor. */
     public val key: FontInstanceKey
 
-    /** Resolves a Unicode scalar value to a glyph. */
+    /**
+     * Resolves a Unicode scalar value to a glyph.
+     *
+     * Invalid scalar values and missing mappings are represented by the
+     * returned result and diagnostics; a missing mapping normally resolves to
+     * glyph identifier zero.
+     */
     public fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution> =
         unsupportedContractOperation("This font instance does not support glyph resolution.")
 
-    /** Returns metrics for a glyph in this instance. */
+    /**
+     * Returns metrics for [glyphId] scaled to this instance's layout size.
+     *
+     * The result is read-only and safe for concurrent calls. Unknown glyphs
+     * and malformed metric tables are reported as typed failures.
+     */
     public fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> =
         unsupportedContractOperation("This font instance does not support glyph metrics.")
 
-    /** Acquires a render asset for this instance. */
+    /**
+     * Acquires a render asset for [variant] using [resolver] and [requirements].
+     *
+     * The resolver must belong to the same source as this instance. A
+     * successful asset is owned by the caller and must be closed; acquisition
+     * failures do not transfer ownership.
+     */
     public fun acquireRenderAsset(
         resolver: FontAssetResolverHandle,
         variant: FontRenderVariantKey,
@@ -224,7 +334,10 @@ public interface FontInstance {
 
 @JvmInline
 /** Type-safe non-negative glyph identifier. */
-public value class GlyphId(public val value: Int) {
+public value class GlyphId(
+    /** Non-negative glyph identifier value. */
+    public val value: Int,
+) {
     init {
         require(value >= 0) { "GlyphId value must be non-negative." }
     }
@@ -411,6 +524,7 @@ public class GlyphOutlineIR(
         fillRule,
     )
 
+    /** Compares all immutable outline fields and their ordered contents. */
     override fun equals(other: Any?): Boolean =
         this === other || other is GlyphOutlineIR &&
             glyphId == other.glyphId &&
@@ -422,6 +536,7 @@ public class GlyphOutlineIR(
             limits == other.limits &&
             fillRule == other.fillRule
 
+    /** Returns a hash derived from all immutable outline fields. */
     override fun hashCode(): Int {
         var result = glyphId
         result = 31 * result + unitsPerEm
@@ -434,6 +549,7 @@ public class GlyphOutlineIR(
         return result
     }
 
+    /** Returns a diagnostic representation containing all outline fields. */
     override fun toString(): String =
         "GlyphOutlineIR(glyphId=$glyphId, unitsPerEm=$unitsPerEm, bounds=$bounds, contours=$contours, " +
             "pointCount=$pointCount, components=$components, limits=$limits, fillRule=$fillRule)"
@@ -458,10 +574,13 @@ public class GlyphContour(
     /** Copies this contour with a new command list. */
     public fun copy(commands: List<GlyphOutlineCommand> = this.commands): GlyphContour = GlyphContour(commands)
 
+    /** Compares the ordered immutable command list. */
     override fun equals(other: Any?): Boolean = this === other || other is GlyphContour && commands == other.commands
 
+    /** Returns a hash derived from the ordered command list. */
     override fun hashCode(): Int = commands.hashCode()
 
+    /** Returns a diagnostic representation containing the contour commands. */
     override fun toString(): String = "GlyphContour(commands=$commands)"
 }
 
@@ -546,6 +665,7 @@ public data class GlyphOutlineLimits(
         require(maxCompositeComponents > 0) { "maxCompositeComponents must be positive." }
     }
 
+    /** Compatibility and factory values for outline limits. */
     public companion object {
         /** Unlimited limits used by the legacy constructor. */
         public val compatibility: GlyphOutlineLimits = GlyphOutlineLimits(

@@ -11,11 +11,24 @@ import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 
-/** Reads the structural metadata of a supported TrueType SFNT font. */
+/**
+ * Reads the structural metadata of a supported TrueType SFNT font.
+ *
+ * The source is defensively copied before parsing, so the returned metadata
+ * cannot observe later caller mutations. Parsing is read-only and publishes a
+ * result only after required tables, ranges, names, and TrueType limits have
+ * been validated.
+ */
 public object SfntReader {
     private val requiredTables = setOf("head", "maxp", "name", "cmap", "hhea", "hmtx", "loca", "glyf")
 
-    /** Parses table records and face metadata from [source]. */
+    /**
+     * Parses table records and face metadata from [source].
+     *
+     * Unsupported containers, malformed data, and missing required tables are
+     * returned as [FontOperationResult.Failure]. The successful parsed value
+     * is immutable and may be shared safely between concurrent readers.
+     */
     public fun readMetadata(source: FontSource): FontOperationResult<ParsedTrueTypeFont> {
         val bytes = source.copyBytes()
         if (bytes.size < 12) {
@@ -259,7 +272,13 @@ public object SfntReader {
         failure(error, listOf(error.toDiagnostic(data)))
 }
 
-/** Immutable structural representation of a parsed TrueType font. */
+/**
+ * Immutable structural representation of a parsed TrueType font.
+ *
+ * This value contains table locations and validated face metadata, not a
+ * public mutable view of the source bytes. It may be copied for value-like
+ * transformations and shared between threads.
+ */
 public class ParsedTrueTypeFont(
     tableRecords: Map<String, TableRecord>,
     /** Face metadata read from the font tables. */
@@ -286,12 +305,14 @@ public class ParsedTrueTypeFont(
         indexToLocFormat: Int = this.indexToLocFormat,
     ): ParsedTrueTypeFont = ParsedTrueTypeFont(tableRecords, metadata, indexToLocFormat)
 
+    /** Compares table records, metadata, and location format. */
     override fun equals(other: Any?): Boolean =
         this === other || other is ParsedTrueTypeFont &&
             tableRecords == other.tableRecords &&
             metadata == other.metadata &&
             indexToLocFormat == other.indexToLocFormat
 
+    /** Returns a hash derived from the parsed table structure. */
     override fun hashCode(): Int {
         var result = tableRecords.hashCode()
         result = 31 * result + metadata.hashCode()
@@ -299,6 +320,7 @@ public class ParsedTrueTypeFont(
         return result
     }
 
+    /** Returns a diagnostic representation of the parsed font structure. */
     override fun toString(): String =
         "ParsedTrueTypeFont(tableRecords=$tableRecords, metadata=$metadata, indexToLocFormat=$indexToLocFormat)"
 }
@@ -318,7 +340,12 @@ private data class ParsedNames(
     val styleName: String,
 )
 
-/** Returns a defensive copy of a table's bytes, or `null` for an invalid range. */
+/**
+ * Returns a defensive copy of a table's bytes, or `null` for an invalid range.
+ *
+ * Hot paths should retain one validated snapshot instead of repeatedly
+ * copying the same table.
+ */
 public fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
     val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null
     return bytes.copyOfRange(record.offset.toInt(), end)

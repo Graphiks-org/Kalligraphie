@@ -14,6 +14,7 @@ import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
+import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -23,6 +24,14 @@ public class EmbeddedFontCatalog(
     private val source: FontSource,
     private val parsedFont: ParsedTrueTypeFont,
 ) : FontCatalogSnapshot {
+    private val face: TrueTypeFace by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        TrueTypeFace(
+            sourceId = source.id,
+            parsedFont = parsedFont,
+            preparedFont = PreparedTrueTypeFont(source, parsedFont),
+        )
+    }
+
     /** Identifier of the embedded source. */
     override val sourceId: FontSourceId = source.id
 
@@ -38,15 +47,15 @@ public class EmbeddedFontCatalog(
         if (request.faceIndex != 0) {
             return failure(
                 FontError.InvalidFontData(
-                    message = "Only face index 0 is supported for J1.",
+                    message = "Only face index 0 is supported by this embedded TrueType catalog.",
                     location = FontDiagnosticLocation.Face(request.faceIndex),
                 ),
             )
         }
-        if (!requirements.isSupportedForJ1()) {
+        if (!requirements.isSupportedForEmbeddedTrueType()) {
             return failure(
                 FontError.UnsupportedRepresentationProfile(
-                    message = "Unsupported font access requirements for J1.",
+                    message = "Unsupported font access requirements for this embedded TrueType catalog.",
                     location = FontDiagnosticLocation.Face(request.faceIndex),
                 ),
                 diagnostics = listOf(
@@ -59,10 +68,10 @@ public class EmbeddedFontCatalog(
                 ),
             )
         }
-        return FontOperationResult.Success(TrueTypeFace(source.id, source.copyBytes(), parsedFont))
+        return FontOperationResult.Success(face)
     }
 
-    private fun FontAccessRequirementsSnapshot.isSupportedForJ1(): Boolean =
+    private fun FontAccessRequirementsSnapshot.isSupportedForEmbeddedTrueType(): Boolean =
         when (mode) {
             FontAccessRequirementsSnapshot.Mode.LAYOUT_ONLY -> true
             FontAccessRequirementsSnapshot.Mode.RENDERABLE -> outlineProfile?.schemaVersion == 1

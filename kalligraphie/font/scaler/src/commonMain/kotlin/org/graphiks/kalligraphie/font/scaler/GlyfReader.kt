@@ -18,10 +18,23 @@ import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
 
-/** Decodes TrueType `glyf` data into bounded scaler outlines. */
-public object GlyfReader {
-    /** Reads one glyph outline while enforcing resource limits and cancellation. */
-    public fun readGlyphOutline(
+/**
+ * Decodes TrueType `glyf` data into bounded scaler outlines.
+ *
+ * The reader validates offsets, recursion, composite placement, geometry, and
+ * profile limits before publishing an outline. It does not mutate the source
+ * bytes; malformed data and limit violations are returned as typed failures.
+ */
+internal object GlyfReader {
+    /**
+     * Reads [glyphId] while enforcing [profile] and cooperative cancellation.
+     *
+     * The returned outline is owned by the caller and contains immutable
+     * contour and component snapshots. A cancellation observed before
+     * completion returns [FontOperationResult.Cancelled] without partial data;
+     * malformed glyph data and resource exhaustion return typed failures.
+     */
+    internal fun readGlyphOutline(
         sourceBytes: ByteArray,
         parsedFont: ParsedTrueTypeFont,
         glyphId: GlyphId,
@@ -32,23 +45,63 @@ public object GlyfReader {
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
+        val prepared = when (val result = prepare(sourceBytes, parsedFont)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return readGlyphOutline(prepared, glyphId, profile, cancellationToken)
+    }
+
+    /** Prepares immutable `glyf`, `loca`, and `maxp` data for repeated outline reads. */
+    internal fun prepare(
+        sourceBytes: ByteArray,
+        parsedFont: ParsedTrueTypeFont,
+    ): FontOperationResult<PreparedGlyphData> {
         val glyfRecord = parsedFont.tableRecords["glyf"] ?: return failure(FontError.MissingRequiredTable("glyf"))
         val glyf = slice(sourceBytes, glyfRecord)
             ?: return failure(fontFailure("font.glyf.truncated", "Table glyf exceeds source length.", tableLocation("glyf")))
-        if (cancellationToken.isCancellationRequested()) return cancelled()
         val loca = when (val result = LocaReader.readLoca(sourceBytes, parsedFont, glyf.size)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        if (cancellationToken.isCancellationRequested()) return cancelled()
         val maxp = when (val result = readMaxpLimits(sourceBytes, parsedFont)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        return FontOperationResult.Success(
+            PreparedGlyphData(
+                glyf = glyf,
+                loca = loca,
+                glyphCount = parsedFont.metadata.glyphCount,
+                unitsPerEm = parsedFont.metadata.unitsPerEm,
+                maxp = maxp,
+            ),
+        )
+    }
+
+    /** Reads one outline from prepared immutable glyph tables. */
+    internal fun readGlyphOutline(
+        prepared: PreparedGlyphData,
+        glyphId: GlyphId,
+        profile: OutlineProfile,
+        cancellationToken: CancellationToken,
+    ): FontOperationResult<ScalerGlyphOutline> {
         if (cancellationToken.isCancellationRequested()) return cancelled()
-        return GlyphResolver(glyf, loca, parsedFont.metadata.glyphCount, parsedFont.metadata.unitsPerEm, profile, maxp, cancellationToken)
+        if (glyphId.value !in 0 until prepared.glyphCount) {
+            return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        return GlyphResolver(
+            prepared.glyf,
+            prepared.loca,
+            prepared.glyphCount,
+            prepared.unitsPerEm,
+            profile,
+            prepared.maxp,
+            cancellationToken,
+        )
             .resolveRoot(glyphId)
     }
 }
@@ -108,6 +161,7 @@ public class ScalerGlyphOutline(
         components,
     )
 
+    /** Compares all immutable outline fields and their ordered contents. */
     override fun equals(other: Any?): Boolean =
         this === other ||
             other is ScalerGlyphOutline &&
@@ -118,6 +172,7 @@ public class ScalerGlyphOutline(
             pointCount == other.pointCount &&
             components == other.components
 
+    /** Returns a hash derived from all immutable outline fields. */
     override fun hashCode(): Int {
         var result = glyphId
         result = 31 * result + unitsPerEm
@@ -128,9 +183,18 @@ public class ScalerGlyphOutline(
         return result
     }
 
+    /** Returns a diagnostic representation containing all outline fields. */
     override fun toString(): String =
         "ScalerGlyphOutline(glyphId=$glyphId, unitsPerEm=$unitsPerEm, bounds=$bounds, contours=$contours, pointCount=$pointCount, components=$components)"
 }
+
+internal data class PreparedGlyphData(
+    val glyf: ByteArray,
+    val loca: LocaTable,
+    val glyphCount: Int,
+    val unitsPerEm: Int,
+    val maxp: MaxpLimits,
+)
 
 private class GlyphResolver(
     private val glyf: ByteArray,
@@ -145,14 +209,18 @@ private class GlyphResolver(
     private var consumedGlyphBytes = 0L
 
     fun resolveRoot(glyphId: GlyphId): FontOperationResult<ScalerGlyphOutline> =
-        resolve(
+        when (val result = resolve(
             glyphId,
             path = emptySet(),
             depth = 0,
             publishDirectComponents = true,
             remainingPointBudget = profile.maxPoints.toLong(),
             remainingContourBudget = profile.maxContours.toLong(),
-        )
+        )) {
+            is FontOperationResult.Success -> FontOperationResult.Success(result.value.toOutline(unitsPerEm), result.diagnostics)
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
 
     private fun resolve(
         glyphId: GlyphId,
@@ -161,7 +229,7 @@ private class GlyphResolver(
         publishDirectComponents: Boolean,
         remainingPointBudget: Long,
         remainingContourBudget: Long,
-    ): FontOperationResult<ScalerGlyphOutline> {
+    ): FontOperationResult<ResolvedGlyph> {
         if (cancellationToken.isCancellationRequested()) return cancelled()
         if (glyphId.value in path) {
             return failure(fontFailure("font.glyf.composite-cycle", "Composite glyph re-enters the active path.", glyphLocation(glyphId.value)))
@@ -247,7 +315,7 @@ private class GlyphResolver(
         reader: GlyphByteReader,
         remainingPointBudget: Long,
         remainingContourBudget: Long,
-    ): FontOperationResult<ScalerGlyphOutline> {
+    ): FontOperationResult<ResolvedGlyph> {
         if (cancellationToken.isCancellationRequested()) return cancelled()
         val contourLimit = minOf(
             profile.maxContours.toLong(),
@@ -307,20 +375,13 @@ private class GlyphResolver(
         val points = flags.indices.map { index ->
             GlyphPoint(xs[index], ys[index], flags[index] and FLAG_ON_CURVE != 0)
         }
-        val contours = ArrayList<GlyphContour>(contourCount)
-        var start = 0
-        for (end in endPoints) {
-            contours += GlyphContour(commandsForContour(points.subList(start, end + 1)))
-            start = end + 1
-        }
         if (cancellationToken.isCancellationRequested()) return cancelled()
         return FontOperationResult.Success(
-            ScalerGlyphOutline(
+            ResolvedGlyph(
                 glyphId = glyphId,
-                unitsPerEm = unitsPerEm,
                 bounds = boundsForPoints(points) ?: bounds,
-                contours = contours,
-                pointCount = pointCount,
+                points = points,
+                contourEndPoints = endPoints,
                 components = emptyList(),
             ),
         )
@@ -335,10 +396,10 @@ private class GlyphResolver(
         publishDirectComponents: Boolean,
         remainingPointBudget: Long,
         remainingContourBudget: Long,
-    ): FontOperationResult<ScalerGlyphOutline> {
-        val contours = mutableListOf<GlyphContour>()
+    ): FontOperationResult<ResolvedGlyph> {
+        val points = mutableListOf<GlyphPoint>()
+        val contourEndPoints = mutableListOf<Int>()
         val directComponents = mutableListOf<GlyphComponentReference>()
-        var pointCount = 0L
         var componentElementCount = 0L
         val pointLimit = minOf(
             profile.maxPoints.toLong(),
@@ -405,20 +466,42 @@ private class GlyphResolver(
             if (componentGlyphId !in 0 until glyphCount) {
                 return failure(fontFailure("font.glyf.component-out-of-range", "Composite component glyph ID is out of range.", glyphLocation(glyphId.value)))
             }
-            if (flags and COMPOSITE_ARGS_ARE_XY_VALUES == 0) {
-                return failure(fontFailure("font.glyf.unsupported-component", "Composite point matching is not supported in J1.3.", glyphLocation(glyphId.value)))
+            val placement = readComponentPlacement(reader, flags) ?: return truncated(glyphId.value)
+            if (componentElementCount == 1L && placement is ComponentPlacement.PointMatch) {
+                return failure(
+                    fontFailure(
+                        "font.glyf.invalid-component-placement",
+                        "The first composite component must use XY offsets.",
+                        glyphLocation(glyphId.value),
+                    ),
+                )
             }
-            val (translationX, translationY) = readComponentTranslation(reader, flags) ?: return truncated(glyphId.value)
-            val transform = when (
-                val result = readComponentTransform(reader, flags, translationX, translationY, glyphId.value)
+            if (placement is ComponentPlacement.PointMatch && placement.parentPointIndex !in points.indices) {
+                return failure(
+                    fontFailure(
+                        "font.glyf.component-point-out-of-range",
+                        "Composite parent point index is out of range.",
+                        glyphLocation(glyphId.value),
+                    ),
+                )
+            }
+            val initialTranslation = if (placement is ComponentPlacement.Offset) {
+                Pair(placement.x, placement.y)
+            } else {
+                Pair(0, 0)
+            }
+            val baseTransform = when (
+                val result = readComponentTransform(
+                    reader,
+                    flags,
+                    initialTranslation.first,
+                    initialTranslation.second,
+                    glyphId.value,
+                )
             ) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
-            }
-            val componentReference = GlyphComponentReference(componentGlyphId, transform)
-            if (publishDirectComponents) {
-                directComponents += componentReference
             }
             if (componentGlyphId in path) {
                 return failure(fontFailure("font.glyf.composite-cycle", "Composite glyph re-enters the active path.", glyphLocation(glyphId.value)))
@@ -429,8 +512,8 @@ private class GlyphResolver(
                     path = path,
                     depth = depth + 1,
                     publishDirectComponents = false,
-                    remainingPointBudget = pointLimit - pointCount,
-                    remainingContourBudget = contourLimit - contours.size.toLong(),
+                    remainingPointBudget = pointLimit - points.size.toLong(),
+                    remainingContourBudget = contourLimit - contourEndPoints.size.toLong(),
                 )
             ) {
                 is FontOperationResult.Success -> result.value
@@ -438,7 +521,7 @@ private class GlyphResolver(
                 is FontOperationResult.Cancelled -> return result
             }
             if (cancellationToken.isCancellationRequested()) return cancelled()
-            val nextPointCount = checkedAdd(pointCount, child.pointCount.toLong())
+            val nextPointCount = checkedAdd(points.size.toLong(), child.points.size.toLong())
                 ?: return limitFailure(
                     "Composite glyph point budget overflowed.",
                     glyphLocation(glyphId.value),
@@ -453,7 +536,7 @@ private class GlyphResolver(
                     pointLimit,
                 )
             }
-            val nextContourCount = checkedAdd(contours.size.toLong(), child.contours.size.toLong())
+            val nextContourCount = checkedAdd(contourEndPoints.size.toLong(), child.contourEndPoints.size.toLong())
                 ?: return limitFailure(
                     "Composite glyph contour budget overflowed.",
                     glyphLocation(glyphId.value),
@@ -468,15 +551,56 @@ private class GlyphResolver(
                     contourLimit,
                 )
             }
-            for (contour in child.contours) {
-                val transformed = when (val result = transformContour(contour, transform, glyphId.value)) {
-                    is FontOperationResult.Success -> result.value
-                    is FontOperationResult.Failure -> return result
-                    is FontOperationResult.Cancelled -> return result
-                }
-                contours += transformed
+            val transformedChildPoints = ArrayList<GlyphPoint>(child.points.size)
+            for (point in child.points) {
+                val transformed = transformPoint(point.x, point.y, baseTransform)
+                    ?: return geometryOverflow(glyphId.value, "Composite point exceeds Int geometry range.")
+                transformedChildPoints += GlyphPoint(transformed.first, transformed.second, point.onCurve)
             }
-            pointCount = nextPointCount
+            val transform = when (placement) {
+                is ComponentPlacement.Offset -> baseTransform
+                is ComponentPlacement.PointMatch -> {
+                    if (placement.childPointIndex !in transformedChildPoints.indices) {
+                        return failure(
+                            fontFailure(
+                                "font.glyf.component-point-out-of-range",
+                                "Composite child point index is out of range.",
+                                glyphLocation(glyphId.value),
+                            ),
+                        )
+                    }
+                    val parentPoint = points[placement.parentPointIndex]
+                    val childPoint = transformedChildPoints[placement.childPointIndex]
+                    val translationX = parentPoint.x.toLong() - childPoint.x.toLong()
+                    val translationY = parentPoint.y.toLong() - childPoint.y.toLong()
+                    if (translationX !in INT_RANGE || translationY !in INT_RANGE) {
+                        return geometryOverflow(glyphId.value, "Composite point alignment exceeds Int geometry range.")
+                    }
+                    for (index in transformedChildPoints.indices) {
+                        val point = transformedChildPoints[index]
+                        val translatedX = point.x.toLong() + translationX
+                        val translatedY = point.y.toLong() + translationY
+                        if (translatedX !in INT_RANGE || translatedY !in INT_RANGE) {
+                            return geometryOverflow(glyphId.value, "Composite point alignment exceeds Int geometry range.")
+                        }
+                        transformedChildPoints[index] = GlyphPoint(
+                            translatedX.toInt(),
+                            translatedY.toInt(),
+                            point.onCurve,
+                        )
+                    }
+                    baseTransform.copy(
+                        translationX = translationX.toInt(),
+                        translationY = translationY.toInt(),
+                    )
+                }
+            }
+            if (publishDirectComponents) {
+                directComponents += GlyphComponentReference(componentGlyphId, transform)
+            }
+            val pointOffset = points.size
+            points += transformedChildPoints
+            child.contourEndPoints.forEach { contourEndPoints += pointOffset + it }
         } while (flags and COMPOSITE_MORE_COMPONENTS != 0)
 
         if (flags and COMPOSITE_WE_HAVE_INSTRUCTIONS != 0) {
@@ -485,24 +609,22 @@ private class GlyphResolver(
         }
         if (cancellationToken.isCancellationRequested()) return cancelled()
         return FontOperationResult.Success(
-            ScalerGlyphOutline(
+            ResolvedGlyph(
                 glyphId = glyphId.value,
-                unitsPerEm = unitsPerEm,
-                bounds = boundsForContours(contours) ?: bounds,
-                contours = contours,
-                pointCount = pointCount.toInt(),
+                bounds = boundsForPoints(points) ?: bounds,
+                points = points,
+                contourEndPoints = contourEndPoints,
                 components = directComponents,
             ),
         )
     }
 
-    private fun emptyOutline(glyphId: Int): ScalerGlyphOutline =
-        ScalerGlyphOutline(
+    private fun emptyOutline(glyphId: Int): ResolvedGlyph =
+        ResolvedGlyph(
             glyphId = glyphId,
-            unitsPerEm = unitsPerEm,
             bounds = DesignBounds.empty,
-            contours = emptyList(),
-            pointCount = 0,
+            points = emptyList(),
+            contourEndPoints = emptyList(),
             components = emptyList(),
         )
 }
@@ -601,11 +723,19 @@ private fun commandsForContour(points: List<GlyphPoint>): List<GlyphOutlineComma
     return commands
 }
 
-private fun readComponentTranslation(reader: GlyphByteReader, flags: Int): Pair<Int, Int>? =
-    if (flags and COMPOSITE_ARG_1_AND_2_ARE_WORDS != 0) {
-        Pair(reader.readInt16() ?: return null, reader.readInt16() ?: return null)
+private fun readComponentPlacement(reader: GlyphByteReader, flags: Int): ComponentPlacement? =
+    if (flags and COMPOSITE_ARGS_ARE_XY_VALUES != 0) {
+        if (flags and COMPOSITE_ARG_1_AND_2_ARE_WORDS != 0) {
+            ComponentPlacement.Offset(reader.readInt16() ?: return null, reader.readInt16() ?: return null)
+        } else {
+            ComponentPlacement.Offset(reader.readInt8() ?: return null, reader.readInt8() ?: return null)
+        }
     } else {
-        Pair(reader.readInt8() ?: return null, reader.readInt8() ?: return null)
+        if (flags and COMPOSITE_ARG_1_AND_2_ARE_WORDS != 0) {
+            ComponentPlacement.PointMatch(reader.readUInt16() ?: return null, reader.readUInt16() ?: return null)
+        } else {
+            ComponentPlacement.PointMatch(reader.readUInt8() ?: return null, reader.readUInt8() ?: return null)
+        }
     }
 
 private fun readComponentTransform(
@@ -656,38 +786,6 @@ private fun readComponentTransform(
     return FontOperationResult.Success(resolvedTransform)
 }
 
-private fun transformContour(
-    contour: GlyphContour,
-    transform: GlyphComponentTransform,
-    glyphId: Int,
-): FontOperationResult<GlyphContour> {
-    val commands = ArrayList<GlyphOutlineCommand>(contour.commands.size)
-    for (command in contour.commands) {
-        val transformed = when (command) {
-            is GlyphOutlineCommand.MoveTo -> {
-                val point = transformPoint(command.x, command.y, transform)
-                    ?: return geometryOverflow(glyphId, "Composite MoveTo exceeds Int geometry range.")
-                GlyphOutlineCommand.MoveTo(point.first, point.second)
-            }
-            is GlyphOutlineCommand.LineTo -> {
-                val point = transformPoint(command.x, command.y, transform)
-                    ?: return geometryOverflow(glyphId, "Composite LineTo exceeds Int geometry range.")
-                GlyphOutlineCommand.LineTo(point.first, point.second)
-            }
-            is GlyphOutlineCommand.QuadraticTo -> {
-                val control = transformPoint(command.controlX, command.controlY, transform)
-                    ?: return geometryOverflow(glyphId, "Composite quadratic control point exceeds Int geometry range.")
-                val end = transformPoint(command.endX, command.endY, transform)
-                    ?: return geometryOverflow(glyphId, "Composite quadratic endpoint exceeds Int geometry range.")
-                GlyphOutlineCommand.QuadraticTo(control.first, control.second, end.first, end.second)
-            }
-            GlyphOutlineCommand.Close -> GlyphOutlineCommand.Close
-        }
-        commands += transformed
-    }
-    return FontOperationResult.Success(GlyphContour(commands))
-}
-
 private fun transformPoint(x: Int, y: Int, transform: GlyphComponentTransform): Pair<Int, Int>? {
     val vector = transformVector(x, y, transform) ?: return null
     val translatedX = vector.first.toLong() + transform.translationX.toLong()
@@ -711,37 +809,6 @@ private fun floorDiv(dividend: Long, divisor: Long): Long {
     val quotient = dividend / divisor
     val remainder = dividend % divisor
     return if (remainder != 0L && dividend < 0L) quotient - 1L else quotient
-}
-
-private fun boundsForContours(contours: List<GlyphContour>): DesignBounds? {
-    var minX = Int.MAX_VALUE
-    var minY = Int.MAX_VALUE
-    var maxX = Int.MIN_VALUE
-    var maxY = Int.MIN_VALUE
-    var hasPoint = false
-
-    fun include(x: Int, y: Int) {
-        minX = minOf(minX, x)
-        minY = minOf(minY, y)
-        maxX = maxOf(maxX, x)
-        maxY = maxOf(maxY, y)
-        hasPoint = true
-    }
-
-    for (contour in contours) {
-        for (command in contour.commands) {
-            when (command) {
-                is GlyphOutlineCommand.MoveTo -> include(command.x, command.y)
-                is GlyphOutlineCommand.LineTo -> include(command.x, command.y)
-                is GlyphOutlineCommand.QuadraticTo -> {
-                    include(command.controlX, command.controlY)
-                    include(command.endX, command.endY)
-                }
-                GlyphOutlineCommand.Close -> Unit
-            }
-        }
-    }
-    return if (hasPoint) DesignBounds(minX, minY, maxX, maxY) else null
 }
 
 private fun boundsForPoints(points: List<GlyphPoint>): DesignBounds? {
@@ -795,7 +862,7 @@ private fun readMaxpLimits(
     )
 }
 
-private data class MaxpLimits(
+internal data class MaxpLimits(
     val maxPoints: Int,
     val maxContours: Int,
     val maxCompositePoints: Int,
@@ -835,6 +902,40 @@ private data class GlyphPoint(
     val y: Int,
     val onCurve: Boolean,
 )
+
+private data class ResolvedGlyph(
+    val glyphId: Int,
+    val bounds: DesignBounds,
+    val points: List<GlyphPoint>,
+    val contourEndPoints: List<Int>,
+    val components: List<GlyphComponentReference>,
+) {
+    fun toOutline(unitsPerEm: Int): ScalerGlyphOutline {
+        val contours = ArrayList<GlyphContour>(contourEndPoints.size)
+        var start = 0
+        for (end in contourEndPoints) {
+            contours += GlyphContour(commandsForContour(points.subList(start, end + 1)))
+            start = end + 1
+        }
+        return ScalerGlyphOutline(
+            glyphId = glyphId,
+            unitsPerEm = unitsPerEm,
+            bounds = bounds,
+            contours = contours,
+            pointCount = points.size,
+            components = components,
+        )
+    }
+}
+
+private sealed interface ComponentPlacement {
+    data class Offset(val x: Int, val y: Int) : ComponentPlacement
+
+    data class PointMatch(
+        val parentPointIndex: Int,
+        val childPointIndex: Int,
+    ) : ComponentPlacement
+}
 
 private fun truncated(glyphId: Int): FontOperationResult.Failure =
     failure(fontFailure("font.glyf.truncated", "Glyph data is truncated.", glyphLocation(glyphId)))

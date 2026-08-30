@@ -171,6 +171,23 @@ class CmapReaderTest {
         assertEquals(5L, failure.diagnostics.single().data.observedValue)
         assertEquals(5L, failure.diagnostics.single().data.limit)
     }
+
+    @Test
+    fun preparedUnicodeLookupReturnsStableResultsAcrossRepeatedQueries() {
+        val lookup = assertIs<FontOperationResult.Success<UnicodeCmapLookup>>(
+            CmapReader.readUnicodeCmap(
+                cmapTable = cmapTable(format4Subtable(delta = -29)),
+                numGlyphs = 256,
+            ),
+        ).value
+
+        repeat(3) {
+            assertEquals(36, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x41)).value.glyphId.value)
+            val missing = assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x42))
+            assertEquals(0, missing.value.glyphId.value)
+            assertEquals("font.cmap.glyph-not-found", missing.diagnostics.single().code)
+        }
+    }
 }
 
 private fun cmapTable(vararg subtables: CmapSubtable): ByteArray {

@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 
 class GlyphMetricsContractTest {
     @Test
-    fun resolvesAndMeasuresAuditedGlyphs() {
+    fun resolvesAndMeasuresLiberationSansGlyphs() {
         val instance = openInstance(size = 2048f)
         val a = assertIs<FontOperationResult.Success<GlyphResolution>>(instance.resolveGlyph(0x41)).value
         assertEquals(36, a.glyphId.value)

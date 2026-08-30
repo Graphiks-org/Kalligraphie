@@ -27,6 +27,7 @@ public data class FontDiagnosticData(
         require(limit == null || limit >= 0L) { "Diagnostic limit must be non-negative." }
     }
 
+    /** Factory value for diagnostics without numeric context. */
     public companion object {
         /** Empty context for diagnostics without numeric details. */
         public val empty: FontDiagnosticData = FontDiagnosticData()
@@ -249,11 +250,14 @@ public sealed interface FontOperationResult<out T> {
             diagnostics: List<FontDiagnostic> = this.diagnostics,
         ): Success<T> = Success(value, diagnostics)
 
+        /** Compares the payload and canonical diagnostics. */
         override fun equals(other: Any?): Boolean =
             this === other || other is Success<*> && value == other.value && diagnostics == other.diagnostics
 
+        /** Returns a hash derived from the payload and canonical diagnostics. */
         override fun hashCode(): Int = 31 * (value?.hashCode() ?: 0) + diagnostics.hashCode()
 
+        /** Returns a diagnostic representation of this successful result. */
         override fun toString(): String = "Success(value=$value, diagnostics=$diagnostics)"
     }
 
@@ -281,11 +285,14 @@ public sealed interface FontOperationResult<out T> {
             diagnostics: List<FontDiagnostic> = this.diagnostics,
         ): Failure = Failure(error, diagnostics)
 
+        /** Compares the typed error and canonical diagnostics. */
         override fun equals(other: Any?): Boolean =
             this === other || other is Failure && error == other.error && diagnostics == other.diagnostics
 
+        /** Returns a hash derived from the typed error and diagnostics. */
         override fun hashCode(): Int = 31 * error.hashCode() + diagnostics.hashCode()
 
+        /** Returns a diagnostic representation of this failed result. */
         override fun toString(): String = "Failure(error=$error, diagnostics=$diagnostics)"
     }
 
@@ -307,11 +314,14 @@ public sealed interface FontOperationResult<out T> {
             diagnostics: List<FontDiagnostic> = this.diagnostics,
         ): Cancelled = Cancelled(diagnostics)
 
+        /** Compares the canonical cancellation diagnostics. */
         override fun equals(other: Any?): Boolean =
             this === other || other is Cancelled && diagnostics == other.diagnostics
 
+        /** Returns a hash derived from the cancellation diagnostics. */
         override fun hashCode(): Int = diagnostics.hashCode()
 
+        /** Returns a diagnostic representation of this cancelled result. */
         override fun toString(): String = "Cancelled(diagnostics=$diagnostics)"
     }
 }

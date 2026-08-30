@@ -18,10 +18,22 @@ import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
 
-/** Reads horizontal metrics and glyph bounds from a TrueType font. */
-public object MetricsReader {
-    /** Reads and scales the metrics of [glyphId] to [layoutSize]. */
-    public fun readGlyphMetrics(
+/**
+ * Reads horizontal metrics and glyph bounds from a TrueType font.
+ *
+ * Reads are side-effect free and preserve the supplied bytes. Invalid table
+ * data, an unknown glyph, or an unrepresentable scaled value is returned as a
+ * typed failure rather than thrown.
+ */
+internal object MetricsReader {
+    /**
+     * Reads and scales the metrics of [glyphId] to [layoutSize].
+     *
+     * This one-shot entry point prepares its tables for the call. Face-level
+     * clients should use [PreparedTrueTypeFont.readGlyphMetrics] to share the
+     * decoded tables across repeated reads.
+     */
+    internal fun readGlyphMetrics(
         sourceBytes: ByteArray,
         parsedFont: ParsedTrueTypeFont,
         glyphId: GlyphId,
@@ -33,7 +45,24 @@ public object MetricsReader {
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
+        val preparedMetrics = when (val result = prepare(sourceBytes, parsedFont)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val preparedGlyph = when (val result = GlyfReader.prepare(sourceBytes, parsedFont)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return readGlyphMetrics(preparedMetrics, preparedGlyph, glyphId, layoutSize)
+    }
 
+    /** Prepares immutable horizontal metric tables for repeated metric reads. */
+    internal fun prepare(
+        sourceBytes: ByteArray,
+        parsedFont: ParsedTrueTypeFont,
+    ): FontOperationResult<PreparedMetricsData> {
         val hheaRecord = parsedFont.tableRecords["hhea"] ?: return failure(missingTable("hhea"))
         val hhea = slice(sourceBytes, hheaRecord)
             ?: return failure(FontError.OutOfBounds("Table hhea exceeds source length.", tableLocation("hhea")))
@@ -45,10 +74,33 @@ public object MetricsReader {
         if (numberOfHMetrics <= 0 || numberOfHMetrics > parsedFont.metadata.glyphCount) {
             return failure(FontError.InvalidFontData("hhea.numberOfHMetrics is invalid.", tableLocation("hhea")))
         }
+        return FontOperationResult.Success(
+            PreparedMetricsData(
+                hmtx = hmtx,
+                numberOfHMetrics = numberOfHMetrics,
+                glyphCount = parsedFont.metadata.glyphCount,
+                unitsPerEm = parsedFont.metadata.unitsPerEm,
+            ),
+        )
+    }
 
-        val metrics = if (glyphId.value < numberOfHMetrics) {
+    /** Reads metrics from cached tables without reparsing or copying the source font. */
+    internal fun readGlyphMetrics(
+        prepared: PreparedMetricsData,
+        glyphData: PreparedGlyphData,
+        glyphId: GlyphId,
+        layoutSize: Float,
+    ): FontOperationResult<GlyphMetrics> {
+        if (!layoutSize.isFinite()) {
+            return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
+        }
+        if (glyphId.value !in 0 until prepared.glyphCount) {
+            return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+
+        val metrics = if (glyphId.value < prepared.numberOfHMetrics) {
             val offset = glyphId.value.toLong() * 4L
-            if (checkedRangeEnd(offset, 4L, hmtx.size) == null) {
+            if (checkedRangeEnd(offset, 4L, prepared.hmtx.size) == null) {
                 return failure(
                     FontError.OutOfBounds("hmtx longHorMetric record is truncated.", tableLocation("hmtx")),
                     FontDiagnosticData(offset = offset, length = 4L),
@@ -56,24 +108,24 @@ public object MetricsReader {
             }
             val checkedOffset = offset.toInt()
             HorizontalMetrics(
-                advanceWidth = readUInt16(hmtx, checkedOffset)?.toInt()
+                advanceWidth = readUInt16(prepared.hmtx, checkedOffset)?.toInt()
                     ?: return failure(FontError.OutOfBounds("hmtx advanceWidth is truncated.", tableLocation("hmtx"))),
-                leftSideBearing = readInt16(hmtx, checkedOffset + 2)
+                leftSideBearing = readInt16(prepared.hmtx, checkedOffset + 2)
                     ?: return failure(FontError.OutOfBounds("hmtx leftSideBearing is truncated.", tableLocation("hmtx"))),
             )
         } else {
-            val lastMetricOffset = (numberOfHMetrics.toLong() - 1L) * 4L
-            if (checkedRangeEnd(lastMetricOffset, 4L, hmtx.size) == null) {
+            val lastMetricOffset = (prepared.numberOfHMetrics.toLong() - 1L) * 4L
+            if (checkedRangeEnd(lastMetricOffset, 4L, prepared.hmtx.size) == null) {
                 return failure(
                     FontError.OutOfBounds("hmtx longHorMetric record is truncated.", tableLocation("hmtx")),
                     FontDiagnosticData(offset = lastMetricOffset, length = 4L),
                 )
             }
-            val advanceWidth = readUInt16(hmtx, lastMetricOffset.toInt())?.toInt()
+            val advanceWidth = readUInt16(prepared.hmtx, lastMetricOffset.toInt())?.toInt()
                 ?: return failure(FontError.OutOfBounds("hmtx advanceWidth is truncated.", tableLocation("hmtx")))
-            val lsbOffset = numberOfHMetrics.toLong() * 4L +
-                (glyphId.value.toLong() - numberOfHMetrics.toLong()) * 2L
-            if (checkedRangeEnd(lsbOffset, 2L, hmtx.size) == null) {
+            val lsbOffset = prepared.numberOfHMetrics.toLong() * 4L +
+                (glyphId.value.toLong() - prepared.numberOfHMetrics.toLong()) * 2L
+            if (checkedRangeEnd(lsbOffset, 2L, prepared.hmtx.size) == null) {
                 return failure(
                     FontError.OutOfBounds("hmtx trailing leftSideBearing is truncated.", tableLocation("hmtx")),
                     FontDiagnosticData(offset = lsbOffset, length = 2L),
@@ -81,22 +133,22 @@ public object MetricsReader {
             }
             HorizontalMetrics(
                 advanceWidth = advanceWidth,
-                leftSideBearing = readInt16(hmtx, lsbOffset.toInt())
+                leftSideBearing = readInt16(prepared.hmtx, lsbOffset.toInt())
                     ?: return failure(FontError.OutOfBounds("hmtx trailing leftSideBearing is truncated.", tableLocation("hmtx"))),
             )
         }
 
-        val bounds = when (val result = readGlyphBounds(sourceBytes, parsedFont, glyphId)) {
+        val bounds = when (val result = readGlyphBounds(glyphData, glyphId)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
 
-        val advanceWidth = scaleDesignUnit(metrics.advanceWidth, layoutSize, parsedFont.metadata.unitsPerEm)
+        val advanceWidth = scaleDesignUnit(metrics.advanceWidth, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceWidth could not be represented as a finite LayoutUnit."))
-        val leftSideBearing = scaleDesignUnit(metrics.leftSideBearing, layoutSize, parsedFont.metadata.unitsPerEm)
+        val leftSideBearing = scaleDesignUnit(metrics.leftSideBearing, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("leftSideBearing could not be represented as a finite LayoutUnit."))
-        val scaledBounds = scaleBounds(bounds, layoutSize, parsedFont.metadata.unitsPerEm)
+        val scaledBounds = scaleBounds(bounds, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("Glyph bounds could not be represented as finite LayoutUnit values."))
 
         return FontOperationResult.Success(
@@ -126,28 +178,16 @@ public object MetricsReader {
     }
 
     private fun readGlyphBounds(
-        sourceBytes: ByteArray,
-        parsedFont: ParsedTrueTypeFont,
+        glyphData: PreparedGlyphData,
         glyphId: GlyphId,
     ): FontOperationResult<DesignBounds> {
-        val glyfRecord = parsedFont.tableRecords["glyf"] ?: return failure(missingTable("glyf"))
-        val glyf = slice(sourceBytes, glyfRecord)
-            ?: return failure(
-                FontError.OutOfBounds("Table glyf exceeds source length.", tableLocation("glyf")),
-                FontDiagnosticData(offset = glyfRecord.offset, length = glyfRecord.length),
-            )
-        val loca = when (val result = LocaReader.readLoca(sourceBytes, parsedFont, glyf.size)) {
-            is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return result
-            is FontOperationResult.Cancelled -> return result
-        }
-        val range = when (val result = loca.rangeForGlyph(glyphId)) {
+        val range = when (val result = glyphData.loca.rangeForGlyph(glyphId)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
         if (range.start == range.endExclusive) return FontOperationResult.Success(DesignBounds.empty)
-        if (checkedRangeEnd(range.start.toLong(), GLYF_HEADER_LENGTH, glyf.size) == null ||
+        if (checkedRangeEnd(range.start.toLong(), GLYF_HEADER_LENGTH, glyphData.glyf.size) == null ||
             range.start.toLong() + GLYF_HEADER_LENGTH > range.endExclusive.toLong()
         ) {
             return failure(
@@ -156,13 +196,13 @@ public object MetricsReader {
             )
         }
         val bounds = DesignBounds(
-            minX = readInt16(glyf, range.start + 2)
+            minX = readInt16(glyphData.glyf, range.start + 2)
                 ?: return failure(FontError.OutOfBounds("Glyph xMin is truncated.", FontDiagnosticLocation.Glyph(glyphId.value))),
-            minY = readInt16(glyf, range.start + 4)
+            minY = readInt16(glyphData.glyf, range.start + 4)
                 ?: return failure(FontError.OutOfBounds("Glyph yMin is truncated.", FontDiagnosticLocation.Glyph(glyphId.value))),
-            maxX = readInt16(glyf, range.start + 6)
+            maxX = readInt16(glyphData.glyf, range.start + 6)
                 ?: return failure(FontError.OutOfBounds("Glyph xMax is truncated.", FontDiagnosticLocation.Glyph(glyphId.value))),
-            maxY = readInt16(glyf, range.start + 8)
+            maxY = readInt16(glyphData.glyf, range.start + 8)
                 ?: return failure(FontError.OutOfBounds("Glyph yMax is truncated.", FontDiagnosticLocation.Glyph(glyphId.value))),
         )
         if (bounds.minX > bounds.maxX || bounds.minY > bounds.maxY) {
@@ -185,6 +225,13 @@ public object MetricsReader {
 private data class HorizontalMetrics(
     val advanceWidth: Int,
     val leftSideBearing: Int,
+)
+
+internal data class PreparedMetricsData(
+    val hmtx: ByteArray,
+    val numberOfHMetrics: Int,
+    val glyphCount: Int,
+    val unitsPerEm: Int,
 )
 
 private const val GLYF_HEADER_LENGTH = 10L

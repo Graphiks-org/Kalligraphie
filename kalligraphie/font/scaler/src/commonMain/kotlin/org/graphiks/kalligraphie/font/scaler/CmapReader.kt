@@ -14,16 +14,28 @@ import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
 
-/** Resolves Unicode code points through validated TrueType `cmap` tables. */
-public object CmapReader {
-    /** Resolves a code point using the maximum representable glyph range. */
-    public fun resolveGlyphId(cmapTable: ByteArray, codePoint: Int): FontOperationResult<GlyphLookupResult> =
+/**
+ * Resolves Unicode code points through validated TrueType `cmap` tables.
+ *
+ * All methods are read-only with respect to the supplied bytes. Malformed
+ * tables and invalid scalar values are returned as typed failures; no partial
+ * glyph mapping is published.
+ */
+internal object CmapReader {
+    /**
+     * Resolves [codePoint] using the maximum representable glyph range.
+     *
+     * This convenience method validates and decodes the table for the call.
+     * Repeated callers should use [readUnicodeCmap] once and then query the
+     * returned immutable lookup.
+     */
+    internal fun resolveGlyphId(cmapTable: ByteArray, codePoint: Int): FontOperationResult<GlyphLookupResult> =
         resolveGlyphId(cmapTable, codePoint, MAX_GLYPH_ID_EXCLUSIVE)
 
     /**
      * Resolves a code point while validating all published glyph identifiers against [numGlyphs].
      */
-    public fun resolveGlyphId(
+    internal fun resolveGlyphId(
         cmapTable: ByteArray,
         codePoint: Int,
         numGlyphs: Int,
@@ -31,6 +43,25 @@ public object CmapReader {
         if (!codePoint.isUnicodeScalar()) {
             return failure(FontError.InvalidFontData("Code point is outside the Unicode scalar range.", CMAP_LOCATION))
         }
+        val lookup = when (val result = readUnicodeCmap(cmapTable, numGlyphs)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return lookup.resolveGlyphId(codePoint)
+    }
+
+    /**
+     * Selects and validates the Unicode mapping once for repeated glyph lookups.
+     *
+     * The returned lookup owns its decoded mapping and is safe for concurrent
+     * read-only queries. A failure identifies invalid table data or a glyph ID
+     * outside [numGlyphs]; the input byte array is never modified.
+     */
+    internal fun readUnicodeCmap(
+        cmapTable: ByteArray,
+        numGlyphs: Int,
+    ): FontOperationResult<UnicodeCmapLookup> {
         if (numGlyphs !in 1..MAX_GLYPH_ID_EXCLUSIVE) {
             return failure(
                 FontError.InvalidFontData("maxp.numGlyphs is invalid for cmap validation.", CMAP_LOCATION),
@@ -44,26 +75,16 @@ public object CmapReader {
             is FontOperationResult.Cancelled -> return result
         }
 
-        val glyphId = when (subtable.format) {
-            4 -> validateAndLookupFormat4(subtable.bytes, codePoint, numGlyphs)
-            12 -> validateAndLookupFormat12(subtable.bytes, codePoint, numGlyphs)
+        val mapping = when (subtable.format) {
+            4 -> decodeFormat4(subtable.bytes, numGlyphs)
+            12 -> decodeFormat12(subtable.bytes, numGlyphs)
             else -> failure(FontError.InvalidFontData("Unsupported cmap format ${subtable.format}.", CMAP_LOCATION))
         }
 
-        return when (glyphId) {
-            is FontOperationResult.Success -> {
-                val value = glyphId.value
-                if (value == 0) {
-                    FontOperationResult.Success(
-                        GlyphLookupResult(GlyphId(0)),
-                        listOf(glyphNotFoundDiagnostic(codePoint)),
-                    )
-                } else {
-                    FontOperationResult.Success(GlyphLookupResult(GlyphId(value)))
-                }
-            }
-            is FontOperationResult.Failure -> glyphId
-            is FontOperationResult.Cancelled -> glyphId
+        return when (mapping) {
+            is FontOperationResult.Success -> FontOperationResult.Success(UnicodeCmapLookup(mapping.value))
+            is FontOperationResult.Failure -> mapping
+            is FontOperationResult.Cancelled -> mapping
         }
     }
 
@@ -176,11 +197,10 @@ public object CmapReader {
         return FontOperationResult.Success(cmapTable.copyOfRange(offset, end))
     }
 
-    private fun validateAndLookupFormat4(
+    private fun decodeFormat4(
         subtable: ByteArray,
-        codePoint: Int,
         glyphLimit: Int,
-    ): FontOperationResult<Int> {
+    ): FontOperationResult<CmapMapping> {
         val segCountX2 = readUInt16(subtable, 6)?.toInt()
             ?: return failure(FontError.InvalidFontData("Format 4 cmap header is truncated.", CMAP_LOCATION))
         if (segCountX2 == 0 || segCountX2 % 2 != 0) {
@@ -201,7 +221,7 @@ public object CmapReader {
         }
 
         var previousEnd = -1
-        var queriedGlyphId = 0
+        val segments = ArrayList<Format4Segment>(segCount)
         for (segmentIndex in 0 until segCount) {
             val endCodeOffset = endCodesOffset + segmentIndex.toLong() * 2L
             val startCodeOffset = startCodesOffset + segmentIndex.toLong() * 2L
@@ -235,36 +255,36 @@ public object CmapReader {
                 }
             }
 
-            for (mappedCodePoint in startCode..endCode) {
-                val mappedGlyphId = if (idRangeOffset == 0) {
-                    mapWithDelta(mappedCodePoint, idDelta)
-                } else {
+            val glyphIds = if (idRangeOffset == 0) {
+                null
+            } else {
+                IntArray(endCode - startCode + 1) { codePointOffset ->
+                    val mappedCodePoint = startCode + codePointOffset
                     val glyphWordOffset = firstGlyphWordOffset + (mappedCodePoint - startCode).toLong() * 2L
                     val glyphIndex = readUInt16(subtable, glyphWordOffset.toInt())?.toInt()
                         ?: return failure(FontError.InvalidFontData("Format 4 glyphIdArray is truncated.", CMAP_LOCATION))
                     if (glyphIndex == 0) 0 else mapWithDelta(glyphIndex, idDelta)
                 }
+            }
+            for (mappedCodePoint in startCode..endCode) {
+                val mappedGlyphId = glyphIds?.get(mappedCodePoint - startCode)
+                    ?: mapWithDelta(mappedCodePoint, idDelta)
                 if (mappedGlyphId != 0 && mappedGlyphId >= glyphLimit) {
                     return invalidGlyphId(mappedGlyphId.toLong(), glyphLimit)
                 }
-                if (mappedCodePoint == codePoint) {
-                    queriedGlyphId = mappedGlyphId
-                }
             }
+            segments += Format4Segment(startCode, endCode, idDelta, glyphIds)
         }
         if (previousEnd != 0xFFFF) {
             return failure(FontError.InvalidFontData("Format 4 cmap is missing its terminal segment.", CMAP_LOCATION))
         }
-        return FontOperationResult.Success(queriedGlyphId)
+        return FontOperationResult.Success(Format4Mapping(segments))
     }
 
-    private fun mapWithDelta(baseValue: Int, idDelta: Int): Int = (baseValue + idDelta) and 0xFFFF
-
-    private fun validateAndLookupFormat12(
+    private fun decodeFormat12(
         subtable: ByteArray,
-        codePoint: Int,
         glyphLimit: Int,
-    ): FontOperationResult<Int> {
+    ): FontOperationResult<CmapMapping> {
         val numGroups = readUInt32(subtable, 12)?.toLong()
             ?: return failure(FontError.InvalidFontData("Format 12 cmap header is truncated.", CMAP_LOCATION))
         val groupsLength = numGroups * 12L
@@ -274,7 +294,7 @@ public object CmapReader {
 
         var previousEnd = -1L
         var offset = 16L
-        var queriedGlyphId = 0
+        val groups = ArrayList<Format12Group>()
         var groupIndex = 0L
         while (groupIndex < numGroups) {
             val startCharCode = readUInt32(subtable, offset.toInt())?.toLong()
@@ -291,22 +311,12 @@ public object CmapReader {
             if (startGlyphId > 0xFFFFL || finalGlyphId > 0xFFFFL || finalGlyphId >= glyphLimit.toLong()) {
                 return invalidGlyphId(finalGlyphId, glyphLimit)
             }
-            if (codePoint.toLong() in startCharCode..endCharCode) {
-                queriedGlyphId = (startGlyphId + (codePoint.toLong() - startCharCode)).toInt()
-            }
+            groups += Format12Group(startCharCode, endCharCode, startGlyphId)
             offset += 12
             groupIndex += 1
         }
-        return FontOperationResult.Success(queriedGlyphId)
+        return FontOperationResult.Success(Format12Mapping(groups))
     }
-
-    private fun glyphNotFoundDiagnostic(codePoint: Int): FontDiagnostic =
-        FontDiagnostic(
-            code = "font.cmap.glyph-not-found",
-            severity = FontDiagnosticSeverity.INFO,
-            location = CMAP_LOCATION,
-            message = "No glyph mapping exists for U+${codePoint.toString(16).uppercase().padStart(4, '0')}.",
-        )
 
     private fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
         FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
@@ -336,8 +346,6 @@ public object CmapReader {
             FontDiagnosticData(observedValue = glyphId, limit = glyphLimit.toLong()),
         )
 
-    private fun Int.isUnicodeScalar(): Boolean = this in 0..0x10FFFF && this !in 0xD800..0xDFFF
-
     private data class SelectedSubtable(
         val priority: Int,
         val offset: Long,
@@ -350,8 +358,94 @@ public object CmapReader {
 
 }
 
-/** Result of resolving a Unicode code point through a `cmap` table. */
-public data class GlyphLookupResult(
+/**
+ * Immutable selected and validated Unicode `cmap` view for repeated lookups.
+ *
+ * Queries are deterministic, allocation-light binary searches over the
+ * decoded mapping and are safe to perform concurrently.
+ */
+internal class UnicodeCmapLookup internal constructor(
+    private val mapping: CmapMapping,
+) {
+    /** Resolves one Unicode scalar value without rescanning or revalidating the `cmap` table. */
+    internal fun resolveGlyphId(codePoint: Int): FontOperationResult<GlyphLookupResult> {
+        if (!codePoint.isUnicodeScalar()) {
+            return failure(FontError.InvalidFontData("Code point is outside the Unicode scalar range.", CMAP_LOCATION))
+        }
+        val glyphId = mapping.glyphIdFor(codePoint)
+        return if (glyphId == 0) {
+            FontOperationResult.Success(
+                GlyphLookupResult(GlyphId(0)),
+                listOf(glyphNotFoundDiagnostic(codePoint)),
+            )
+        } else {
+            FontOperationResult.Success(GlyphLookupResult(GlyphId(glyphId)))
+        }
+    }
+}
+
+internal interface CmapMapping {
+    fun glyphIdFor(codePoint: Int): Int
+}
+
+private class Format4Mapping(
+    private val segments: List<Format4Segment>,
+) : CmapMapping {
+    override fun glyphIdFor(codePoint: Int): Int {
+        if (codePoint > 0xFFFF) return 0
+        var low = 0
+        var high = segments.lastIndex
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val segment = segments[middle]
+            when {
+                codePoint < segment.startCode -> high = middle - 1
+                codePoint > segment.endCode -> low = middle + 1
+                else -> return segment.glyphIdFor(codePoint)
+            }
+        }
+        return 0
+    }
+}
+
+private data class Format4Segment(
+    val startCode: Int,
+    val endCode: Int,
+    val idDelta: Int,
+    private val glyphIds: IntArray?,
+) {
+    fun glyphIdFor(codePoint: Int): Int =
+        glyphIds?.get(codePoint - startCode) ?: mapWithDelta(codePoint, idDelta)
+}
+
+private class Format12Mapping(
+    private val groups: List<Format12Group>,
+) : CmapMapping {
+    override fun glyphIdFor(codePoint: Int): Int {
+        val value = codePoint.toLong()
+        var low = 0
+        var high = groups.lastIndex
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val group = groups[middle]
+            when {
+                value < group.startCharCode -> high = middle - 1
+                value > group.endCharCode -> low = middle + 1
+                else -> return (group.startGlyphId + value - group.startCharCode).toInt()
+            }
+        }
+        return 0
+    }
+}
+
+private data class Format12Group(
+    val startCharCode: Long,
+    val endCharCode: Long,
+    val startGlyphId: Long,
+)
+
+/** Result of resolving a Unicode code point through a validated `cmap` table. */
+internal data class GlyphLookupResult(
     /** Resolved glyph identifier; zero denotes the missing-glyph glyph. */
     public val glyphId: GlyphId,
 )
@@ -359,3 +453,15 @@ public data class GlyphLookupResult(
 private val CMAP_LOCATION: FontDiagnosticLocation = FontDiagnosticLocation.Table("cmap")
 
 private const val MAX_GLYPH_ID_EXCLUSIVE = 0x10000
+
+private fun mapWithDelta(baseValue: Int, idDelta: Int): Int = (baseValue + idDelta) and 0xFFFF
+
+private fun Int.isUnicodeScalar(): Boolean = this in 0..0x10FFFF && this !in 0xD800..0xDFFF
+
+private fun glyphNotFoundDiagnostic(codePoint: Int): FontDiagnostic =
+    FontDiagnostic(
+        code = "font.cmap.glyph-not-found",
+        severity = FontDiagnosticSeverity.INFO,
+        location = CMAP_LOCATION,
+        message = "No glyph mapping exists for U+${codePoint.toString(16).uppercase().padStart(4, '0')}.",
+    )

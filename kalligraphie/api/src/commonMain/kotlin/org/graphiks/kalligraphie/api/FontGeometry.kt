@@ -5,6 +5,7 @@ public class LayoutUnit private constructor(
     /** The value expressed in layout units. */
     public val value: Float,
 ) : Comparable<LayoutUnit> {
+    /** Factory for finite layout units. */
     public companion object {
         /** Creates a layout unit and rejects non-finite values. */
         public operator fun invoke(value: Float): LayoutUnit {
@@ -13,12 +14,16 @@ public class LayoutUnit private constructor(
         }
     }
 
+    /** Compares layout-unit values numerically. */
     override fun compareTo(other: LayoutUnit): Int = value.compareTo(other.value)
 
+    /** Compares the finite numeric value. */
     override fun equals(other: Any?): Boolean = other is LayoutUnit && value == other.value
 
+    /** Returns a hash derived from the numeric value. */
     override fun hashCode(): Int = value.hashCode()
 
+    /** Returns a diagnostic representation of this layout unit. */
     override fun toString(): String = "LayoutUnit($value)"
 }
 
@@ -33,6 +38,7 @@ public data class DesignBounds(
     /** Maximum vertical coordinate. */
     public val maxY: Int,
 ) {
+    /** Factory value for empty design bounds. */
     public companion object {
         /** Empty bounds for glyphs without ink. */
         public val empty: DesignBounds = DesignBounds(0, 0, 0, 0)
@@ -50,6 +56,7 @@ public data class LayoutBounds(
     /** Maximum vertical coordinate. */
     public val maxY: LayoutUnit,
 ) {
+    /** Factory value for empty layout bounds. */
     public companion object {
         /** Empty bounds for glyphs without ink. */
         public val empty: LayoutBounds = LayoutBounds(

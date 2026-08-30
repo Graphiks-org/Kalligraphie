@@ -23,7 +23,7 @@ import kotlin.test.assertIs
 
 class GlyphOutlineContractTest {
     @Test
-    fun materializesAuditedSimpleGlyphAInDesignUnits() {
+    fun materializesLiberationSansSimpleGlyphAInDesignUnits() {
         val font = openRenderableFont(fixtureBytes())
         val a = assertIs<FontOperationResult.Success<GlyphResolution>>(font.instance.resolveGlyph(0x41)).value
         assertEquals(36, a.glyphId.value)
@@ -41,7 +41,7 @@ class GlyphOutlineContractTest {
     }
 
     @Test
-    fun resolvesAuditedCompositeAdieresisComponentsInDesignUnits() {
+    fun resolvesLiberationSansCompositeAdieresisComponentsInDesignUnits() {
         val font = openRenderableFont(fixtureBytes())
         val adieresis = assertIs<FontOperationResult.Success<GlyphResolution>>(font.instance.resolveGlyph(0x00C4)).value
         assertEquals(134, adieresis.glyphId.value)
