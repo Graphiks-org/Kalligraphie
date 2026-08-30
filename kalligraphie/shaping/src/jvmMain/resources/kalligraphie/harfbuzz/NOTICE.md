@@ -51,8 +51,12 @@ HB_BUILD_GPU_DEMO=OFF
 The macOS dependency allowlist is exactly `@rpath/libharfbuzz.dylib` and
 `/usr/lib/libSystem.B.dylib`. The Linux resource allowlists contain only the
 platform C runtime, math runtime, pthread runtime where applicable, and the
-dynamic loader. CI audits these lists, required FFM exports, reported version,
-and a source rebuild twice on every supported architecture.
+dynamic loader. CI audits these lists, required FFM exports, and the reported
+version. It rebuilds each macOS library twice from the pinned source and
+compares the result byte-for-byte with the embedded resource. For Linux, it
+downloads the pinned LWJGL native artifact, checks its digest, extracts the
+declared library, and compares that library byte-for-byte with the embedded
+resource.
 
 ## Fixed adapter configuration
 
