@@ -37,7 +37,16 @@ public data class UnicodeDataIdentity(
     }
 }
 
-/** Half-open text run sharing one ISO 15924 script and explicit language. */
+/**
+ * Half-open text run sharing one ISO 15924 script and explicit language.
+ *
+ * Script resolution is portable across analyzer implementations: `Zzzz` (Unknown) remains
+ * Unknown; `Zyyy` (Common) and `Zinh` (Inherited) attach to surrounding explicit script
+ * context when it determines one and otherwise remain unchanged; paired punctuation attaches
+ * to its determinable enclosing script; and a `Script_Extensions` value selects a
+ * context-compatible explicit script, then a language-compatible or primary script, before
+ * the lexicographically first ISO 15924 candidate.
+ */
 public data class ScriptLanguageRun(
     /** Snapshot-bound half-open scalar range covered by this run. */
     public val range: TextRange,
@@ -56,16 +65,19 @@ public data class ScriptLanguageRun(
 public data class BidiRun(
     /** Snapshot-bound half-open scalar range covered by this run. */
     public val range: TextRange,
-    /** UAX #9 embedding level, where even levels are LTR and odd levels are RTL. */
+    /** UAX #9 resolved embedding level from 0 through 126; even levels are LTR and odd levels are RTL. */
     public val level: Int,
 ) {
     init {
-        require(level in 0..MAX_BIDI_LEVEL) { "BiDi level must be between 0 and 125." }
+        require(level in 0..MAX_BIDI_LEVEL) { "BiDi level must be between 0 and 126." }
     }
 }
 
 /**
  * Immutable Unicode analysis of one complete snapshot revision.
+ *
+ * Every partition over a non-empty [range] contains non-empty ranges, is complete, and is
+ * bound to that snapshot version.
  *
  * @param graphemeClusters Extended grapheme cluster ranges in logical text order.
  * @param scriptLanguageRuns Script and language runs in logical text order.
@@ -118,6 +130,7 @@ private fun requirePartition(owner: TextRange, ranges: List<TextRange>, label: S
     require(ranges.isNotEmpty()) { "$label must cover the complete analysis range." }
     var expectedStart = owner.start
     ranges.forEach { item ->
+        require(item.start != item.endExclusive) { "$label must not contain empty ranges." }
         require(item.start == expectedStart) { "$label must be contiguous and ordered." }
         require(item.endExclusive.compareTo(owner.endExclusive) <= 0) { "$label must stay within the analysis range." }
         expectedStart = item.endExclusive
@@ -125,4 +138,4 @@ private fun requirePartition(owner: TextRange, ranges: List<TextRange>, label: S
     require(expectedStart == owner.endExclusive) { "$label must cover the complete analysis range." }
 }
 
-private const val MAX_BIDI_LEVEL: Int = 125
+private const val MAX_BIDI_LEVEL: Int = 126

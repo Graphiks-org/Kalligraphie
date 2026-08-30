@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.unicode
 
 import com.ibm.icu.lang.UCharacter
+import com.ibm.icu.lang.UProperty
 import com.ibm.icu.lang.UScript
 import com.ibm.icu.text.Bidi
 import com.ibm.icu.text.BreakIterator
@@ -19,7 +20,7 @@ import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 
 /** Factory for the pinned JVM-reference Unicode analyzer. */
 public object JvmUnicodeAnalyzer {
-    /** Creates an analyzer backed internally by ICU4J 76.1 and Unicode 16.0 data. */
+    /** Creates an analyzer backed internally by ICU4J 77.1 and Unicode 16.0 data. */
     public fun create(): UnicodeAnalyzer = IcuUnicodeAnalyzer()
 }
 
@@ -72,23 +73,26 @@ private fun scriptLanguageRuns(
 ): List<ScriptLanguageRun> {
     if (snapshot.scalars.isEmpty()) return emptyList()
     val languageScript = likelyScript(locale)
-    val candidateScripts = snapshot.scalars.map(::candidateScripts)
+    val scriptProperties = snapshot.scalars.map(::scriptProperties)
+    val pairedScripts = pairedPunctuationScripts(snapshot.scalars, scriptProperties)
     val resolvedScripts = IntArray(snapshot.scalars.size)
     var previousScript: Int? = null
     snapshot.scalars.indices.forEach { scalarIndex ->
-        val candidates = candidateScripts[scalarIndex]
-        val primary = UScript.getScript(snapshot.scalars[scalarIndex]).takeUnless(::isNeutralScript)
-        val nextScript = nextContextScript(candidateScripts, snapshot.scalars, scalarIndex + 1, languageScript)
+        val properties = scriptProperties[scalarIndex]
         val resolved = when {
-            candidates.isEmpty() -> previousScript ?: nextScript ?: languageScript ?: UScript.COMMON
-            previousScript != null && previousScript in candidates -> previousScript
-            languageScript != null && languageScript in candidates -> languageScript
-            primary != null && primary in candidates -> primary
-            nextScript != null && nextScript in candidates -> nextScript
-            else -> candidates.minOrNull() ?: UScript.COMMON
+            properties.script == UScript.UNKNOWN -> UScript.UNKNOWN
+            pairedScripts[scalarIndex] != null -> pairedScripts.getValue(scalarIndex)
+            properties.candidates.isEmpty() ->
+                previousScript ?: nextContextScript(scriptProperties, scalarIndex + 1) ?: properties.script
+            else -> resolveCandidateScript(
+                properties = properties,
+                previousScript = previousScript,
+                nextScript = nextContextScript(scriptProperties, scalarIndex + 1),
+                languageScript = languageScript,
+            )
         }
         resolvedScripts[scalarIndex] = resolved
-        previousScript = resolved
+        previousScript = resolved.takeIf(::isExplicitScript)
     }
 
     val runs = mutableListOf<ScriptLanguageRun>()
@@ -105,6 +109,16 @@ private fun scriptLanguageRuns(
     return runs
 }
 
+private data class ScriptProperties(
+    val script: Int,
+    val candidates: Set<Int>,
+)
+
+private fun scriptProperties(scalar: Int): ScriptProperties = ScriptProperties(
+    script = UScript.getScript(scalar),
+    candidates = candidateScripts(scalar),
+)
+
 private fun candidateScripts(scalar: Int): Set<Int> {
     val scriptExtensions = BitSet()
     UScript.getScriptExtensions(scalar, scriptExtensions)
@@ -120,20 +134,72 @@ private fun candidateScripts(scalar: Int): Set<Int> {
     }
 }
 
-private fun nextContextScript(
-    candidateScripts: List<Set<Int>>,
-    scalars: List<Int>,
-    start: Int,
+private fun resolveCandidateScript(
+    properties: ScriptProperties,
+    previousScript: Int?,
+    nextScript: Int?,
     languageScript: Int?,
+): Int = when {
+    previousScript != null && previousScript in properties.candidates -> previousScript
+    nextScript != null && nextScript in properties.candidates -> nextScript
+    languageScript != null && languageScript in properties.candidates -> languageScript
+    properties.script in properties.candidates -> properties.script
+    else -> properties.candidates.minByOrNull(UScript::getShortName) ?: properties.script
+}
+
+private fun nextContextScript(scriptProperties: List<ScriptProperties>, start: Int): Int? {
+    for (scalarIndex in start until scriptProperties.size) {
+        val properties = scriptProperties[scalarIndex]
+        when {
+            properties.script == UScript.UNKNOWN -> return null
+            isExplicitScript(properties.script) -> return properties.script
+            properties.candidates.size == 1 -> return properties.candidates.single()
+        }
+    }
+    return null
+}
+
+private fun pairedPunctuationScripts(
+    scalars: List<Int>,
+    scriptProperties: List<ScriptProperties>,
+): Map<Int, Int> {
+    val openingIndexes = mutableListOf<Int>()
+    val resolvedScripts = mutableMapOf<Int, Int>()
+    scalars.forEachIndexed { scalarIndex, scalar ->
+        when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)) {
+            UCharacter.BidiPairedBracketType.OPEN -> openingIndexes += scalarIndex
+            UCharacter.BidiPairedBracketType.CLOSE -> {
+                val openingIndex = openingIndexes.lastOrNull() ?: return@forEachIndexed
+                if (UCharacter.getBidiPairedBracket(scalars[openingIndex]) == scalar) {
+                    openingIndexes.removeAt(openingIndexes.lastIndex)
+                    enclosingScript(scriptProperties, openingIndex, scalarIndex)?.let { script ->
+                        resolvedScripts[openingIndex] = script
+                        resolvedScripts[scalarIndex] = script
+                    }
+                }
+            }
+        }
+    }
+    return resolvedScripts
+}
+
+private fun enclosingScript(
+    scriptProperties: List<ScriptProperties>,
+    openingIndex: Int,
+    closingIndex: Int,
 ): Int? {
-    for (scalarIndex in start until candidateScripts.size) {
-        val candidates = candidateScripts[scalarIndex]
-        if (candidates.isEmpty()) continue
-        val primary = UScript.getScript(scalars[scalarIndex]).takeUnless(::isNeutralScript)
-        return when {
-            languageScript != null && languageScript in candidates -> languageScript
-            primary != null && primary in candidates -> primary
-            else -> candidates.minOrNull()
+    val before = previousContextScript(scriptProperties, openingIndex - 1)
+    val after = nextContextScript(scriptProperties, closingIndex + 1)
+    return before?.takeIf { it == after }
+}
+
+private fun previousContextScript(scriptProperties: List<ScriptProperties>, start: Int): Int? {
+    for (scalarIndex in start downTo 0) {
+        val properties = scriptProperties[scalarIndex]
+        when {
+            properties.script == UScript.UNKNOWN -> return null
+            isExplicitScript(properties.script) -> return properties.script
+            properties.candidates.size == 1 -> return properties.candidates.single()
         }
     }
     return null
@@ -145,7 +211,8 @@ private fun likelyScript(locale: ULocale): Int? {
     return UScript.getCodeFromName(script).takeUnless { it == UScript.INVALID_CODE }
 }
 
-private fun isNeutralScript(script: Int): Boolean = script == UScript.COMMON || script == UScript.INHERITED
+private fun isExplicitScript(script: Int): Boolean =
+    script != UScript.COMMON && script != UScript.INHERITED && script != UScript.UNKNOWN
 
 private fun scriptRun(
     snapshot: TextSnapshot,
@@ -235,14 +302,17 @@ private fun verifyPinnedUnicodeData() {
     check(UCharacter.getUnicodeVersion() == VersionInfo.UNICODE_16_0) {
         "ICU4J must provide Unicode 16.0 data."
     }
-    check(VersionInfo.ICU_VERSION.major == 76 && VersionInfo.ICU_VERSION.minor == 1) {
-        "ICU4J 76.1 is required."
+    check(VersionInfo.ICU_VERSION.major == 77 && VersionInfo.ICU_VERSION.minor == 1) {
+        "ICU4J 77.1 is required."
     }
 }
 
 private val UNICODE_DATA: UnicodeDataIdentity = UnicodeDataIdentity(
-    unicodeVersion = "16.0",
+    unicodeVersion = loadedVersion(UCharacter.getUnicodeVersion()),
     implementation = "ICU4J",
-    implementationVersion = "76.1",
+    implementationVersion = loadedVersion(VersionInfo.ICU_VERSION),
 )
+
+private fun loadedVersion(version: VersionInfo): String = "${version.major}.${version.minor}"
+
 private const val INVALID_LANGUAGE_MESSAGE: String = "Language must be a well-formed BCP 47 tag."
