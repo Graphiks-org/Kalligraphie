@@ -241,6 +241,33 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
+    fun realHarfBuzzFfmReadsFrozenAmiriGdefLigatureCarets() {
+        val prepared = text("ffi")
+        val shaped = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance(
+                    resource = "/fonts/amiri/Amiri-Regular.ttf",
+                    declaredName = "Amiri Regular",
+                    layoutSize = LayoutUnit(1000f),
+                ),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+            ),
+        ).successValue()
+
+        assertEquals(listOf(GlyphId(6631)), shaped.glyphs.map { it.glyphId })
+        assertEquals(listOf(LayoutUnit(795f)), shaped.glyphs.map { it.xAdvance })
+        val fact = shaped.ligatureCaretFacts.single()
+        assertEquals(GdefLigatureCaretState.AVAILABLE, fact.state)
+        assertEquals(listOf(index(prepared, 1), index(prepared, 2)), fact.logicalSourceBoundaries)
+        assertEquals(listOf(LayoutUnit(269f), LayoutUnit(537f)), fact.positions)
+    }
+
+    @Test
     fun excessiveNativeGdefTotalIsInconsistentEvenWhenItsBufferWasFilled() {
         val prepared = text("fi")
         val fact = LigatureCaretFactInterpreter.fromNativeResponse(
