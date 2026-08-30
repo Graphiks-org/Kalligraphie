@@ -24,17 +24,3 @@ kotlin {
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
-
-tasks.register("fontTest") {
-    group = "verification"
-    dependsOn(
-        ":kalligraphie:api:jvmTest",
-        ":kalligraphie:font:sfnt:jvmTest",
-        ":kalligraphie:font:scaler:jvmTest",
-        ":kalligraphie:font:glyph:jvmTest",
-        ":kalligraphie:unicode:jvmTest",
-        ":kalligraphie:shaping:jvmTest",
-        ":kalligraphie:layout:jvmTest",
-        ":kalligraphie:jvmTest",
-    )
-}

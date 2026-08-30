@@ -17,8 +17,8 @@ Kalligraphie est une bibliothèque portable Kotlin Multiplatform (KMP) de gestio
 ## Commandes utiles
 
 ```bash
-# Exécuter tous les tests JVM de la pile de polices.
-./gradlew :kalligraphie:fontTest
+# Exécuter le cycle de vérification Gradle standard.
+./gradlew check
 
 # Générer et intégrer la documentation de l’API (Dokka → MkDocs).
 ./gradlew :docs:embedDokkaIntoMkDocs

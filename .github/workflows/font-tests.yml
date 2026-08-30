@@ -1,4 +1,4 @@
-name: Kalligraphie font business tests
+name: Kalligraphie verification
 
 on:
   pull_request:
@@ -33,7 +33,7 @@ jobs:
           java-version: '25'
           cache: gradle
       - run: chmod +x gradlew
-      - run: ./gradlew --no-daemon :kalligraphie:fontTest
+      - run: ./gradlew --no-daemon check
 
   shaping-native:
     name: HarfBuzz JVM (${{ matrix.target }})

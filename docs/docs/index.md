@@ -17,8 +17,8 @@ Kalligraphie is a portable KMP font library. Its API is split into focused Gradl
 ## Useful commands
 
 ```bash
-# Run all JVM tests for the font stack.
-./gradlew :kalligraphie:fontTest
+# Run the standard Gradle verification lifecycle.
+./gradlew check
 
 # Generate and embed the API reference (Dokka → MkDocs).
 ./gradlew :docs:embedDokkaIntoMkDocs

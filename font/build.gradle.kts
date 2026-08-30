@@ -11,16 +11,3 @@ dependencies {
     api(project(":font:glyph"))
     testImplementation(kotlin("test"))
 }
-
-tasks.register("fontTest") {
-    group = "verification"
-    dependsOn(
-        ":font:core:test",
-        ":font:sfnt:test",
-        ":font:colr:test",
-        ":font:scaler:test",
-        ":font:text:test",
-        ":font:glyph:test",
-        ":font:test",
-    )
-}
