@@ -278,6 +278,32 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
+    fun realHarfBuzzRejectsUnadjustedGdefCaretsForAKernedLigature() {
+        val prepared = text("fiV")
+        val shaped = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance(
+                    resource = "/fonts/gdef-kern/GdefKerningFixture.ttf",
+                    declaredName = "Kalligraphie GDEF Kerning Fixture",
+                    layoutSize = LayoutUnit(1000f),
+                ),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+            ),
+        ).successValue()
+
+        assertEquals(listOf(GlyphId(3), GlyphId(4)), shaped.glyphs.map { it.glyphId })
+        assertEquals(listOf(LayoutUnit(800f), LayoutUnit(600f)), shaped.glyphs.map { it.xAdvance })
+        val fact = shaped.ligatureCaretFacts.single()
+        assertEquals(GdefLigatureCaretState.INCONSISTENT, fact.state)
+        assertEquals(listOf(index(prepared, 1)), fact.logicalSourceBoundaries)
+        assertEquals(emptyList(), fact.positions)
+    }
+
+    @Test
     fun gdefCaretsAreRejectedWhenTheShapedLigatureAdvanceContainsKerning() {
         val prepared = text("ffi")
         val fact = LigatureCaretFactInterpreter.fromNativeResponse(
