@@ -8,6 +8,9 @@ kotlin {
             api(project(":kalligraphie:api"))
             implementation(project(":kalligraphie:font:core"))
             implementation(project(":kalligraphie:font:sfnt"))
+            api(project(":kalligraphie:unicode"))
+            api(project(":kalligraphie:shaping"))
+            api(project(":kalligraphie:layout"))
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
@@ -16,6 +19,10 @@ kotlin {
             implementation(kotlin("test"))
         }
     }
+}
+
+tasks.withType<Test>().configureEach {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
 tasks.register("fontTest") {
