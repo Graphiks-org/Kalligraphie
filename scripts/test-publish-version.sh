@@ -2,7 +2,7 @@
 set -euo pipefail
 
 expected_version="1.0.0-SNAPSHOT"
-actual_version="$(./gradlew :shared:properties --no-daemon --console=plain -PreleaseVersion= \
+actual_version="$(./gradlew :kalligraphie:properties --no-daemon --console=plain -PreleaseVersion="${expected_version}" \
   | sed -n 's/^version: //p' \
   | tail -n 1)"
 
