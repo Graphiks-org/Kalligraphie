@@ -25,3 +25,18 @@ x + U+0301: glyphs 91 and 707; accent offset (-249, -340)
 
 The test never calls `hb-shape` at runtime and does not use the embedded
 HarfBuzz backend as its oracle.
+
+## Fallback rejection oracle
+
+For the deep fallback scenario, `hb-shape 14.4.0` on this unchanged artifact
+reported no usable glyph mapping for Arabic `سلام`:
+
+```text
+hb-shape --no-glyph-names LiberationSans-Regular.ttf 'سلام'
+[0=3+1536|0=2+1536|0=1+1536|0=0+1536]
+```
+
+Human review verified that every emitted glyph identifier is `.notdef` (zero),
+which makes the candidate unsuitable for the complete Arabic unit. The
+consumer test stores only its independently reviewed consequence and never
+executes `hb-shape` at runtime.

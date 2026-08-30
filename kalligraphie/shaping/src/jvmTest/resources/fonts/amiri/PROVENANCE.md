@@ -29,3 +29,23 @@ GDEF ligature carets: AVAILABLE, logical boundaries [1, 2], positions [269, 537]
 This oracle is fixed fixture data. The test calls the Kotlin backend once and
 compares its result with these constants; it neither invokes a second
 HarfBuzz call nor uses the backend under test as an oracle.
+
+## Multiscript fallback oracle
+
+The Arabic portion of the mixed Latin/Arabic consumer scenario was separately
+audited with the unchanged checked-in TTF and `hb-shape 14.4.0`:
+
+```sh
+hb-shape --direction=rtl --script=Arab --language=ar --no-glyph-names \
+  Amiri-Regular.ttf 'سلام'
+```
+
+```text
+[85=3+452|3080=2+446|3075=1+245|1919=0+568]
+```
+
+The expected glyph identifiers, advances, and reverse cluster order in the
+consumer test were transcribed from this independent command. A human review
+confirmed that the command names the checked-in Amiri artifact, uses Arabic
+script and language, and preserves the logical scalar clusters `0` through
+`3` while HarfBuzz emits RTL glyph order. The test never runs this command.

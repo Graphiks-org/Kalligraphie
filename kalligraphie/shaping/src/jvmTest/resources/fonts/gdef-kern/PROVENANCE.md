@@ -61,3 +61,18 @@ cc -std=c11 -I "$SOURCE_ROOT/src" AuditProbe.c \
   -o audit-probe
 ./audit-probe GdefKerningFixture.ttf
 ```
+
+## Outline fallback oracle
+
+The same checked-in CC0 artifact was also inspected with `hb-shape 14.4.0`:
+
+```text
+hb-shape --no-glyph-names GdefKerningFixture.ttf 'fi'
+[3=0+900]
+```
+
+`FixtureBuild.py` constructs `f_i` as one closed rectangular contour with four
+points. Human review verified that this geometry fits an outline profile whose
+maximum is one contour, so it is the audited fallback for a DejaVu `fi`
+ligature that exceeds that profile. The consumer test freezes these external
+facts and does not invoke HarfBuzz to derive an expected value.
