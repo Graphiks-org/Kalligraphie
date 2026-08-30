@@ -30,14 +30,20 @@ public class TextIndex internal constructor(
     /** Returns whether this index is compatible with the supplied snapshot version. */
     internal fun belongsTo(candidate: TextSnapshot): Boolean = version == candidate.version
 
-    /** Returns whether this index and [other] belong to the same text version. */
-    internal fun sharesVersionWith(other: TextIndex): Boolean = version == other.version
-
-    /** Compares two boundaries that belong to the same text version. */
-    internal fun compareTo(other: TextIndex): Int {
+    /**
+     * Compares two opaque boundaries in logical scalar order.
+     *
+     * Both boundaries must belong to one [TextVersion]; comparing different versions throws
+     * [IllegalArgumentException]. The result exposes ordering only, never the private scalar
+     * ordinal or any source-encoding offset.
+     */
+    public operator fun compareTo(other: TextIndex): Int {
         require(version == other.version) { "Text indices must belong to the same version." }
         return ordinal.compareTo(other.ordinal)
     }
+
+    /** Returns whether this boundary and [other] belong to the same text version. */
+    public fun sharesVersionWith(other: TextIndex): Boolean = version == other.version
 
     override fun equals(other: Any?): Boolean =
         other is TextIndex && version == other.version && ordinal == other.ordinal
@@ -223,11 +229,42 @@ public class TextSnapshot(
         return sourceRanges[index.ordinal]
     }
 
+    /**
+     * Returns immutable scalar values in [range] in logical order.
+     *
+     * The range must belong to this snapshot and is interpreted as half-open scalar
+     * boundaries. The result owns an immutable collection snapshot and is safe to share
+     * between threads; it does not reveal the private representation of [TextIndex].
+     */
+    public fun scalarValues(range: TextRange): List<Int> {
+        require(contains(range)) { "Text range must belong to this snapshot." }
+        return scalars.subList(range.start.ordinal, range.endExclusive.ordinal).immutableListSnapshot()
+    }
+
+    /**
+     * Returns one half-open scalar range per scalar in [range], in logical order.
+     *
+     * The input must belong to this snapshot. Returned ranges are bound to this snapshot's
+     * version, contain no encoding offsets, and form an immutable partition of [range].
+     */
+    public fun scalarRanges(range: TextRange): List<TextRange> {
+        require(contains(range)) { "Text range must belong to this snapshot." }
+        return (range.start.ordinal until range.endExclusive.ordinal)
+            .map { ordinal -> TextRange(textIndexAtScalarBoundary(ordinal), textIndexAtScalarBoundary(ordinal + 1)) }
+            .immutableListSnapshot()
+    }
+
     /** Returns whether the supplied source range lies entirely within this snapshot. */
     internal fun contains(sourceRange: SourceRange): Boolean =
         sourceRange.start.version == version &&
             sourceRange.start.encoding == sourceEncoding &&
             sourceRange.endExclusive.value <= sourceLength
+
+    /** Returns whether [range] is a scalar range bound to this snapshot. */
+    internal fun contains(range: TextRange): Boolean =
+        range.start.belongsTo(this) &&
+            range.endExclusive.belongsTo(this) &&
+            range.endExclusive.ordinal <= scalars.size
 
     private fun scalarIndexContaining(sourceOffset: Int): Int {
         var lower = 0

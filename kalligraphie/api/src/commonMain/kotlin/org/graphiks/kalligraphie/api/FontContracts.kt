@@ -320,6 +320,18 @@ public interface FontInstance {
         unsupportedContractOperation("This font instance does not support glyph metrics.")
 
     /**
+     * Returns an owned defensive copy of the OpenType bytes for this instance's face.
+     *
+     * The returned [OpenTypeFontData] remains independent of this instance and may be
+     * shared between threads. The caller owns every byte-array copy requested from it;
+     * modifying such a copy never changes the instance. Implementations that cannot
+     * preserve this isolation return a typed capability failure rather than exposing
+     * provider, platform, or native storage.
+     */
+    public fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> =
+        unsupportedOpenTypeDataOperation()
+
+    /**
      * Acquires a render asset for [variant] using [resolver] and [requirements].
      *
      * The resolver must belong to the same source as this instance. A
@@ -332,6 +344,32 @@ public interface FontInstance {
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontRenderAssetHandle> =
         unsupportedContractOperation("This font instance does not support render assets.")
+}
+
+/**
+ * Immutable, owned OpenType source bytes for one concrete face.
+ *
+ * The container captures its input before construction and returns a fresh copy from
+ * [copyBytes]. It contains no borrowed, native, or platform-specific storage. Instances
+ * are safe to share between threads; callers own returned arrays and may mutate them.
+ */
+public class OpenTypeFontData(
+    /** Identity of the face described by these bytes. */
+    public val face: FontFaceId,
+    sourceBytes: ByteArray,
+) {
+    private val capturedBytes: ByteArray = sourceBytes.copyOf()
+
+    init {
+        require(capturedBytes.isNotEmpty()) { "OpenType font data must not be empty." }
+    }
+
+    /** Number of captured OpenType bytes. */
+    public val sizeInBytes: Int
+        get() = capturedBytes.size
+
+    /** Returns a caller-owned copy of the immutable captured OpenType bytes. */
+    public fun copyBytes(): ByteArray = capturedBytes.copyOf()
 }
 
 @JvmInline
@@ -1021,5 +1059,14 @@ internal fun canonicalGlyphCoordinate(value: Double): Double {
 
 private fun <Value> unsupportedContractOperation(message: String): FontOperationResult<Value> {
     val error = FontError.UnsupportedRepresentationProfile(message)
+    return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
+}
+
+private fun unsupportedOpenTypeDataOperation(): FontOperationResult<OpenTypeFontData> {
+    val error = FontError.FontDataFailure(
+        code = "font.open-type-data-unavailable",
+        message = "This font instance cannot provide isolated OpenType bytes.",
+        location = FontDiagnosticLocation.Source,
+    )
     return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
 }
