@@ -24,13 +24,12 @@ import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.glyph.OutlineMaterializer
-import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 
 internal class TrueTypeFace(
     private val sourceId: FontSourceId,
     private val parsedFont: ParsedTrueTypeFont,
-    private val preparedFont: PreparedTrueTypeFont,
+    private val resource: PreparedFontResource,
 ) : FontFace {
     override val metadata: FontFaceMetadata = parsedFont.metadata
     override val id: FontFaceId = FontFaceId("${sourceId.value}#0")
@@ -48,7 +47,7 @@ internal class TrueTypeFace(
             TrueTypeFontInstance(
                 key = instanceKey(descriptor),
                 descriptor = descriptor,
-                preparedFont = preparedFont,
+                resource = resource,
                 faceId = id,
                 sourceId = sourceId,
             ),
@@ -65,16 +64,16 @@ internal class TrueTypeFace(
 private data class TrueTypeFontInstance(
     override val key: FontInstanceKey,
     private val descriptor: FontInstanceDescriptor,
-    private val preparedFont: PreparedTrueTypeFont,
+    private val resource: PreparedFontResource,
     private val faceId: FontFaceId,
     private val sourceId: FontSourceId,
 ) : FontInstance {
     override fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution> {
-        return preparedFont.resolveGlyph(codePoint)
+        return resource.preparedFont.resolveGlyph(codePoint)
     }
 
     override fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> =
-        preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value)
+        resource.preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value)
 
     override fun acquireRenderAsset(
         resolver: FontAssetResolverHandle,
@@ -104,13 +103,13 @@ private data class TrueTypeFontInstance(
         if (resolver !is EmbeddedFontAssetResolver) {
             return failure(FontError.InvalidFontData("Resolver was not opened by the embedded TrueType catalog.", FontDiagnosticLocation.Face(0)))
         }
-        val lease = resolver.acquireLease()
+        val lease = resolver.acquireAssetLease()
             ?: return failure(FontError.ResourceClosed("Asset resolver is closed."))
         return try {
             FontOperationResult.Success(
                 TrueTypeRenderAssetHandle(
                     faceId = faceId,
-                    preparedFont = preparedFont,
+                    resourceLease = lease,
                     profile = outlineProfile,
                 ),
             )
@@ -123,19 +122,21 @@ private data class TrueTypeFontInstance(
 
 private class TrueTypeRenderAssetHandle(
     override val faceId: FontFaceId,
-    private val preparedFont: PreparedTrueTypeFont,
+    private var resourceLease: PreparedFontResourceLease?,
     private val profile: org.graphiks.kalligraphie.api.OutlineProfile,
 ) : FontRenderAssetHandle {
-    private val lifecycle = FontHandleLifecycle()
+    private val lifecycle = FontHandleLifecycle(::releaseResourceLease)
 
     override fun detach(): FontOperationResult<FontRenderAssetHandle> {
         val lease = lifecycle.acquireLease()
             ?: return failure(FontError.ResourceClosed("Render asset is closed."))
         return try {
+            val detachedResourceLease = resourceLease?.resource?.acquireLease()
+                ?: return failure(FontError.ResourceClosed("Render asset is closed."))
             FontOperationResult.Success(
                 TrueTypeRenderAssetHandle(
                     faceId = faceId,
-                    preparedFont = preparedFont,
+                    resourceLease = detachedResourceLease,
                     profile = profile.copy(),
                 ),
             )
@@ -157,6 +158,8 @@ private class TrueTypeRenderAssetHandle(
             if (cancellationToken.isCancellationRequested()) {
                 return FontOperationResult.Cancelled()
             }
+            val preparedFont = resourceLease?.preparedFont
+                ?: return failure(FontError.ResourceClosed("Render asset is closed."))
             val outline = when (val result = preparedFont.readGlyphOutline(GlyphId(request.glyphId), profile, cancellationToken)) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
@@ -174,6 +177,11 @@ private class TrueTypeRenderAssetHandle(
     override fun close(): FontOperationResult<Unit> {
         lifecycle.close()
         return FontOperationResult.Success(Unit)
+    }
+
+    private fun releaseResourceLease() {
+        resourceLease?.release()
+        resourceLease = null
     }
 }
 

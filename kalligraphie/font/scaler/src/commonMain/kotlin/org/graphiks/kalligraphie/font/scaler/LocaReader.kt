@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.font.scaler
 
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticData
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -29,7 +30,9 @@ internal object LocaReader {
         sourceBytes: ByteArray,
         parsedFont: ParsedTrueTypeFont,
         glyfLength: Int,
+        cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<LocaTable> {
+        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         val locaRecord = parsedFont.tableRecords["loca"] ?: return failure(missingTable("loca"))
         val loca = slice(sourceBytes, locaRecord)
             ?: return failure(fontFailure("font.loca.out-of-range", "Table loca exceeds source length.", tableLocation("loca")))
@@ -55,6 +58,7 @@ internal object LocaReader {
 
         val offsets = ArrayList<Int>(entryCount.toInt())
         repeat(entryCount.toInt()) { index ->
+            if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
             val offset = when (parsedFont.indexToLocFormat) {
                 0 -> {
                     val value = readUInt16(loca, index * 2)?.toInt()
@@ -79,6 +83,7 @@ internal object LocaReader {
             }
             offsets += offset
         }
+        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         return FontOperationResult.Success(LocaTable(offsets))
     }
 

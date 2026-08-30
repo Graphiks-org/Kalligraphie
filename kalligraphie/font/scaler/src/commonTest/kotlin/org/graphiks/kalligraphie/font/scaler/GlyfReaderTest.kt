@@ -290,7 +290,8 @@ class GlyfReaderTest {
         val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
 
         val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(result).value
-        assertEquals(DesignBounds(5, 8, 25, 20), outline.bounds)
+        assertEquals(DesignBounds(5, 7, 25, 20), outline.bounds)
+        assertEquals(GlyphOutlineCommand.LineTo(25.0, 7.5), outline.contours.single().commands[2])
     }
 
     @Test
@@ -393,7 +394,7 @@ class GlyfReaderTest {
         val result = GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile())
 
         val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(result).value
-        assertEquals(DesignBounds(110, 215, 150, 252), outline.bounds)
+        assertEquals(DesignBounds(110, 215, 150, 253), outline.bounds)
         assertEquals(
             listOf(
                 GlyphOutlineCommand.MoveTo(110, 220),
@@ -405,8 +406,8 @@ class GlyfReaderTest {
         )
         assertEquals(
             listOf(
-                GlyphOutlineCommand.MoveTo(110, 242),
-                GlyphOutlineCommand.LineTo(120, 252),
+                GlyphOutlineCommand.MoveTo(110.0, 242.5),
+                GlyphOutlineCommand.LineTo(120.0, 252.5),
                 GlyphOutlineCommand.LineTo(130, 240),
                 GlyphOutlineCommand.Close,
             ),

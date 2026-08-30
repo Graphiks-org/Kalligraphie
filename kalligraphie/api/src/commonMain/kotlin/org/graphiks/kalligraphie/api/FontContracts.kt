@@ -379,7 +379,14 @@ public sealed interface GlyphRepresentation {
     ) : GlyphRepresentation
 }
 
-/** Immutable intermediate representation of a glyph outline. */
+/**
+ * Immutable intermediate representation of a glyph outline.
+ *
+ * Contour command coordinates are `Double` design units so implicit TrueType
+ * points and composite transforms keep their fractional values. [bounds] is
+ * the conservative integer envelope used by the existing bounds contract;
+ * consumers needing exact geometry should consume [contours].
+ */
 public class GlyphOutlineIR(
     /** Numeric glyph identifier. */
     public val glyphId: Int,
@@ -445,29 +452,45 @@ public class GlyphOutlineIR(
     public sealed interface Command {
         /** Starts a contour at a design-space point. */
         public data class MoveTo(
-            /** Horizontal coordinate. */
-            public val x: Int,
-            /** Vertical coordinate. */
-            public val y: Int,
-        ) : Command
+            /** Horizontal coordinate, preserving fractional design units. */
+            public val x: Double,
+            /** Vertical coordinate, preserving fractional design units. */
+            public val y: Double,
+        ) : Command {
+            /** Creates a command from integral design-unit coordinates. */
+            public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+        }
+
         /** Adds a line segment to a design-space point. */
         public data class LineTo(
-            /** Horizontal coordinate. */
-            public val x: Int,
-            /** Vertical coordinate. */
-            public val y: Int,
-        ) : Command
+            /** Horizontal coordinate, preserving fractional design units. */
+            public val x: Double,
+            /** Vertical coordinate, preserving fractional design units. */
+            public val y: Double,
+        ) : Command {
+            /** Creates a command from integral design-unit coordinates. */
+            public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+        }
+
         /** Adds a quadratic Bézier segment. */
         public data class QuadraticTo(
-            /** Control-point horizontal coordinate. */
-            public val controlX: Int,
-            /** Control-point vertical coordinate. */
-            public val controlY: Int,
-            /** End-point horizontal coordinate. */
-            public val endX: Int,
-            /** End-point vertical coordinate. */
-            public val endY: Int,
-        ) : Command
+            /** Control-point horizontal coordinate, preserving fractions. */
+            public val controlX: Double,
+            /** Control-point vertical coordinate, preserving fractions. */
+            public val controlY: Double,
+            /** End-point horizontal coordinate, preserving fractions. */
+            public val endX: Double,
+            /** End-point vertical coordinate, preserving fractions. */
+            public val endY: Double,
+        ) : Command {
+            /** Creates a command from integral design-unit coordinates. */
+            public constructor(controlX: Int, controlY: Int, endX: Int, endY: Int) : this(
+                controlX.toDouble(),
+                controlY.toDouble(),
+                endX.toDouble(),
+                endY.toDouble(),
+            )
+        }
 
         /** Closes the current contour. */
         public data object Close : Command
@@ -588,29 +611,45 @@ public class GlyphContour(
 public sealed interface GlyphOutlineCommand {
     /** Starts a contour at a design-space point. */
     public data class MoveTo(
-        /** Horizontal coordinate. */
-        public val x: Int,
-        /** Vertical coordinate. */
-        public val y: Int,
-    ) : GlyphOutlineCommand
+        /** Horizontal coordinate, preserving fractional design units. */
+        public val x: Double,
+        /** Vertical coordinate, preserving fractional design units. */
+        public val y: Double,
+    ) : GlyphOutlineCommand {
+        /** Creates a command from integral design-unit coordinates. */
+        public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+    }
+
     /** Adds a line segment to a design-space point. */
     public data class LineTo(
-        /** Horizontal coordinate. */
-        public val x: Int,
-        /** Vertical coordinate. */
-        public val y: Int,
-    ) : GlyphOutlineCommand
+        /** Horizontal coordinate, preserving fractional design units. */
+        public val x: Double,
+        /** Vertical coordinate, preserving fractional design units. */
+        public val y: Double,
+    ) : GlyphOutlineCommand {
+        /** Creates a command from integral design-unit coordinates. */
+        public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+    }
+
     /** Adds a quadratic Bézier segment. */
     public data class QuadraticTo(
-        /** Control-point horizontal coordinate. */
-        public val controlX: Int,
-        /** Control-point vertical coordinate. */
-        public val controlY: Int,
-        /** End-point horizontal coordinate. */
-        public val endX: Int,
-        /** End-point vertical coordinate. */
-        public val endY: Int,
-    ) : GlyphOutlineCommand
+        /** Control-point horizontal coordinate, preserving fractions. */
+        public val controlX: Double,
+        /** Control-point vertical coordinate, preserving fractions. */
+        public val controlY: Double,
+        /** End-point horizontal coordinate, preserving fractions. */
+        public val endX: Double,
+        /** End-point vertical coordinate, preserving fractions. */
+        public val endY: Double,
+    ) : GlyphOutlineCommand {
+        /** Creates a command from integral design-unit coordinates. */
+        public constructor(controlX: Int, controlY: Int, endX: Int, endY: Int) : this(
+            controlX.toDouble(),
+            controlY.toDouble(),
+            endX.toDouble(),
+            endY.toDouble(),
+        )
+    }
 
     /** Closes the current contour. */
     public data object Close : GlyphOutlineCommand
@@ -630,10 +669,10 @@ public data class GlyphComponentReference(
 
 /** Two-dimensional affine transform for a composite glyph component. */
 public data class GlyphComponentTransform(
-    /** Horizontal translation in design units. */
-    public val translationX: Int,
-    /** Vertical translation in design units. */
-    public val translationY: Int,
+    /** Horizontal translation in design units, preserving fractions. */
+    public val translationX: Double,
+    /** Vertical translation in design units, preserving fractions. */
+    public val translationY: Double,
     /** F2DOT14 horizontal-to-horizontal scale. */
     public val xxF2Dot14: Int = 16_384,
     /** F2DOT14 horizontal-to-vertical shear. */
@@ -642,7 +681,24 @@ public data class GlyphComponentTransform(
     public val xyF2Dot14: Int = 0,
     /** F2DOT14 vertical-to-vertical scale. */
     public val yyF2Dot14: Int = 16_384,
-)
+) {
+    /** Creates a transform from integral design-unit translations. */
+    public constructor(
+        translationX: Int,
+        translationY: Int,
+        xxF2Dot14: Int = 16_384,
+        yxF2Dot14: Int = 0,
+        xyF2Dot14: Int = 0,
+        yyF2Dot14: Int = 16_384,
+    ) : this(
+        translationX.toDouble(),
+        translationY.toDouble(),
+        xxF2Dot14,
+        yxF2Dot14,
+        xyF2Dot14,
+        yyF2Dot14,
+    )
+}
 
 /** Resource limits attached to a materialized outline. */
 public data class GlyphOutlineLimits(

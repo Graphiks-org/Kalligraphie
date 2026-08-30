@@ -13,6 +13,7 @@ import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphId
+import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.LayoutUnit
@@ -53,8 +54,26 @@ class GlyphOutlineContractTest {
 
         assertEquals(DesignBounds(4, 0, 1362, 1714), outline.bounds)
         assertEquals(listOf(36, 2338), outline.components.map { it.glyphId })
-        assertEquals(364, outline.components[1].transform.translationX)
-        assertEquals(0, outline.components[1].transform.translationY)
+        assertEquals(364.0, outline.components[1].transform.translationX)
+        assertEquals(0.0, outline.components[1].transform.translationY)
+    }
+
+    @Test
+    fun preservesLiberationSansDollarImplicitMidpointInContourCommands() {
+        val font = openRenderableFont(fixtureBytes())
+        val dollar = assertIs<FontOperationResult.Success<GlyphResolution>>(font.instance.resolveGlyph(0x24)).value
+        assertEquals(7, dollar.glyphId.value)
+
+        val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
+            font.asset.resolveGlyph(FontGlyphRequest(dollar.glyphId)),
+        ).value
+        val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
+        val quadratic = outline.contours.first().commands
+            .filterIsInstance<GlyphOutlineCommand.QuadraticTo>()
+            .first { it.controlX == 217.0 && it.controlY == 297.0 }
+
+        assertEquals(296.5, quadratic.endX)
+        assertEquals(237.0, quadratic.endY)
     }
 
     @Test

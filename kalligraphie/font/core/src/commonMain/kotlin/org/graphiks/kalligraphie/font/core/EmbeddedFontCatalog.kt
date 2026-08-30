@@ -19,25 +19,39 @@ import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
-/** Catalog implementation for an immutable embedded TrueType source. */
+/**
+ * Catalog implementation for an immutable embedded TrueType source.
+ *
+ * The catalog keeps the parsed snapshot and an explicit shared resource
+ * owner. Faces and instances are immutable views of that owner; they do not
+ * own an asset lease or expose its byte buffers. Resolver and render-asset
+ * handles acquire independent leases, and a detached asset never stores a
+ * reference to this catalog.
+ *
+ * @param source captured source bytes and provenance used to build the catalog.
+ * @param parsedFont validated metadata describing [source].
+ */
 public class EmbeddedFontCatalog(
-    private val source: FontSource,
-    private val parsedFont: ParsedTrueTypeFont,
+    source: FontSource,
+    parsedFont: ParsedTrueTypeFont,
 ) : FontCatalogSnapshot {
+    private val resource = PreparedFontResource(PreparedTrueTypeFont(source, parsedFont))
+    private val catalogSourceId: FontSourceId = source.id
+
     private val face: TrueTypeFace by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         TrueTypeFace(
-            sourceId = source.id,
+            sourceId = catalogSourceId,
             parsedFont = parsedFont,
-            preparedFont = PreparedTrueTypeFont(source, parsedFont),
+            resource = resource,
         )
     }
 
     /** Identifier of the embedded source. */
-    override val sourceId: FontSourceId = source.id
+    override val sourceId: FontSourceId = catalogSourceId
 
     /** Opens a resolver backed by the embedded source. */
     override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> =
-        FontOperationResult.Success(EmbeddedFontAssetResolver(source.id))
+        FontOperationResult.Success(EmbeddedFontAssetResolver(catalogSourceId, resource))
 
     /** Resolves face zero when the requested access profile is supported. */
     override fun resolveFace(
@@ -83,22 +97,38 @@ public class EmbeddedFontCatalog(
 
 internal class EmbeddedFontAssetResolver(
     override val sourceId: FontSourceId,
+    resource: PreparedFontResource,
 ) : FontAssetResolverHandle {
-    private val lifecycle = FontHandleLifecycle()
+    private var resourceLease: PreparedFontResourceLease? = resource.acquireLease()
+    private val lifecycle = FontHandleLifecycle(::releaseResourceLease)
 
     val isClosed: Boolean
         get() = !lifecycle.isOpenForNewOperations()
 
-    fun acquireLease(): FontHandleLease? = lifecycle.acquireLease()
+    fun acquireAssetLease(): PreparedFontResourceLease? {
+        val operationLease = lifecycle.acquireLease() ?: return null
+        return try {
+            resourceLease?.resource?.acquireLease()
+        } finally {
+            operationLease.release()
+        }
+    }
 
     override fun close(): FontOperationResult<Unit> {
         lifecycle.close()
         return FontOperationResult.Success(Unit)
     }
+
+    private fun releaseResourceLease() {
+        resourceLease?.release()
+        resourceLease = null
+    }
 }
 
 @OptIn(ExperimentalAtomicApi::class)
-internal class FontHandleLifecycle {
+internal class FontHandleLifecycle(
+    private val onDrained: () -> Unit = {},
+) {
     private val state = AtomicInt(0)
 
     fun isOpenForNewOperations(): Boolean = state.load() >= 0
@@ -123,6 +153,7 @@ internal class FontHandleLifecycle {
             }
             val next = Int.MIN_VALUE + current
             if (state.compareAndSet(current, next)) {
+                if (current == 0) onDrained()
                 return
             }
         }
@@ -137,9 +168,49 @@ internal class FontHandleLifecycle {
                 else -> return
             }
             if (state.compareAndSet(current, next)) {
+                if (next == Int.MIN_VALUE) onDrained()
                 return
             }
         }
+    }
+}
+
+@OptIn(ExperimentalAtomicApi::class)
+internal class PreparedFontResource(
+    internal val preparedFont: PreparedTrueTypeFont,
+) {
+    private val leaseCount = AtomicInt(0)
+
+    internal fun acquireLease(): PreparedFontResourceLease {
+        while (true) {
+            val current = leaseCount.load()
+            check(current < Int.MAX_VALUE) { "Prepared font resource lease count overflowed." }
+            if (leaseCount.compareAndSet(current, current + 1)) {
+                return PreparedFontResourceLease(this)
+            }
+        }
+    }
+
+    internal fun releaseLease() {
+        while (true) {
+            val current = leaseCount.load()
+            check(current > 0) { "Prepared font resource lease released more than once." }
+            if (leaseCount.compareAndSet(current, current - 1)) return
+        }
+    }
+}
+
+@OptIn(ExperimentalAtomicApi::class)
+internal class PreparedFontResourceLease(
+    internal val resource: PreparedFontResource,
+) {
+    private val released = AtomicInt(0)
+
+    internal val preparedFont: PreparedTrueTypeFont
+        get() = resource.preparedFont
+
+    internal fun release() {
+        if (released.compareAndSet(0, 1)) resource.releaseLease()
     }
 }
 

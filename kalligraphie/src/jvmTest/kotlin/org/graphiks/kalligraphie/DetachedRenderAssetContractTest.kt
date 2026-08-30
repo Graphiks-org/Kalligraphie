@@ -22,6 +22,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class DetachedRenderAssetContractTest {
     @Test
@@ -49,6 +50,32 @@ class DetachedRenderAssetContractTest {
         assertEquals(2048, outline.unitsPerEm)
         assertEquals(4, outline.bounds.minX)
         assertEquals(1362, outline.bounds.maxX)
+    }
+
+    @Test
+    fun detachedAssetDoesNotDependOnCatalogOrAttachedOwner() {
+        val detached = detachedAssetAfterOwnersClose()
+
+        val representation = success(detached.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none))
+        val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
+
+        assertEquals(36, outline.glyphId)
+        assertEquals(4, outline.bounds.minX)
+        assertEquals(1362, outline.bounds.maxX)
+        assertIs<FontOperationResult.Success<Unit>>(detached.close())
+    }
+
+    @Test
+    fun closingDetachedAssetDoesNotCloseAttachedAsset() {
+        val opened = openRenderableFont(fixtureBytes(), 2048f)
+        val detached = success(opened.asset.detach())
+
+        assertIs<FontOperationResult.Success<Unit>>(detached.close())
+        val representation = success(opened.asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none))
+
+        assertIs<GlyphRepresentation.Outline>(representation)
+        assertIs<FontOperationResult.Success<Unit>>(opened.asset.close())
+        assertIs<FontOperationResult.Success<Unit>>(opened.resolver.close())
     }
 
     @Test
@@ -98,6 +125,27 @@ class DetachedRenderAssetContractTest {
     }
 
     @Test
+    fun coldOutlinePreparationObservesCancellationAndCanRetry() {
+        val opened = openRenderableFont(fixtureBytes(), 2048f)
+        val asset = opened.asset
+        var checks = 0
+        val cancellationToken = CancellationToken { checks++ >= 10 }
+
+        try {
+            val cancelled = asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), cancellationToken)
+
+            assertIs<FontOperationResult.Cancelled>(cancelled)
+            assertTrue(checks > 10)
+
+            val representation = success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none))
+            assertIs<GlyphRepresentation.Outline>(representation)
+        } finally {
+            asset.close()
+            opened.resolver.close()
+        }
+    }
+
+    @Test
     fun restrictiveOutlineProfileReturnsTypedLimitFailureThroughPublicRoute() {
         val catalog = catalogFor(fixtureBytes())
         val resolver = success(catalog.openAssetResolver())
@@ -123,6 +171,25 @@ class DetachedRenderAssetContractTest {
             instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, FontAccessRequirementsSnapshot.renderable(outlineProfile())),
         )
         return DetachedFontResources(resolver, instance, asset)
+    }
+
+    private fun detachedAssetAfterOwnersClose(): FontRenderAssetHandle {
+        val catalog = catalogFor(fixtureBytes())
+        val resolver = success(catalog.openAssetResolver())
+        val face = success(catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.renderable(outlineProfile())))
+        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
+        val attached = success(
+            instance.acquireRenderAsset(
+                resolver,
+                FontRenderVariantKey.default,
+                FontAccessRequirementsSnapshot.renderable(outlineProfile()),
+            ),
+        )
+        val detached = success(attached.detach())
+
+        resolver.close()
+        attached.close()
+        return detached
     }
 
     private fun faceFor(bytes: ByteArray): FontFace =

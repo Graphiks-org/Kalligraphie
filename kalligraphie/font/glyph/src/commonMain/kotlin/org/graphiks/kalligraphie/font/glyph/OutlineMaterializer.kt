@@ -24,7 +24,15 @@ public object OutlineMaterializer {
     /**
      * Materializes [outline] while enforcing [profile] and cooperative
      * cancellation. A cancellation observed before completion returns
-     * [FontOperationResult.Cancelled] without exposing partial output.
+     * [FontOperationResult.Cancelled] without exposing partial output. The
+     * result contains a complete immutable [GlyphRepresentation.Outline], an
+     * empty representation for a glyph without contours, or a typed resource
+     * limit failure. No renderer-specific object is created or retained.
+     *
+     * @param outline scaler output in design units.
+     * @param profile limits and schema accepted by the consumer.
+     * @param cancellationToken cooperative cancellation signal.
+     * @return a complete representation, a typed limit failure, or cancellation.
      */
     public fun materialize(
         outline: ScalerGlyphOutline,
@@ -61,23 +69,30 @@ public object OutlineMaterializer {
                 profile.maxCompositeComponents.toLong(),
             )
         }
-        var commandCount = 0L
+        var commandBytes = 0L
         for (contour in outline.contours) {
-            commandCount = checkedAdd(commandCount, contour.commands.size.toLong())
-                ?: return limitFailure(
-                    "Outline command count overflowed.",
-                    outline.glyphId,
-                    Long.MAX_VALUE,
-                    profile.maxBytes.toLong(),
-                )
+            for (command in contour.commands) {
+                val encodedBytes = when (command) {
+                    is org.graphiks.kalligraphie.api.GlyphOutlineCommand.QuadraticTo -> BYTES_PER_QUADRATIC_COMMAND
+                    else -> BYTES_PER_COMMAND
+                }
+                commandBytes = checkedAdd(commandBytes, encodedBytes)
+                    ?: return limitFailure(
+                        "Outline command byte budget overflowed.",
+                        outline.glyphId,
+                        Long.MAX_VALUE,
+                        profile.maxBytes.toLong(),
+                    )
+            }
         }
-        val commandBytes = checkedMultiply(commandCount, BYTES_PER_COMMAND)
         val componentBytes = checkedMultiply(outline.components.size.toLong(), BYTES_PER_COMPONENT)
-        val contentBytes = if (commandBytes != null && componentBytes != null) {
-            checkedAdd(commandBytes, componentBytes)
-        } else {
-            null
-        }
+            ?: return limitFailure(
+                "Outline component byte budget overflowed.",
+                outline.glyphId,
+                Long.MAX_VALUE,
+                profile.maxBytes.toLong(),
+            )
+        val contentBytes = checkedAdd(commandBytes, componentBytes)
         val byteBudget = contentBytes?.let { checkedAdd(it, OUTLINE_OVERHEAD_BYTES) }
             ?: return limitFailure(
                 "Outline byte budget overflowed.",
@@ -138,5 +153,6 @@ private fun checkedMultiply(left: Long, right: Long): Long? {
 }
 
 private const val BYTES_PER_COMMAND = 16L
+private const val BYTES_PER_QUADRATIC_COMMAND = 32L
 private const val BYTES_PER_COMPONENT = 16L
 private const val OUTLINE_OVERHEAD_BYTES = 32L

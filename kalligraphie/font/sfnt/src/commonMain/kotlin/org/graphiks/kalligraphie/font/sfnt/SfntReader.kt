@@ -27,7 +27,14 @@ public object SfntReader {
      *
      * Unsupported containers, malformed data, and missing required tables are
      * returned as [FontOperationResult.Failure]. The successful parsed value
-     * is immutable and may be shared safely between concurrent readers.
+     * is immutable and may be shared safely between concurrent readers. The
+     * accepted signatures are TrueType `0x00010000` and legacy `true`; this
+     * entry point deliberately rejects collections and CFF-based containers.
+     * The source is read by defensive copy and is never mutated.
+     *
+     * @param source source bytes and caller-declared provenance to inspect.
+     * @return validated table locations and face metadata, or a typed failure
+     * with diagnostics identifying the invalid container or table.
      */
     public fun readMetadata(source: FontSource): FontOperationResult<ParsedTrueTypeFont> {
         val bytes = source.copyBytes()
@@ -277,9 +284,12 @@ public object SfntReader {
  *
  * This value contains table locations and validated face metadata, not a
  * public mutable view of the source bytes. It may be copied for value-like
- * transformations and shared between threads.
+ * transformations and shared between threads. It does not own the source
+ * buffer; a scaler or asset owner decides how long the corresponding bytes
+ * and decoded tables remain retained.
  */
 public class ParsedTrueTypeFont(
+    /** Validated table locations keyed by their four-byte SFNT tags. */
     tableRecords: Map<String, TableRecord>,
     /** Face metadata read from the font tables. */
     public val metadata: FontFaceMetadata,
@@ -325,7 +335,13 @@ public class ParsedTrueTypeFont(
         "ParsedTrueTypeFont(tableRecords=$tableRecords, metadata=$metadata, indexToLocFormat=$indexToLocFormat)"
 }
 
-/** Location and size of one SFNT table in the source bytes. */
+/**
+ * Location and size of one SFNT table in the source bytes.
+ *
+ * Records are immutable values. Offsets and lengths are expressed in bytes
+ * and are validated against the source only when consumed by [slice] or the
+ * metadata reader.
+ */
 public data class TableRecord(
     /** Four-character table tag. */
     public val tag: String,
@@ -344,19 +360,37 @@ private data class ParsedNames(
  * Returns a defensive copy of a table's bytes, or `null` for an invalid range.
  *
  * Hot paths should retain one validated snapshot instead of repeatedly
- * copying the same table.
+ * copying the same table. The returned array belongs to the caller and can be
+ * mutated without changing [bytes].
+ *
+ * @param bytes source buffer to read without mutation.
+ * @param record table range to copy.
+ * @return an independent table copy, or `null` when the range overflows or is
+ * outside [bytes].
  */
 public fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
     val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null
     return bytes.copyOfRange(record.offset.toInt(), end)
 }
 
-/** Safely computes an exclusive range end for 32-bit range values. */
+/**
+ * Safely computes an exclusive range end for 32-bit range values.
+ *
+ * @return the exclusive end when the non-negative range fits [sourceSize], or
+ * `null` on overflow or out-of-bounds input.
+ */
 public fun checkedRangeEnd(offset: Int, length: Int, sourceSize: Int): Int? {
     return checkedRangeEnd(offset.toLong(), length.toLong(), sourceSize)
 }
 
-/** Safely computes an exclusive range end without overflow. */
+/**
+ * Safely computes an exclusive range end without overflow.
+ *
+ * @param offset non-negative start offset.
+ * @param length non-negative range length.
+ * @param sourceSize available source size.
+ * @return the exclusive end, or `null` when the range is invalid.
+ */
 public fun checkedRangeEnd(offset: Long, length: Long, sourceSize: Int): Int? {
     if (offset < 0L || length < 0L || offset > sourceSize.toLong()) {
         return null
@@ -371,7 +405,12 @@ public fun checkedRangeEnd(offset: Long, length: Long, sourceSize: Int): Int? {
     return end.toInt()
 }
 
-/** Reads one big-endian unsigned 16-bit value, or `null` if truncated. */
+/**
+ * Reads one big-endian unsigned 16-bit value, or `null` if truncated.
+ *
+ * @param bytes source buffer, which is not modified.
+ * @param offset byte offset of the value.
+ */
 public fun readUInt16(bytes: ByteArray, offset: Int): UInt? {
     checkedRangeEnd(offset.toLong(), 2L, bytes.size) ?: return null
     return (((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)).toUInt()
@@ -380,7 +419,12 @@ public fun readUInt16(bytes: ByteArray, offset: Int): UInt? {
 /** Reads one big-endian signed 16-bit value, or `null` if truncated. */
 public fun readInt16(bytes: ByteArray, offset: Int): Int? = readUInt16(bytes, offset)?.toShort()?.toInt()
 
-/** Reads one big-endian unsigned 32-bit value, or `null` if truncated. */
+/**
+ * Reads one big-endian unsigned 32-bit value, or `null` if truncated.
+ *
+ * The result uses Kotlin's unsigned integer type and never throws for an
+ * invalid offset.
+ */
 public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
     checkedRangeEnd(offset.toLong(), 4L, bytes.size) ?: return null
     return (((bytes[offset].toUInt() and 0xFFu) shl 24) or
@@ -389,7 +433,11 @@ public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
         (bytes[offset + 3].toUInt() and 0xFFu))
 }
 
-/** Decodes four bytes as an ASCII SFNT tag, or returns an empty string if truncated. */
+/**
+ * Decodes four bytes as an ASCII SFNT tag, or returns an empty string if
+ * truncated. The receiver is read-only; non-ASCII byte values are preserved
+ * as one code unit rather than normalized.
+ */
 public fun ByteArray.decodeAsciiTag(offset: Int): String {
     checkedRangeEnd(offset.toLong(), 4L, size) ?: return ""
     return CharArray(4) { index -> (this[offset + index].toInt() and 0xFF).toChar() }.concatToString()
