@@ -1,0 +1,12 @@
+table GDEF {
+  GlyphClassDef [f i V], [f_i], , ;
+  LigatureCaretByPos f_i 450;
+} GDEF;
+
+feature liga {
+  sub f i by f_i;
+} liga;
+
+feature kern {
+  pos f_i V -100;
+} kern;

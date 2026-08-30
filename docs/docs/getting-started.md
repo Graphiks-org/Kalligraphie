@@ -8,7 +8,7 @@
 ## Verify the Kalligraphie font modules
 
 ```bash
-./gradlew :kalligraphie:fontTest
+./gradlew check
 ```
 
 ## Build the API reference and site

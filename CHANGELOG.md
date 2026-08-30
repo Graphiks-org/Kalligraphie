@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - KMP project template (Android, iOS, Desktop)
+- JVM reference editable Unicode lines through `org.graphiks:kalligraphie`: canonical UTF-8/UTF-16 decoding, Unicode analysis, pinned HarfBuzz shaping, exact caret and selection geometry, hit testing, and outline-route certification.
 - Clean Architecture / DDD
 - JVM-only autonomous embedded TrueType catalog support through `org.graphiks:kalligraphie`, including immutable source/face/instance data, cmap and metrics, design-unit outlines, and detached render assets.
 - Maven Central publishing via Vanniktech

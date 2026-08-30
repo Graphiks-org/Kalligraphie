@@ -4,8 +4,12 @@ import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.TextDecodingResult
+import org.graphiks.kalligraphie.api.TextSlice
+import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
+import org.graphiks.kalligraphie.unicode.TextSnapshots
 
 /**
  * Entry point for loading font sources supported by the portable API.
@@ -14,6 +18,34 @@ import org.graphiks.kalligraphie.font.sfnt.SfntReader
  * document, renderer, platform font service, or rasterization backend.
  */
 public object Kalligraphie {
+    /**
+     * Decodes UTF-8 source slices into one immutable, canonical [TextDecodingResult].
+     *
+     * [version] remains the opaque identity of the returned snapshot. Every slice is copied by
+     * the text contract before decoding, so callers retain ownership of their byte arrays and
+     * may mutate or release them after this call. Malformed subsequences are replaced according
+     * to Unicode maximal-subpart rules and reported as structured diagnostics. The result is
+     * independent of physical slice boundaries and safe to share between threads.
+     */
+    public fun decodeUtf8(
+        version: TextVersion,
+        slices: List<TextSlice.Utf8>,
+    ): TextDecodingResult = TextSnapshots.decodeUtf8(version, slices)
+
+    /**
+     * Decodes UTF-16 source slices into one immutable, canonical [TextDecodingResult].
+     *
+     * [version] remains the opaque identity of the returned snapshot. Every slice is copied by
+     * the text contract before decoding, so callers retain ownership of their code-unit arrays
+     * and may mutate or release them after this call. Malformed subsequences are replaced
+     * according to Unicode maximal-subpart rules and reported as structured diagnostics. The
+     * result is independent of physical slice boundaries and safe to share between threads.
+     */
+    public fun decodeUtf16(
+        version: TextVersion,
+        slices: List<TextSlice.Utf16>,
+    ): TextDecodingResult = TextSnapshots.decodeUtf16(version, slices)
+
     /**
      * Loads one single-face TrueType font from an in-memory byte array.
      *

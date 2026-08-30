@@ -1,4 +1,4 @@
-name: Kalligraphie font business tests
+name: Kalligraphie verification
 
 on:
   pull_request:
@@ -33,4 +33,173 @@ jobs:
           java-version: '25'
           cache: gradle
       - run: chmod +x gradlew
-      - run: ./gradlew --no-daemon :kalligraphie:fontTest
+      - run: ./gradlew --no-daemon check
+
+  shaping-native:
+    name: HarfBuzz JVM (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # GitHub-hosted runner labels explicitly map to the bundled native targets.
+          - target: linux-x64
+            runner: ubuntu-24.04
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+          - target: macos-x64
+            runner: macos-15-intel
+          - target: macos-arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+          cache: gradle
+      - run: chmod +x gradlew
+      - name: Audit embedded native dependencies and FFM exports
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            linux-x64)
+              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/x64/libharfbuzz.so'
+              expected_dependencies=$'libc.so.6\nlibm.so.6\nlibpthread.so.0'
+              ;;
+            linux-arm64)
+              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/arm64/libharfbuzz.so'
+              expected_dependencies=$'ld-linux-aarch64.so.1\nlibc.so.6\nlibm.so.6'
+              ;;
+            macos-x64)
+              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/x64/libharfbuzz.dylib'
+              ;;
+            macos-arm64)
+              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/arm64/libharfbuzz.dylib'
+              ;;
+            *)
+              exit 1
+              ;;
+          esac
+
+          if [[ "${{ matrix.target }}" == macos-* ]]; then
+            actual_dependencies="$(otool -L "$library" | awk 'NR > 1 { print $1 }')"
+            test "$actual_dependencies" = $'@rpath/libharfbuzz.dylib\n/usr/lib/libSystem.B.dylib'
+            exported_symbols="$(nm -gU "$library")"
+          else
+            actual_dependencies="$(readelf -d "$library" | awk '/NEEDED/ { gsub(/\[|\]/, "", $5); print $5 }' | sort)"
+            test "$actual_dependencies" = "$expected_dependencies"
+            exported_symbols="$(nm -D --defined-only "$library")"
+          fi
+
+          for symbol in hb_buffer_set_cluster_level hb_glyph_info_get_glyph_flags hb_ot_layout_get_ligature_carets hb_shape_full hb_version_string; do
+            if [[ "${{ matrix.target }}" == macos-* ]]; then
+              grep -Eq "[[:space:]]_${symbol}$" <<<"$exported_symbols"
+            else
+              grep -Eq "[[:space:]]${symbol}$" <<<"$exported_symbols"
+            fi
+          done
+      - run: ./gradlew --no-daemon :kalligraphie:shaping:jvmTest
+
+  harfbuzz-source-rebuild-macos:
+    name: HarfBuzz source rebuild (macOS ${{ matrix.architecture }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: macos-26-intel
+            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/x64/libharfbuzz.dylib
+            embedded_sha256: 9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c
+          - architecture: arm64
+            runner: macos-26
+            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/arm64/libharfbuzz.dylib
+            embedded_sha256: 504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rebuild the pinned source twice and audit it
+        shell: bash
+        run: |
+          set -euo pipefail
+          hb_rebuild_root="$(mktemp -d)"
+          trap 'rm -rf "$hb_rebuild_root"' EXIT
+          source_archive="$hb_rebuild_root/harfbuzz-14.3.0.tar.xz"
+          cmake_archive="$hb_rebuild_root/cmake-4.4.3-macos-universal.tar.gz"
+          curl --fail --location --retry 3 --output "$source_archive" https://github.com/harfbuzz/harfbuzz/releases/download/14.3.0/harfbuzz-14.3.0.tar.xz
+          test "$(shasum -a 256 "$source_archive" | awk '{ print $1 }')" = '16070d77cfc4ba1f1e7327e83bf9b3f55898081cabdb94e56a33e04fc8874eae'
+          curl --fail --location --retry 3 --output "$cmake_archive" https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-macos-universal.tar.gz
+          test "$(shasum -a 256 "$cmake_archive" | awk '{ print $1 }')" = '0c5d65251c14cc884bfa16bdbed3c263ce5bffe2e21c0d0d00962cb0610464fa'
+          tar -xJf "$source_archive" -C "$hb_rebuild_root"
+          tar -xzf "$cmake_archive" -C "$hb_rebuild_root"
+          export DEVELOPER_DIR=/Applications/Xcode_26.6.app/Contents/Developer
+          test "$(xcodebuild -version | awk 'NR == 1 { print $2 }')" = '26.6'
+          export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+          test "$(xcrun --sdk macosx --show-sdk-version)" = '26.5'
+          cmake_bin="$hb_rebuild_root/cmake-4.4.3-macos-universal/CMake.app/Contents/bin/cmake"
+          source_root="$hb_rebuild_root/harfbuzz-14.3.0"
+
+          build_once() {
+            local build_root="$hb_rebuild_root/build-$1"
+            "$cmake_bin" -S "$source_root" -B "$build_root" -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release -DCMAKE_DISABLE_FIND_PACKAGE_Python3=TRUE -DBUILD_SHARED_LIBS=ON -DBUILD_FRAMEWORK=OFF -DHB_HAVE_CORETEXT=OFF -DHB_HAVE_CAIRO=OFF -DHB_HAVE_FREETYPE=OFF -DHB_HAVE_GRAPHITE2=OFF -DHB_HAVE_GLIB=OFF -DHB_HAVE_ICU=OFF -DHB_HAVE_GOBJECT=OFF -DHB_HAVE_INTROSPECTION=OFF -DHB_BUILD_UTILS=OFF -DHB_BUILD_SUBSET=OFF -DHB_BUILD_RASTER=OFF -DHB_BUILD_VECTOR=OFF -DHB_BUILD_GPU=OFF -DHB_BUILD_GPU_DEMO=OFF -DCMAKE_OSX_ARCHITECTURES='${{ matrix.architecture }}' -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+            "$cmake_bin" --build "$build_root" --target harfbuzz --parallel 2
+          }
+
+          build_once first
+          build_once second
+          first_library="$hb_rebuild_root/build-first/libharfbuzz.dylib"
+          second_library="$hb_rebuild_root/build-second/libharfbuzz.dylib"
+          test "$(shasum -a 256 "$first_library" | awk '{ print $1 }')" = "$(shasum -a 256 "$second_library" | awk '{ print $1 }')"
+          test "$(shasum -a 256 "$first_library" | awk '{ print $1 }')" = '${{ matrix.embedded_sha256 }}'
+          cmp --silent "$first_library" '${{ matrix.embedded_library }}'
+          test "$(otool -L "$first_library" | awk 'NR > 1 { print $1 }')" = $'@rpath/libharfbuzz.dylib\n/usr/lib/libSystem.B.dylib'
+          exported_symbols="$(nm -gU "$first_library")"
+          for symbol in hb_buffer_set_cluster_level hb_glyph_info_get_glyph_flags hb_ot_layout_get_ligature_carets hb_shape_full hb_version_string; do
+            grep -Eq "[[:space:]]_${symbol}$" <<<"$exported_symbols"
+          done
+          "${CC:-cc}" -I"$source_root/src" -x c - -x none "$first_library" -Wl,-rpath,"$(dirname "$first_library")" -o "$hb_rebuild_root/version-probe" <<'C'
+          #include <string.h>
+          #include "hb.h"
+
+          int main(void) {
+            return strcmp(hb_version_string(), "14.3.0") != 0;
+          }
+          C
+          "$hb_rebuild_root/version-probe"
+
+  harfbuzz-published-artifact-linux:
+    name: HarfBuzz published artifact (Linux ${{ matrix.architecture }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: ubuntu-24.04
+            artifact_url: https://repo1.maven.org/maven2/org/lwjgl/lwjgl-harfbuzz/3.4.3/lwjgl-harfbuzz-3.4.3-natives-linux.jar
+            artifact_sha256: b9413ce2de710021d39eb08a51a4cfcac88bf84bbf3b90fd925b7bd5d7a6dba7
+            artifact_entry: linux/x64/org/lwjgl/harfbuzz/libharfbuzz.so
+            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/x64/libharfbuzz.so
+            embedded_sha256: 9a5e3576912c2f8c8b2533d4a264fec1eac9667adfd64f7e71e80179ba118614
+          - architecture: aarch64
+            runner: ubuntu-24.04-arm
+            artifact_url: https://repo1.maven.org/maven2/org/lwjgl/lwjgl-harfbuzz/3.4.3/lwjgl-harfbuzz-3.4.3-natives-linux-arm64.jar
+            artifact_sha256: 47362b77683f5126946498ea7456c1a0b129791d585cc9f74b2c4d069ca099da
+            artifact_entry: linux/arm64/org/lwjgl/harfbuzz/libharfbuzz.so
+            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/arm64/libharfbuzz.so
+            embedded_sha256: b1c7c67034297763e0ce46f3749c4da33a4bb4064929868446cb5a3d81dc26bc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify the pinned published artifact and embedded library
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="$(mktemp)"
+          published_library="$(mktemp)"
+          trap 'rm -f "$artifact" "$published_library"' EXIT
+          curl --fail --location --retry 3 --output "$artifact" '${{ matrix.artifact_url }}'
+          test "$(sha256sum "$artifact" | awk '{ print $1 }')" = '${{ matrix.artifact_sha256 }}'
+          unzip -p "$artifact" '${{ matrix.artifact_entry }}' > "$published_library"
+          test "$(sha256sum "$published_library" | awk '{ print $1 }')" = '${{ matrix.embedded_sha256 }}'
+          cmp --silent "$published_library" '${{ matrix.embedded_library }}'

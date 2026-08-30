@@ -162,6 +162,22 @@ public data class FontRenderVariantKey(
     }
 }
 
+/**
+ * Portable identity of one acquired render asset.
+ *
+ * The key binds the exact font instance, render variant, and immutable outline profile used by
+ * an asset. It owns only portable values, carries no native handle, and is safe to retain or
+ * share between threads after the corresponding asset has been closed.
+ */
+public data class FontRenderAssetKey(
+    /** Exact font instance served by the asset. */
+    public val fontInstanceKey: FontInstanceKey,
+    /** Render variant selected when the asset was acquired. */
+    public val variant: FontRenderVariantKey,
+    /** Outline representation profile enforced by the asset. */
+    public val outlineProfile: OutlineProfile,
+)
+
 /** Selects a glyph by its numeric identifier. */
 public data class FontGlyphRequest(
     /** Non-negative glyph identifier. */
@@ -229,6 +245,9 @@ public interface FontAssetResolverHandle {
  * successful detached handle and must close both handles independently.
  */
 public interface FontRenderAssetHandle {
+    /** Portable identity of this exact instance, variant, and outline profile. */
+    public val key: FontRenderAssetKey
+
     /** Identifier of the face served by this asset. */
     public val faceId: FontFaceId
 
@@ -320,6 +339,18 @@ public interface FontInstance {
         unsupportedContractOperation("This font instance does not support glyph metrics.")
 
     /**
+     * Returns an owned defensive copy of the OpenType bytes for this instance's face.
+     *
+     * The returned [OpenTypeFontData] remains independent of this instance and may be
+     * shared between threads. The caller owns every byte-array copy requested from it;
+     * modifying such a copy never changes the instance. Implementations that cannot
+     * preserve this isolation return a typed capability failure rather than exposing
+     * provider, platform, or native storage.
+     */
+    public fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> =
+        unsupportedOpenTypeDataOperation()
+
+    /**
      * Acquires a render asset for [variant] using [resolver] and [requirements].
      *
      * The resolver must belong to the same source as this instance. A
@@ -332,6 +363,32 @@ public interface FontInstance {
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontRenderAssetHandle> =
         unsupportedContractOperation("This font instance does not support render assets.")
+}
+
+/**
+ * Immutable, owned OpenType source bytes for one concrete face.
+ *
+ * The container captures its input before construction and returns a fresh copy from
+ * [copyBytes]. It contains no borrowed, native, or platform-specific storage. Instances
+ * are safe to share between threads; callers own returned arrays and may mutate them.
+ */
+public class OpenTypeFontData(
+    /** Identity of the face described by these bytes. */
+    public val face: FontFaceId,
+    sourceBytes: ByteArray,
+) {
+    private val capturedBytes: ByteArray = sourceBytes.copyOf()
+
+    init {
+        require(capturedBytes.isNotEmpty()) { "OpenType font data must not be empty." }
+    }
+
+    /** Number of captured OpenType bytes. */
+    public val sizeInBytes: Int
+        get() = capturedBytes.size
+
+    /** Returns a caller-owned copy of the immutable captured OpenType bytes. */
+    public fun copyBytes(): ByteArray = capturedBytes.copyOf()
 }
 
 @JvmInline
@@ -1021,5 +1078,14 @@ internal fun canonicalGlyphCoordinate(value: Double): Double {
 
 private fun <Value> unsupportedContractOperation(message: String): FontOperationResult<Value> {
     val error = FontError.UnsupportedRepresentationProfile(message)
+    return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
+}
+
+private fun unsupportedOpenTypeDataOperation(): FontOperationResult<OpenTypeFontData> {
+    val error = FontError.FontDataFailure(
+        code = "font.open-type-data-unavailable",
+        message = "This font instance cannot provide isolated OpenType bytes.",
+        location = FontDiagnosticLocation.Source,
+    )
     return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
 }

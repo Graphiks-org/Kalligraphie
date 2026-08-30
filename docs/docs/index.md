@@ -6,6 +6,9 @@ Kalligraphie is a portable KMP font library. Its API is split into focused Gradl
 
 - `:kalligraphie` is the public facade consumed by applications.
 - `:kalligraphie:api` contains the portable public contracts and immutable value types.
+- `:kalligraphie:unicode` provides canonical text decoding and the JVM reference Unicode analysis.
+- `:kalligraphie:shaping` provides the reference JVM HarfBuzz adapter behind portable shaping contracts.
+- `:kalligraphie:layout` positions shaped runs and provides exact editable-line geometry.
 - `:kalligraphie:font:core` provides font sources, faces, and instances.
 - `:kalligraphie:font:sfnt` parses bounded SFNT and OpenType data.
 - `:kalligraphie:font:scaler` resolves metrics and TrueType outlines.
@@ -14,8 +17,8 @@ Kalligraphie is a portable KMP font library. Its API is split into focused Gradl
 ## Useful commands
 
 ```bash
-# Run all JVM tests for the font stack.
-./gradlew :kalligraphie:fontTest
+# Run the standard Gradle verification lifecycle.
+./gradlew check
 
 # Generate and embed the API reference (Dokka → MkDocs).
 ./gradlew :docs:embedDokkaIntoMkDocs

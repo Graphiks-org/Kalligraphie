@@ -47,6 +47,14 @@ public class PreparedTrueTypeFont internal constructor(
 
     private val glyphDataCache = AtomicReference<FontOperationResult<PreparedGlyphData>?>(null)
 
+    /**
+     * Returns a defensive copy of the immutable source bytes retained for this face.
+     *
+     * The returned array is caller-owned and can be mutated without changing this shared
+     * decoder state. The operation is safe to invoke concurrently.
+     */
+    public fun copySourceBytes(): ByteArray = sourceBytes.copyOf()
+
     private val cmapResult: FontOperationResult<UnicodeCmapLookup> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         val record = parsedFont.tableRecords["cmap"]
             ?: return@lazy failure(FontError.MissingRequiredTable("cmap"))
