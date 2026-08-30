@@ -53,6 +53,16 @@ class CanonicalTextDecoderTest {
         assertEquals(sourceOffset(version, SourceEncoding.UTF16, 0), utf16.snapshot.textIndexToSource(utf16.snapshot.range.start))
         assertEquals(sourceOffset(version, SourceEncoding.UTF16, 4), utf16.snapshot.textIndexToSource(utf16.snapshot.range.endExclusive))
 
+        val emojiIndex = utf8.snapshot.sourceToTextIndex(
+            sourceOffset(version, SourceEncoding.UTF8, 1),
+            SourceBias.BEFORE,
+        ).index
+        assertEquals(sourceOffset(version, SourceEncoding.UTF16, 1), utf16.snapshot.textIndexToSource(emojiIndex))
+        val crossViewRange = TextRange(emojiIndex, utf16.snapshot.range.endExclusive)
+        assertEquals(emojiIndex, crossViewRange.start)
+        assertEquals(utf16.snapshot.range.endExclusive, crossViewRange.endExclusive)
+        assertEquals(sourceOffset(version, SourceEncoding.UTF8, 0), utf8.snapshot.textIndexToSource(utf16.snapshot.range.start))
+
         val utf8Interior = utf8.snapshot.sourceToTextIndex(sourceOffset(version, SourceEncoding.UTF8, 3), SourceBias.BEFORE)
         val utf8Biased = assertIs<SourceIndexResult.Biased>(utf8Interior)
         assertEquals(sourceRange(version, SourceEncoding.UTF8, 1, 5), utf8Biased.containingRange)
@@ -62,16 +72,35 @@ class CanonicalTextDecoderTest {
             utf16.snapshot.sourceToTextIndex(sourceOffset(version, SourceEncoding.UTF8, 1), SourceBias.BEFORE)
         }
         assertFailsWith<IllegalArgumentException> {
-            TextRange(utf8.snapshot.range.start, utf16.snapshot.range.endExclusive)
-        }
-        assertFailsWith<IllegalArgumentException> {
-            utf8.snapshot.textIndexToSource(utf16.snapshot.range.start)
+            utf16.snapshot.sourceToTextIndex(sourceOffset(TextVersion.create(), SourceEncoding.UTF16, 0), SourceBias.BEFORE)
         }
         assertFailsWith<IllegalArgumentException> {
             utf8.snapshot.sourceToTextIndex(
                 sourceOffset(TextVersion.create(), SourceEncoding.UTF8, 0),
                 SourceBias.BEFORE,
             )
+        }
+    }
+
+    @Test
+    fun scalar_boundary_factory_creates_version_compatible_indices() {
+        val version = TextVersion.create()
+        val utf8 = TextSnapshots.decodeUtf8(
+            version,
+            listOf(TextSlice.Utf8(byteArrayOf(0x41, 0xF0.toByte(), 0x9F.toByte(), 0x98.toByte(), 0x80.toByte(), 0x42))),
+        )
+        val utf16 = TextSnapshots.decodeUtf16(
+            version,
+            listOf(TextSlice.Utf16(charArrayOf('A', '\uD83D', '\uDE00', 'B'))),
+        )
+
+        val trailingBoundary = utf8.snapshot.textIndexAtScalarBoundary(2)
+        assertEquals(sourceOffset(version, SourceEncoding.UTF16, 3), utf16.snapshot.textIndexToSource(trailingBoundary))
+        assertFailsWith<IllegalArgumentException> {
+            utf8.snapshot.textIndexAtScalarBoundary(-1)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            utf8.snapshot.textIndexAtScalarBoundary(4)
         }
     }
 

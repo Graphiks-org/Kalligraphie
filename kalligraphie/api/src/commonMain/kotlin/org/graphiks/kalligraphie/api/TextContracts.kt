@@ -22,32 +22,32 @@ public enum class SourceEncoding {
     UTF16,
 }
 
-/** Opaque scalar boundary belonging to one specific [TextSnapshot]. */
+/** Opaque scalar boundary belonging to one specific [TextVersion]. */
 public class TextIndex internal constructor(
-    private val snapshot: TextSnapshot,
+    private val version: TextVersion,
     internal val ordinal: Int,
 ) {
-    /** Returns whether this index belongs to the supplied snapshot. */
-    internal fun belongsTo(candidate: TextSnapshot): Boolean = snapshot === candidate
+    /** Returns whether this index is compatible with the supplied snapshot version. */
+    internal fun belongsTo(candidate: TextSnapshot): Boolean = version == candidate.version
 
-    /** Returns whether this index and [other] belong to the same snapshot. */
-    internal fun sharesSnapshotWith(other: TextIndex): Boolean = snapshot === other.snapshot
+    /** Returns whether this index and [other] belong to the same text version. */
+    internal fun sharesVersionWith(other: TextIndex): Boolean = version == other.version
 
-    /** Compares two boundaries that belong to the same snapshot. */
+    /** Compares two boundaries that belong to the same text version. */
     internal fun compareTo(other: TextIndex): Int {
-        require(snapshot === other.snapshot) { "Text indices must belong to the same snapshot." }
+        require(version == other.version) { "Text indices must belong to the same version." }
         return ordinal.compareTo(other.ordinal)
     }
 
     override fun equals(other: Any?): Boolean =
-        other is TextIndex && snapshot === other.snapshot && ordinal == other.ordinal
+        other is TextIndex && version == other.version && ordinal == other.ordinal
 
-    override fun hashCode(): Int = 31 * snapshot.hashCode() + ordinal
+    override fun hashCode(): Int = 31 * version.hashCode() + ordinal
 
     override fun toString(): String = "TextIndex()"
 }
 
-/** Half-open range of scalar boundaries belonging to one specific snapshot. */
+/** Half-open range of scalar boundaries belonging to one specific text version. */
 public class TextRange(
     /** Inclusive start boundary. */
     public val start: TextIndex,
@@ -55,7 +55,7 @@ public class TextRange(
     public val endExclusive: TextIndex,
 ) {
     init {
-        require(start.sharesSnapshotWith(endExclusive)) { "Text range boundaries must belong to the same snapshot." }
+        require(start.sharesVersionWith(endExclusive)) { "Text range boundaries must belong to the same version." }
         require(start.compareTo(endExclusive) <= 0) { "Text range start must not follow its end." }
     }
 
@@ -155,11 +155,11 @@ public class TextSnapshot(
     /** Unicode scalar values in logical order. */
     public val scalars: List<Int> = scalars.immutableListSnapshot()
 
-    /** Source range consumed by each scalar at the corresponding internal index. */
+    /** Source range consumed by each scalar at the corresponding scalar boundary. */
     public val sourceRanges: List<SourceRange> = sourceRanges.immutableListSnapshot()
 
     /** Complete half-open scalar range of this snapshot. */
-    public val range: TextRange = TextRange(TextIndex(this, 0), TextIndex(this, this.scalars.size))
+    public val range: TextRange = TextRange(TextIndex(version, 0), TextIndex(version, this.scalars.size))
 
     private val sourceLength: Int = this.sourceRanges.lastOrNull()?.endExclusive?.value ?: 0
 
@@ -178,25 +178,37 @@ public class TextSnapshot(
         }
     }
 
+    /**
+     * Creates an opaque scalar boundary for this version after validating its ordinal.
+     *
+     * The ordinal is accepted only as an input; existing [TextIndex] values never
+     * expose their hidden ordinal.
+     */
+    public fun textIndexAtScalarBoundary(ordinal: Int): TextIndex {
+        require(ordinal in 0..scalars.size) { "Scalar boundary lies outside the snapshot." }
+        return TextIndex(version, ordinal)
+    }
+
     /** Maps a source offset to an exact or bias-selected scalar boundary. */
     public fun sourceToTextIndex(offset: SourceOffset, bias: SourceBias): SourceIndexResult {
         require(offset.version == version) { "Source offset must use the snapshot version." }
         require(offset.encoding == sourceEncoding) { "Source offset must use the snapshot encoding." }
         require(offset.value <= sourceLength) { "Source offset lies outside the snapshot." }
-        if (offset.value == sourceLength) return SourceIndexResult.Exact(TextIndex(this, scalars.size))
+        if (offset.value == sourceLength) return SourceIndexResult.Exact(textIndexAtScalarBoundary(scalars.size))
 
         val scalarIndex = scalarIndexContaining(offset.value)
         val sourceRange = sourceRanges[scalarIndex]
         if (offset.value == sourceRange.start.value) {
-            return SourceIndexResult.Exact(TextIndex(this, scalarIndex))
+            return SourceIndexResult.Exact(textIndexAtScalarBoundary(scalarIndex))
         }
         val boundary = if (bias == SourceBias.BEFORE) scalarIndex else scalarIndex + 1
-        return SourceIndexResult.Biased(TextIndex(this, boundary), sourceRange)
+        return SourceIndexResult.Biased(textIndexAtScalarBoundary(boundary), sourceRange)
     }
 
     /** Maps a scalar boundary from this snapshot to its exact source boundary. */
     public fun textIndexToSource(index: TextIndex): SourceOffset {
-        require(index.belongsTo(this)) { "Text index must belong to this snapshot." }
+        require(index.belongsTo(this)) { "Text index must belong to the snapshot version." }
+        require(index.ordinal <= scalars.size) { "Text index lies outside the snapshot." }
         return if (index.ordinal == scalars.size) {
             SourceOffset(version, sourceEncoding, sourceLength)
         } else {
@@ -206,7 +218,7 @@ public class TextSnapshot(
 
     /** Returns the source range consumed by the scalar beginning at [index]. */
     public fun sourceRange(index: TextIndex): SourceRange {
-        require(index.belongsTo(this)) { "Text index must belong to this snapshot." }
+        require(index.belongsTo(this)) { "Text index must belong to the snapshot version." }
         require(index.ordinal < scalars.size) { "Text index does not identify a scalar in the snapshot." }
         return sourceRanges[index.ordinal]
     }
