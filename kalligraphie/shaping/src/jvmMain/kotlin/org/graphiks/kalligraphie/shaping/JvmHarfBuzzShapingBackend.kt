@@ -372,6 +372,11 @@ internal class HarfBuzzNativeLibrary(
         "hb_glyph_info_get_glyph_flags",
         FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS),
     )
+    private val fontGetGlyphHorizontalAdvance: MethodHandle = handle(
+        lookup,
+        "hb_font_get_glyph_h_advance",
+        FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS, ValueLayout.JAVA_INT),
+    )
     private val ligatureCarets: MethodHandle = handle(
         lookup,
         "hb_ot_layout_get_ligature_carets",
@@ -520,6 +525,10 @@ internal class HarfBuzzNativeLibrary(
                     record.glyphId,
                     glyphIndex,
                     cluster,
+                    finalAdvanceMatchesUnshapedAdvance = advancesMatch(
+                        shapedAdvance = record.xAdvance,
+                        unshapedAdvance = int(fontGetGlyphHorizontalAdvance, font, record.glyphId),
+                    ),
                     designToLayout,
                 )
             }
@@ -579,6 +588,7 @@ internal class HarfBuzzNativeLibrary(
         glyphId: Int,
         glyphIndex: Int,
         cluster: ShaperCluster,
+        finalAdvanceMatchesUnshapedAdvance: Boolean,
         designToLayout: DesignToLayoutScale,
     ): GdefLigatureCaretFact {
         val expectedCaretCount = cluster.internalAdmissibleGraphemeBoundaries().size
@@ -602,6 +612,7 @@ internal class HarfBuzzNativeLibrary(
             response = NativeLigatureCaretResponse(
                 totalCount = totalCount,
                 copiedCount = copiedCount,
+                finalAdvanceMatchesUnshapedAdvance = finalAdvanceMatchesUnshapedAdvance,
                 positions = List(safelyReadableCount) { index ->
                     designToLayout.convert(positions.getAtIndex(ValueLayout.JAVA_INT, index.toLong()))
                 },
@@ -634,6 +645,8 @@ private data class NativeGlyphRecord(
 internal data class NativeLigatureCaretResponse(
     val totalCount: Int,
     val copiedCount: Int,
+    /** Whether the final shaped horizontal advance still equals the unshaped glyph advance. */
+    val finalAdvanceMatchesUnshapedAdvance: Boolean = true,
     val positions: List<LayoutUnit>,
 )
 
@@ -666,7 +679,8 @@ internal object LigatureCaretFactInterpreter {
 
             response.totalCount != expectedCount ||
                 response.copiedCount != expectedCount ||
-                response.positions.size != expectedCount ->
+                response.positions.size != expectedCount ||
+                !response.finalAdvanceMatchesUnshapedAdvance ->
                 GdefLigatureCaretFact(
                     glyphIndex = glyphIndex,
                     state = GdefLigatureCaretState.INCONSISTENT,
@@ -691,6 +705,12 @@ internal object LigatureCaretFactInterpreter {
 private fun ShaperCluster.internalAdmissibleGraphemeBoundaries() = admissibleGraphemeBoundaries.filter { boundary ->
     boundary.compareTo(sourceRange.start) > 0 && boundary.compareTo(sourceRange.endExclusive) < 0
 }
+
+private fun advancesMatch(shapedAdvance: Int, unshapedAdvance: Int): Boolean =
+    absoluteMagnitude(shapedAdvance) == absoluteMagnitude(unshapedAdvance)
+
+private fun absoluteMagnitude(value: Int): Long =
+    value.toLong().let { if (it < 0L) -it else it }
 
 private class DesignToLayoutScale private constructor(
     private val layoutSize: Double,

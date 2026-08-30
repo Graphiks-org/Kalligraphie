@@ -278,6 +278,29 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
+    fun gdefCaretsAreRejectedWhenTheShapedLigatureAdvanceContainsKerning() {
+        val prepared = text("ffi")
+        val fact = LigatureCaretFactInterpreter.fromNativeResponse(
+            glyphIndex = 0,
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            cluster = cluster(
+                prepared = prepared,
+                scalarRanges = listOf(range(prepared, 0, 1), range(prepared, 1, 2), range(prepared, 2, 3)),
+                admissibleBoundaries = listOf(index(prepared, 0), index(prepared, 1), index(prepared, 2), index(prepared, 3)),
+            ),
+            response = NativeLigatureCaretResponse(
+                totalCount = 2,
+                copiedCount = 2,
+                finalAdvanceMatchesUnshapedAdvance = false,
+                positions = listOf(LayoutUnit(269f), LayoutUnit(537f)),
+            ),
+        )
+
+        assertEquals(GdefLigatureCaretState.INCONSISTENT, fact.state)
+        assertEquals(emptyList(), fact.positions)
+    }
+
+    @Test
     fun excessiveNativeGdefTotalIsInconsistentEvenWhenItsBufferWasFilled() {
         val prepared = text("fi")
         val fact = LigatureCaretFactInterpreter.fromNativeResponse(
