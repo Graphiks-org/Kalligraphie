@@ -42,6 +42,15 @@ import org.graphiks.kalligraphie.api.TextRange
  * the published line.
  */
 public object ExactEditableLineLayouter : EditableLineLayouter {
+    /**
+     * Produces one immutable editable line from already analyzed and shaped input.
+     *
+     * The request must provide a complete compatible Unicode, BiDi, and shaping partition; its
+     * validation failures are reported by [EditableLineRequest] before this method runs. Finite
+     * geometry overflow and render-asset failures become typed [EditableLineResult] failures.
+     * This singleton retains no request resource and is safe for concurrent calls; renderable
+     * mode borrows and closes its asset before returning.
+     */
     override fun layout(request: EditableLineRequest): EditableLineResult {
         val diagnostics = mutableListOf<EditableLineDiagnostic>()
         val placements = try {

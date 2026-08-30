@@ -481,6 +481,12 @@ nav:
                       - api/kalligraphie/font/sfnt/org.graphiks.kalligraphie.font.sfnt/read-u-int16.md
                       - api/kalligraphie/font/sfnt/org.graphiks.kalligraphie.font.sfnt/read-u-int32.md
                       - api/kalligraphie/font/sfnt/org.graphiks.kalligraphie.font.sfnt/slice.md
+          - "layout":
+              - api/kalligraphie/layout/index.md
+              - "Org.graphiks.kalligraphie.layout":
+                  - api/kalligraphie/layout/org.graphiks.kalligraphie.layout/index.md
+                  - "ExactEditableLineLayouter":
+                      - api/kalligraphie/layout/org.graphiks.kalligraphie.layout/-exact-editable-line-layouter/index.md
           - "org.graphiks.kalligraphie":
               - api/kalligraphie/org.graphiks.kalligraphie/index.md
               - "JvmEditableLineFacade":
@@ -489,6 +495,12 @@ nav:
                   - api/kalligraphie/org.graphiks.kalligraphie/-jvm-editable-line-facade-request/index.md
               - "Kalligraphie":
                   - api/kalligraphie/org.graphiks.kalligraphie/-kalligraphie/index.md
+          - "shaping":
+              - api/kalligraphie/shaping/index.md
+              - "Org.graphiks.kalligraphie.shaping":
+                  - api/kalligraphie/shaping/org.graphiks.kalligraphie.shaping/index.md
+                  - "JvmHarfBuzzShapingBackend":
+                      - api/kalligraphie/shaping/org.graphiks.kalligraphie.shaping/-jvm-harf-buzz-shaping-backend/index.md
           - "unicode":
               - api/kalligraphie/unicode/index.md
               - "Org.graphiks.kalligraphie.unicode":
