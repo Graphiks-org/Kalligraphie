@@ -72,6 +72,31 @@ internal fun compositeGlyphSelfCycle(): ByteArray =
         bytes.writeInt16(16, 0)
     }
 
+internal fun compositeGlyphWithUseMyMetrics(firstComponentGlyphId: Int, metricsComponentGlyphId: Int): ByteArray =
+    ByteArray(26).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeInt16(2, 0)
+        bytes.writeInt16(4, 0)
+        bytes.writeInt16(6, 0)
+        bytes.writeInt16(8, 0)
+        bytes.writeUInt16(10, 0x0023)
+        bytes.writeUInt16(12, firstComponentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+        bytes.writeUInt16(18, 0x0203)
+        bytes.writeUInt16(20, metricsComponentGlyphId)
+        bytes.writeInt16(22, 0)
+        bytes.writeInt16(24, 0)
+    }
+
+internal fun hmtxTableForMetrics(vararg metrics: Pair<Int, Int>): ByteArray =
+    ByteArray(metrics.size * 4).also { bytes ->
+        metrics.forEachIndexed { index, (advanceWidth, leftSideBearing) ->
+            bytes.writeUInt16(index * 4, advanceWidth)
+            bytes.writeInt16(index * 4 + 2, leftSideBearing)
+        }
+    }
+
 private fun headTable(unitsPerEm: Int, indexToLocFormat: Int): ByteArray =
     ByteArray(54).also { bytes ->
         bytes.writeUInt16(18, unitsPerEm)

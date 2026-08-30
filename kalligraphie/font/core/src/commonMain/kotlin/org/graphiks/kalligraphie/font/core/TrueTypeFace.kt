@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.font.core
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontDataInterpretationVersion
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -32,7 +33,7 @@ internal class TrueTypeFace(
     private val resource: PreparedFontResource,
 ) : FontFace {
     override val metadata: FontFaceMetadata = parsedFont.metadata
-    override val id: FontFaceId = FontFaceId("${sourceId.value}#0")
+    override val id: FontFaceId = FontFaceId(source = sourceId, faceIndex = 0)
 
     override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> {
         if (descriptor.layoutSize.value <= 0f) {
@@ -56,8 +57,13 @@ internal class TrueTypeFace(
 
     private fun instanceKey(descriptor: FontInstanceDescriptor): FontInstanceKey =
         FontInstanceKey(
-            "ttf|face=${id.value}|interpretation=static-true-type-outline-v1|" +
-                "layout-size-bits=${descriptor.layoutSize.value.toRawBits()}|variations=none|synthetic=none",
+            face = id,
+            interpretation = FontDataInterpretationVersion(
+                pipelineId = "org.graphiks.kalligraphie.true-type",
+                version = "1",
+            ),
+            layoutSize = descriptor.layoutSize,
+            geometry = descriptor.geometry,
         )
 }
 
@@ -106,15 +112,15 @@ private data class TrueTypeFontInstance(
         val lease = resolver.acquireAssetLease()
             ?: return failure(FontError.ResourceClosed("Asset resolver is closed."))
         return try {
-            FontOperationResult.Success(
-                TrueTypeRenderAssetHandle(
-                    faceId = faceId,
-                    resourceLease = lease,
-                    profile = outlineProfile,
-                ),
+            val handle = TrueTypeRenderAssetHandle(
+                faceId = faceId,
+                resourceLease = lease,
+                profile = outlineProfile,
             )
-        } finally {
+            FontOperationResult.Success(handle)
+        } catch (throwable: Throwable) {
             lease.release()
+            throw throwable
         }
     }
 

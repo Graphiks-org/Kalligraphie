@@ -26,6 +26,22 @@ import kotlin.test.assertTrue
 
 class DetachedRenderAssetContractTest {
     @Test
+    fun attachedAssetRetainsItsResourceAfterResolverClose() {
+        val opened = openRenderableFont(fixtureBytes(), 2048f)
+
+        try {
+            assertIs<FontOperationResult.Success<Unit>>(opened.resolver.close())
+
+            val representation = success(
+                opened.asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none),
+            )
+            assertIs<GlyphRepresentation.Outline>(representation)
+        } finally {
+            opened.asset.close()
+        }
+    }
+
+    @Test
     fun detachedAssetResolvesAfterResolverAndAttachedHandleClose() {
         val catalog = catalogFor(fixtureBytes())
         val resolver = success(catalog.openAssetResolver())

@@ -280,10 +280,12 @@ public interface FontRenderAssetHandle {
     public fun close(): FontOperationResult<Unit>
 }
 
-/** Selects the layout size for a font instance. */
+/** Selects the layout size and geometric interpretation for a font instance. */
 public data class FontInstanceDescriptor(
     /** Requested size in layout units. */
     public val layoutSize: LayoutUnit = LayoutUnit(12f),
+    /** Normalized variation and synthetic geometry parameters. */
+    public val geometry: FontGeometryParameters = FontGeometryParameters(),
 )
 
 /**
@@ -448,41 +450,89 @@ public class GlyphOutlineIR(
         NON_ZERO,
     }
 
-    /** Legacy flattened command representation. */
+    /**
+     * Legacy flattened command representation.
+     *
+     * Coordinates are finite, preserve valid fractions, and canonicalize
+     * negative zero to positive zero when a command is constructed or copied.
+     */
     public sealed interface Command {
         /** Starts a contour at a design-space point. */
-        public data class MoveTo(
+        public class MoveTo(
             /** Horizontal coordinate, preserving fractional design units. */
-            public val x: Double,
+            x: Double,
             /** Vertical coordinate, preserving fractional design units. */
-            public val y: Double,
+            y: Double,
         ) : Command {
+            /** Canonical finite horizontal coordinate. */
+            public val x: Double = canonicalGlyphCoordinate(x)
+            /** Canonical finite vertical coordinate. */
+            public val y: Double = canonicalGlyphCoordinate(y)
+
             /** Creates a command from integral design-unit coordinates. */
             public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+
+            /** Copies this command while revalidating and canonicalizing coordinates. */
+            public fun copy(x: Double = this.x, y: Double = this.y): MoveTo = MoveTo(x, y)
+
+            /** Returns the horizontal coordinate for destructuring. */
+            public operator fun component1(): Double = x
+            /** Returns the vertical coordinate for destructuring. */
+            public operator fun component2(): Double = y
+
+            override fun equals(other: Any?): Boolean = other is MoveTo && x == other.x && y == other.y
+            override fun hashCode(): Int = 31 * x.hashCode() + y.hashCode()
+            override fun toString(): String = "MoveTo(x=$x, y=$y)"
         }
 
         /** Adds a line segment to a design-space point. */
-        public data class LineTo(
+        public class LineTo(
             /** Horizontal coordinate, preserving fractional design units. */
-            public val x: Double,
+            x: Double,
             /** Vertical coordinate, preserving fractional design units. */
-            public val y: Double,
+            y: Double,
         ) : Command {
+            /** Canonical finite horizontal coordinate. */
+            public val x: Double = canonicalGlyphCoordinate(x)
+            /** Canonical finite vertical coordinate. */
+            public val y: Double = canonicalGlyphCoordinate(y)
+
             /** Creates a command from integral design-unit coordinates. */
             public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+
+            /** Copies this command while revalidating and canonicalizing coordinates. */
+            public fun copy(x: Double = this.x, y: Double = this.y): LineTo = LineTo(x, y)
+
+            /** Returns the horizontal coordinate for destructuring. */
+            public operator fun component1(): Double = x
+            /** Returns the vertical coordinate for destructuring. */
+            public operator fun component2(): Double = y
+
+            override fun equals(other: Any?): Boolean = other is LineTo && x == other.x && y == other.y
+            override fun hashCode(): Int = 31 * x.hashCode() + y.hashCode()
+            override fun toString(): String = "LineTo(x=$x, y=$y)"
         }
 
         /** Adds a quadratic Bézier segment. */
-        public data class QuadraticTo(
+        public class QuadraticTo(
             /** Control-point horizontal coordinate, preserving fractions. */
-            public val controlX: Double,
+            controlX: Double,
             /** Control-point vertical coordinate, preserving fractions. */
-            public val controlY: Double,
+            controlY: Double,
             /** End-point horizontal coordinate, preserving fractions. */
-            public val endX: Double,
+            endX: Double,
             /** End-point vertical coordinate, preserving fractions. */
-            public val endY: Double,
+            endY: Double,
         ) : Command {
+            /** Canonical finite control-point horizontal coordinate. */
+            public val controlX: Double = canonicalGlyphCoordinate(controlX)
+            /** Canonical finite control-point vertical coordinate. */
+            public val controlY: Double = canonicalGlyphCoordinate(controlY)
+            /** Canonical finite end-point horizontal coordinate. */
+            public val endX: Double = canonicalGlyphCoordinate(endX)
+            /** Canonical finite end-point vertical coordinate. */
+            public val endY: Double = canonicalGlyphCoordinate(endY)
+
             /** Creates a command from integral design-unit coordinates. */
             public constructor(controlX: Int, controlY: Int, endX: Int, endY: Int) : this(
                 controlX.toDouble(),
@@ -490,6 +540,38 @@ public class GlyphOutlineIR(
                 endX.toDouble(),
                 endY.toDouble(),
             )
+
+            /** Copies this command while revalidating and canonicalizing coordinates. */
+            public fun copy(
+                controlX: Double = this.controlX,
+                controlY: Double = this.controlY,
+                endX: Double = this.endX,
+                endY: Double = this.endY,
+            ): QuadraticTo = QuadraticTo(controlX, controlY, endX, endY)
+
+            /** Returns the control-point horizontal coordinate for destructuring. */
+            public operator fun component1(): Double = controlX
+            /** Returns the control-point vertical coordinate for destructuring. */
+            public operator fun component2(): Double = controlY
+            /** Returns the end-point horizontal coordinate for destructuring. */
+            public operator fun component3(): Double = endX
+            /** Returns the end-point vertical coordinate for destructuring. */
+            public operator fun component4(): Double = endY
+
+            override fun equals(other: Any?): Boolean = other is QuadraticTo &&
+                controlX == other.controlX && controlY == other.controlY &&
+                endX == other.endX && endY == other.endY
+
+            override fun hashCode(): Int {
+                var result = controlX.hashCode()
+                result = 31 * result + controlY.hashCode()
+                result = 31 * result + endX.hashCode()
+                result = 31 * result + endY.hashCode()
+                return result
+            }
+
+            override fun toString(): String =
+                "QuadraticTo(controlX=$controlX, controlY=$controlY, endX=$endX, endY=$endY)"
         }
 
         /** Closes the current contour. */
@@ -607,41 +689,89 @@ public class GlyphContour(
     override fun toString(): String = "GlyphContour(commands=$commands)"
 }
 
-/** Command in a structured glyph contour. */
+/**
+ * Command in a structured glyph contour.
+ *
+ * Coordinate values are finite, preserve valid fractions, and canonicalize
+ * negative zero to positive zero at construction and copy boundaries.
+ */
 public sealed interface GlyphOutlineCommand {
     /** Starts a contour at a design-space point. */
-    public data class MoveTo(
+    public class MoveTo(
         /** Horizontal coordinate, preserving fractional design units. */
-        public val x: Double,
+        x: Double,
         /** Vertical coordinate, preserving fractional design units. */
-        public val y: Double,
+        y: Double,
     ) : GlyphOutlineCommand {
+        /** Canonical finite horizontal coordinate. */
+        public val x: Double = canonicalGlyphCoordinate(x)
+        /** Canonical finite vertical coordinate. */
+        public val y: Double = canonicalGlyphCoordinate(y)
+
         /** Creates a command from integral design-unit coordinates. */
         public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+
+        /** Copies this command while revalidating and canonicalizing coordinates. */
+        public fun copy(x: Double = this.x, y: Double = this.y): MoveTo = MoveTo(x, y)
+
+        /** Returns the horizontal coordinate for destructuring. */
+        public operator fun component1(): Double = x
+        /** Returns the vertical coordinate for destructuring. */
+        public operator fun component2(): Double = y
+
+        override fun equals(other: Any?): Boolean = other is MoveTo && x == other.x && y == other.y
+        override fun hashCode(): Int = 31 * x.hashCode() + y.hashCode()
+        override fun toString(): String = "MoveTo(x=$x, y=$y)"
     }
 
     /** Adds a line segment to a design-space point. */
-    public data class LineTo(
+    public class LineTo(
         /** Horizontal coordinate, preserving fractional design units. */
-        public val x: Double,
+        x: Double,
         /** Vertical coordinate, preserving fractional design units. */
-        public val y: Double,
+        y: Double,
     ) : GlyphOutlineCommand {
+        /** Canonical finite horizontal coordinate. */
+        public val x: Double = canonicalGlyphCoordinate(x)
+        /** Canonical finite vertical coordinate. */
+        public val y: Double = canonicalGlyphCoordinate(y)
+
         /** Creates a command from integral design-unit coordinates. */
         public constructor(x: Int, y: Int) : this(x.toDouble(), y.toDouble())
+
+        /** Copies this command while revalidating and canonicalizing coordinates. */
+        public fun copy(x: Double = this.x, y: Double = this.y): LineTo = LineTo(x, y)
+
+        /** Returns the horizontal coordinate for destructuring. */
+        public operator fun component1(): Double = x
+        /** Returns the vertical coordinate for destructuring. */
+        public operator fun component2(): Double = y
+
+        override fun equals(other: Any?): Boolean = other is LineTo && x == other.x && y == other.y
+        override fun hashCode(): Int = 31 * x.hashCode() + y.hashCode()
+        override fun toString(): String = "LineTo(x=$x, y=$y)"
     }
 
     /** Adds a quadratic Bézier segment. */
-    public data class QuadraticTo(
+    public class QuadraticTo(
         /** Control-point horizontal coordinate, preserving fractions. */
-        public val controlX: Double,
+        controlX: Double,
         /** Control-point vertical coordinate, preserving fractions. */
-        public val controlY: Double,
+        controlY: Double,
         /** End-point horizontal coordinate, preserving fractions. */
-        public val endX: Double,
+        endX: Double,
         /** End-point vertical coordinate, preserving fractions. */
-        public val endY: Double,
+        endY: Double,
     ) : GlyphOutlineCommand {
+        /** Canonical finite control-point horizontal coordinate. */
+        public val controlX: Double = canonicalGlyphCoordinate(controlX)
+        /** Canonical finite control-point vertical coordinate. */
+        public val controlY: Double = canonicalGlyphCoordinate(controlY)
+        /** Canonical finite end-point horizontal coordinate. */
+        public val endX: Double = canonicalGlyphCoordinate(endX)
+        /** Canonical finite end-point vertical coordinate. */
+        public val endY: Double = canonicalGlyphCoordinate(endY)
+
         /** Creates a command from integral design-unit coordinates. */
         public constructor(controlX: Int, controlY: Int, endX: Int, endY: Int) : this(
             controlX.toDouble(),
@@ -649,6 +779,38 @@ public sealed interface GlyphOutlineCommand {
             endX.toDouble(),
             endY.toDouble(),
         )
+
+        /** Copies this command while revalidating and canonicalizing coordinates. */
+        public fun copy(
+            controlX: Double = this.controlX,
+            controlY: Double = this.controlY,
+            endX: Double = this.endX,
+            endY: Double = this.endY,
+        ): QuadraticTo = QuadraticTo(controlX, controlY, endX, endY)
+
+        /** Returns the control-point horizontal coordinate for destructuring. */
+        public operator fun component1(): Double = controlX
+        /** Returns the control-point vertical coordinate for destructuring. */
+        public operator fun component2(): Double = controlY
+        /** Returns the end-point horizontal coordinate for destructuring. */
+        public operator fun component3(): Double = endX
+        /** Returns the end-point vertical coordinate for destructuring. */
+        public operator fun component4(): Double = endY
+
+        override fun equals(other: Any?): Boolean = other is QuadraticTo &&
+            controlX == other.controlX && controlY == other.controlY &&
+            endX == other.endX && endY == other.endY
+
+        override fun hashCode(): Int {
+            var result = controlX.hashCode()
+            result = 31 * result + controlY.hashCode()
+            result = 31 * result + endX.hashCode()
+            result = 31 * result + endY.hashCode()
+            return result
+        }
+
+        override fun toString(): String =
+            "QuadraticTo(controlX=$controlX, controlY=$controlY, endX=$endX, endY=$endY)"
     }
 
     /** Closes the current contour. */
@@ -667,12 +829,18 @@ public data class GlyphComponentReference(
     }
 }
 
-/** Two-dimensional affine transform for a composite glyph component. */
-public data class GlyphComponentTransform(
+/**
+ * Two-dimensional affine transform for a composite glyph component.
+ *
+ * Translation values are finite, preserve valid fractions, and canonicalize
+ * negative zero to positive zero. Matrix coefficients use signed F2DOT14
+ * design-space units.
+ */
+public class GlyphComponentTransform(
     /** Horizontal translation in design units, preserving fractions. */
-    public val translationX: Double,
+    translationX: Double,
     /** Vertical translation in design units, preserving fractions. */
-    public val translationY: Double,
+    translationY: Double,
     /** F2DOT14 horizontal-to-horizontal scale. */
     public val xxF2Dot14: Int = 16_384,
     /** F2DOT14 horizontal-to-vertical shear. */
@@ -682,6 +850,11 @@ public data class GlyphComponentTransform(
     /** F2DOT14 vertical-to-vertical scale. */
     public val yyF2Dot14: Int = 16_384,
 ) {
+    /** Canonical finite horizontal translation. */
+    public val translationX: Double = canonicalGlyphCoordinate(translationX)
+    /** Canonical finite vertical translation. */
+    public val translationY: Double = canonicalGlyphCoordinate(translationY)
+
     /** Creates a transform from integral design-unit translations. */
     public constructor(
         translationX: Int,
@@ -698,6 +871,55 @@ public data class GlyphComponentTransform(
         xyF2Dot14,
         yyF2Dot14,
     )
+
+    /** Copies this transform while revalidating and canonicalizing translations. */
+    public fun copy(
+        translationX: Double = this.translationX,
+        translationY: Double = this.translationY,
+        xxF2Dot14: Int = this.xxF2Dot14,
+        yxF2Dot14: Int = this.yxF2Dot14,
+        xyF2Dot14: Int = this.xyF2Dot14,
+        yyF2Dot14: Int = this.yyF2Dot14,
+    ): GlyphComponentTransform = GlyphComponentTransform(
+        translationX,
+        translationY,
+        xxF2Dot14,
+        yxF2Dot14,
+        xyF2Dot14,
+        yyF2Dot14,
+    )
+
+    /** Returns the horizontal translation for destructuring. */
+    public operator fun component1(): Double = translationX
+    /** Returns the vertical translation for destructuring. */
+    public operator fun component2(): Double = translationY
+    /** Returns the horizontal scale matrix element for destructuring. */
+    public operator fun component3(): Int = xxF2Dot14
+    /** Returns the first shear matrix element for destructuring. */
+    public operator fun component4(): Int = yxF2Dot14
+    /** Returns the second shear matrix element for destructuring. */
+    public operator fun component5(): Int = xyF2Dot14
+    /** Returns the vertical scale matrix element for destructuring. */
+    public operator fun component6(): Int = yyF2Dot14
+
+    override fun equals(other: Any?): Boolean = other is GlyphComponentTransform &&
+        translationX == other.translationX && translationY == other.translationY &&
+        xxF2Dot14 == other.xxF2Dot14 && yxF2Dot14 == other.yxF2Dot14 &&
+        xyF2Dot14 == other.xyF2Dot14 && yyF2Dot14 == other.yyF2Dot14
+
+    override fun hashCode(): Int {
+        var result = translationX.hashCode()
+        result = 31 * result + translationY.hashCode()
+        result = 31 * result + xxF2Dot14
+        result = 31 * result + yxF2Dot14
+        result = 31 * result + xyF2Dot14
+        result = 31 * result + yyF2Dot14
+        return result
+    }
+
+    override fun toString(): String =
+        "GlyphComponentTransform(translationX=$translationX, translationY=$translationY, " +
+            "xxF2Dot14=$xxF2Dot14, yxF2Dot14=$yxF2Dot14, xyF2Dot14=$xyF2Dot14, yyF2Dot14=$yyF2Dot14)"
 }
 
 /** Resource limits attached to a materialized outline. */
@@ -790,6 +1012,12 @@ private fun GlyphOutlineCommand.toLegacyCommand(): GlyphOutlineIR.Command =
             GlyphOutlineIR.Command.QuadraticTo(controlX, controlY, endX, endY)
         GlyphOutlineCommand.Close -> GlyphOutlineIR.Command.Close
     }
+
+/** Returns the canonical finite representation used by all public glyph coordinates. */
+internal fun canonicalGlyphCoordinate(value: Double): Double {
+    require(value.isFinite()) { "Glyph coordinates must be finite." }
+    return if (value == 0.0) 0.0 else value
+}
 
 private fun <Value> unsupportedContractOperation(message: String): FontOperationResult<Value> {
     val error = FontError.UnsupportedRepresentationProfile(message)

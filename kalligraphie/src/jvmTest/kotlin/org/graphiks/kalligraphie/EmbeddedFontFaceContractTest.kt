@@ -5,11 +5,11 @@ import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 class EmbeddedFontFaceContractTest {
     @Test
@@ -27,7 +27,9 @@ class EmbeddedFontFaceContractTest {
         assertEquals("Regular", face.metadata.styleName)
         assertEquals(2048, face.metadata.unitsPerEm)
         assertEquals(2620, face.metadata.glyphCount)
-        assertTrue(face.id.value.isNotBlank())
+        assertEquals(0, face.id.faceIndex)
+        val sourceId = assertIs<FontSourceId.Portable>(face.id.source)
+        assertEquals(64, sourceId.contentDigest.value.length)
     }
 
     private fun fixtureBytes(): ByteArray =

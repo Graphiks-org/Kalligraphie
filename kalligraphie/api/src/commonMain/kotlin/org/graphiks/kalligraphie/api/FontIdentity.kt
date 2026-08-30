@@ -8,38 +8,172 @@ public data class FontSourceProvenance(
     public val declaredName: String,
 )
 
+/** A lowercase SHA-256 digest identifying portable font content. */
 @JvmInline
-/** Stable content-derived identifier for a font source. */
-public value class FontSourceId(
-    /** Stable identifier value. */
+public value class FontContentDigest private constructor(
+    /** The 64-character lowercase hexadecimal digest. */
     public val value: String,
 ) {
-    init {
-        require(value.isNotBlank()) { "FontSourceId value must not be blank." }
+    public companion object {
+        /** Creates a digest after validating its canonical hexadecimal form. */
+        public operator fun invoke(value: String): FontContentDigest {
+            require(value.length == 64 && value.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) {
+                "FontContentDigest must contain exactly 64 hexadecimal characters."
+            }
+            return FontContentDigest(value.lowercase())
+        }
     }
 }
 
-@JvmInline
-/** Stable identifier for a face within a font source. */
-public value class FontFaceId(
-    /** Stable identifier value. */
-    public val value: String,
-) {
-    init {
-        require(value.isNotBlank()) { "FontFaceId value must not be blank." }
+/** Structured identity of either portable content or an opaque provider asset. */
+public sealed interface FontSourceId {
+    /** Identity derived solely from the exact portable font bytes. */
+    public data class Portable(
+        /** SHA-256 digest of the portable font bytes. */
+        public val contentDigest: FontContentDigest,
+    ) : FontSourceId
+
+    /** Identity assigned by a provider whose token is meaningful only in its generation. */
+    public data class Opaque(
+        /** Stable identity of the provider or backing store. */
+        public val providerId: String,
+        /** Provider generation in which [sourceToken] is valid. */
+        public val catalogGeneration: String,
+        /** Provider-owned token for the source. */
+        public val sourceToken: String,
+    ) : FontSourceId {
+        init {
+            require(providerId.isNotBlank()) { "providerId must not be blank." }
+            require(catalogGeneration.isNotBlank()) { "catalogGeneration must not be blank." }
+            require(sourceToken.isNotBlank()) { "sourceToken must not be blank." }
+        }
     }
 }
 
-@JvmInline
-/** Stable identifier for a concrete font instance. */
-public value class FontInstanceKey(
-    /** Stable identifier value. */
-    public val value: String,
+/** Identity of one face, distinguished from sibling faces in the same source. */
+public data class FontFaceId(
+    /** Source containing the face. */
+    public val source: FontSourceId,
+    /** Zero-based face index within [source]. */
+    public val faceIndex: Int,
 ) {
     init {
-        require(value.isNotBlank()) { "FontInstanceKey value must not be blank." }
+        require(faceIndex >= 0) { "faceIndex must be non-negative." }
     }
 }
+
+/** Versioned identity of the interpretation pipeline used to decode a font. */
+public data class FontDataInterpretationVersion(
+    /** Stable pipeline identity, independent of a particular font source. */
+    public val pipelineId: String,
+    /** Version of the interpretation rules. */
+    public val version: String,
+) {
+    init {
+        require(pipelineId.isNotBlank()) { "pipelineId must not be blank." }
+        require(version.isNotBlank()) { "version must not be blank." }
+    }
+}
+
+/**
+ * One normalized variation-axis coordinate included in an instance identity.
+ *
+ * The tag must be an OpenType four-character tag and the value must be finite.
+ * Instances are immutable and therefore safe to share between concurrent callers.
+ *
+ * @param tag four-character OpenType axis tag.
+ * @param value normalized finite axis value; negative zero is canonicalized.
+ */
+public class FontAxisCoordinate(
+    /** Four-character OpenType axis tag. */
+    public val tag: String,
+    /** Normalized finite axis value; negative zero is canonicalized. */
+    value: Float,
+) {
+    /** Canonical finite axis value; negative zero is represented as positive zero. */
+    public val value: Float = if (value == 0f) 0f else value
+
+    init {
+        require(tag.length == 4) { "Font axis tags must contain exactly four characters." }
+        require(value.isFinite()) { "Font axis values must be finite." }
+    }
+
+    /** Copies this coordinate while revalidating and canonicalizing its value. */
+    public fun copy(tag: String = this.tag, value: Float = this.value): FontAxisCoordinate =
+        FontAxisCoordinate(tag, value)
+
+    override fun equals(other: Any?): Boolean = other is FontAxisCoordinate && tag == other.tag && value == other.value
+
+    override fun hashCode(): Int = 31 * tag.hashCode() + value.hashCode()
+
+    override fun toString(): String = "FontAxisCoordinate(tag=$tag, value=$value)"
+}
+
+/**
+ * Geometric parameters that affect the rendered shape of an instance.
+ *
+ * Axis coordinates are copied into an immutable, tag-sorted snapshot. Two
+ * parameter values are equal only when their axes and synthetic geometry
+ * settings are equal, which makes them suitable for instance-key equality.
+ *
+ * @param normalizedAxes variation coordinates to include in the identity.
+ * @param syntheticBold whether synthetic bold geometry is applied.
+ * @param syntheticItalic whether synthetic italic geometry is applied.
+ */
+public class FontGeometryParameters(
+    /** Variation coordinates to include in the instance identity. */
+    normalizedAxes: List<FontAxisCoordinate> = emptyList(),
+    /** Whether synthetic bold geometry is applied. */
+    public val syntheticBold: Boolean = false,
+    /** Whether synthetic italic geometry is applied. */
+    public val syntheticItalic: Boolean = false,
+) {
+    /** Normalized variation axes participating in the instance identity. */
+    public val normalizedAxes: List<FontAxisCoordinate> = normalizedAxes
+        .sortedBy { it.tag }
+        .immutableListSnapshot()
+
+    init {
+        require(this.normalizedAxes.zipWithNext().all { (left, right) -> left.tag < right.tag }) {
+            "normalizedAxes must be sorted by unique axis tag."
+        }
+    }
+
+    /** Copies these parameters while retaining canonical axis ordering. */
+    public fun copy(
+        normalizedAxes: List<FontAxisCoordinate> = this.normalizedAxes,
+        syntheticBold: Boolean = this.syntheticBold,
+        syntheticItalic: Boolean = this.syntheticItalic,
+    ): FontGeometryParameters = FontGeometryParameters(normalizedAxes, syntheticBold, syntheticItalic)
+
+    override fun equals(other: Any?): Boolean = other is FontGeometryParameters &&
+        normalizedAxes == other.normalizedAxes &&
+        syntheticBold == other.syntheticBold &&
+        syntheticItalic == other.syntheticItalic
+
+    override fun hashCode(): Int {
+        var result = normalizedAxes.hashCode()
+        result = 31 * result + syntheticBold.hashCode()
+        result = 31 * result + syntheticItalic.hashCode()
+        return result
+    }
+
+    override fun toString(): String =
+        "FontGeometryParameters(normalizedAxes=$normalizedAxes, syntheticBold=$syntheticBold, " +
+            "syntheticItalic=$syntheticItalic)"
+}
+
+/** Complete identity of a concrete face interpretation and geometric instance. */
+public data class FontInstanceKey(
+    /** Face from which the instance is derived. */
+    public val face: FontFaceId,
+    /** Interpretation rules used to decode the face. */
+    public val interpretation: FontDataInterpretationVersion,
+    /** Layout size used by the instance. */
+    public val layoutSize: LayoutUnit,
+    /** Variation and synthetic geometry parameters. */
+    public val geometry: FontGeometryParameters = FontGeometryParameters(),
+)
 
 /** Immutable byte-backed font source used by the loading pipeline. */
 public class FontSource(
@@ -50,7 +184,7 @@ public class FontSource(
     private val capturedBytes: ByteArray = sourceBytes.copyOf()
 
     /** Identifier derived from the captured bytes. */
-    public val id: FontSourceId = FontSourceId(capturedBytes.sha256Hex())
+    public val id: FontSourceId = FontSourceId.Portable(FontContentDigest(capturedBytes.sha256Hex()))
 
     /** Number of bytes captured from the source. */
     public val sizeInBytes: Int

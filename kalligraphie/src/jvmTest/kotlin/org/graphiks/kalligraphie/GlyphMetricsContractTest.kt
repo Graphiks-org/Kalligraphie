@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.LayoutBounds
@@ -18,6 +19,31 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class GlyphMetricsContractTest {
+    @Test
+    fun compositeMetricsUseTheComponentMarkedWithUseMyMetrics() {
+        val composite = compositeGlyphWithUseMyMetrics(firstComponentGlyphId = 1, metricsComponentGlyphId = 2)
+        val hmtx = hmtxTableForMetrics(
+            700 to 0,
+            500 to 0,
+            900 to 0,
+        )
+        val bytes = minimalTrueTypeFont(
+            glyphCount = 3,
+            tables = mapOf(
+                "hmtx" to hmtx,
+                "loca" to locaFormat0(0, composite.size, composite.size, composite.size),
+                "glyf" to composite,
+            ),
+        )
+
+        val instance = openInstance(size = 2048f, bytes = bytes)
+        val metrics = assertIs<FontOperationResult.Success<GlyphMetrics>>(instance.metrics(GlyphId(0))).value
+
+        assertEquals(900, metrics.advanceWidthDesignUnits)
+        assertEquals(0, metrics.leftSideBearingDesignUnits)
+        assertEquals(900f, metrics.advanceWidth.value)
+    }
+
     @Test
     fun resolvesAndMeasuresLiberationSansGlyphs() {
         val instance = openInstance(size = 2048f)
@@ -83,11 +109,11 @@ class GlyphMetricsContractTest {
         assertTrue(resolution.diagnostics.any { it.code == "font.cmap.glyph-not-found" })
     }
 
-    private fun openInstance(size: Float) =
+    private fun openInstance(size: Float, bytes: ByteArray = fixtureBytes()) =
         assertIs<FontOperationResult.Success<FontFace>>(
             assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
                 Kalligraphie.embedded(
-                    sourceBytes = fixtureBytes(),
+                    sourceBytes = bytes,
                     provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
                 ),
             ).value.resolveFace(FontFaceRequest(faceIndex = 0), FontAccessRequirementsSnapshot.layoutOnly()),

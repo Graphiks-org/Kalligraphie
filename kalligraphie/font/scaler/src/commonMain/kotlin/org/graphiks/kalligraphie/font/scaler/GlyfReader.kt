@@ -89,6 +89,19 @@ internal object GlyfReader {
         )
     }
 
+    /**
+     * Returns the glyph whose horizontal metrics apply to [glyphId].
+     *
+     * A composite component carrying `USE_MY_METRICS` overrides the parent
+     * composite's `hmtx` entry. The lookup is intentionally limited to the
+     * component records and does not decode contours a second time.
+     */
+    internal fun horizontalMetricsGlyphId(
+        prepared: PreparedGlyphData,
+        glyphId: GlyphId,
+    ): FontOperationResult<GlyphId> =
+        readHorizontalMetricsGlyphId(prepared, glyphId)
+
     /** Reads one outline from prepared immutable glyph tables. */
     internal fun readGlyphOutline(
         prepared: PreparedGlyphData,
@@ -110,6 +123,81 @@ internal object GlyfReader {
             cancellationToken,
         )
             .resolveRoot(glyphId)
+    }
+
+    private fun readHorizontalMetricsGlyphId(
+        prepared: PreparedGlyphData,
+        glyphId: GlyphId,
+    ): FontOperationResult<GlyphId> {
+        if (glyphId.value !in 0 until prepared.glyphCount) {
+            return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        val range = when (val result = prepared.loca.rangeForGlyph(glyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        if (range.start == range.endExclusive) return FontOperationResult.Success(glyphId)
+        if (range.endExclusive > prepared.glyf.size || range.endExclusive - range.start < 10) {
+            return failure(fontFailure("font.glyf.truncated", "Glyph header is truncated.", glyphLocation(glyphId.value)))
+        }
+
+        val reader = GlyphByteReader(prepared.glyf, range.start, range.endExclusive)
+        val contourCount = reader.readInt16() ?: return truncated(glyphId.value)
+        repeat(4) {
+            reader.readInt16() ?: return truncated(glyphId.value)
+        }
+        if (contourCount >= 0) return FontOperationResult.Success(glyphId)
+
+        var metricsGlyphId = glyphId
+        var flags: Int
+        var componentCount = 0
+        do {
+            if (componentCount >= prepared.maxp.maxComponentElements) {
+                return limitFailure(
+                    "Composite glyph component element limit exceeded.",
+                    glyphLocation(glyphId.value),
+                    (componentCount + 1).toLong(),
+                    prepared.maxp.maxComponentElements.toLong(),
+                )
+            }
+            flags = reader.readUInt16() ?: return truncated(glyphId.value)
+            if (flags and SUPPORTED_COMPOSITE_FLAGS.inv() != 0) {
+                return failure(fontFailure("font.glyf.unsupported-component", "Composite glyph has unsupported flags.", glyphLocation(glyphId.value)))
+            }
+            val componentGlyphId = reader.readUInt16() ?: return truncated(glyphId.value)
+            if (componentGlyphId !in 0 until prepared.glyphCount) {
+                return failure(fontFailure("font.glyf.component-out-of-range", "Composite component glyph ID is out of range.", glyphLocation(glyphId.value)))
+            }
+            val placement = readComponentPlacement(reader, flags) ?: return truncated(glyphId.value)
+            val initialTranslation = if (placement is ComponentPlacement.Offset) {
+                Pair(placement.x, placement.y)
+            } else {
+                Pair(0.0, 0.0)
+            }
+            when (
+                val result = readComponentTransform(
+                    reader,
+                    flags,
+                    initialTranslation.first,
+                    initialTranslation.second,
+                    glyphId.value,
+                )
+            ) {
+                is FontOperationResult.Success -> Unit
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            componentCount += 1
+            if (flags and COMPOSITE_USE_MY_METRICS != 0) {
+                metricsGlyphId = GlyphId(componentGlyphId)
+            }
+        } while (flags and COMPOSITE_MORE_COMPONENTS != 0)
+        if (flags and COMPOSITE_WE_HAVE_INSTRUCTIONS != 0) {
+            val instructionLength = reader.readUInt16() ?: return truncated(glyphId.value)
+            if (!reader.skip(instructionLength)) return truncated(glyphId.value)
+        }
+        return FontOperationResult.Success(metricsGlyphId)
     }
 }
 

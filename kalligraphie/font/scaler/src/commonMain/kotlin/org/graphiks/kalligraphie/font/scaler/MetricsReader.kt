@@ -98,8 +98,13 @@ internal object MetricsReader {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
 
-        val metrics = if (glyphId.value < prepared.numberOfHMetrics) {
-            val offset = glyphId.value.toLong() * 4L
+        val metricsGlyphId = when (val result = GlyfReader.horizontalMetricsGlyphId(glyphData, glyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val metrics = if (metricsGlyphId.value < prepared.numberOfHMetrics) {
+            val offset = metricsGlyphId.value.toLong() * 4L
             if (checkedRangeEnd(offset, 4L, prepared.hmtx.size) == null) {
                 return failure(
                     FontError.OutOfBounds("hmtx longHorMetric record is truncated.", tableLocation("hmtx")),
@@ -124,7 +129,7 @@ internal object MetricsReader {
             val advanceWidth = readUInt16(prepared.hmtx, lastMetricOffset.toInt())?.toInt()
                 ?: return failure(FontError.OutOfBounds("hmtx advanceWidth is truncated.", tableLocation("hmtx")))
             val lsbOffset = prepared.numberOfHMetrics.toLong() * 4L +
-                (glyphId.value.toLong() - prepared.numberOfHMetrics.toLong()) * 2L
+                (metricsGlyphId.value.toLong() - prepared.numberOfHMetrics.toLong()) * 2L
             if (checkedRangeEnd(lsbOffset, 2L, prepared.hmtx.size) == null) {
                 return failure(
                     FontError.OutOfBounds("hmtx trailing leftSideBearing is truncated.", tableLocation("hmtx")),
