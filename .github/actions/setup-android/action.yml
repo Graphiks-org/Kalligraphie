@@ -1,0 +1,51 @@
+name: Set up Android SDK
+description: Install the Android SDK platform and the exact NDK used by Gradle
+
+runs:
+  using: composite
+  steps:
+    - name: Install Android command-line tools
+      uses: android-actions/setup-android@v4
+
+    - name: Locate sdkmanager
+      id: sdkmanager
+      shell: bash
+      run: |
+        if sdkmanager_bin="$(command -v sdkmanager 2>/dev/null)"; then
+          echo "path=$sdkmanager_bin" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        sdk_root="$ANDROID_SDK_ROOT"
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          sdk_root="$(cygpath -u "$sdk_root")"
+        fi
+
+        sdkmanager_bin=""
+        for candidate in "$sdk_root"/cmdline-tools/*/bin/sdkmanager "$sdk_root"/cmdline-tools/*/bin/sdkmanager.bat; do
+          if [[ -f "$candidate" ]]; then
+            sdkmanager_bin="$candidate"
+            break
+          fi
+        done
+
+        if [[ -z "$sdkmanager_bin" ]]; then
+          echo "Unable to locate sdkmanager under $sdk_root/cmdline-tools" >&2
+          exit 1
+        fi
+
+        echo "path=$sdkmanager_bin" >> "$GITHUB_OUTPUT"
+
+    - name: Accept Android SDK licenses
+      shell: bash
+      env:
+        SDKMANAGER_PATH: ${{ steps.sdkmanager.outputs.path }}
+      run: |
+        "$SDKMANAGER_PATH" --licenses < <(yes)
+
+    - name: Install Android SDK packages
+      shell: bash
+      env:
+        SDKMANAGER_PATH: ${{ steps.sdkmanager.outputs.path }}
+      run: |
+        "$SDKMANAGER_PATH" "platforms;android-37" "ndk;30.0.15729638"
