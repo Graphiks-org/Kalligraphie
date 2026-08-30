@@ -154,8 +154,9 @@ jobs:
           test "$(shasum -a 256 "$first_library" | awk '{ print $1 }')" = '${{ matrix.embedded_sha256 }}'
           cmp --silent "$first_library" '${{ matrix.embedded_library }}'
           test "$(otool -L "$first_library" | awk 'NR > 1 { print $1 }')" = $'@rpath/libharfbuzz.dylib\n/usr/lib/libSystem.B.dylib'
+          exported_symbols="$(nm -gU "$first_library")"
           for symbol in hb_buffer_set_cluster_level hb_glyph_info_get_glyph_flags hb_ot_layout_get_ligature_carets hb_shape_full hb_version_string; do
-            nm -gU "$first_library" | grep -Eq "[[:space:]]_${symbol}$"
+            grep -Eq "[[:space:]]_${symbol}$" <<<"$exported_symbols"
           done
           "${CC:-cc}" -I"$source_root/src" -x c - -x none "$first_library" -Wl,-rpath,"$(dirname "$first_library")" -o "$hb_rebuild_root/version-probe" <<'C'
           #include <string.h>
