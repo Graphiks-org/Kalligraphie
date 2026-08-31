@@ -12,7 +12,7 @@ class ParagraphLayoutContractsTest {
         val features = mutableListOf(OpenTypeFeature("kern", 1))
         val request = fixture.request(features = features)
         val lines = mutableListOf(fixture.lineLayout())
-        val layout = TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, lines)
+        val layout = TestParagraphLayout(fixture.snapshot, fixture.lineBreakAnalysis, fixture.snapshot.range, lines)
 
         features.clear()
         lines.clear()
@@ -26,6 +26,24 @@ class ParagraphLayoutContractsTest {
         assertFailsWith<UnsupportedOperationException> {
             @Suppress("UNCHECKED_CAST")
             (layout.lines as MutableList<LineLayout>).clear()
+        }
+    }
+
+    @Test
+    fun ordinaryParagraphRejectsAnUnprovenTerminalEmptyLine() {
+        val fixture = fixture("a")
+        val end = fixture.snapshot.range.endExclusive
+
+        assertFailsWith<IllegalArgumentException> {
+            TestParagraphLayout(
+                fixture.snapshot,
+                fixture.lineBreakAnalysis,
+                fixture.snapshot.range,
+                listOf(
+                    fixture.lineLayout(),
+                    fixture.lineLayout(TextRange(end, end), baselineY = 30f),
+                ),
+            )
         }
     }
 
@@ -86,7 +104,7 @@ class ParagraphLayoutContractsTest {
             fixture.request(sourceRange = foreign.snapshot.range)
         }
         assertFailsWith<IllegalArgumentException> {
-            TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(foreign.lineLayout()))
+            TestParagraphLayout(fixture.snapshot, fixture.lineBreakAnalysis, fixture.snapshot.range, listOf(foreign.lineLayout()))
         }
     }
 
@@ -100,7 +118,7 @@ class ParagraphLayoutContractsTest {
             fixture.request(sourceRange = largerSnapshot.snapshot.range)
         }
         assertFailsWith<IllegalArgumentException> {
-            TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(largerSnapshot.lineLayout()))
+            TestParagraphLayout(fixture.snapshot, fixture.lineBreakAnalysis, fixture.snapshot.range, listOf(largerSnapshot.lineLayout()))
         }
     }
 
@@ -161,6 +179,7 @@ class ParagraphLayoutContractsTest {
         val incompletePublishedRange = TextRange(first, second)
         val incompleteLayout = TestParagraphLayout(
             fixture.snapshot,
+            fixture.lineBreakAnalysis,
             incompletePublishedRange,
             listOf(fixture.lineLayout(incompletePublishedRange)),
         )
@@ -192,7 +211,7 @@ class ParagraphLayoutContractsTest {
         val middle = fixture.snapshot.textIndexAtScalarBoundary(1)
         val firstLine = fixture.lineLayout(TextRange(fixture.snapshot.range.start, middle), baselineY = 20f)
         val secondLine = fixture.lineLayout(TextRange(middle, fixture.snapshot.range.endExclusive), baselineY = 30f)
-        val layout = TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(firstLine, secondLine))
+        val layout = TestParagraphLayout(fixture.snapshot, fixture.lineBreakAnalysis, fixture.snapshot.range, listOf(firstLine, secondLine))
 
         val rectangles = layout.selectionGeometry(
             firstLine.allCaretCandidates.first().position,
@@ -214,7 +233,7 @@ class ParagraphLayoutContractsTest {
         val middle = fixture.snapshot.textIndexAtScalarBoundary(1)
         val firstLine = fixture.lineLayout(TextRange(fixture.snapshot.range.start, middle), baselineY = 20f)
         val secondLine = fixture.lineLayout(TextRange(middle, fixture.snapshot.range.endExclusive), baselineY = 30f)
-        val layout = TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(firstLine, secondLine))
+        val layout = TestParagraphLayout(fixture.snapshot, fixture.lineBreakAnalysis, fixture.snapshot.range, listOf(firstLine, secondLine))
 
         assertSame(
             firstLine.allCaretCandidates.first(),
@@ -236,9 +255,10 @@ class ParagraphLayoutContractsTest {
 
     private class TestParagraphLayout(
         snapshot: TextSnapshot,
+        lineBreakAnalysis: LineBreakAnalysis,
         range: TextRange,
         lines: List<LineLayout>,
-    ) : ParagraphLayout(snapshot, range, lines) {
+    ) : ParagraphLayout(snapshot, lineBreakAnalysis, range, lines) {
         override fun nextLogical(position: CaretPosition, direction: LogicalNavigationDirection): CaretPosition? = null
 
         override fun nextVisual(candidate: CaretCandidate, direction: VisualNavigationDirection): CaretCandidate? = null

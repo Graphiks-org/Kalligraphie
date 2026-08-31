@@ -28,6 +28,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
@@ -379,13 +380,7 @@ class EditableParagraphCompositionTest {
             ParagraphComposer.layout(fixture.request, EditableLineMaterialization.LayoutOnly),
         )
         val line = result.layout.lines.single()
-        val glyphBounds = trueGlyphBounds(fixture, line)
-        val expectedInk = LayoutBounds(
-            glyphBounds.minOf { it.minX },
-            glyphBounds.minOf { it.minY },
-            glyphBounds.maxOf { it.maxX },
-            glyphBounds.maxOf { it.maxY },
-        )
+        val expectedInk = trueInkBounds(fixture, line)
 
         assertEquals(expectedInk, line.designInkBounds)
         assertEquals(
@@ -410,6 +405,59 @@ class EditableParagraphCompositionTest {
         assertTrue(line.contentMetrics.descent != line.verticalMetrics.descent)
         // The oracle is the actual DejaVu TrueType instance used by shaping, not an empty
         // placeholder or a renderer-dependent raster bound.
+    }
+
+    @Test
+    fun trailingSpacesDoNotExpandPublishedInkBounds() {
+        val fixture = fixture("Ag   ", width = 5_000f, height = 1_000f)
+
+        val line = layout(fixture.request).layout.lines.single()
+        val expectedInk = trueInkBounds(fixture, line)
+
+        assertEquals(expectedInk, line.designInkBounds)
+        assertTrue(line.designInkBounds.maxX < LayoutUnit(line.baseline.x.value + line.contentMetrics.inlineAdvance.value))
+        // The independent font oracle discards an empty glyph metric before any translation, so
+        // a translated zero-area space cannot become a false paragraph-coordinate ink point.
+    }
+
+    @Test
+    fun allSpaceLinePublishesOnlyItsBaselineAsInkBounds() {
+        val fixture = fixture("   ", width = 5_000f, height = 1_000f)
+
+        val line = layout(fixture.request).layout.lines.single()
+
+        assertTrue(line.positionedGlyphRuns.flatMap { it.glyphs }.isNotEmpty())
+        assertEquals(emptyList(), trueNonEmptyGlyphBounds(fixture, line))
+        assertEquals(
+            LayoutBounds(line.baseline.x, line.baseline.y, line.baseline.x, line.baseline.y),
+            line.designInkBounds,
+        )
+        assertEquals(LayoutUnit(0f), line.contentMetrics.ascent)
+        assertEquals(LayoutUnit(0f), line.contentMetrics.descent)
+    }
+
+    @Test
+    fun extremeFiniteProjectionGeometryReturnsTypedOverflow() {
+        val fixture = fixture("A", width = 1_000f, height = 1_000f)
+        val request = copyRequest(
+            fixture.request,
+            constraints = HorizontalParagraphConstraints(
+                region = LayoutRect(
+                    LayoutUnit(3.0e38f),
+                    LayoutUnit(50f),
+                    LayoutUnit(3.3e38f),
+                    LayoutUnit(1_050f),
+                ),
+                lineMetrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
+            ),
+            fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1.0e38f)),
+        )
+
+        assertIs<ParagraphCompositionResult.Success>(ParagraphComposer.compose(request, EditableLineMaterialization.LayoutOnly))
+        val result = ParagraphComposer.layout(request, EditableLineMaterialization.LayoutOnly)
+
+        val failure = assertIs<ParagraphLayoutResult.Failure>(result)
+        assertIs<ParagraphLayoutError.GeometryOverflow>(failure.error)
     }
 
     @Test
@@ -532,6 +580,7 @@ class EditableParagraphCompositionTest {
         request: ParagraphLayoutRequest,
         sourceRange: TextRange = request.sourceRange,
         constraints: HorizontalParagraphConstraints = request.constraints,
+        fontInstanceDescriptor: FontInstanceDescriptor = request.fontInstanceDescriptor,
         materializationIdentity: ParagraphMaterializationIdentity = request.materializationIdentity,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
     ): ParagraphLayoutRequest = ParagraphLayoutRequest(
@@ -546,7 +595,7 @@ class EditableParagraphCompositionTest {
         features = request.features,
         fontCatalog = request.fontCatalog,
         resolutionPolicy = request.resolutionPolicy,
-        fontInstanceDescriptor = request.fontInstanceDescriptor,
+        fontInstanceDescriptor = fontInstanceDescriptor,
         shapingBackend = request.shapingBackend,
         materializationIdentity = materializationIdentity,
         overflowPolicy = request.overflowPolicy,
@@ -642,7 +691,7 @@ class EditableParagraphCompositionTest {
     private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange =
         TextRange(snapshot.textIndexAtScalarBoundary(start), snapshot.textIndexAtScalarBoundary(endExclusive))
 
-    private fun trueGlyphBounds(
+    private fun trueNonEmptyGlyphBounds(
         fixture: Fixture,
         line: org.graphiks.kalligraphie.api.LineLayout,
     ): List<LayoutBounds> {
@@ -653,15 +702,32 @@ class EditableParagraphCompositionTest {
             .successValue()
         return line.positionedGlyphRuns.flatMap { run ->
             check(run.fontInstanceKey == instance.key)
-            run.glyphs.map { glyph ->
+            run.glyphs.mapNotNull { glyph ->
                 val metrics = instance.metrics(glyph.shapedGlyph.glyphId).successValue()
-                LayoutBounds(
-                    minX = LayoutUnit(glyph.origin.x.value + metrics.scaledBounds.minX.value),
-                    minY = LayoutUnit(glyph.origin.y.value - metrics.scaledBounds.maxY.value),
-                    maxX = LayoutUnit(glyph.origin.x.value + metrics.scaledBounds.maxX.value),
-                    maxY = LayoutUnit(glyph.origin.y.value - metrics.scaledBounds.minY.value),
-                )
+                metrics.scaledBounds.takeUnless { it == LayoutBounds.empty }?.let { bounds -> LayoutBounds(
+                    minX = LayoutUnit(glyph.origin.x.value + bounds.minX.value),
+                    minY = LayoutUnit(glyph.origin.y.value - bounds.maxY.value),
+                    maxX = LayoutUnit(glyph.origin.x.value + bounds.maxX.value),
+                    maxY = LayoutUnit(glyph.origin.y.value - bounds.minY.value),
+                ) }
             }
+        }
+    }
+
+    private fun trueInkBounds(
+        fixture: Fixture,
+        line: org.graphiks.kalligraphie.api.LineLayout,
+    ): LayoutBounds {
+        val glyphBounds = trueNonEmptyGlyphBounds(fixture, line)
+        return if (glyphBounds.isEmpty()) {
+            LayoutBounds(line.baseline.x, line.baseline.y, line.baseline.x, line.baseline.y)
+        } else {
+            LayoutBounds(
+                glyphBounds.minOf { it.minX },
+                glyphBounds.minOf { it.minY },
+                glyphBounds.maxOf { it.maxX },
+                glyphBounds.maxOf { it.maxY },
+            )
         }
     }
 

@@ -21,6 +21,7 @@ import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBreakKind
+import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.LineContentMetrics
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
@@ -91,15 +92,8 @@ public object ParagraphComposer : ParagraphLayouter {
     override fun layout(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
-    ): ParagraphLayoutResult {
-        val composition = try {
-            compose(request, materialization)
-        } catch (overflow: ParagraphGeometryOverflowException) {
-            return ParagraphLayoutResult.Failure(
-                ParagraphLayoutError.GeometryOverflow(overflow.message ?: "Paragraph geometry overflowed."),
-            )
-        }
-        return when (composition) {
+    ): ParagraphLayoutResult = try {
+        when (val composition = compose(request, materialization)) {
             is ParagraphCompositionResult.Failure -> ParagraphLayoutResult.Failure(
                 composition.error.toParagraphError(),
                 composition.diagnostics,
@@ -108,6 +102,10 @@ public object ParagraphComposer : ParagraphLayouter {
             is ParagraphCompositionResult.Cancelled -> ParagraphLayoutResult.Cancelled(composition.diagnostics)
             is ParagraphCompositionResult.Success -> projectComposition(request, composition)
         }
+    } catch (overflow: ParagraphGeometryOverflowException) {
+        ParagraphLayoutResult.Failure(
+            ParagraphLayoutError.GeometryOverflow(overflow.message ?: "Paragraph geometry overflowed."),
+        )
     }
 
     internal fun compose(
@@ -242,7 +240,7 @@ public object ParagraphComposer : ParagraphLayouter {
         } else {
             TextRange(request.sourceRange.start, remaining.start)
         }
-        val layout = FinalParagraphLayout(request.snapshot, range, projectedLines)
+        val layout = FinalParagraphLayout(request.snapshot, request.lineBreakAnalysis, range, projectedLines)
         return ParagraphLayoutResult.Success(
             layout = layout,
             coverageStatus = if (continuation == null) CoverageStatus.COMPLETE else CoverageStatus.PARTIAL,
@@ -262,13 +260,17 @@ public object ParagraphComposer : ParagraphLayouter {
                 )
             run.glyphs.forEach { glyph ->
                 when (val metrics = instance.metrics(glyph.shapedGlyph.glyphId)) {
-                    is FontOperationResult.Success -> glyphBounds += translatedGlyphBounds(
-                        LayoutPoint(
-                            finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
-                            finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
-                        ),
-                        metrics.value.scaledBounds,
-                    )
+                    is FontOperationResult.Success -> metrics.value.scaledBounds
+                        .takeUnless { it == LayoutBounds.empty }
+                        ?.let { bounds ->
+                            glyphBounds += translatedGlyphBounds(
+                                LayoutPoint(
+                                    finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
+                                    finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
+                                ),
+                                bounds,
+                            )
+                        }
                     is FontOperationResult.Failure -> return ProjectedLine.Failure(ParagraphLayoutError.FontFailure(metrics.error))
                     is FontOperationResult.Cancelled -> return ProjectedLine.Cancelled
                 }
@@ -804,9 +806,10 @@ public object ParagraphComposer : ParagraphLayouter {
 /** Final immutable paragraph projection whose editing operations use paragraph-coordinate values. */
 private class FinalParagraphLayout(
     snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
+    lineBreakAnalysis: LineBreakAnalysis,
     range: TextRange,
     lines: List<LineLayout>,
-) : ParagraphLayout(snapshot, range, lines) {
+) : ParagraphLayout(snapshot, lineBreakAnalysis, range, lines) {
     override fun nextLogical(
         position: CaretPosition,
         direction: LogicalNavigationDirection,

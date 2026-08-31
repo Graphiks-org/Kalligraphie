@@ -131,12 +131,15 @@ public class LineLayout(
  * Immutable base contract for a complete set of paragraph lines and editing operations.
  *
  * The constructor defensively captures [lines], verifies that they form the complete ordered
- * partition of [range], and binds the result to [snapshot]'s [TextVersion]. Implementations of
- * the abstract editorial operations must use only the published final candidates and visual-run
- * rectangles, retain no borrowed native or renderer resource, and be safe for concurrent reads.
+ * partition of [range], validates a terminal empty line against [lineBreakAnalysis], and binds
+ * the result to [snapshot]'s [TextVersion]. Implementations of the abstract editorial operations
+ * must use only the published final candidates and visual-run rectangles, retain no borrowed
+ * native or renderer resource, and be safe for concurrent reads.
  */
 public abstract class ParagraphLayout protected constructor(
     snapshot: TextSnapshot,
+    /** Complete UAX #14 analysis that proves any terminal empty physical line is mandatory. */
+    lineBreakAnalysis: LineBreakAnalysis,
     /** Complete half-open source range covered by [lines]. */
     public val range: TextRange,
     lines: List<LineLayout>,
@@ -149,7 +152,14 @@ public abstract class ParagraphLayout protected constructor(
 
     init {
         require(snapshot.contains(range)) { "A paragraph layout range must belong to its source snapshot." }
-        requireCompleteLinePartition(range, this.lines)
+        require(lineBreakAnalysis.range == snapshot.range) {
+            "Paragraph line-break analysis must cover the complete source snapshot revision."
+        }
+        requireCompleteLinePartition(
+            range,
+            this.lines,
+            hasMandatoryTerminalBreak(lineBreakAnalysis, range.endExclusive),
+        )
         require(this.lines.zipWithNext().all { (first, second) -> first.lineBox.bottom <= second.lineBox.top }) {
             "Paragraph lines must be published in non-overlapping physical top-to-bottom order."
         }
@@ -676,7 +686,18 @@ private fun EditableLineMaterialization.toParagraphIdentity(): ParagraphMaterial
     is EditableLineMaterialization.Renderable -> ParagraphMaterializationIdentity.Renderable(variant, outlineProfile)
 }
 
-private fun requireCompleteLinePartition(range: TextRange, lines: List<LineLayout>) {
+private fun hasMandatoryTerminalBreak(
+    lineBreakAnalysis: LineBreakAnalysis,
+    boundary: TextIndex,
+): Boolean = lineBreakAnalysis.opportunities.any { opportunity ->
+    opportunity.boundary == boundary && opportunity.kind == LineBreakKind.MANDATORY
+}
+
+private fun requireCompleteLinePartition(
+    range: TextRange,
+    lines: List<LineLayout>,
+    terminalEmptyLineIsMandatory: Boolean,
+) {
     if (range.start == range.endExclusive) {
         require(lines.size <= 1 && lines.all { line -> line.range == range }) {
             "An empty paragraph range may publish at most one matching empty line."
@@ -695,9 +716,10 @@ private fun requireCompleteLinePartition(range: TextRange, lines: List<LineLayou
                 !terminalEmptyLineSeen &&
                     index == lines.lastIndex &&
                     expectedStart == range.endExclusive &&
-                    line.range == TextRange(range.endExclusive, range.endExclusive),
+                    line.range == TextRange(range.endExclusive, range.endExclusive) &&
+                    terminalEmptyLineIsMandatory,
             ) {
-                "Only one terminal empty line may follow complete non-empty paragraph coverage."
+                "Only one terminal empty line proven by a mandatory source break may follow complete non-empty paragraph coverage."
             }
             terminalEmptyLineSeen = true
             return@forEachIndexed
