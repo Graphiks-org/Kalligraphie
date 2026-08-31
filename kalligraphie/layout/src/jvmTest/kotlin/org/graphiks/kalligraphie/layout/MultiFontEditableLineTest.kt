@@ -439,6 +439,64 @@ class MultiFontEditableLineTest {
     }
 
     @Test
+    fun fallbackDoesNotDiscardTheCyrillicFragmentInsideAGraphemeBeforeArabicFallback() {
+        val latin = source("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")
+        val arabic = source("/fonts/amiri/Amiri-Regular.ttf", "Amiri Regular")
+        val generation = FontCatalogGeneration("audited-cross-itemization-fallback-fixture-v1")
+        val catalog = EmbeddedFontCatalog(
+            generation = generation,
+            entries = listOf(
+                EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue()),
+                EmbeddedFontCatalogEntry(arabic, SfntReader.readMetadata(arabic).successValue()),
+            ),
+        )
+        val latinFace = FontFaceId(latin.id, 0)
+        val arabicFace = FontFaceId(arabic.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = generation,
+            policyId = "audited-cross-itemization-fallback",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(latinFace), FontResolutionCandidate(arabicFace)),
+            lastResortFace = arabicFace,
+        )
+        val source = text("f\u0483سلام")
+        val analysis = analyze(source, "ar")
+
+        assertEquals(listOf("Latn", "Cyrl", "Arab"), analysis.scriptLanguageRuns.map { it.script })
+        assertTrue(analysis.graphemeClusters.any { grapheme ->
+            analysis.scriptLanguageRuns[1].range.start >= grapheme.start &&
+                analysis.scriptLanguageRuns[1].range.endExclusive <= grapheme.endExclusive &&
+                analysis.scriptLanguageRuns[1].range != grapheme
+        })
+
+        val lines = List(2) {
+            assertIs<EditableLineResult.Success>(
+                ExactEditableLineLayouter.layout(
+                    request(source, analysis, catalog, policy, backend(), EditableLineMaterialization.LayoutOnly),
+                ),
+            ).line
+        }
+        val line = lines.first()
+
+        assertEquals(listOf(latinFace, latinFace, arabicFace), line.positionedGlyphRuns.map { it.fontInstanceKey.face })
+        assertEquals(listOf(73, 1076, 85, 3080, 3075, 1919), line.positionedGlyphRuns.flatMap { run ->
+            run.glyphs.map { it.shapedGlyph.glyphId.value }
+        })
+        assertEquals(listOf(277.83203f, 0f, 452f, 446f, 245f, 568f), line.positionedGlyphRuns.flatMap { run ->
+            run.glyphs.map { it.advance.x.value }
+        })
+        val publishedScalars = line.positionedGlyphRuns.flatMap { run ->
+            run.glyphs.flatMap { glyph -> glyph.sourceClusters.flatMap { cluster -> cluster.scalarRanges } }
+        }
+        assertEquals(source.scalarRanges(source.range).toSet(), publishedScalars.toSet())
+        assertEquals(source.scalarRanges(source.range).size, publishedScalars.size)
+        assertTrue(lines.drop(1).all { candidate ->
+            candidate.positionedGlyphRuns.map { run -> run.fontInstanceKey.face } ==
+                line.positionedGlyphRuns.map { run -> run.fontInstanceKey.face }
+        })
+    }
+
+    @Test
     fun emptyMultiFontLineUsesTheExplicitRightToLeftCaretDirectionWithoutResolvingAFace() {
         val source = text("")
         val fallback = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")

@@ -35,7 +35,7 @@ internal object FontFallbackResolver {
         val records = request.fontCatalog.faces.associateBy(FontFaceRecord::id)
         val blacklist = mutableSetOf<RejectedCandidate>()
         val instances = mutableMapOf<FontFaceId, FontInstance>()
-        val shapedGroups = mutableMapOf<GroupSignature, ShapedGlyphRun>()
+        val shapedGroups = mutableMapOf<GroupSignature, List<ShapedGlyphRun>>()
         val diagnostics = mutableListOf<FontDiagnostic>()
         var assignments = units.map { unit ->
             when (
@@ -71,8 +71,8 @@ internal object FontFallbackResolver {
                 }
                 when (val attempted = shapeAndValidate(group, request)) {
                     is Attempt.Success -> {
-                        shapedGroups[signature] = attempted.run
-                        shaped += attempted.run
+                        shapedGroups[signature] = attempted.runs
+                        shaped += attempted.runs
                     }
                     is Attempt.Rejected -> {
                         diagnostics += attempted.diagnostics
@@ -221,23 +221,24 @@ internal object FontFallbackResolver {
 
     private fun shapeAndValidate(group: List<AssignedUnit>, request: MultiFontEditableLineRequest): Attempt {
         val first = group.first()
-        val last = group.last()
-        val range = TextRange(first.unit.range.start, last.unit.range.endExclusive)
-        val shaped = when (
+        val fragments = shapingFragments(group, request)
+        val shaped = mutableListOf<ShapedGlyphRun>()
+        fragments.forEach { fragment ->
+            val fragmentRun = when (
             val result = request.shapingBackend.shape(
                 ShapingRequest(
                     snapshot = request.snapshot,
-                    range = range,
+                    range = fragment.range,
                     font = first.instance,
-                    direction = if (first.unit.bidiLevel % 2 == 0) ShapingDirection.LEFT_TO_RIGHT else ShapingDirection.RIGHT_TO_LEFT,
-                    script = first.unit.script,
-                    language = first.unit.language,
-                    bidiLevel = first.unit.bidiLevel,
-                    bot = range.start == request.snapshot.range.start,
-                    eot = range.endExclusive == request.snapshot.range.endExclusive,
+                    direction = if (fragment.bidiLevel % 2 == 0) ShapingDirection.LEFT_TO_RIGHT else ShapingDirection.RIGHT_TO_LEFT,
+                    script = org.graphiks.kalligraphie.api.OpenTypeScript(fragment.script),
+                    language = fragment.language,
+                    bidiLevel = fragment.bidiLevel,
+                    bot = fragment.range.start == request.snapshot.range.start,
+                    eot = fragment.range.endExclusive == request.snapshot.range.endExclusive,
                     featurePolicy = request.shapingBackend.identity.featurePolicy,
                     features = request.features,
-                    graphemeClusters = request.unicodeAnalysis.graphemeClusters.filter { grapheme -> contains(range, grapheme) },
+                    graphemeClusters = graphemeFragments(fragment.range, request.unicodeAnalysis.graphemeClusters),
                 ),
             )
         ) {
@@ -245,19 +246,64 @@ internal object FontFallbackResolver {
             is FontOperationResult.Failure -> return Attempt.Rejected(result.diagnostics)
             is FontOperationResult.Cancelled -> return Attempt.Cancelled
         }
-        if (shaped.glyphs.any { it.glyphId.value == 0 }) {
-            return Attempt.Rejected(listOf(rejectionDiagnostic("Shaping produced the missing-glyph identifier for a complete fallback unit.")))
-        }
-        val materialization = request.materialization
-        if (materialization is EditableLineMaterialization.Renderable) {
-            when (val validation = validateOutlines(shaped, first.instance, materialization, request)) {
-                Validation.Valid -> Unit
-                is Validation.Rejected -> return Attempt.Rejected(validation.diagnostics)
-                Validation.Cancelled -> return Attempt.Cancelled
+            if (fragmentRun.glyphs.any { it.glyphId.value == 0 }) {
+                return Attempt.Rejected(listOf(rejectionDiagnostic("Shaping produced the missing-glyph identifier for a complete fallback unit.")))
             }
+            val materialization = request.materialization
+            if (materialization is EditableLineMaterialization.Renderable) {
+                when (val validation = validateOutlines(fragmentRun, first.instance, materialization, request)) {
+                    Validation.Valid -> Unit
+                    is Validation.Rejected -> return Attempt.Rejected(validation.diagnostics)
+                    Validation.Cancelled -> return Attempt.Cancelled
+                }
+            }
+            shaped += fragmentRun
         }
         return Attempt.Success(shaped)
     }
+
+    private fun shapingFragments(
+        group: List<AssignedUnit>,
+        request: MultiFontEditableLineRequest,
+    ): List<ShapingFragment> {
+        val first = group.first()
+        val last = group.last()
+        val groupRange = TextRange(first.unit.range.start, last.unit.range.endExclusive)
+        return scriptFragments(groupRange, request.unicodeAnalysis.scriptLanguageRuns).flatMap { script ->
+            request.unicodeAnalysis.logicalBidiRuns.mapNotNull { bidi ->
+                intersection(script.range, bidi.range)?.let { range ->
+                    ShapingFragment(range, script.script, script.language, bidi.level)
+                }
+            }
+        }
+    }
+
+    private fun scriptFragments(
+        range: TextRange,
+        scripts: List<org.graphiks.kalligraphie.api.ScriptLanguageRun>,
+    ): List<ScriptFragment> {
+        val intersections = scripts.mapNotNull { script ->
+            intersection(range, script.range)?.let { intersection -> ScriptFragment(intersection, script.script, script.language) }
+        }
+        val first = intersections.first()
+        var fragmentStart = range.start
+        var active = intersections.firstOrNull { fragment -> fragment.script.isExplicitScript() } ?: first
+        val fragments = mutableListOf<ScriptFragment>()
+        intersections.forEach { fragment ->
+            if (fragment.script.isExplicitScript() &&
+                (fragment.script != active.script || fragment.language != active.language)
+            ) {
+                fragments += ScriptFragment(TextRange(fragmentStart, fragment.range.start), active.script, active.language)
+                fragmentStart = fragment.range.start
+                active = fragment
+            }
+        }
+        fragments += ScriptFragment(TextRange(fragmentStart, range.endExclusive), active.script, active.language)
+        return fragments
+    }
+
+    private fun graphemeFragments(range: TextRange, graphemes: List<TextRange>): List<TextRange> =
+        graphemes.mapNotNull { grapheme -> intersection(range, grapheme) }
 
     private fun validateOutlines(
         shaped: ShapedGlyphRun,
@@ -363,6 +409,12 @@ internal object FontFallbackResolver {
     private fun overlaps(left: TextRange, right: TextRange): Boolean =
         left.start < right.endExclusive && right.start < left.endExclusive
 
+    private fun intersection(left: TextRange, right: TextRange): TextRange? {
+        val start = if (left.start.compareTo(right.start) >= 0) left.start else right.start
+        val endExclusive = if (left.endExclusive.compareTo(right.endExclusive) <= 0) left.endExclusive else right.endExclusive
+        return if (start.compareTo(endExclusive) < 0) TextRange(start, endExclusive) else null
+    }
+
     private fun rejectionDiagnostic(message: String): FontDiagnostic = FontDiagnostic(
         code = "font.fallback-shaping-rejected",
         severity = FontDiagnosticSeverity.WARNING,
@@ -388,6 +440,19 @@ internal object FontFallbackResolver {
         val unit: FallbackUnit,
         val record: FontFaceRecord,
         val instance: FontInstance,
+    )
+
+    private data class ShapingFragment(
+        val range: TextRange,
+        val script: String,
+        val language: String,
+        val bidiLevel: Int,
+    )
+
+    private data class ScriptFragment(
+        val range: TextRange,
+        val script: String,
+        val language: String,
     )
 
     private data class RejectedCandidate(
@@ -425,7 +490,7 @@ internal object FontFallbackResolver {
     }
 
     private sealed interface Attempt {
-        data class Success(val run: ShapedGlyphRun) : Attempt
+        data class Success(val runs: List<ShapedGlyphRun>) : Attempt
         data class Rejected(val diagnostics: List<FontDiagnostic>) : Attempt
         data object Cancelled : Attempt
     }
@@ -441,4 +506,9 @@ internal object FontFallbackResolver {
     }
 
     private fun Int.isVariationSelector(): Boolean = this in 0xFE00..0xFE0F || this in 0xE0100..0xE01EF
+
+    private fun String.isExplicitScript(): Boolean = this != COMMON_SCRIPT && this != INHERITED_SCRIPT
+
+    private const val COMMON_SCRIPT: String = "Zyyy"
+    private const val INHERITED_SCRIPT: String = "Zinh"
 }
