@@ -252,7 +252,13 @@ public object ParagraphComposer : ParagraphLayouter {
         }
         val remaining = composition.remainingSourceRange ?: composition.takeIf { it.hasUnplacedTrailingEmptyLine }
             ?.let { TextRange(request.sourceRange.endExclusive, request.sourceRange.endExclusive) }
-        val continuation = remaining?.let { LayoutContinuation.create(request, it) }
+        val continuation = remaining?.let { remainingRange ->
+            LayoutContinuation.create(
+                request = request,
+                remainingSourceRange = remainingRange,
+                resumptionRegionTop = composition.lines.lastOrNull()?.lineBox?.bottom ?: request.constraints.region.top,
+            )
+        }
         val range = if (remaining == null) {
             request.sourceRange
         } else {

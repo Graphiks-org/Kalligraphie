@@ -429,6 +429,38 @@ class JvmEditableParagraphFacadeTest {
         assertIs<ParagraphLayoutError.InvalidInput>(
             assertIs<ParagraphLayoutResult.Failure>(incompatible).error,
         )
+
+        val incompatibleLeft = JvmEditableParagraphFacade.layout(
+            request(
+                fixture = fixture,
+                constraints = HorizontalParagraphConstraints(
+                    region = LayoutRect(
+                        LayoutUnit(101f),
+                        LayoutUnit(1_250f),
+                        LayoutUnit(1_501f),
+                        LayoutUnit(2_450f),
+                    ),
+                    lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+                ),
+                sourceRange = continuation.remainingSourceRange,
+                continuation = continuation,
+            ),
+        )
+        assertIs<ParagraphLayoutError.InvalidInput>(
+            assertIs<ParagraphLayoutResult.Failure>(incompatibleLeft).error,
+        )
+
+        val incompatibleTop = JvmEditableParagraphFacade.layout(
+            request(
+                fixture = fixture,
+                constraints = constraints(width = 1_400f, top = 1_251f, height = 1_200f),
+                sourceRange = continuation.remainingSourceRange,
+                continuation = continuation,
+            ),
+        )
+        assertIs<ParagraphLayoutError.InvalidInput>(
+            assertIs<ParagraphLayoutResult.Failure>(incompatibleTop).error,
+        )
     }
 
     @Test

@@ -313,7 +313,7 @@ public sealed interface ParagraphMaterializationIdentity {
  * Immutable capability for resuming an incompletely covered paragraph request.
  *
  * The continuation records the original [TextVersion], exact [originalSourceRange] and
- * [remainingSourceRange], compatible rectangle width and line metrics, and every configuration
+ * [remainingSourceRange], compatible physical region origin, rectangle width and line metrics, and every configuration
  * identity that can affect observable line breaking or final glyph geometry. The remainder is an
  * exact suffix of [originalSourceRange]; it is empty only when a required terminal empty physical
  * line remains. A partial layout prefix plus this value partitions the complete source requested
@@ -334,6 +334,10 @@ public class LayoutContinuation private constructor(
     public val remainingSourceRange: TextRange,
     /** Exact rectangle width required by a compatible resumed request. */
     public val regionWidth: LayoutUnit,
+    /** Exact physical left origin required by a compatible resumed request. */
+    public val regionLeft: LayoutUnit,
+    /** Exact physical top at which the first resumed line must be placed. */
+    public val resumptionRegionTop: LayoutUnit,
     /** Exact line rhythm required by a compatible resumed request. */
     public val lineMetrics: LineVerticalMetrics,
     /** Explicit paragraph direction that produced the covered prefix. */
@@ -365,9 +369,11 @@ public class LayoutContinuation private constructor(
 
     /** Returns whether [request] can consume this continuation without changing observable layout. */
     public fun isCompatibleWith(request: ParagraphLayoutRequest): Boolean =
-        request.snapshot.version == originalVersion &&
+            request.snapshot.version == originalVersion &&
             request.sourceRange == remainingSourceRange &&
             request.constraints.width == regionWidth &&
+            request.constraints.region.left == regionLeft &&
+            request.constraints.region.top == resumptionRegionTop &&
             request.constraints.lineMetrics == lineMetrics &&
             request.baseDirection == baseDirection &&
             request.language == language &&
@@ -390,11 +396,14 @@ public class LayoutContinuation private constructor(
          * [remainingSourceRange] must be a suffix of the current request range and may equal the
          * full range when the region cannot publish even one complete line. An empty remainder is
          * valid only to resume the required terminal physical empty line of an empty paragraph or
-         * a source range ending at a mandatory line-break boundary.
+         * a source range ending at a mandatory line-break boundary. [resumptionRegionTop] is the
+         * physical top at which the resumed request must begin; callers that create a capability
+         * outside composition use the current request top.
          */
         public fun create(
             request: ParagraphLayoutRequest,
             remainingSourceRange: TextRange,
+            resumptionRegionTop: LayoutUnit = request.constraints.region.top,
         ): LayoutContinuation {
             require(remainingSourceRange.start.sharesVersionWith(request.sourceRange.start)) {
                 "A continuation remainder must use the request text version."
@@ -417,6 +426,8 @@ public class LayoutContinuation private constructor(
                 originalSourceRange = request.sourceRange,
                 remainingSourceRange = remainingSourceRange,
                 regionWidth = request.constraints.width,
+                regionLeft = request.constraints.region.left,
+                resumptionRegionTop = resumptionRegionTop,
                 lineMetrics = request.constraints.lineMetrics,
                 baseDirection = request.baseDirection,
                 language = request.language,
