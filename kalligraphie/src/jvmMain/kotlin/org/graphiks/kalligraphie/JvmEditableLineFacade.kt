@@ -115,26 +115,30 @@ public object JvmEditableLineFacade {
             is FontOperationResult.Failure -> return shapingFailure(opened)
             is FontOperationResult.Cancelled -> return EditableLineResult.Cancelled(opened.diagnostics.toEditableDiagnostics())
         }
-        val shapedRuns = when (val shaped = shapeRuns(request, analysis, backend)) {
-            is ShapingRunsResult.Success -> shaped.runs
-            is ShapingRunsResult.Failure -> return shapingFailure(shaped.result)
-            is ShapingRunsResult.Cancelled -> return EditableLineResult.Cancelled(shaped.result.diagnostics.toEditableDiagnostics())
-        }
         return try {
-            ExactEditableLineLayouter.layout(
-                EditableLineRequest(
-                    unicodeAnalysis = analysis,
-                    shapedGlyphRuns = shapedRuns,
-                    baseDirection = request.baseDirection.toShapingDirection(),
-                    emptyLineBidiLevel = request.emptyLineBidiLevel,
-                    font = request.font,
-                    verticalMetrics = request.verticalMetrics,
-                    materialization = request.materialization,
-                    cancellationToken = request.cancellationToken,
-                ),
-            )
-        } catch (error: IllegalArgumentException) {
-            invalidInput(error)
+            val shapedRuns = when (val shaped = shapeRuns(request, analysis, backend)) {
+                is ShapingRunsResult.Success -> shaped.runs
+                is ShapingRunsResult.Failure -> return shapingFailure(shaped.result)
+                is ShapingRunsResult.Cancelled -> return EditableLineResult.Cancelled(shaped.result.diagnostics.toEditableDiagnostics())
+            }
+            try {
+                ExactEditableLineLayouter.layout(
+                    EditableLineRequest(
+                        unicodeAnalysis = analysis,
+                        shapedGlyphRuns = shapedRuns,
+                        baseDirection = request.baseDirection.toShapingDirection(),
+                        emptyLineBidiLevel = request.emptyLineBidiLevel,
+                        font = request.font,
+                        verticalMetrics = request.verticalMetrics,
+                        materialization = request.materialization,
+                        cancellationToken = request.cancellationToken,
+                    ),
+                )
+            } catch (error: IllegalArgumentException) {
+                invalidInput(error)
+            }
+        } finally {
+            backend.close()
         }
     }
 

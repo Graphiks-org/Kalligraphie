@@ -194,14 +194,26 @@ internal object FontFallbackResolver {
         request: MultiFontEditableLineRequest,
         instance: FontInstance,
     ): ScalarMapping {
+        var precedingScalar: Int? = null
         request.snapshot.scalarValues(unit.range).forEach { scalar ->
             if (request.cancellationToken.isCancellationRequested()) return ScalarMapping.Cancelled
-            if (scalar !in IGNORED_MAPPING_SCALARS) {
-                when (val result = instance.resolveGlyph(scalar)) {
+            if (scalar.isVariationSelector()) {
+                val base = precedingScalar ?: return ScalarMapping.Unsupported
+                when (val result = instance.resolveGlyph(base, scalar)) {
                     is FontOperationResult.Success -> if (result.value.glyphId.value == 0) return ScalarMapping.Unsupported
                     is FontOperationResult.Failure -> return ScalarMapping.Unsupported
                     is FontOperationResult.Cancelled -> return ScalarMapping.Cancelled
                 }
+                precedingScalar = null
+            } else {
+                if (scalar !in IGNORED_MAPPING_SCALARS) {
+                    when (val result = instance.resolveGlyph(scalar)) {
+                        is FontOperationResult.Success -> if (result.value.glyphId.value == 0) return ScalarMapping.Unsupported
+                        is FontOperationResult.Failure -> return ScalarMapping.Unsupported
+                        is FontOperationResult.Cancelled -> return ScalarMapping.Cancelled
+                    }
+                }
+                precedingScalar = scalar.takeUnless { it in IGNORED_MAPPING_SCALARS }
             }
         }
         return ScalarMapping.Supported
@@ -302,21 +314,7 @@ internal object FontFallbackResolver {
                 ?: request.unicodeAnalysis.logicalBidiRuns.first { overlaps(it.range, cluster) }
             FallbackUnit(cluster, org.graphiks.kalligraphie.api.OpenTypeScript(script.script), script.language, bidi.level)
         }
-        return graphemeUnits.fold(mutableListOf()) { units, next ->
-            val previous = units.lastOrNull()
-            if (
-                previous != null &&
-                previous.script == next.script &&
-                previous.language == next.language &&
-                previous.bidiLevel == next.bidiLevel &&
-                previous.range.endExclusive == next.range.start
-            ) {
-                units[units.lastIndex] = previous.copy(range = TextRange(previous.range.start, next.range.endExclusive))
-            } else {
-                units += next
-            }
-            units
-        }
+        return graphemeUnits
     }
 
     private fun contiguousGroups(assignments: List<AssignedUnit>): List<List<AssignedUnit>> {
@@ -440,7 +438,7 @@ internal object FontFallbackResolver {
 
     private val IGNORED_MAPPING_SCALARS: Set<Int> = buildSet {
         add(0x200D)
-        addAll(0xFE00..0xFE0F)
-        addAll(0xE0100..0xE01EF)
     }
+
+    private fun Int.isVariationSelector(): Boolean = this in 0xFE00..0xFE0F || this in 0xE0100..0xE01EF
 }

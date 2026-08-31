@@ -93,6 +93,12 @@ private data class TrueTypeFontInstance(
         return resource.preparedFont.resolveGlyph(codePoint)
     }
 
+    override fun resolveGlyph(
+        codePoint: Int,
+        variationSelector: Int,
+    ): FontOperationResult<GlyphResolution> =
+        resource.preparedFont.resolveGlyph(codePoint, variationSelector)
+
     override fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> =
         resource.preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value)
 

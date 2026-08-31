@@ -188,6 +188,24 @@ class CmapReaderTest {
             assertEquals("font.cmap.glyph-not-found", missing.diagnostics.single().code)
         }
     }
+
+    @Test
+    fun resolvesAnExplicitUnicodeVariationSequenceWithoutAcceptingTheBaseMappingAlone() {
+        val lookup = assertIs<FontOperationResult.Success<UnicodeCmapLookup>>(
+            CmapReader.readUnicodeCmap(
+                cmapTable(
+                    format4SubtableWithRangeOffset(startCode = 0x2764, endCode = 0x2764, glyphId = 5),
+                    format14Subtable(variationSelector = 0xFE0F, baseCodePoint = 0x2764, glyphId = 6),
+                ),
+                numGlyphs = 7,
+            ),
+        ).value
+
+        assertEquals(5, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x2764)).value.glyphId.value)
+        assertEquals(6, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x2764, 0xFE0F)).value.glyphId.value)
+        assertEquals(5, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x2764, 0xFE0E)).value.glyphId.value)
+        assertEquals(0, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x2764, 0xFE01)).value.glyphId.value)
+    }
 }
 
 private fun cmapTable(vararg subtables: CmapSubtable): ByteArray {
@@ -330,6 +348,35 @@ private fun format12Subtable(
     return CmapSubtable(platformId = platformId, encodingId = encodingId, bytes = bytes)
 }
 
+private fun format14Subtable(
+    variationSelector: Int,
+    baseCodePoint: Int,
+    glyphId: Int,
+): CmapSubtable {
+    val recordOffset = 10
+    val selectorRecordsSize = 22
+    val defaultOffset = recordOffset + selectorRecordsSize
+    val mappingOffset = defaultOffset + 4 + 4
+    val length = mappingOffset + 4 + 5
+    val bytes = ByteArray(length)
+    bytes.writeUInt16(0, 14)
+    bytes.writeUInt32(2, length)
+    bytes.writeUInt32(6, 2)
+    bytes.writeUInt24(recordOffset, 0xFE0E)
+    bytes.writeUInt32(recordOffset + 3, defaultOffset)
+    bytes.writeUInt32(recordOffset + 7, 0)
+    bytes.writeUInt24(recordOffset + 11, variationSelector)
+    bytes.writeUInt32(recordOffset + 14, 0)
+    bytes.writeUInt32(recordOffset + 18, mappingOffset)
+    bytes.writeUInt32(defaultOffset, 1)
+    bytes.writeUInt24(defaultOffset + 4, baseCodePoint)
+    bytes[defaultOffset + 7] = 0
+    bytes.writeUInt32(mappingOffset, 1)
+    bytes.writeUInt24(mappingOffset + 4, baseCodePoint)
+    bytes.writeUInt16(mappingOffset + 7, glyphId)
+    return CmapSubtable(platformId = 0, encodingId = 5, bytes = bytes)
+}
+
 private data class CmapSubtable(
     val platformId: Int,
     val encodingId: Int,
@@ -350,4 +397,10 @@ private fun ByteArray.writeUInt32(offset: Int, value: Int) {
     this[offset + 1] = (value ushr 16).toByte()
     this[offset + 2] = (value ushr 8).toByte()
     this[offset + 3] = value.toByte()
+}
+
+private fun ByteArray.writeUInt24(offset: Int, value: Int) {
+    this[offset] = (value ushr 16).toByte()
+    this[offset + 1] = (value ushr 8).toByte()
+    this[offset + 2] = value.toByte()
 }

@@ -10,17 +10,20 @@ from fontTools import __version__ as fonttools_version
 from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
+from fontTools.ttLib.tables._c_m_a_p import CmapSubtable
 
 
 EXPECTED_FONTTOOLS_VERSION = "4.59.2"
 UNITS_PER_EM = 1000
-GLYPH_ORDER = [".notdef", "f", "i", "f_i", "V"]
+GLYPH_ORDER = [".notdef", "f", "i", "f_i", "V", "heart", "heart_emoji"]
 HORIZONTAL_METRICS = {
     ".notdef": (500, 0),
     "f": (500, 0),
     "i": (500, 0),
     "f_i": (900, 0),
     "V": (600, 0),
+    "heart": (700, 0),
+    "heart_emoji": (900, 0),
 }
 
 
@@ -42,7 +45,7 @@ def build(output: Path, feature_source: Path) -> None:
 
     builder = FontBuilder(UNITS_PER_EM, isTTF=True)
     builder.setupGlyphOrder(GLYPH_ORDER)
-    builder.setupCharacterMap({0x0066: "f", 0x0069: "i", 0x0056: "V"})
+    builder.setupCharacterMap({0x0066: "f", 0x0069: "i", 0x0056: "V", 0x2764: "heart"})
     builder.setupGlyf({name: glyph(advance) for name, (advance, _) in HORIZONTAL_METRICS.items()})
     builder.setupHorizontalMetrics(HORIZONTAL_METRICS)
     builder.setupHorizontalHeader(ascent=800, descent=-200)
@@ -66,6 +69,13 @@ def build(output: Path, feature_source: Path) -> None:
     builder.setupPost(keepGlyphNames=True)
     builder.setupMaxp()
     builder.setupHead()
+    variation_cmap = CmapSubtable.newSubtable(14)
+    variation_cmap.platformID = 0
+    variation_cmap.platEncID = 5
+    variation_cmap.language = 0xFF
+    variation_cmap.cmap = {}
+    variation_cmap.uvsDict = {0xFE0F: [(0x2764, "heart_emoji")]}
+    builder.font["cmap"].tables.append(variation_cmap)
     builder.font.recalcTimestamp = False
     builder.font["head"].created = 0
     builder.font["head"].modified = 0

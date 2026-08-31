@@ -276,11 +276,11 @@ class MultiFontEditableLineTest {
             assertEquals(listOf(arabicFace), first.positionedGlyphRuns.map { it.fontInstanceKey.face })
             assertEquals(listOf(85, 3080, 3075, 1919), first.positionedGlyphRuns.single().glyphs.map { it.shapedGlyph.glyphId.value })
             assertEquals(
-                2,
+                8,
                 first.diagnostics.count { diagnostic -> diagnostic.code == "font.fallback-candidate-rejected" },
             )
             assertEquals(
-                1,
+                4,
                 first.diagnostics.count { diagnostic -> diagnostic.code == "font.fallback-last-resort" },
             )
             assertTrue(results.drop(1).all { line ->
@@ -322,36 +322,147 @@ class MultiFontEditableLineTest {
 
     @Test
     fun graphemeVariationAndEmojiZwJSequencesRemainAssignedToOneFace() {
-        val incomplete = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val selective = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
         val complete = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
         val generation = FontCatalogGeneration("audited-unicode-unit-fixture-v1")
         val catalog = EmbeddedFontCatalog(
             generation = generation,
             entries = listOf(
-                EmbeddedFontCatalogEntry(incomplete, SfntReader.readMetadata(incomplete).successValue()),
+                EmbeddedFontCatalogEntry(selective, SfntReader.readMetadata(selective).successValue()),
                 EmbeddedFontCatalogEntry(complete, SfntReader.readMetadata(complete).successValue()),
             ),
         )
+        val selectiveFace = FontFaceId(selective.id, 0)
         val completeFace = FontFaceId(complete.id, 0)
         val policy = FontResolutionPolicySnapshot(
             generation = generation,
             policyId = "audited-unicode-units",
             version = "1",
-            candidates = listOf(FontResolutionCandidate(FontFaceId(incomplete.id, 0)), FontResolutionCandidate(completeFace)),
+            candidates = listOf(FontResolutionCandidate(selectiveFace), FontResolutionCandidate(completeFace)),
             lastResortFace = completeFace,
         )
         val backend = JvmHarfBuzzShapingBackend.open().successValue()
 
-        listOf("f\u0301", "\u2764\uFE0F", "\u2764\uFE0F\u200D\u2764\uFE0F").forEach { value ->
+        listOf(
+            "f\u0301" to completeFace,
+            "\u2764\uFE0F" to selectiveFace,
+            "\u2764\uFE0F\u200D\u2764\uFE0F" to selectiveFace,
+        ).forEach { (value, expectedFace) ->
             val text = text(value)
             val analysis = analyze(text, "und")
             val line = assertIs<EditableLineResult.Success>(
                 ExactEditableLineLayouter.layout(request(text, analysis, catalog, policy, backend, EditableLineMaterialization.LayoutOnly)),
             ).line
-            assertEquals(listOf(completeFace), line.positionedGlyphRuns.map { it.fontInstanceKey.face })
+            assertEquals(listOf(expectedFace), line.positionedGlyphRuns.map { it.fontInstanceKey.face })
             assertEquals(text.range, line.positionedGlyphRuns.single().sourceRun.range)
             assertEquals(analysis.graphemeClusters, line.positionedGlyphRuns.single().sourceRun.graphemeClusters)
         }
+    }
+
+    @Test
+    fun variationSequenceFallsBackOnlyToFaceWithAnExplicitUvsMapping() {
+        val baseOnly = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
+        val uvs = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val generation = FontCatalogGeneration("audited-variation-sequence-fixture-v1")
+        val catalog = EmbeddedFontCatalog(
+            generation = generation,
+            entries = listOf(
+                EmbeddedFontCatalogEntry(baseOnly, SfntReader.readMetadata(baseOnly).successValue()),
+                EmbeddedFontCatalogEntry(uvs, SfntReader.readMetadata(uvs).successValue()),
+            ),
+        )
+        val uvsFace = FontFaceId(uvs.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = generation,
+            policyId = "audited-variation-sequence",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(FontFaceId(baseOnly.id, 0)), FontResolutionCandidate(uvsFace)),
+            lastResortFace = uvsFace,
+        )
+        val source = text("\u2764\uFE0F")
+
+        val line = assertIs<EditableLineResult.Success>(
+            ExactEditableLineLayouter.layout(
+                request(source, analyze(source, "und"), catalog, policy, JvmHarfBuzzShapingBackend.open().successValue(), EditableLineMaterialization.LayoutOnly),
+            ),
+        ).line
+
+        assertEquals(listOf(uvsFace), line.positionedGlyphRuns.map { it.fontInstanceKey.face })
+        assertEquals(listOf(6), line.positionedGlyphRuns.single().glyphs.map { it.shapedGlyph.glyphId.value })
+    }
+
+    @Test
+    fun fallbackKeepsThePreferredFaceOnBothSidesOfAnUnsupportedSameScriptGrapheme() {
+        val preferred = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val fallback = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
+        val generation = FontCatalogGeneration("audited-intra-script-fallback-fixture-v1")
+        val catalog = EmbeddedFontCatalog(
+            generation = generation,
+            entries = listOf(
+                EmbeddedFontCatalogEntry(preferred, SfntReader.readMetadata(preferred).successValue()),
+                EmbeddedFontCatalogEntry(fallback, SfntReader.readMetadata(fallback).successValue()),
+            ),
+        )
+        val preferredFace = FontFaceId(preferred.id, 0)
+        val fallbackFace = FontFaceId(fallback.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = generation,
+            policyId = "audited-intra-script-fallback",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(preferredFace), FontResolutionCandidate(fallbackFace)),
+            lastResortFace = fallbackFace,
+        )
+        val source = text("fAf")
+
+        val line = assertIs<EditableLineResult.Success>(
+            ExactEditableLineLayouter.layout(
+                request(source, analyze(source, "en"), catalog, policy, JvmHarfBuzzShapingBackend.open().successValue(), EditableLineMaterialization.LayoutOnly),
+            ),
+        ).line
+
+        assertEquals(
+            listOf(preferredFace, fallbackFace, preferredFace),
+            line.positionedGlyphRuns.map { it.fontInstanceKey.face },
+        )
+        assertEquals(listOf(1, 36, 1), line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } })
+    }
+
+    @Test
+    fun emptyMultiFontLineUsesTheExplicitRightToLeftCaretDirectionWithoutResolvingAFace() {
+        val source = text("")
+        val fallback = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val generation = FontCatalogGeneration("audited-empty-multi-font-fixture-v1")
+        val catalog = EmbeddedFontCatalog(
+            generation = generation,
+            entries = listOf(EmbeddedFontCatalogEntry(fallback, SfntReader.readMetadata(fallback).successValue())),
+        )
+        val fallbackFace = FontFaceId(fallback.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = generation,
+            policyId = "audited-empty-multi-font",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(fallbackFace)),
+            lastResortFace = fallbackFace,
+        )
+
+        val line = assertIs<EditableLineResult.Success>(
+            ExactEditableLineLayouter.layout(
+                request(
+                    source,
+                    analyze(source, "und", BaseDirection.RIGHT_TO_LEFT),
+                    catalog,
+                    policy,
+                    JvmHarfBuzzShapingBackend.open().successValue(),
+                    EditableLineMaterialization.LayoutOnly,
+                    BaseDirection.RIGHT_TO_LEFT,
+                ),
+            ),
+        ).line
+
+        assertTrue(line.positionedGlyphRuns.isEmpty())
+        assertEquals(2, line.allCaretCandidates.size)
+        assertTrue(line.allCaretCandidates.all { it.direction == org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT })
+        assertTrue(line.allCaretCandidates.all { it.bidiLevel == 1 })
     }
 
     private fun source(resource: String, declaredName: String): FontSource =
@@ -379,9 +490,10 @@ class MultiFontEditableLineTest {
     private fun analyze(
         text: org.graphiks.kalligraphie.api.TextSnapshot,
         language: String,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
     ) = JvmUnicodeAnalyzer.create().analyze(
         text,
-        org.graphiks.kalligraphie.api.UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language),
+        org.graphiks.kalligraphie.api.UnicodeAnalysisRequest(baseDirection, language),
     )
 
     private fun request(
@@ -391,6 +503,7 @@ class MultiFontEditableLineTest {
         policy: FontResolutionPolicySnapshot,
         backend: org.graphiks.kalligraphie.api.ShapingBackend,
         materialization: EditableLineMaterialization,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
     ): MultiFontEditableLineRequest = MultiFontEditableLineRequest(
         snapshot = text,
         unicodeAnalysis = analysis,
@@ -398,7 +511,7 @@ class MultiFontEditableLineTest {
         resolutionPolicy = policy,
         fontInstanceDescriptor = FontInstanceDescriptor(layoutSize = LayoutUnit(1000f)),
         shapingBackend = backend,
-        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        baseDirection = baseDirection,
         verticalMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
         materialization = materialization,
     )

@@ -488,7 +488,8 @@ public class MultiFontEditableLineRequest(
  * The analysis must cover its entire snapshot range. Runs must be contiguous in logical source
  * order, preserve exactly the analyzed extended-grapheme partition, have zero vertical advance,
  * and use a key declared in [fontInstances]. Their direction, level, script, language, and the line's
- * [baseDirection] stay explicit rather than inferred from text or a left-to-right default. The
+ * [baseDirection] stay explicit rather than inferred from text or a left-to-right default. An
+ * empty line needs no font instance because it has no glyph or render-asset route. The
  * request retains no resource except the borrowed resolver named by [materialization]. Contract
  * incompatibilities are programming errors reported by construction preconditions.
  */
@@ -500,9 +501,13 @@ public class EditableLineRequest(
     public val baseDirection: ShapingDirection,
     /** Explicit UAX #9 level paired with [baseDirection] for an empty line. */
     public val emptyLineBidiLevel: Int? = null,
-    /** Compatibility primary instance; it must also appear in [fontInstances]. */
-    public val font: FontInstance,
-    fontInstances: List<FontInstance> = listOf(font),
+    /**
+     * Compatibility primary instance for a non-empty line; it must also appear in [fontInstances].
+     *
+     * Empty lines may omit it because they publish no glyphs, routes, or certificates.
+     */
+    public val font: FontInstance? = null,
+    fontInstances: List<FontInstance> = listOfNotNull(font),
     /** Explicit line-box metrics supplied by the consumer. */
     public val verticalMetrics: LineVerticalMetrics,
     /** Explicit layout-only or outline-renderable publication mode. */
@@ -536,8 +541,13 @@ public class EditableLineRequest(
         require(this.fontInstances.map(FontInstance::key).distinct().size == this.fontInstances.size) {
             "Editable line font instances must not repeat a key."
         }
-        require(font.key in this.fontInstances.map(FontInstance::key)) {
-            "The compatibility primary font instance must appear in the request font instances."
+        if (this.shapedGlyphRuns.isNotEmpty()) {
+            require(font != null) {
+                "A non-empty editable line requires a compatibility primary font instance."
+            }
+            require(font.key in this.fontInstances.map(FontInstance::key)) {
+                "The compatibility primary font instance must appear in the request font instances."
+            }
         }
         require(this.shapedGlyphRuns.all { run -> run.fontInstanceKey in this.fontInstances.map(FontInstance::key) }) {
             "Every shaped run must use one request font instance key."

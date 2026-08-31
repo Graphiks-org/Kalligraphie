@@ -54,11 +54,6 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     public fun layout(request: MultiFontEditableLineRequest): EditableLineResult {
         return when (val resolved = FontFallbackResolver.resolve(request)) {
             is FontOperationResult.Success -> {
-                val primaryInstance = resolved.value.instances.firstOrNull()
-                    ?: return EditableLineResult.Failure(
-                        EditableLineError.InvalidInput("A non-empty multi-font line must resolve at least one font instance."),
-                        emptyList(),
-                    )
                 when (
                     val positioned = layout(
                         EditableLineRequest(
@@ -68,7 +63,15 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                                 org.graphiks.kalligraphie.api.BaseDirection.LEFT_TO_RIGHT -> org.graphiks.kalligraphie.api.ShapingDirection.LEFT_TO_RIGHT
                                 org.graphiks.kalligraphie.api.BaseDirection.RIGHT_TO_LEFT -> org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT
                             },
-                            font = primaryInstance,
+                            emptyLineBidiLevel = if (resolved.value.shapedRuns.isEmpty()) {
+                                when (request.baseDirection) {
+                                    org.graphiks.kalligraphie.api.BaseDirection.LEFT_TO_RIGHT -> 0
+                                    org.graphiks.kalligraphie.api.BaseDirection.RIGHT_TO_LEFT -> 1
+                                }
+                            } else {
+                                null
+                            },
+                            font = resolved.value.instances.firstOrNull(),
                             fontInstances = resolved.value.instances,
                             verticalMetrics = request.verticalMetrics,
                             materialization = request.materialization,

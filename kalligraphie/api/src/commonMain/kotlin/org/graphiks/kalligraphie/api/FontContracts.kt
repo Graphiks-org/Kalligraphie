@@ -336,6 +336,22 @@ public interface FontInstance {
         unsupportedContractOperation("This font instance does not support glyph resolution.")
 
     /**
+     * Resolves one Unicode variation sequence to the glyph selected by this instance.
+     *
+     * [codePoint] is the base Unicode scalar and [variationSelector] must be a standard or
+     * ideographic variation selector. A successful result proves that this exact pair is
+     * declared by the face's variation mapping; the result may differ from resolving
+     * [codePoint] alone. Invalid values, an undeclared pair, and unsupported variation
+     * mappings are returned as a typed failure or glyph identifier zero with diagnostics.
+     * The operation is read-only and safe for concurrent callers.
+     */
+    public fun resolveGlyph(
+        codePoint: Int,
+        variationSelector: Int,
+    ): FontOperationResult<GlyphResolution> =
+        unsupportedContractOperation("This font instance does not support Unicode variation-sequence glyph resolution.")
+
+    /**
      * Returns metrics for [glyphId] scaled to this instance's layout size.
      *
      * The result is read-only and safe for concurrent calls. Unknown glyphs

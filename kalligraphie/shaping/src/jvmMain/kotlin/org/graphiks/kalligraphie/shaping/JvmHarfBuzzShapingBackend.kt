@@ -13,6 +13,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.io.path.absolutePathString
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -70,46 +71,87 @@ private class HarfBuzzJvmBackend(
 ) : ShapingBackend {
     override val identity: ShapingBackendIdentity = nativeLibrary.identity
     private val preparedFonts: ConcurrentHashMap<FontInstanceKey, PreparedHarfBuzzFont> = ConcurrentHashMap()
+    private val lifecycle = ReentrantReadWriteLock()
+    private var closed: Boolean = false
 
     override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
-        if (request.featurePolicy != identity.featurePolicy) {
-            return shapingFailure(
-                code = "font.shaping-feature-policy-unsupported",
-                message = "The requested OpenType feature policy is not implemented by this pinned HarfBuzz backend.",
-            )
-        }
-        if (request.features.any { feature -> feature.tag in NON_DETERMINISTIC_FEATURES }) {
-            return shapingFailure(
-                code = "font.shaping-feature-not-deterministic",
-                message = "The requested OpenType feature is non-deterministic and cannot be shaped reproducibly.",
-            )
-        }
+        lifecycle.readLock().lock()
+        try {
+            if (closed) {
+                return FontOperationResult.Failure(
+                    FontError.ResourceClosed("The pinned HarfBuzz backend is closed."),
+                )
+            }
+            if (request.featurePolicy != identity.featurePolicy) {
+                return shapingFailure(
+                    code = "font.shaping-feature-policy-unsupported",
+                    message = "The requested OpenType feature policy is not implemented by this pinned HarfBuzz backend.",
+                )
+            }
+            if (request.features.any { feature -> feature.tag in NON_DETERMINISTIC_FEATURES }) {
+                return shapingFailure(
+                    code = "font.shaping-feature-not-deterministic",
+                    message = "The requested OpenType feature is non-deterministic and cannot be shaped reproducibly.",
+                )
+            }
 
-        val layoutSize = request.font.key.layoutSize.value
-        if (!layoutSize.isFinite() || layoutSize <= 0f) {
-            return shapingFailure(
-                code = "font.shaping-scale-invalid",
-                message = "The font instance layout size must be finite and positive.",
-            )
-        }
+            val layoutSize = request.font.key.layoutSize.value
+            if (!layoutSize.isFinite() || layoutSize <= 0f) {
+                return shapingFailure(
+                    code = "font.shaping-scale-invalid",
+                    message = "The font instance layout size must be finite and positive.",
+                )
+            }
 
-        return try {
-            val prepared = preparedFonts[request.font.key] ?: prepareFont(request, layoutSize)
-            FontOperationResult.Success(
-                nativeLibrary.shape(
-                    request = request,
-                    preparedFont = prepared,
-                ),
-            )
-        } catch (failure: PreparedFontFailure) {
-            failure.result
-        } catch (cancelled: PreparedFontCancelled) {
-            cancelled.result
-        } catch (error: Throwable) {
-            shapingFailure(
-                code = "font.shaping-native-failure",
-                message = "The pinned HarfBuzz backend failed while shaping: ${error.message ?: error::class.simpleName}.",
-            )
+            return try {
+                val prepared = preparedFonts[request.font.key] ?: prepareFont(request, layoutSize)
+                FontOperationResult.Success(
+                    nativeLibrary.shape(
+                        request = request,
+                        preparedFont = prepared,
+                    ),
+                )
+            } catch (failure: PreparedFontFailure) {
+                failure.result
+            } catch (cancelled: PreparedFontCancelled) {
+                cancelled.result
+            } catch (error: Throwable) {
+                shapingFailure(
+                    code = "font.shaping-native-failure",
+                    message = "The pinned HarfBuzz backend failed while shaping: ${error.message ?: error::class.simpleName}.",
+                )
+            }
+        } finally {
+            lifecycle.readLock().unlock()
+        }
+    }
+
+    override fun close(): FontOperationResult<Unit> {
+        lifecycle.writeLock().lock()
+        try {
+            if (closed) return FontOperationResult.Success(Unit)
+            closed = true
+            val prepared = preparedFonts.values.toList()
+            preparedFonts.clear()
+            var releaseFailure: Throwable? = null
+            prepared.forEach { font ->
+                try {
+                    font.close()
+                } catch (error: Throwable) {
+                    if (releaseFailure == null) releaseFailure = error
+                }
+            }
+            return releaseFailure?.let { error ->
+                FontOperationResult.Failure(
+                    FontError.FontDataFailure(
+                        code = "font.shaping-native-release-failed",
+                        message = "The pinned HarfBuzz backend could not release its native resources: ${error.message ?: error::class.simpleName}.",
+                        location = FontDiagnosticLocation.Source,
+                    ),
+                )
+            } ?: FontOperationResult.Success(Unit)
+        } finally {
+            lifecycle.writeLock().unlock()
         }
     }
 

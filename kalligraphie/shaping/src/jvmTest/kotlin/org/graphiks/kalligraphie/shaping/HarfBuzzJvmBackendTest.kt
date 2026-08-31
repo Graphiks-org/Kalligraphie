@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.shaping
 
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -31,6 +32,27 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class HarfBuzzJvmBackendTest {
+    @Test
+    fun closingTheBackendReleasesPreparedFontsAndRejectsLaterShaping() {
+        val backend = backend()
+        val prepared = text("fi")
+        val request = request(
+            prepared = prepared,
+            font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            script = OpenTypeScript("Latn"),
+            language = "en",
+            bidiLevel = 0,
+        )
+
+        assertIs<FontOperationResult.Success<*>>(backend.shape(request))
+        assertIs<FontOperationResult.Success<*>>(backend.close())
+        assertIs<FontOperationResult.Success<*>>(backend.close())
+
+        val failure = assertIs<FontOperationResult.Failure>(backend.shape(request))
+        assertIs<FontError.ResourceClosed>(failure.error)
+    }
+
     @Test
     fun explicitPinnedDefaultFeaturePolicyShapesTheAuditedDefaultLigature() {
         val backend = backend()

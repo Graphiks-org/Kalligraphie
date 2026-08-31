@@ -81,8 +81,20 @@ internal object CmapReader {
             else -> failure(FontError.InvalidFontData("Unsupported cmap format ${subtable.format}.", CMAP_LOCATION))
         }
 
+        val variationMapping = when (val selected = selectVariationSubtable(cmapTable)) {
+            is FontOperationResult.Success -> selected.value?.let { variation ->
+                when (val decoded = decodeFormat14(variation.bytes, numGlyphs)) {
+                    is FontOperationResult.Success -> decoded.value
+                    is FontOperationResult.Failure -> return decoded
+                    is FontOperationResult.Cancelled -> return decoded
+                }
+            }
+            is FontOperationResult.Failure -> return selected
+            is FontOperationResult.Cancelled -> return selected
+        }
+
         return when (mapping) {
-            is FontOperationResult.Success -> FontOperationResult.Success(UnicodeCmapLookup(mapping.value))
+            is FontOperationResult.Success -> FontOperationResult.Success(UnicodeCmapLookup(mapping.value, variationMapping))
             is FontOperationResult.Failure -> mapping
             is FontOperationResult.Cancelled -> mapping
         }
@@ -154,6 +166,59 @@ internal object CmapReader {
             ?: failure(FontError.InvalidFontData("No supported Unicode cmap subtable was found.", CMAP_LOCATION))
     }
 
+    private fun selectVariationSubtable(cmapTable: ByteArray): FontOperationResult<SelectedSubtable?> {
+        val version = readUInt16(cmapTable, 0)?.toInt()
+            ?: return failure(FontError.InvalidFontData("cmap header is truncated.", CMAP_LOCATION))
+        if (version != 0) {
+            return failure(
+                FontError.InvalidFontData("cmap version must be zero.", CMAP_LOCATION),
+                FontDiagnosticData(observedValue = version.toLong(), limit = 0L),
+            )
+        }
+        val numTables = readUInt16(cmapTable, 2)?.toInt()
+            ?: return failure(FontError.InvalidFontData("cmap header is truncated.", CMAP_LOCATION))
+        val directoryLength = numTables.toLong() * 8L
+        if (checkedRangeEnd(4L, directoryLength, cmapTable.size) == null) {
+            return failure(
+                FontError.InvalidFontData("cmap encoding records are truncated.", CMAP_LOCATION),
+                FontDiagnosticData(
+                    offset = 4L,
+                    length = directoryLength,
+                    observedValue = 4L + directoryLength,
+                    limit = cmapTable.size.toLong(),
+                ),
+            )
+        }
+        var selected: SelectedSubtable? = null
+        var offset = 4
+        repeat(numTables) {
+            val platformId = readUInt16(cmapTable, offset)?.toInt()
+                ?: return failure(FontError.InvalidFontData("cmap platform ID is truncated.", CMAP_LOCATION))
+            val encodingId = readUInt16(cmapTable, offset + 2)?.toInt()
+                ?: return failure(FontError.InvalidFontData("cmap encoding ID is truncated.", CMAP_LOCATION))
+            val subtableOffset = readUInt32(cmapTable, offset + 4)?.toLong()
+                ?: return failure(FontError.InvalidFontData("cmap subtable offset is truncated.", CMAP_LOCATION))
+            if (platformId == 0 && encodingId == 5) {
+                val subtableOffsetInt = checkedRangeEnd(subtableOffset, 2L, cmapTable.size)
+                    ?.let { subtableOffset.toInt() }
+                    ?: return rangeFailure("cmap subtable offset is out of bounds.", subtableOffset, 2L, cmapTable.size)
+                val format = readUInt16(cmapTable, subtableOffsetInt)?.toInt()
+                    ?: return failure(FontError.InvalidFontData("cmap subtable format is truncated.", CMAP_LOCATION))
+                if (format == 14) {
+                    val bytes = when (val result = subtableSlice(cmapTable, subtableOffset, format)) {
+                        is FontOperationResult.Success -> result.value
+                        is FontOperationResult.Failure -> return result
+                        is FontOperationResult.Cancelled -> return result
+                    }
+                    val candidate = SelectedSubtable(0, subtableOffset, format, bytes)
+                    if (selected == null || candidate.offset < selected.offset) selected = candidate
+                }
+            }
+            offset += 8
+        }
+        return FontOperationResult.Success(selected)
+    }
+
     private fun subtablePriority(platformId: Int, encodingId: Int, format: Int): Int? =
         when {
             platformId == 3 && encodingId == 10 && format == 12 -> 0
@@ -183,9 +248,15 @@ internal object CmapReader {
                 ?.let { readUInt16(cmapTable, (subtableOffset + 2L).toInt())?.toLong() }
             12 -> checkedRangeEnd(subtableOffset, 8L, cmapTable.size)
                 ?.let { readUInt32(cmapTable, (subtableOffset + 4L).toInt())?.toLong() }
+            14 -> checkedRangeEnd(subtableOffset, 6L, cmapTable.size)
+                ?.let { readUInt32(cmapTable, (subtableOffset + 2L).toInt())?.toLong() }
             else -> null
         } ?: return failure(FontError.InvalidFontData("cmap subtable length is truncated.", CMAP_LOCATION))
-        val minimumLength = if (format == 4) 16L else 16L
+        val minimumLength = when (format) {
+            4, 12 -> 16L
+            14 -> 10L
+            else -> return failure(FontError.InvalidFontData("Unsupported cmap format $format.", CMAP_LOCATION))
+        }
         if (length < minimumLength) {
             return failure(
                 FontError.InvalidFontData("cmap subtable length is too small.", CMAP_LOCATION),
@@ -318,6 +389,119 @@ internal object CmapReader {
         return FontOperationResult.Success(Format12Mapping(groups))
     }
 
+    private fun decodeFormat14(
+        subtable: ByteArray,
+        glyphLimit: Int,
+    ): FontOperationResult<VariationCmapMapping> {
+        val selectorCount = readUInt32(subtable, 6)?.toLong()
+            ?: return failure(FontError.InvalidFontData("Format 14 cmap header is truncated.", CMAP_LOCATION))
+        val recordsLength = selectorCount * FORMAT_14_SELECTOR_RECORD_BYTES
+        val recordsEnd = checkedRangeEnd(FORMAT_14_HEADER_BYTES, recordsLength, subtable.size)
+            ?: return failure(FontError.InvalidFontData("Format 14 variation selector records are truncated.", CMAP_LOCATION))
+        val selectors = mutableMapOf<Int, VariationSelectorMapping>()
+        var offset = FORMAT_14_HEADER_BYTES.toInt()
+        repeat(selectorCount.toInt()) {
+            val selector = readUInt24(subtable, offset)
+                ?: return failure(FontError.InvalidFontData("Format 14 variation selector is truncated.", CMAP_LOCATION))
+            if (!selector.isVariationSelector() || selector in selectors) {
+                return failure(FontError.InvalidFontData("Format 14 variation selector is invalid or repeated.", CMAP_LOCATION))
+            }
+            val defaultOffset = readUInt32(subtable, offset + 3)?.toLong()
+                ?: return failure(FontError.InvalidFontData("Format 14 default UVS offset is truncated.", CMAP_LOCATION))
+            val nonDefaultOffset = readUInt32(subtable, offset + 7)?.toLong()
+                ?: return failure(FontError.InvalidFontData("Format 14 non-default UVS offset is truncated.", CMAP_LOCATION))
+            val defaults = when (val result = decodeDefaultUvs(subtable, defaultOffset, recordsEnd)) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            val nonDefaults = when (val result = decodeNonDefaultUvs(subtable, nonDefaultOffset, recordsEnd, glyphLimit)) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            selectors[selector] = VariationSelectorMapping(defaults, nonDefaults)
+            offset += FORMAT_14_SELECTOR_RECORD_BYTES.toInt()
+        }
+        return FontOperationResult.Success(VariationCmapMapping(selectors))
+    }
+
+    private fun decodeDefaultUvs(
+        subtable: ByteArray,
+        tableOffset: Long,
+        recordsEnd: Int,
+    ): FontOperationResult<List<DefaultVariationRange>> {
+        if (tableOffset == 0L) return FontOperationResult.Success(emptyList())
+        val offset = variationTableOffset(subtable, tableOffset, recordsEnd) ?: return variationOffsetFailure(tableOffset, subtable.size)
+        val rangeCount = readUInt32(subtable, offset)?.toLong()
+            ?: return failure(FontError.InvalidFontData("Format 14 default UVS count is truncated.", CMAP_LOCATION))
+        val rangesLength = rangeCount * FORMAT_14_DEFAULT_RANGE_BYTES
+        if (checkedRangeEnd(offset.toLong() + 4L, rangesLength, subtable.size) == null) {
+            return failure(FontError.InvalidFontData("Format 14 default UVS ranges are truncated.", CMAP_LOCATION))
+        }
+        val ranges = ArrayList<DefaultVariationRange>(rangeCount.toInt())
+        var rangeOffset = offset + 4
+        var previousEnd = -1
+        repeat(rangeCount.toInt()) {
+            val start = readUInt24(subtable, rangeOffset)
+                ?: return failure(FontError.InvalidFontData("Format 14 default UVS range is truncated.", CMAP_LOCATION))
+            val additionalCount = subtable.getOrNull(rangeOffset + 3)?.toInt()?.and(0xFF)
+                ?: return failure(FontError.InvalidFontData("Format 14 default UVS range is truncated.", CMAP_LOCATION))
+            val end = start + additionalCount
+            if (!start.isUnicodeScalar() || !end.isUnicodeScalar() || start <= previousEnd) {
+                return failure(FontError.InvalidFontData("Format 14 default UVS ranges are invalid or overlapping.", CMAP_LOCATION))
+            }
+            ranges += DefaultVariationRange(start, end)
+            previousEnd = end
+            rangeOffset += FORMAT_14_DEFAULT_RANGE_BYTES.toInt()
+        }
+        return FontOperationResult.Success(ranges)
+    }
+
+    private fun decodeNonDefaultUvs(
+        subtable: ByteArray,
+        tableOffset: Long,
+        recordsEnd: Int,
+        glyphLimit: Int,
+    ): FontOperationResult<List<NonDefaultVariationMapping>> {
+        if (tableOffset == 0L) return FontOperationResult.Success(emptyList())
+        val offset = variationTableOffset(subtable, tableOffset, recordsEnd) ?: return variationOffsetFailure(tableOffset, subtable.size)
+        val mappingCount = readUInt32(subtable, offset)?.toLong()
+            ?: return failure(FontError.InvalidFontData("Format 14 non-default UVS count is truncated.", CMAP_LOCATION))
+        val mappingsLength = mappingCount * FORMAT_14_NON_DEFAULT_MAPPING_BYTES
+        if (checkedRangeEnd(offset.toLong() + 4L, mappingsLength, subtable.size) == null) {
+            return failure(FontError.InvalidFontData("Format 14 non-default UVS mappings are truncated.", CMAP_LOCATION))
+        }
+        val mappings = ArrayList<NonDefaultVariationMapping>(mappingCount.toInt())
+        var mappingOffset = offset + 4
+        var previousCodePoint = -1
+        repeat(mappingCount.toInt()) {
+            val codePoint = readUInt24(subtable, mappingOffset)
+                ?: return failure(FontError.InvalidFontData("Format 14 non-default UVS mapping is truncated.", CMAP_LOCATION))
+            val glyphId = readUInt16(subtable, mappingOffset + 3)?.toInt()
+                ?: return failure(FontError.InvalidFontData("Format 14 non-default UVS mapping is truncated.", CMAP_LOCATION))
+            if (!codePoint.isUnicodeScalar() || codePoint <= previousCodePoint || glyphId !in 1 until glyphLimit) {
+                return failure(FontError.InvalidFontData("Format 14 non-default UVS mappings are invalid or unsorted.", CMAP_LOCATION))
+            }
+            mappings += NonDefaultVariationMapping(codePoint, glyphId)
+            previousCodePoint = codePoint
+            mappingOffset += FORMAT_14_NON_DEFAULT_MAPPING_BYTES.toInt()
+        }
+        return FontOperationResult.Success(mappings)
+    }
+
+    private fun variationTableOffset(
+        subtable: ByteArray,
+        tableOffset: Long,
+        recordsEnd: Int,
+    ): Int? {
+        if (tableOffset < recordsEnd.toLong()) return null
+        return checkedRangeEnd(tableOffset, 4L, subtable.size)?.let { tableOffset.toInt() }
+    }
+
+    private fun variationOffsetFailure(tableOffset: Long, sourceSize: Int): FontOperationResult.Failure =
+        rangeFailure("Format 14 variation table offset is out of bounds.", tableOffset, 4L, sourceSize)
+
     private fun failure(error: FontError, diagnostics: List<FontDiagnostic> = listOf(error.toDiagnostic())): FontOperationResult.Failure =
         FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
 
@@ -366,6 +550,7 @@ internal object CmapReader {
  */
 internal class UnicodeCmapLookup internal constructor(
     private val mapping: CmapMapping,
+    private val variationMapping: VariationCmapMapping?,
 ) {
     /** Resolves one Unicode scalar value without rescanning or revalidating the `cmap` table. */
     internal fun resolveGlyphId(codePoint: Int): FontOperationResult<GlyphLookupResult> {
@@ -377,6 +562,22 @@ internal class UnicodeCmapLookup internal constructor(
             FontOperationResult.Success(
                 GlyphLookupResult(GlyphId(0)),
                 listOf(glyphNotFoundDiagnostic(codePoint)),
+            )
+        } else {
+            FontOperationResult.Success(GlyphLookupResult(GlyphId(glyphId)))
+        }
+    }
+
+    /** Resolves one declared base-and-selector pair without rescanning the validated `cmap`. */
+    internal fun resolveGlyphId(codePoint: Int, variationSelector: Int): FontOperationResult<GlyphLookupResult> {
+        if (!codePoint.isUnicodeScalar() || !variationSelector.isVariationSelector()) {
+            return failure(FontError.InvalidFontData("Unicode variation sequence contains an invalid scalar.", CMAP_LOCATION))
+        }
+        val glyphId = variationMapping?.glyphIdFor(codePoint, variationSelector, mapping.glyphIdFor(codePoint)) ?: 0
+        return if (glyphId == 0) {
+            FontOperationResult.Success(
+                GlyphLookupResult(GlyphId(0)),
+                listOf(variationSequenceNotFoundDiagnostic(codePoint, variationSelector)),
             )
         } else {
             FontOperationResult.Success(GlyphLookupResult(GlyphId(glyphId)))
@@ -444,6 +645,61 @@ private data class Format12Group(
     val startGlyphId: Long,
 )
 
+internal class VariationCmapMapping(
+    private val selectors: Map<Int, VariationSelectorMapping>,
+) {
+    fun glyphIdFor(codePoint: Int, variationSelector: Int, baseGlyphId: Int): Int =
+        selectors[variationSelector]?.glyphIdFor(codePoint, baseGlyphId) ?: 0
+}
+
+internal class VariationSelectorMapping(
+    private val defaultRanges: List<DefaultVariationRange>,
+    private val nonDefaultMappings: List<NonDefaultVariationMapping>,
+) {
+    fun glyphIdFor(codePoint: Int, baseGlyphId: Int): Int =
+        nonDefaultGlyphId(codePoint) ?: if (isDefault(codePoint)) baseGlyphId else 0
+
+    private fun nonDefaultGlyphId(codePoint: Int): Int? {
+        var low = 0
+        var high = nonDefaultMappings.lastIndex
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val mapping = nonDefaultMappings[middle]
+            when {
+                codePoint < mapping.codePoint -> high = middle - 1
+                codePoint > mapping.codePoint -> low = middle + 1
+                else -> return mapping.glyphId
+            }
+        }
+        return null
+    }
+
+    private fun isDefault(codePoint: Int): Boolean {
+        var low = 0
+        var high = defaultRanges.lastIndex
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val range = defaultRanges[middle]
+            when {
+                codePoint < range.start -> high = middle - 1
+                codePoint > range.end -> low = middle + 1
+                else -> return true
+            }
+        }
+        return false
+    }
+}
+
+internal data class DefaultVariationRange(
+    val start: Int,
+    val end: Int,
+)
+
+internal data class NonDefaultVariationMapping(
+    val codePoint: Int,
+    val glyphId: Int,
+)
+
 /** Result of resolving a Unicode code point through a validated `cmap` table. */
 internal data class GlyphLookupResult(
     /** Resolved glyph identifier; zero denotes the missing-glyph glyph. */
@@ -453,10 +709,25 @@ internal data class GlyphLookupResult(
 private val CMAP_LOCATION: FontDiagnosticLocation = FontDiagnosticLocation.Table("cmap")
 
 private const val MAX_GLYPH_ID_EXCLUSIVE = 0x10000
+private const val FORMAT_14_HEADER_BYTES = 10L
+private const val FORMAT_14_SELECTOR_RECORD_BYTES = 11L
+private const val FORMAT_14_DEFAULT_RANGE_BYTES = 4L
+private const val FORMAT_14_NON_DEFAULT_MAPPING_BYTES = 5L
 
 private fun mapWithDelta(baseValue: Int, idDelta: Int): Int = (baseValue + idDelta) and 0xFFFF
 
 private fun Int.isUnicodeScalar(): Boolean = this in 0..0x10FFFF && this !in 0xD800..0xDFFF
+
+private fun Int.isVariationSelector(): Boolean = this in 0xFE00..0xFE0F || this in 0xE0100..0xE01EF
+
+private fun readUInt24(bytes: ByteArray, offset: Int): Int? =
+    if (offset < 0 || offset > bytes.size - 3) {
+        null
+    } else {
+        ((bytes[offset].toInt() and 0xFF) shl 16) or
+            ((bytes[offset + 1].toInt() and 0xFF) shl 8) or
+            (bytes[offset + 2].toInt() and 0xFF)
+    }
 
 private fun glyphNotFoundDiagnostic(codePoint: Int): FontDiagnostic =
     FontDiagnostic(
@@ -464,4 +735,12 @@ private fun glyphNotFoundDiagnostic(codePoint: Int): FontDiagnostic =
         severity = FontDiagnosticSeverity.INFO,
         location = CMAP_LOCATION,
         message = "No glyph mapping exists for U+${codePoint.toString(16).uppercase().padStart(4, '0')}.",
+    )
+
+private fun variationSequenceNotFoundDiagnostic(codePoint: Int, variationSelector: Int): FontDiagnostic =
+    FontDiagnostic(
+        code = "font.cmap.variation-sequence-not-found",
+        severity = FontDiagnosticSeverity.INFO,
+        location = CMAP_LOCATION,
+        message = "No variation mapping exists for U+${codePoint.toString(16).uppercase().padStart(4, '0')} U+${variationSelector.toString(16).uppercase().padStart(4, '0')}.",
     )

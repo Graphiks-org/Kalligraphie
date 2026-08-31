@@ -520,6 +520,18 @@ public interface ShapingBackend {
      * backend's identity is successfully opened.
      */
     public fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun>
+
+    /**
+     * Releases resources owned by this backend after its caller has finished shaping.
+     *
+     * A backend that owns no releasable resource returns success. Implementations with native
+     * state must make closure idempotent and linearizable: shaping admitted before closure may
+     * finish, while shaping admitted after its close transition returns
+     * [FontError.ResourceClosed]. Closing never closes a caller-owned [FontInstance], catalog,
+     * resolver, or asset. Callers own a successfully opened backend and must invoke this method
+     * once they no longer need it; concurrent calls are safe.
+     */
+    public fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
 }
 
 private fun String.canonicalScriptTag(): String {
