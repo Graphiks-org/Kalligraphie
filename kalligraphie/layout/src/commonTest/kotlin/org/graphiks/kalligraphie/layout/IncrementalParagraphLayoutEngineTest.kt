@@ -31,12 +31,11 @@ import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
-import org.graphiks.kalligraphie.api.IncrementalLayout
-import org.graphiks.kalligraphie.api.IncrementalLayoutDiagnostics
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
 import org.graphiks.kalligraphie.api.LayoutBounds
 import org.graphiks.kalligraphie.api.LayoutCheckpoint
+import org.graphiks.kalligraphie.api.LayoutContinuationSignature
 import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutCoverage
 import org.graphiks.kalligraphie.api.LayoutDelta
@@ -45,6 +44,7 @@ import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutSegment
 import org.graphiks.kalligraphie.api.LayoutStateHandle
+import org.graphiks.kalligraphie.api.LayoutTailState
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LayoutVector
 import org.graphiks.kalligraphie.api.LineContentMetrics
@@ -53,6 +53,7 @@ import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
+import org.graphiks.kalligraphie.api.RangeChange
 import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShaperCluster
@@ -71,6 +72,7 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TypographySnapshot
+import org.graphiks.kalligraphie.api.TypographyDelta
 import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 
@@ -207,6 +209,118 @@ class IncrementalParagraphLayoutEngineTest {
         assertEquals(range(target.snapshot, 8, 12), success.layout.coverage.invalidatedSuffix)
     }
 
+    @Test
+    fun boundedComputerMaterializesOnlyTheRequestedWindowAndReportsItsTail() {
+        val fixture = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12))
+
+        val result = fixture.engine.layout(fixture.request(4, 5), fixture.computer())
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(listOf(range(fixture.snapshot, 4, 8)), success.layout.lines.map(LineLayout::range))
+        assertEquals(range(fixture.snapshot, 4, 8), success.layout.coveredRange)
+        assertEquals(
+            LayoutTailState.Invalidated(range(fixture.snapshot, 8, 12)),
+            success.layout.coverage.tailState,
+        )
+    }
+
+    @Test
+    fun matchingLineWithDifferentContinuationDoesNotStabilizeTheTail() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(source.request(0, 12), source.computer()),
+        )
+        val target = fixture("axcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine, typography = source.typography)
+        val textDelta = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 1, 2), range(target.snapshot, 1, 2))),
+            ),
+        ).value
+
+        val result = engine.layout(
+            target.request(4, 5, previousState = initial.layout.state, delta = LayoutDelta(text = textDelta)),
+            target.computer(continuationValues = listOf("after-4", "different-after-8", "after-12")),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertNull(success.diagnostics.stabilizedAt)
+        assertEquals(
+            LayoutTailState.Invalidated(range(target.snapshot, 8, 12)),
+            success.layout.coverage.tailState,
+        )
+    }
+
+    @Test
+    fun changedTypographyWithoutProvenLocalizedRangesUsesConservativeReflow() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(source.request(0, 12), source.computer()),
+        )
+        val targetTypography = typography(version = TypographyVersion.create(), like = source.typography)
+        val target = fixture(
+            "abcdefghijkl",
+            listOf(0 to 4, 4 to 8, 8 to 12),
+            engine = engine,
+            typography = targetTypography,
+            version = source.snapshot.version,
+        )
+        val typographyDelta = TypographyDelta(
+            sourceVersion = source.typography.version,
+            targetVersion = targetTypography.version,
+            rangeChange = RangeChange.FullInvalidation,
+        )
+
+        val result = engine.layout(
+            target.request(
+                4,
+                5,
+                previousState = initial.layout.state,
+                delta = LayoutDelta(typography = typographyDelta),
+            ),
+            target.computer(),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(target.snapshot.range.start, success.diagnostics.reflowStart)
+        assertTrue(success.diagnostics.usedConservativeInvalidation)
+        assertEquals(
+            LayoutTailState.Invalidated(range(target.snapshot, 8, 12)),
+            success.layout.coverage.tailState,
+        )
+    }
+
+    @Test
+    fun cacheEvictionDoesNotChangeCheckpointOrTailObservables() {
+        val warmEngine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val coldEngine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 0)
+        val fixture = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = warmEngine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            warmEngine.layout(fixture.request(0, 12), fixture.computer()),
+        )
+        val request = fixture.request(4, 5, previousState = initial.layout.state)
+
+        val warm = assertIs<IncrementalLayoutResult.Success>(warmEngine.layout(request, fixture.computer()))
+        val evicted = assertIs<IncrementalLayoutResult.Success>(coldEngine.layout(request, fixture.computer()))
+
+        assertEquals(fixture.snapshot.textIndexAtScalarBoundary(4), warm.diagnostics.reflowStart)
+        assertEquals(fixture.snapshot.textIndexAtScalarBoundary(4), evicted.diagnostics.reflowStart)
+        assertFalse(warm.diagnostics.usedConservativeInvalidation)
+        assertFalse(evicted.diagnostics.usedConservativeInvalidation)
+        assertEquals(range(fixture.snapshot, 4, 8), warm.layout.coveredRange)
+        assertEquals(range(fixture.snapshot, 4, 8), evicted.layout.coveredRange)
+        assertEquals(
+            LayoutTailState.Stable(range(fixture.snapshot, 8, 12)),
+            warm.layout.coverage.tailState,
+        )
+        assertEquals(warm.layout.coverage.tailState, evicted.layout.coverage.tailState)
+        assertEquals(fixture.snapshot.textIndexAtScalarBoundary(8), warm.diagnostics.stabilizedAt)
+        assertEquals(warm.diagnostics.stabilizedAt, evicted.diagnostics.stabilizedAt)
+    }
+
     private data class Fixture(
         val snapshot: TextSnapshot,
         val typography: TypographySnapshot,
@@ -231,33 +345,46 @@ class IncrementalParagraphLayoutEngineTest {
             ),
         ).value
 
-        fun computer(glyphIds: List<Int> = lineBoundaries.map { 7 }): IncrementalParagraphComputer =
-            IncrementalParagraphComputer { from, request ->
-                val lines = lineBoundaries.zip(glyphIds)
-                    .filter { (bounds, _) -> bounds.first >= scalarOrdinal(snapshot, from.start) }
-                    .mapIndexed { index, (bounds, glyphId) ->
-                        line(snapshot, bounds.first, bounds.second, baselineY = 8f + index * 10f, glyphId = glyphId)
-                    }
-                val composedRange = from
-                val outputCoverage = coverage(snapshot, composedRange, invalidatedSuffix = null)
-                val state = LayoutStateHandle(
-                    identity = "fixture",
-                    checkpoint = LayoutCheckpoint(snapshot.version, typography.version),
-                    coverage = outputCoverage,
-                )
-                IncrementalLayoutResult.Success(
-                    layout = FixtureLayout(LayoutInput(snapshot, typography), outputCoverage, lines, state),
-                    diagnostics = IncrementalLayoutDiagnostics(from.start, usedConservativeInvalidation = true),
-                )
+        fun computer(
+            glyphIds: List<Int> = lineBoundaries.map { 7 },
+            continuationValues: List<String> = lineBoundaries.map { (_, end) -> "after-$end" },
+        ): IncrementalParagraphComputer =
+            IncrementalParagraphComputer { target, overscan, _ ->
+                val requestedFirst = lineBoundaries.indexOfFirst { (start, end) ->
+                    start < scalarOrdinal(snapshot, target.requestedRange.endExclusive) &&
+                        scalarOrdinal(snapshot, target.requestedRange.start) < end
+                }
+                val requestedLast = lineBoundaries.indexOfLast { (start, end) ->
+                    start < scalarOrdinal(snapshot, target.requestedRange.endExclusive) &&
+                        scalarOrdinal(snapshot, target.requestedRange.start) < end
+                }
+                val first = maxOf(0, requestedFirst - overscan.lineCount)
+                val endExclusive = minOf(lineBoundaries.size, requestedLast + overscan.lineCount + 1)
+                val computedLines = (first until endExclusive).map { index ->
+                    val bounds = lineBoundaries[index]
+                    IncrementalComputedLine(
+                        line = line(
+                            snapshot,
+                            bounds.first,
+                            bounds.second,
+                            baselineY = 8f + index * 10f,
+                            glyphId = glyphIds[index],
+                        ),
+                        continuation = LayoutContinuationSignature(
+                            boundary = snapshot.textIndexAtScalarBoundary(bounds.second),
+                            semanticValue = continuationValues[index],
+                        ),
+                    )
+                }
+                val finalBoundary = computedLines.last().line.range.endExclusive
+                val tail = if (finalBoundary == snapshot.range.endExclusive) {
+                    IncrementalComputationTail.MaterializedThroughDocumentEnd
+                } else {
+                    IncrementalComputationTail.Unmaterialized(TextRange(finalBoundary, snapshot.range.endExclusive))
+                }
+                IncrementalParagraphComputation.Success(computedLines, tail)
             }
     }
-
-    private class FixtureLayout(
-        override val input: LayoutInput,
-        override val coverage: LayoutCoverage,
-        override val lines: List<LineLayout>,
-        override val state: LayoutStateHandle,
-    ) : IncrementalLayout
 
     private companion object {
         val constraints = HorizontalParagraphConstraints(
@@ -290,13 +417,13 @@ class IncrementalParagraphLayoutEngineTest {
             lines: List<Pair<Int, Int>>,
             engine: IncrementalParagraphLayoutEngine = IncrementalParagraphLayoutEngine(64 * 1024),
             typography: TypographySnapshot? = null,
+            version: TextVersion = TextVersion.create(),
         ): Fixture {
-            val snapshot = decode(text)
+            val snapshot = decode(text, version)
             return Fixture(snapshot, typography ?: typography(), lines, engine)
         }
 
-        fun decode(value: String): TextSnapshot {
-            val version = TextVersion.create()
+        fun decode(value: String, version: TextVersion = TextVersion.create()): TextSnapshot {
             val scalars = value.map(Char::code)
             val sourceRanges = scalars.indices.map { ordinal ->
                 SourceRange(
@@ -307,7 +434,20 @@ class IncrementalParagraphLayoutEngineTest {
             return TextSnapshot(version, SourceEncoding.UTF16, scalars, sourceRanges)
         }
 
-        fun typography(): TypographySnapshot {
+        fun typography(
+            version: TypographyVersion = TypographyVersion.create(),
+            like: TypographySnapshot? = null,
+        ): TypographySnapshot {
+            if (like != null) {
+                return TypographySnapshot(
+                    version = version,
+                    fontCatalog = like.fontCatalog,
+                    resolutionPolicy = like.resolutionPolicy,
+                    fontInstanceDescriptor = like.fontInstanceDescriptor,
+                    features = like.features,
+                    shapingConfigurationIdentity = like.shapingConfigurationIdentity,
+                )
+            }
             val generation = FontCatalogGeneration("fixture")
             val record = FontFaceRecord(
                 faceId,
@@ -324,7 +464,7 @@ class IncrementalParagraphLayoutEngineTest {
                 ): FontOperationResult<FontFace> = error("Not used")
             }
             return TypographySnapshot(
-                version = TypographyVersion.create(),
+                version = version,
                 fontCatalog = catalog,
                 resolutionPolicy = FontResolutionPolicySnapshot(
                     generation = generation,

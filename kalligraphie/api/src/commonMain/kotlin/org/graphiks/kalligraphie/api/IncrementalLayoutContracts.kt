@@ -352,6 +352,24 @@ public value class LineOverscan(
     }
 }
 
+/** Explicit state of source text following complete published coverage. */
+public sealed interface LayoutTailState {
+    /** All source through the document end has been materialized. */
+    public data object MaterializedThroughDocumentEnd : LayoutTailState
+
+    /** An exact unmaterialized suffix is semantically proven unchanged. */
+    public data class Stable(
+        /** Exact stable suffix beginning at the covered-range end. */
+        public val range: TextRange,
+    ) : LayoutTailState
+
+    /** An exact unmaterialized suffix remains invalid and requires later materialization. */
+    public data class Invalidated(
+        /** Exact invalid suffix beginning at the covered-range end. */
+        public val range: TextRange,
+    ) : LayoutTailState
+}
+
 /**
  * Immutable coverage metadata for a laid-out text revision.
  *
@@ -366,15 +384,20 @@ public class LayoutCoverage internal constructor(
     public val range: TextRange,
     /** Whether [range] completely covers the corresponding request. */
     public val isComplete: Boolean,
-    /** Exact unmaterialized suffix that remains invalid, or `null` when no suffix remains. */
-    public val invalidatedSuffix: TextRange? = null,
+    /** Explicit state of the exact source suffix following [range]. */
+    public val tailState: LayoutTailState = LayoutTailState.MaterializedThroughDocumentEnd,
 ) {
+    /** Exact unmaterialized suffix that remains invalid, or `null` otherwise. */
+    public val invalidatedSuffix: TextRange?
+        get() = (tailState as? LayoutTailState.Invalidated)?.range
+
     init {
-        require(invalidatedSuffix == null || invalidatedSuffix.start.sharesVersionWith(range.start)) {
-            "An invalidated suffix must use the coverage text version."
+        val tailRange = tailState.rangeOrNull()
+        require(tailRange == null || tailRange.start.sharesVersionWith(range.start)) {
+            "An unmaterialized tail must use the coverage text version."
         }
-        require(invalidatedSuffix == null || invalidatedSuffix.start == range.endExclusive) {
-            "An invalidated suffix must begin exactly where complete published coverage ends."
+        require(tailRange == null || tailRange.start == range.endExclusive) {
+            "An unmaterialized tail must begin exactly where complete published coverage ends."
         }
     }
 
@@ -386,27 +409,38 @@ public class LayoutCoverage internal constructor(
             range: TextRange,
             isComplete: Boolean,
             invalidatedSuffix: TextRange? = null,
-        ): LayoutContractResult<LayoutCoverage> =
-            if (
-                range.usesVersion(textVersion) &&
-                (invalidatedSuffix == null || invalidatedSuffix.usesVersion(textVersion))
-            ) {
-                if (invalidatedSuffix != null && invalidatedSuffix.start != range.endExclusive) {
-                    LayoutContractResult.Failure(
-                        IncrementalLayoutError.InvalidRange(
-                            "An invalidated suffix must begin exactly where complete published coverage ends.",
-                        ),
-                    )
-                } else {
-                    LayoutContractResult.Success(LayoutCoverage(textVersion, range, isComplete, invalidatedSuffix))
-                }
-            } else {
-                LayoutContractResult.Failure(
+        ): LayoutContractResult<LayoutCoverage> = create(
+            textVersion,
+            range,
+            isComplete,
+            invalidatedSuffix?.let { LayoutTailState.Invalidated(it) }
+                ?: LayoutTailState.MaterializedThroughDocumentEnd,
+        )
+
+        /** Creates coverage with an explicit stable, invalidated, or fully materialized tail. */
+        public fun create(
+            textVersion: TextVersion,
+            range: TextRange,
+            isComplete: Boolean,
+            tailState: LayoutTailState,
+        ): LayoutContractResult<LayoutCoverage> {
+            val tailRange = tailState.rangeOrNull()
+            if (!range.usesVersion(textVersion) || (tailRange != null && !tailRange.usesVersion(textVersion))) {
+                return LayoutContractResult.Failure(
                     IncrementalLayoutError.VersionMismatch(
-                        "Layout coverage and invalidated suffix must use the declared text version.",
+                        "Layout coverage and its tail must use the declared text version.",
                     ),
                 )
             }
+            if (tailRange != null && tailRange.start != range.endExclusive) {
+                return LayoutContractResult.Failure(
+                    IncrementalLayoutError.InvalidRange(
+                        "An unmaterialized tail must begin exactly where complete published coverage ends.",
+                    ),
+                )
+            }
+            return LayoutContractResult.Success(LayoutCoverage(textVersion, range, isComplete, tailState))
+        }
     }
 }
 
@@ -418,10 +452,32 @@ public data class LayoutCheckpoint(
     public val typographyVersion: TypographyVersion,
 )
 
+/**
+ * Resource-free continuation signature after one complete line.
+ *
+ * [semanticValue] must encode every producer-specific state component that can change subsequent
+ * line breaking or geometry. Absolute boundaries are compared separately after text-delta mapping.
+ */
+public data class LayoutContinuationSignature(
+    /** Source boundary immediately following the complete line. */
+    public val boundary: TextIndex,
+    /** Stable complete semantic serialization of continuation state. */
+    public val semanticValue: String,
+) {
+    init {
+        require(semanticValue.isNotBlank()) { "A continuation semantic value must not be blank." }
+    }
+
+    /** Compares continuation semantics independently of snapshot-bound absolute position. */
+    public fun hasSameSemantics(other: LayoutContinuationSignature): Boolean = semanticValue == other.semanticValue
+}
+
 /** Exact resource-free signature of one complete observable line. */
 public class LineCheckpointSignature private constructor(
     /** Source range and break boundary represented by this complete line. */
     public val range: TextRange,
+    /** Complete continuation state immediately after [range]. */
+    public val continuation: LayoutContinuationSignature,
     private val observable: ObservableLineSignature,
 ) {
     /** Compares every observable except the snapshot-bound absolute source range. */
@@ -429,18 +485,29 @@ public class LineCheckpointSignature private constructor(
 
     /** Compares the source range and every captured observable. */
     override fun equals(other: Any?): Boolean =
-        other is LineCheckpointSignature && range == other.range && observable == other.observable
+        other is LineCheckpointSignature &&
+            range == other.range &&
+            continuation == other.continuation &&
+            observable == other.observable
 
     /** Returns a stable hash of the source range and captured observables. */
-    override fun hashCode(): Int = 31 * range.hashCode() + observable.hashCode()
+    override fun hashCode(): Int = 31 * (31 * range.hashCode() + continuation.hashCode()) + observable.hashCode()
 
     /** Factories for complete line signatures. */
     public companion object {
         /** Captures range-relative glyph, cluster, font, metric, geometry, caret, and continuation facts. */
-        public fun from(line: LineLayout): LineCheckpointSignature = LineCheckpointSignature(
+        public fun from(
+            line: LineLayout,
+            continuation: LayoutContinuationSignature,
+        ): LineCheckpointSignature = LineCheckpointSignature(
             range = line.range,
+            continuation = continuation,
             observable = line.toObservableSignature(),
-        )
+        ).also {
+            require(continuation.boundary == line.range.endExclusive) {
+                "A line checkpoint continuation must begin at the line end boundary."
+            }
+        }
     }
 }
 
@@ -490,6 +557,8 @@ public class LayoutStateHandle(
     public val coverage: LayoutCoverage,
     /** Complete semantic configuration required to reuse this state. */
     public val configuration: LayoutConfigurationSignature? = null,
+    /** Complete continuation signature after the final covered line. */
+    public val continuation: LayoutContinuationSignature? = null,
     lineCheckpoints: List<LineCheckpointSignature> = emptyList(),
 ) {
     /** Immutable complete-line signatures ordered in logical source order. */
@@ -515,6 +584,12 @@ public class LayoutStateHandle(
             left.range.endExclusive <= right.range.start
         }) {
             "Layout state line checkpoints must be ordered and non-overlapping."
+        }
+        require(continuation == null || continuation.boundary == coverage.range.endExclusive) {
+            "Layout state continuation must begin at the covered-range end."
+        }
+        require(this.lineCheckpoints.isEmpty() || continuation == this.lineCheckpoints.last().continuation) {
+            "Layout state continuation must equal the final line checkpoint continuation."
         }
     }
 }
@@ -925,6 +1000,12 @@ private fun TextRange.usesVersion(version: TextVersion): Boolean =
 
 private fun TextIndex.usesVersion(version: TextVersion): Boolean =
     sharesVersionWith(TextIndex(version, 0))
+
+private fun LayoutTailState.rangeOrNull(): TextRange? = when (this) {
+    LayoutTailState.MaterializedThroughDocumentEnd -> null
+    is LayoutTailState.Stable -> range
+    is LayoutTailState.Invalidated -> range
+}
 
 private fun unchangedScalarsMatch(
     source: TextSnapshot,

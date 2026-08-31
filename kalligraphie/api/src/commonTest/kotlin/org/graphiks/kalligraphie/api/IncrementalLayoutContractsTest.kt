@@ -2,7 +2,9 @@ package org.graphiks.kalligraphie.api
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 
 class IncrementalLayoutContractsTest {
@@ -262,6 +264,44 @@ class IncrementalLayoutContractsTest {
 
         assertIs<LayoutContractResult.Failure>(result).also {
             assertIs<IncrementalLayoutError.InvalidRange>(it.error)
+        }
+    }
+
+    @Test
+    fun layoutCoveragePublishesAnExactStableTailWithoutCallingItInvalid() {
+        val text = decode("abcdef")
+        val stableTail = LayoutTailState.Stable(range(text, 2, 6))
+
+        val result = LayoutCoverage.create(
+            textVersion = text.version,
+            range = range(text, 0, 2),
+            isComplete = true,
+            tailState = stableTail,
+        )
+
+        val coverage = assertIs<LayoutContractResult.Success<LayoutCoverage>>(result).value
+        assertEquals(stableTail, coverage.tailState)
+        assertNull(coverage.invalidatedSuffix)
+    }
+
+    @Test
+    fun layoutStateRejectsAContinuationOutsideItsCoveredEnd() {
+        val text = decode("abcdef")
+        val typographyVersion = TypographyVersion.create()
+        val coverage = assertIs<LayoutContractResult.Success<LayoutCoverage>>(
+            LayoutCoverage.create(text.version, range(text, 0, 2), isComplete = true),
+        ).value
+
+        assertFailsWith<IllegalArgumentException> {
+            LayoutStateHandle(
+                identity = "state",
+                checkpoint = LayoutCheckpoint(text.version, typographyVersion),
+                coverage = coverage,
+                continuation = LayoutContinuationSignature(
+                    boundary = text.textIndexAtScalarBoundary(3),
+                    semanticValue = "paragraph continuation",
+                ),
+            )
         }
     }
 
