@@ -694,8 +694,11 @@ public fun createIncrementalLayoutRequest(
             IncrementalLayoutError.VersionMismatch("Typography delta source does not match the previous layout checkpoint."),
         )
     }
-    if (previousState != null && delta?.typography != null) {
-        val proofError = validateTypographyProofs(previousState, input.text, delta.typography)
+    if (delta?.typography != null) {
+        val sourceTextVersion = previousState?.checkpoint?.textVersion
+            ?: delta.text?.sourceVersion
+            ?: input.text.version
+        val proofError = validateTypographyProofs(sourceTextVersion, input.text, delta.typography)
         if (proofError != null) return LayoutContractResult.Failure(proofError)
     }
     return LayoutContractResult.Success(
@@ -712,14 +715,14 @@ public fun createIncrementalLayoutRequest(
 }
 
 private fun validateTypographyProofs(
-    previousState: LayoutStateHandle,
+    sourceTextVersion: TextVersion,
     target: TextSnapshot,
     typographyDelta: TypographyDelta,
 ): IncrementalLayoutError? {
     val typographyError = validateProvenRangeSpaces(
         label = "Typography delta",
         rangeChange = typographyDelta.rangeChange,
-        sourceVersion = previousState.checkpoint.textVersion,
+        sourceVersion = sourceTextVersion,
         target = target,
     )
     if (typographyError != null) return typographyError
@@ -728,7 +731,7 @@ private fun validateTypographyProofs(
     val policyError = validateProvenRangeSpaces(
         label = "Font resolution policy delta",
         rangeChange = policyChange,
-        sourceVersion = previousState.checkpoint.textVersion,
+        sourceVersion = sourceTextVersion,
         target = target,
     )
     if (policyError != null) return policyError
@@ -749,7 +752,7 @@ private fun validateProvenRangeSpaces(
     val proven = rangeChange as? RangeChange.Proven ?: return null
     if (proven.sourceRanges.any { range -> !range.usesVersion(sourceVersion) }) {
         return IncrementalLayoutError.VersionMismatch(
-            "$label source ranges must use the previous layout text revision.",
+            "$label source ranges must use the declared source text revision.",
         )
     }
     proven.targetRanges.forEach { range ->

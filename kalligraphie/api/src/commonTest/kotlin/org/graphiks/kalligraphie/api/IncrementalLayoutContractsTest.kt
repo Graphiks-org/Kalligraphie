@@ -308,6 +308,86 @@ class IncrementalLayoutContractsTest {
     }
 
     @Test
+    fun initialRequestWithoutPreviousStateOrDeltaIsAccepted() {
+        val text = decode("abc")
+        val input = LayoutInput(text, typography(TypographyVersion.create()))
+
+        val result = request(input, previousState = null, delta = null)
+
+        assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(result)
+    }
+
+    @Test
+    fun requestWithoutPreviousStateRejectsUnverifiableTypographyProofSource() {
+        val target = decode("abc")
+        val foreignSource = decode("abc")
+        val targetTypography = typography(TypographyVersion.create())
+        val typographyDelta = TypographyDelta(
+            sourceVersion = TypographyVersion.create(),
+            targetVersion = targetTypography.version,
+            rangeChange = proof(foreignSource, target, 1, 2),
+        )
+
+        val result = request(
+            input = LayoutInput(target, targetTypography),
+            previousState = null,
+            delta = LayoutDelta(typography = typographyDelta),
+        )
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestWithoutPreviousStateRejectsForeignTypographyProofTarget() {
+        val target = decode("abc")
+        val foreignTarget = decode("abc")
+        val targetTypography = typography(TypographyVersion.create())
+        val typographyDelta = TypographyDelta(
+            sourceVersion = TypographyVersion.create(),
+            targetVersion = targetTypography.version,
+            rangeChange = proof(target, foreignTarget, 1, 2),
+        )
+
+        val result = request(
+            input = LayoutInput(target, targetTypography),
+            previousState = null,
+            delta = LayoutDelta(typography = typographyDelta),
+        )
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestWithoutPreviousStateRejectsDifferentTypographyAndPolicyProofs() {
+        val target = decode("abcd")
+        val targetTypography = typography(TypographyVersion.create())
+        val typographyDelta = TypographyDelta(
+            sourceVersion = TypographyVersion.create(),
+            targetVersion = targetTypography.version,
+            rangeChange = proof(target, target, 1, 2),
+            fontResolutionPolicy = FontResolutionPolicyDelta(
+                source = targetTypography.resolutionPolicy,
+                target = targetTypography.resolutionPolicy,
+                provenRanges = proof(target, target, 2, 3),
+            ),
+        )
+
+        val result = request(
+            input = LayoutInput(target, targetTypography),
+            previousState = null,
+            delta = LayoutDelta(typography = typographyDelta),
+        )
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.InvalidRange>(it.error)
+        }
+    }
+
+    @Test
     fun layoutCoverageFactoryRejectsARangeFromAnotherVersion() {
         val text = decode("abc")
         val foreign = decode("abc")
@@ -543,7 +623,7 @@ class IncrementalLayoutContractsTest {
 
     private fun request(
         input: LayoutInput,
-        previousState: LayoutStateHandle,
+        previousState: LayoutStateHandle?,
         delta: LayoutDelta?,
     ): LayoutContractResult<IncrementalLayoutRequest> = createIncrementalLayoutRequest(
         input = input,
