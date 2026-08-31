@@ -143,6 +143,112 @@ class IncrementalLayoutContractsTest {
         assertSame(RangeChange.FullInvalidation, delta.rangeChange)
     }
 
+    @Test
+    fun requestRejectsChangedTextCheckpointWithoutATextDelta() {
+        val source = decode("abc")
+        val target = decode("abc")
+        val typography = typography(TypographyVersion.create())
+        val input = LayoutInput(target, typography)
+        val previousState = state(source, typography.version)
+
+        val result = request(input, previousState, delta = null)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestRejectsChangedTypographyCheckpointWithoutATypographyDelta() {
+        val text = decode("abc")
+        val sourceTypography = TypographyVersion.create()
+        val targetTypography = typography(TypographyVersion.create())
+        val input = LayoutInput(text, targetTypography)
+        val previousState = state(text, sourceTypography)
+
+        val result = request(input, previousState, delta = null)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestRejectsCoverageWhoseRangeUsesAnotherTextVersion() {
+        val text = decode("abc")
+        val foreign = decode("abc")
+        val typography = typography(TypographyVersion.create())
+        val input = LayoutInput(text, typography)
+        val previousState = LayoutStateHandle(
+            identity = "foreign-coverage",
+            checkpoint = LayoutCheckpoint(text.version, typography.version),
+            coverage = LayoutCoverage(text.version, foreign.range, isComplete = true),
+        )
+
+        val result = request(input, previousState, delta = null)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestAcceptsSameVersionCheckpointWithoutADelta() {
+        val text = decode("abc")
+        val typography = typography(TypographyVersion.create())
+        val input = LayoutInput(text, typography)
+
+        val result = request(input, state(text, typography.version), delta = null)
+
+        assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(result)
+    }
+
+    @Test
+    fun requestAcceptsDeltasThatProveBothVersionTransitions() {
+        val source = decode("abc")
+        val target = decode("adc")
+        val sourceTypography = TypographyVersion.create()
+        val targetTypography = typography(TypographyVersion.create())
+        val textDelta = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source,
+                target,
+                listOf(TextChange(range(source, 1, 2), range(target, 1, 2))),
+            ),
+        ).value
+        val typographyDelta = TypographyDelta(sourceTypography, targetTypography.version)
+        val input = LayoutInput(target, targetTypography)
+
+        val result = request(
+            input,
+            state(source, sourceTypography),
+            LayoutDelta(textDelta, typographyDelta),
+        )
+
+        assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(result)
+    }
+
+    @Test
+    fun layoutCoverageFactoryRejectsARangeFromAnotherVersion() {
+        val text = decode("abc")
+        val foreign = decode("abc")
+
+        val result = LayoutCoverage.create(text.version, foreign.range, isComplete = true)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun layoutCoverageFactoryAcceptsARangeFromTheDeclaredVersion() {
+        val text = decode("abc")
+
+        val result = LayoutCoverage.create(text.version, text.range, isComplete = true)
+
+        assertIs<LayoutContractResult.Success<LayoutCoverage>>(result)
+    }
+
     private fun decode(value: String): TextSnapshot {
         val version = TextVersion.create()
         val scalars = mutableListOf<Int>()
@@ -188,4 +294,66 @@ class IncrementalLayoutContractsTest {
             lastResortFace = face,
         )
     }
+
+    private fun typography(version: TypographyVersion): TypographySnapshot {
+        val generation = FontCatalogGeneration("generation")
+        val face = FontFaceId(
+            source = FontSourceId.Opaque("tests", "generation", "face"),
+            faceIndex = 0,
+        )
+        val faceRecord = FontFaceRecord(
+            id = face,
+            metadata = FontFaceMetadata("Test", "Regular", unitsPerEm = 1_000, glyphCount = 1),
+            capabilities = FontFaceCapabilities(characterMapping = true, shaping = true, outline = true),
+        )
+        val catalog = object : FontCatalogSnapshot {
+            override val generation: FontCatalogGeneration = generation
+            override val faces: List<FontFaceRecord> = listOf(faceRecord)
+
+            override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> = error("Not used")
+
+            override fun resolveFace(
+                faceId: FontFaceId,
+                requirements: FontAccessRequirementsSnapshot,
+            ): FontOperationResult<FontFace> = error("Not used")
+        }
+        return TypographySnapshot(
+            version = version,
+            fontCatalog = catalog,
+            resolutionPolicy = FontResolutionPolicySnapshot(
+                generation = generation,
+                policyId = "tests",
+                version = "1",
+                candidates = listOf(FontResolutionCandidate(face)),
+                lastResortFace = face,
+            ),
+            fontInstanceDescriptor = FontInstanceDescriptor(),
+        )
+    }
+
+    private fun state(text: TextSnapshot, typographyVersion: TypographyVersion): LayoutStateHandle =
+        LayoutStateHandle(
+            identity = "previous",
+            checkpoint = LayoutCheckpoint(text.version, typographyVersion),
+            coverage = assertIs<LayoutContractResult.Success<LayoutCoverage>>(
+                LayoutCoverage.create(text.version, text.range, isComplete = true),
+            ).value,
+        )
+
+    private fun request(
+        input: LayoutInput,
+        previousState: LayoutStateHandle,
+        delta: LayoutDelta?,
+    ): LayoutContractResult<IncrementalLayoutRequest> = createIncrementalLayoutRequest(
+        input = input,
+        requestedRange = input.text.range,
+        constraints = HorizontalParagraphConstraints(
+            region = LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(100f), LayoutUnit(100f)),
+            lineMetrics = LineVerticalMetrics(LayoutUnit(10f), LayoutUnit(2f)),
+        ),
+        overscan = LineOverscan(1),
+        previousState = previousState,
+        delta = delta,
+        cancellationToken = CancellationToken.none,
+    )
 }

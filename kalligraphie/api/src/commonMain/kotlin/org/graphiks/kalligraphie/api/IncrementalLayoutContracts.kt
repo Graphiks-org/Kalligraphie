@@ -295,15 +295,40 @@ public value class LineOverscan(
     }
 }
 
-/** Immutable coverage metadata for a laid-out text revision. */
-public data class LayoutCoverage(
+/**
+ * Immutable coverage metadata for a laid-out text revision.
+ *
+ * Public callers construct coverage through [create], which proves that [range] carries
+ * [textVersion]. The internal constructor supports trusted layout implementations while request
+ * validation still rejects an inconsistent internal value at the public boundary.
+ */
+public class LayoutCoverage internal constructor(
     /** Text revision to which [range] belongs. */
     public val textVersion: TextVersion,
     /** Contiguous half-open range covered by complete layout output. */
     public val range: TextRange,
     /** Whether [range] completely covers the corresponding request. */
     public val isComplete: Boolean,
-)
+) {
+    /** Validated construction of immutable coverage metadata. */
+    public companion object {
+        /** Creates coverage only when [range] belongs to [textVersion]. */
+        public fun create(
+            textVersion: TextVersion,
+            range: TextRange,
+            isComplete: Boolean,
+        ): LayoutContractResult<LayoutCoverage> =
+            if (range.usesVersion(textVersion)) {
+                LayoutContractResult.Success(LayoutCoverage(textVersion, range, isComplete))
+            } else {
+                LayoutContractResult.Failure(
+                    IncrementalLayoutError.VersionMismatch(
+                        "Layout coverage range must use the declared text version.",
+                    ),
+                )
+            }
+    }
+}
 
 /** Immutable version checkpoint represented by a retained layout state. */
 public data class LayoutCheckpoint(
@@ -368,6 +393,33 @@ public fun createIncrementalLayoutRequest(
     val rangeError = validateRangeDomain(input.text, requestedRange, "Requested layout range")
     if (rangeError != null) return LayoutContractResult.Failure(rangeError)
 
+    if (previousState != null && !previousState.coverage.range.usesVersion(previousState.coverage.textVersion)) {
+        return LayoutContractResult.Failure(
+            IncrementalLayoutError.VersionMismatch(
+                "Previous layout coverage range does not match its declared text version.",
+            ),
+        )
+    }
+    if (
+        previousState != null &&
+        previousState.checkpoint.textVersion != input.text.version &&
+        delta?.text == null
+    ) {
+        return LayoutContractResult.Failure(
+            IncrementalLayoutError.VersionMismatch("A changed text checkpoint requires a versioned text delta."),
+        )
+    }
+    if (
+        previousState != null &&
+        previousState.checkpoint.typographyVersion != input.typography.version &&
+        delta?.typography == null
+    ) {
+        return LayoutContractResult.Failure(
+            IncrementalLayoutError.VersionMismatch(
+                "A changed typography checkpoint requires a versioned typography delta.",
+            ),
+        )
+    }
     if (delta?.text != null && delta.text.targetVersion != input.text.version) {
         return LayoutContractResult.Failure(
             IncrementalLayoutError.VersionMismatch("Text delta target does not match the layout input revision."),
@@ -491,6 +543,9 @@ private fun validateRangeDomain(
 }
 
 private fun TextRange.isEmpty(): Boolean = start == endExclusive
+
+private fun TextRange.usesVersion(version: TextVersion): Boolean =
+    start.sharesVersionWith(TextIndex(version, 0))
 
 private fun unchangedScalarsMatch(
     source: TextSnapshot,
