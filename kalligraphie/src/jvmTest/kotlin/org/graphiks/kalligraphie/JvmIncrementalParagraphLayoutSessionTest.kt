@@ -32,6 +32,7 @@ import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingRequest
@@ -262,7 +263,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
     }
 
     @Test
-    fun smallWindowShapesOnlyBoundedLookaheadAndMatchesTheFullJ4FirstLine() {
+    fun softWrappedTextWithoutMandatoryBreakSearchesThroughDocumentEndAndMatchesFullJ4() {
         val fixture = fixture("fi ".repeat(24) + "\u0633\u0644\u0627\u0645")
         val documentEnd = fixture.snapshot.range.endExclusive
         val reference = assertIs<ParagraphLayoutResult.Success>(
@@ -302,9 +303,102 @@ class JvmIncrementalParagraphLayoutSessionTest {
             assertEquals(reference.glyphAdvances(), actual.glyphAdvances())
             assertEquals(actual.range, session.currentLayout()?.layout?.coveredRange)
             assertTrue(backend.observedRanges.isNotEmpty())
-            assertTrue(backend.observedRanges.all { shaped -> shaped.endExclusive < documentEnd })
+            assertTrue(backend.observedRanges.any { shaped -> shaped.endExclusive == documentEnd })
             assertTrue(backend.observedRanges.all { shaped -> shaped.start >= fixture.snapshot.range.start })
         } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun firstMandatoryBreakBoundsShapingBeforeALongFollowingSuffixAndMatchesFullJ4() {
+        val fixture = fixture("fi\n" + "fi ".repeat(24) + "\u0633\u0644\u0627\u0645")
+        val mandatoryEnd = fixture.snapshot.textIndexAtScalarBoundary(3)
+        val reference = assertIs<ParagraphLayoutResult.Success>(
+            JvmEditableParagraphFacade.layout(
+                JvmEditableParagraphFacadeRequest(
+                    snapshot = fixture.snapshot,
+                    constraints = constraints(height = 1_200f),
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "ar",
+                    fontCatalog = fixture.catalog,
+                    resolutionPolicy = fixture.policy,
+                    fontInstanceDescriptor = fixture.typography.fontInstanceDescriptor,
+                ),
+            ),
+        ).layout.lines.single()
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = TrackingBackend(delegate)
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+
+        try {
+            val actual = assertIs<IncrementalLayoutResult.Success>(
+                session.layout(request(fixture, requestedRange = range(fixture.snapshot, 0, 1))),
+            ).layout.lines.single()
+
+            assertEquals(range(fixture.snapshot, 0, 3), actual.range)
+            assertEquals(listOf(3), actual.glyphIds())
+            assertEquals(listOf(900f), actual.glyphAdvances())
+            assertEquals(reference.range, actual.range)
+            assertEquals(reference.glyphIds(), actual.glyphIds())
+            assertEquals(reference.glyphAdvances(), actual.glyphAdvances())
+            assertEquals(reference.range, session.currentLayout()?.layout?.coveredRange)
+            assertTrue(backend.observedRanges.isNotEmpty())
+            assertTrue(backend.observedRanges.all { shaped -> shaped.endExclusive <= mandatoryEnd })
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun signedAdvancesRequireTheCompleteCandidateSearchSegment() {
+        val fixture = fixture("fi ".repeat(4))
+        val signedSuffixStart = fixture.snapshot.textIndexAtScalarBoundary(8)
+        val referenceDelegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val referenceBackend = ThresholdSignedAdvanceBackend(referenceDelegate, signedSuffixStart)
+        val sessionDelegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(
+            ThresholdSignedAdvanceBackend(sessionDelegate, signedSuffixStart),
+        )
+
+        try {
+            val reference = assertIs<ParagraphLayoutResult.Success>(
+                JvmEditableParagraphFacade.layoutBorrowing(
+                    request = JvmEditableParagraphFacadeRequest(
+                        snapshot = fixture.snapshot,
+                        constraints = constraints(height = 1_200f),
+                        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                        language = "en",
+                        fontCatalog = fixture.catalog,
+                        resolutionPolicy = fixture.policy,
+                        fontInstanceDescriptor = fixture.typography.fontInstanceDescriptor,
+                    ),
+                    backend = referenceBackend,
+                ),
+            ).layout.lines.single()
+
+            val actual = assertIs<IncrementalLayoutResult.Success>(
+                session.layout(
+                    request(
+                        fixture,
+                        requestedRange = range(fixture.snapshot, 0, 1),
+                        language = "en",
+                    ),
+                ),
+            ).layout.lines.single()
+
+            assertEquals(fixture.snapshot.range, reference.range)
+            assertEquals(reference.range, actual.range)
+            assertEquals(reference.glyphIds(), actual.glyphIds())
+            assertEquals(reference.glyphAdvances(), actual.glyphAdvances())
+        } finally {
+            referenceBackend.close()
             session.close()
         }
     }
@@ -661,5 +755,54 @@ class JvmIncrementalParagraphLayoutSessionTest {
         }
 
         override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
+
+    private class ThresholdSignedAdvanceBackend(
+        private val delegate: ShapingBackend,
+        private val signedSuffixStart: TextIndex,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val result = delegate.shape(request)) {
+                is FontOperationResult.Success -> result.copy(
+                    value = result.value.withSignedSuffixAdvances(signedSuffixStart),
+                )
+                is FontOperationResult.Failure -> result
+                is FontOperationResult.Cancelled -> result
+            }
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
+
+        private fun ShapedGlyphRun.withSignedSuffixAdvances(signedSuffixStart: TextIndex): ShapedGlyphRun = ShapedGlyphRun(
+            range = range,
+            fontInstanceKey = fontInstanceKey,
+            backendIdentity = backendIdentity,
+            direction = direction,
+            script = script,
+            language = language,
+            bidiLevel = bidiLevel,
+            bot = bot,
+            eot = eot,
+            featurePolicy = featurePolicy,
+            features = features,
+            graphemeClusters = graphemeClusters,
+            glyphs = glyphs.map { glyph ->
+                val beginsInSignedSuffix = glyph.clusterTokens
+                    .map { token -> clusters.single { cluster -> cluster.token == token }.sourceRange.start }
+                    .minWith { left, right -> left.compareTo(right) } >= signedSuffixStart
+                ShapedGlyph(
+                    glyphId = glyph.glyphId,
+                    xAdvance = LayoutUnit(if (beginsInSignedSuffix) -1_500f else 1_000f),
+                    yAdvance = glyph.yAdvance,
+                    xOffset = glyph.xOffset,
+                    yOffset = glyph.yOffset,
+                    safetyFlags = glyph.safetyFlags,
+                    clusterTokens = glyph.clusterTokens,
+                )
+            },
+            clusters = clusters,
+            ligatureCaretFacts = ligatureCaretFacts,
+        )
     }
 }
