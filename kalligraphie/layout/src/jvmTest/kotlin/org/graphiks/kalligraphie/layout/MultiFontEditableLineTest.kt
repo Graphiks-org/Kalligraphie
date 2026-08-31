@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.EditableLineError
@@ -21,6 +22,8 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.TextVersion
@@ -497,6 +500,47 @@ class MultiFontEditableLineTest {
     }
 
     @Test
+    fun cancellationBetweenFragmentsInOneFallbackGroupStartsNoSecondShape() {
+        val latin = source("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")
+        val arabic = source("/fonts/amiri/Amiri-Regular.ttf", "Amiri Regular")
+        val generation = FontCatalogGeneration("fragment-cancellation-fixture-v1")
+        val catalog = EmbeddedFontCatalog(
+            generation = generation,
+            entries = listOf(
+                EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue()),
+                EmbeddedFontCatalogEntry(arabic, SfntReader.readMetadata(arabic).successValue()),
+            ),
+        )
+        val latinFace = FontFaceId(latin.id, 0)
+        val arabicFace = FontFaceId(arabic.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = generation,
+            policyId = "fragment-cancellation",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(latinFace), FontResolutionCandidate(arabicFace)),
+            lastResortFace = arabicFace,
+        )
+        val source = text("f\u0483\u0633\u0644\u0627\u0645")
+        val token = SwitchableCancellationToken()
+        val backend = CancellingAfterFirstShapeBackend(backend(), token)
+
+        val result = ExactEditableLineLayouter.layout(
+            request(
+                source,
+                analyze(source, "und"),
+                catalog,
+                policy,
+                backend,
+                EditableLineMaterialization.LayoutOnly,
+                cancellationToken = token,
+            ),
+        )
+
+        assertIs<EditableLineResult.Cancelled>(result)
+        assertEquals(1, backend.shapeCalls)
+    }
+
+    @Test
     fun emptyMultiFontLineUsesTheExplicitRightToLeftCaretDirectionWithoutResolvingAFace() {
         val source = text("")
         val fallback = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
@@ -575,6 +619,7 @@ class MultiFontEditableLineTest {
         backend: org.graphiks.kalligraphie.api.ShapingBackend,
         materialization: EditableLineMaterialization,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
+        cancellationToken: CancellationToken = CancellationToken.none,
     ): MultiFontEditableLineRequest = MultiFontEditableLineRequest(
         snapshot = text,
         unicodeAnalysis = analysis,
@@ -585,5 +630,34 @@ class MultiFontEditableLineTest {
         baseDirection = baseDirection,
         verticalMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
         materialization = materialization,
+        cancellationToken = cancellationToken,
     )
+
+    private class SwitchableCancellationToken : CancellationToken {
+        private var cancelled: Boolean = false
+
+        fun cancel() {
+            cancelled = true
+        }
+
+        override fun isCancellationRequested(): Boolean = cancelled
+    }
+
+    private class CancellingAfterFirstShapeBackend(
+        private val delegate: ShapingBackend,
+        private val token: SwitchableCancellationToken,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+        var shapeCalls: Int = 0
+            private set
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
+            shapeCalls += 1
+            val result = delegate.shape(request)
+            if (shapeCalls == 1) token.cancel()
+            return result
+        }
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
 }

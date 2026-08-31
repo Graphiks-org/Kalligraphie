@@ -87,6 +87,9 @@ internal object FontFallbackResolver {
         val shapedGroups = mutableMapOf<GroupSignature, List<ShapedGlyphRun>>()
         val diagnostics = mutableListOf<FontDiagnostic>()
         var assignments = units.map { unit ->
+            if (request.cancellationToken.isCancellationRequested()) {
+                return FontOperationResult.Cancelled(diagnostics)
+            }
             when (
                 val selection = selectCandidate(
                     unit,
@@ -112,6 +115,9 @@ internal object FontFallbackResolver {
             var rejected: List<AssignedUnit>? = null
             contiguousGroups(assignments).forEach { group ->
                 if (rejected != null) return@forEach
+                if (request.cancellationToken.isCancellationRequested()) {
+                    return FontOperationResult.Cancelled(diagnostics)
+                }
                 val signature = GroupSignature.from(group)
                 val cached = shapedGroups[signature]
                 if (cached != null) {
@@ -199,6 +205,9 @@ internal object FontFallbackResolver {
         diagnostics: MutableList<FontDiagnostic>,
     ): CandidateSelection {
         policy.candidates.forEach { candidate ->
+            if (request.cancellationToken.isCancellationRequested()) {
+                return CandidateSelection.Cancelled(emptyList())
+            }
             val record = records.getValue(candidate.faceId)
             val rejected = RejectedCandidate(unit.range, record.id, requirements.outlineProfile)
             if (rejected in blacklist || !supports(record.capabilities, requirements)) return@forEach
@@ -282,6 +291,9 @@ internal object FontFallbackResolver {
         val fragments = shapingFragments(group, request)
         val shaped = mutableListOf<ShapedGlyphRun>()
         fragments.forEach { fragment ->
+            if (request.cancellationToken.isCancellationRequested()) {
+                return Attempt.Cancelled(emptyList())
+            }
             if (first.glyphless) {
                 shaped += zeroWidthControlRun(request, fragment, first.instance)
                 return@forEach

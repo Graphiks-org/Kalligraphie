@@ -31,6 +31,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingRequest
@@ -255,6 +256,80 @@ class JvmIncrementalParagraphLayoutSessionTest {
             assertTrue(backend.observedRangeStarts.all { start ->
                 start >= target.snapshot.textIndexAtScalarBoundary(3)
             })
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun smallWindowShapesOnlyBoundedLookaheadAndMatchesTheFullJ4FirstLine() {
+        val fixture = fixture("fi ".repeat(24) + "\u0633\u0644\u0627\u0645")
+        val documentEnd = fixture.snapshot.range.endExclusive
+        val reference = assertIs<ParagraphLayoutResult.Success>(
+            JvmEditableParagraphFacade.layout(
+                JvmEditableParagraphFacadeRequest(
+                    snapshot = fixture.snapshot,
+                    constraints = constraints(height = 1_200f),
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "ar",
+                    fontCatalog = fixture.catalog,
+                    resolutionPolicy = fixture.policy,
+                    fontInstanceDescriptor = fixture.typography.fontInstanceDescriptor,
+                ),
+            ),
+        ).layout.lines.single()
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = TrackingBackend(delegate)
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+
+        try {
+            val actual = assertIs<IncrementalLayoutResult.Success>(
+                session.layout(
+                    request(
+                        fixture,
+                        requestedRange = range(fixture.snapshot, 0, 1),
+                    ),
+                ),
+            ).layout.lines.single()
+
+            assertEquals(range(fixture.snapshot, 0, 3), actual.range)
+            assertEquals(listOf(3, 1), actual.glyphIds())
+            assertEquals(listOf(900f, 292f), actual.glyphAdvances())
+            assertEquals(reference.range, actual.range)
+            assertEquals(reference.glyphIds(), actual.glyphIds())
+            assertEquals(reference.glyphAdvances(), actual.glyphAdvances())
+            assertEquals(actual.range, session.currentLayout()?.layout?.coveredRange)
+            assertTrue(backend.observedRanges.isNotEmpty())
+            assertTrue(backend.observedRanges.all { shaped -> shaped.endExclusive < documentEnd })
+            assertTrue(backend.observedRanges.all { shaped -> shaped.start >= fixture.snapshot.range.start })
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun cancellationAfterFirstFallbackFragmentStartsNoSecondShapeAndKeepsPublication() {
+        val token = SwitchableCancellationToken()
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = CancellingAfterFirstShapeBackend(delegate, token)
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val publishedFixture = fixture("fi")
+        val cancelledFixture = fixture("fi \u0633\u0644\u0627\u0645")
+
+        try {
+            val published = assertIs<IncrementalLayoutResult.Success>(session.layout(request(publishedFixture)))
+            backend.arm()
+
+            val cancelled = session.layout(request(cancelledFixture, cancellationToken = token))
+
+            assertIs<IncrementalLayoutResult.Cancelled>(cancelled)
+            assertEquals(1, backend.shapeCallsAfterArming)
+            assertEquals(published.layout.inputIdentity, session.currentLayout()?.layout?.inputIdentity)
+            assertEquals(published.layout.lines.map { it.glyphIds() }, session.currentLayout()?.layout?.lines?.map { it.glyphIds() })
         } finally {
             session.close()
         }
@@ -535,20 +610,56 @@ class JvmIncrementalParagraphLayoutSessionTest {
         var closeCalls: Int = 0
             private set
         val observedRangeStarts: MutableList<TextIndex> = mutableListOf()
+        val observedRanges: MutableList<TextRange> = mutableListOf()
 
         override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
             shapeCalls += 1
             observedRangeStarts += request.range.start
+            observedRanges += request.range
             return delegate.shape(request)
         }
 
         fun clearObservedRanges() {
             observedRangeStarts.clear()
+            observedRanges.clear()
         }
 
         override fun close(): FontOperationResult<Unit> {
             closeCalls += 1
             return delegate.close()
         }
+    }
+
+    private class SwitchableCancellationToken : CancellationToken {
+        private var cancelled: Boolean = false
+
+        fun cancel() {
+            cancelled = true
+        }
+
+        override fun isCancellationRequested(): Boolean = cancelled
+    }
+
+    private class CancellingAfterFirstShapeBackend(
+        private val delegate: ShapingBackend,
+        private val token: SwitchableCancellationToken,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+        var shapeCallsAfterArming: Int = 0
+            private set
+        private var armed: Boolean = false
+
+        fun arm() {
+            armed = true
+        }
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
+            if (armed) shapeCallsAfterArming += 1
+            val result = delegate.shape(request)
+            if (armed && shapeCallsAfterArming == 1) token.cancel()
+            return result
+        }
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
     }
 }

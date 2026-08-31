@@ -11,15 +11,16 @@ import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.LayoutContinuationSignature
 import org.graphiks.kalligraphie.api.LayoutRect
+import org.graphiks.kalligraphie.api.LayoutStateHandle
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.OverflowPolicy
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
-import org.graphiks.kalligraphie.api.LayoutStateHandle
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
+import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 import org.graphiks.kalligraphie.layout.IncrementalComputationTail
 import org.graphiks.kalligraphie.layout.IncrementalComputedLine
@@ -28,6 +29,7 @@ import org.graphiks.kalligraphie.layout.IncrementalParagraphComputation
 import org.graphiks.kalligraphie.layout.IncrementalParagraphComputer
 import org.graphiks.kalligraphie.layout.IncrementalParagraphLayoutEngine
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 
 /**
  * JVM-specific inputs layered on a validated portable [IncrementalLayoutRequest].
@@ -205,6 +207,14 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
 
         val snapshot = request.input.text
         val documentEnd = snapshot.range.endExclusive
+        val unicodeAnalysis = JvmUnicodeAnalyzer.create().analyze(
+            snapshot,
+            UnicodeAnalysisRequest(sessionRequest.baseDirection, sessionRequest.language),
+        )
+        if (request.cancellationToken.isCancellationRequested()) {
+            return ComputerWork(IncrementalParagraphComputation.Cancelled)
+        }
+        val graphemeEnds = unicodeAnalysis.graphemeClusters.map(TextRange::endExclusive)
         val initialTop = reflowTop(target, request)
             ?: return ComputerWork(
                 IncrementalParagraphComputation.Failure(
@@ -213,22 +223,8 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                     ),
                 ),
             )
-        var sourceRange = TextRange(target.reflowStart, documentEnd)
+        var lineStart = target.reflowStart
         var lineTop = initialTop
-        var continuation = initialContinuation(sessionRequest, request, sourceRange, initialTop)
-        if (target.reflowStart != snapshot.range.start && continuation == null) {
-            return if (request.cancellationToken.isCancellationRequested()) {
-                ComputerWork(IncrementalParagraphComputation.Cancelled)
-            } else {
-                ComputerWork(
-                    IncrementalParagraphComputation.Failure(
-                        IncrementalLayoutError.InvalidRange(
-                            "The JVM route could not create a continuation for the proven reflow checkpoint.",
-                        ),
-                    ),
-                )
-            }
-        }
         var targetCovered = false
         var remainingAfterOverscan = overscan.lineCount
         val computed = mutableListOf<IncrementalComputedLine>()
@@ -238,47 +234,69 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             if (request.cancellationToken.isCancellationRequested()) {
                 return ComputerWork(IncrementalParagraphComputation.Cancelled)
             }
-            val lineConstraints = oneLineConstraints(request.constraints, lineTop)
-            val paragraphResult = JvmEditableParagraphFacade.layoutBorrowing(
-                request = JvmEditableParagraphFacadeRequest(
-                    snapshot = snapshot,
-                    sourceRange = sourceRange,
-                    constraints = lineConstraints,
-                    baseDirection = sessionRequest.baseDirection,
-                    language = sessionRequest.language,
-                    fontCatalog = request.input.typography.fontCatalog,
-                    resolutionPolicy = request.input.typography.resolutionPolicy,
-                    fontInstanceDescriptor = request.input.typography.fontInstanceDescriptor,
-                    features = request.input.typography.features,
-                    materialization = sessionRequest.materialization,
-                    overflowPolicy = sessionRequest.overflowPolicy,
-                    continuation = continuation,
-                    cancellationToken = request.cancellationToken,
-                ),
-                backend = backend,
-            )
-            if (request.cancellationToken.isCancellationRequested()) {
-                return ComputerWork(IncrementalParagraphComputation.Cancelled)
-            }
-            val paragraph = when (paragraphResult) {
-                is ParagraphLayoutResult.Success -> paragraphResult
-                is ParagraphLayoutResult.Failure -> return ComputerWork(
-                    IncrementalParagraphComputation.Failure(
-                        IncrementalLayoutError.InvalidRange(
-                            "JVM paragraph layout failed: ${paragraphResult.error.message}",
-                        ),
+            var lookaheadGraphemes = INITIAL_LOOKAHEAD_GRAPHEMES
+            var paragraph: ParagraphLayoutResult.Success
+            while (true) {
+                val probeEnd = probeEnd(graphemeEnds, lineStart, documentEnd, lookaheadGraphemes)
+                val sourceRange = TextRange(lineStart, probeEnd)
+                val continuation = continuationForWindow(sessionRequest, request, sourceRange, lineTop)
+                if (lineStart != snapshot.range.start && continuation == null) {
+                    return if (request.cancellationToken.isCancellationRequested()) {
+                        ComputerWork(IncrementalParagraphComputation.Cancelled)
+                    } else {
+                        ComputerWork(
+                            IncrementalParagraphComputation.Failure(
+                                IncrementalLayoutError.InvalidRange(
+                                    "The JVM route could not create a continuation for the proven reflow checkpoint.",
+                                ),
+                            ),
+                        )
+                    }
+                }
+                val paragraphResult = JvmEditableParagraphFacade.layoutBorrowing(
+                    request = JvmEditableParagraphFacadeRequest(
+                        snapshot = snapshot,
+                        sourceRange = sourceRange,
+                        constraints = oneLineConstraints(request.constraints, lineTop),
+                        baseDirection = sessionRequest.baseDirection,
+                        language = sessionRequest.language,
+                        fontCatalog = request.input.typography.fontCatalog,
+                        resolutionPolicy = request.input.typography.resolutionPolicy,
+                        fontInstanceDescriptor = request.input.typography.fontInstanceDescriptor,
+                        features = request.input.typography.features,
+                        materialization = sessionRequest.materialization,
+                        overflowPolicy = sessionRequest.overflowPolicy,
+                        continuation = continuation,
+                        cancellationToken = request.cancellationToken,
                     ),
+                    backend = backend,
                 )
-                is ParagraphLayoutResult.Cancelled -> return ComputerWork(IncrementalParagraphComputation.Cancelled)
-            }
-            val line = paragraph.layout.lines.singleOrNull()
-                ?: return ComputerWork(
-                    IncrementalParagraphComputation.Failure(
-                        IncrementalLayoutError.InvalidRange(
-                            "The bounded JVM paragraph route must produce exactly one complete line per step.",
+                if (request.cancellationToken.isCancellationRequested()) {
+                    return ComputerWork(IncrementalParagraphComputation.Cancelled)
+                }
+                paragraph = when (paragraphResult) {
+                    is ParagraphLayoutResult.Success -> paragraphResult
+                    is ParagraphLayoutResult.Failure -> return ComputerWork(
+                        IncrementalParagraphComputation.Failure(
+                            IncrementalLayoutError.InvalidRange(
+                                "JVM paragraph layout failed: ${paragraphResult.error.message}",
+                            ),
                         ),
-                    ),
-                )
+                    )
+                    is ParagraphLayoutResult.Cancelled -> return ComputerWork(IncrementalParagraphComputation.Cancelled)
+                }
+                val candidate = paragraph.layout.lines.singleOrNull()
+                    ?: return ComputerWork(
+                        IncrementalParagraphComputation.Failure(
+                            IncrementalLayoutError.InvalidRange(
+                                "The bounded JVM paragraph route must produce exactly one complete line per step.",
+                            ),
+                        ),
+                    )
+                if (probeEnd == documentEnd || candidate.range.endExclusive < probeEnd) break
+                lookaheadGraphemes = doubledLookahead(lookaheadGraphemes)
+            }
+            val line = paragraph.layout.lines.single()
             val nextTop = line.lineBox.bottom
             lineTops += LineTop(line.range.start, line.lineBox.top)
             computed += IncrementalComputedLine(
@@ -321,8 +339,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                         ),
                     )
                 }
-            sourceRange = next.remainingSourceRange
-            continuation = next
+            lineStart = next.remainingSourceRange.start
             lineTop = next.resumptionRegionTop
         }
     }
@@ -364,7 +381,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         }
     }
 
-    private fun initialContinuation(
+    private fun continuationForWindow(
         sessionRequest: JvmIncrementalParagraphLayoutRequest,
         request: IncrementalLayoutRequest,
         sourceRange: TextRange,
@@ -375,7 +392,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             JvmEditableParagraphFacade.continuationBorrowing(
                 request = JvmEditableParagraphFacadeRequest(
                     snapshot = request.input.text,
-                    sourceRange = request.input.text.range,
+                    sourceRange = sourceRange,
                     constraints = oneLineConstraints(request.constraints, request.constraints.region.top),
                     baseDirection = sessionRequest.baseDirection,
                     language = sessionRequest.language,
@@ -395,6 +412,30 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             null
         }
     }
+
+    private fun probeEnd(
+        graphemeEnds: List<TextIndex>,
+        lineStart: TextIndex,
+        documentEnd: TextIndex,
+        lookaheadGraphemes: Int,
+    ): TextIndex {
+        var low = 0
+        var high = graphemeEnds.size
+        while (low < high) {
+            val middle = low + (high - low) / 2
+            if (graphemeEnds[middle] <= lineStart) {
+                low = middle + 1
+            } else {
+                high = middle
+            }
+        }
+        val insertionPoint = low
+        if (insertionPoint >= graphemeEnds.size) return documentEnd
+        return graphemeEnds[minOf(graphemeEnds.lastIndex, insertionPoint + lookaheadGraphemes - 1)]
+    }
+
+    private fun doubledLookahead(current: Int): Int =
+        if (current > Int.MAX_VALUE / 2) Int.MAX_VALUE else current * 2
 
     private fun lineCompletesTarget(
         line: TextRange,
@@ -485,6 +526,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         )
 
         private const val DEFAULT_CACHE_BUDGET_BYTES: Long = 4L * 1024L * 1024L
+        private const val INITIAL_LOOKAHEAD_GRAPHEMES: Int = 8
     }
 
     private data class LineTop(
