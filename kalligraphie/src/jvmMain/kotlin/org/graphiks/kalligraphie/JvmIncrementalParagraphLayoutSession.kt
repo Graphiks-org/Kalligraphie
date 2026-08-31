@@ -42,6 +42,8 @@ import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
  * never retained in the published layout state. The request itself is immutable provided a
  * resolver inside [materialization] and the cancellation token in [request] support concurrent
  * access.
+ *
+ * @throws IllegalArgumentException when [language] is blank.
  */
 public class JvmIncrementalParagraphLayoutRequest(
     /** Validated target input, exact requested range, overscan, prior state, delta, and cancellation. */
