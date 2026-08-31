@@ -249,6 +249,22 @@ class IncrementalLayoutContractsTest {
         assertIs<LayoutContractResult.Success<LayoutCoverage>>(result)
     }
 
+    @Test
+    fun layoutCoverageRejectsAnInvalidatedSuffixThatLeavesAnUnreportedGap() {
+        val text = decode("abcdef")
+
+        val result = LayoutCoverage.create(
+            textVersion = text.version,
+            range = range(text, 0, 2),
+            isComplete = true,
+            invalidatedSuffix = range(text, 3, 6),
+        )
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.InvalidRange>(it.error)
+        }
+    }
+
     private fun decode(value: String): TextSnapshot {
         val version = TextVersion.create()
         val scalars = mutableListOf<Int>()

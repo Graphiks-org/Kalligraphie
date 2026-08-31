@@ -29,6 +29,8 @@ public class TypographySnapshot(
     /** Geometry applied to resolved faces. */
     public val fontInstanceDescriptor: FontInstanceDescriptor,
     features: List<OpenTypeFeature> = emptyList(),
+    /** Stable identity of every shaping option not represented by [features]. */
+    public val shapingConfigurationIdentity: String = "default",
 ) {
     /** Deterministic feature overrides in caller order. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
@@ -39,6 +41,9 @@ public class TypographySnapshot(
         }
         require(this.features.map(OpenTypeFeature::tag).distinct().size == this.features.size) {
             "Typography features must not repeat a tag."
+        }
+        require(shapingConfigurationIdentity.isNotBlank()) {
+            "Typography shaping configuration identity must not be blank."
         }
     }
 }
@@ -102,6 +107,58 @@ public class TextChangeSet private constructor(
             target: TextSnapshot,
             changes: List<TextChange>,
         ): TextChangeSet = TextChangeSet(source.version, target.version, changes)
+    }
+
+    /**
+     * Maps one source boundary into [target] without exposing scalar ordinals.
+     *
+     * At a zero-width insertion boundary, [afterInsertion] selects the following target side;
+     * replacement boundaries map to the corresponding outer target boundary. A boundary inside
+     * removed source is not mappable and returns `null`.
+     */
+    public fun mapSourceBoundaryToTarget(
+        sourceBoundary: TextIndex,
+        target: TextSnapshot,
+        afterInsertion: Boolean,
+    ): TextIndex? {
+        if (target.version != targetVersion || !sourceBoundary.usesVersion(sourceVersion)) return null
+        var shift = 0
+        changes.forEach { change ->
+            val sourceStart = change.sourceRange.start.ordinal
+            val sourceEnd = change.sourceRange.endExclusive.ordinal
+            val targetStart = change.insertedTargetRange.start.ordinal
+            val targetEnd = change.insertedTargetRange.endExclusive.ordinal
+            val boundary = sourceBoundary.ordinal
+            if (sourceStart == sourceEnd && boundary == sourceStart) {
+                return target.textIndexAtScalarBoundary(if (afterInsertion) targetEnd else targetStart)
+            }
+            if (boundary == sourceStart) return target.textIndexAtScalarBoundary(targetStart)
+            if (boundary == sourceEnd) return target.textIndexAtScalarBoundary(targetEnd)
+            if (boundary in (sourceStart + 1) until sourceEnd) return null
+            if (boundary > sourceEnd || (sourceStart == sourceEnd && boundary > sourceStart)) {
+                shift += (targetEnd - targetStart) - (sourceEnd - sourceStart)
+            }
+        }
+        return target.textIndexAtScalarBoundary(sourceBoundary.ordinal + shift)
+    }
+
+    /**
+     * Maps an unchanged source [range] into [target], returning `null` when any edit intersects
+     * its interior. Insertions exactly at an edge are assigned outside the mapped range.
+     */
+    public fun mapUnchangedSourceRangeToTarget(range: TextRange, target: TextSnapshot): TextRange? {
+        if (!range.start.usesVersion(sourceVersion) || target.version != targetVersion) return null
+        val intersectsChange = changes.any { change ->
+            if (change.sourceRange.start == change.sourceRange.endExclusive) {
+                change.sourceRange.start > range.start && change.sourceRange.start < range.endExclusive
+            } else {
+                range.start < change.sourceRange.endExclusive && change.sourceRange.start < range.endExclusive
+            }
+        }
+        if (intersectsChange) return null
+        val start = mapSourceBoundaryToTarget(range.start, target, afterInsertion = true) ?: return null
+        val end = mapSourceBoundaryToTarget(range.endExclusive, target, afterInsertion = false) ?: return null
+        return TextRange(start, end)
     }
 }
 
@@ -309,7 +366,18 @@ public class LayoutCoverage internal constructor(
     public val range: TextRange,
     /** Whether [range] completely covers the corresponding request. */
     public val isComplete: Boolean,
+    /** Exact unmaterialized suffix that remains invalid, or `null` when no suffix remains. */
+    public val invalidatedSuffix: TextRange? = null,
 ) {
+    init {
+        require(invalidatedSuffix == null || invalidatedSuffix.start.sharesVersionWith(range.start)) {
+            "An invalidated suffix must use the coverage text version."
+        }
+        require(invalidatedSuffix == null || invalidatedSuffix.start == range.endExclusive) {
+            "An invalidated suffix must begin exactly where complete published coverage ends."
+        }
+    }
+
     /** Validated construction of immutable coverage metadata. */
     public companion object {
         /** Creates coverage only when [range] belongs to [textVersion]. */
@@ -317,13 +385,25 @@ public class LayoutCoverage internal constructor(
             textVersion: TextVersion,
             range: TextRange,
             isComplete: Boolean,
+            invalidatedSuffix: TextRange? = null,
         ): LayoutContractResult<LayoutCoverage> =
-            if (range.usesVersion(textVersion)) {
-                LayoutContractResult.Success(LayoutCoverage(textVersion, range, isComplete))
+            if (
+                range.usesVersion(textVersion) &&
+                (invalidatedSuffix == null || invalidatedSuffix.usesVersion(textVersion))
+            ) {
+                if (invalidatedSuffix != null && invalidatedSuffix.start != range.endExclusive) {
+                    LayoutContractResult.Failure(
+                        IncrementalLayoutError.InvalidRange(
+                            "An invalidated suffix must begin exactly where complete published coverage ends.",
+                        ),
+                    )
+                } else {
+                    LayoutContractResult.Success(LayoutCoverage(textVersion, range, isComplete, invalidatedSuffix))
+                }
             } else {
                 LayoutContractResult.Failure(
                     IncrementalLayoutError.VersionMismatch(
-                        "Layout coverage range must use the declared text version.",
+                        "Layout coverage and invalidated suffix must use the declared text version.",
                     ),
                 )
             }
@@ -338,6 +418,63 @@ public data class LayoutCheckpoint(
     public val typographyVersion: TypographyVersion,
 )
 
+/** Exact resource-free signature of one complete observable line. */
+public class LineCheckpointSignature private constructor(
+    /** Source range and break boundary represented by this complete line. */
+    public val range: TextRange,
+    private val observable: ObservableLineSignature,
+) {
+    /** Compares every observable except the snapshot-bound absolute source range. */
+    public fun hasSameObservableLayout(other: LineCheckpointSignature): Boolean = observable == other.observable
+
+    /** Compares the source range and every captured observable. */
+    override fun equals(other: Any?): Boolean =
+        other is LineCheckpointSignature && range == other.range && observable == other.observable
+
+    /** Returns a stable hash of the source range and captured observables. */
+    override fun hashCode(): Int = 31 * range.hashCode() + observable.hashCode()
+
+    /** Factories for complete line signatures. */
+    public companion object {
+        /** Captures range-relative glyph, cluster, font, metric, geometry, caret, and continuation facts. */
+        public fun from(line: LineLayout): LineCheckpointSignature = LineCheckpointSignature(
+            range = line.range,
+            observable = line.toObservableSignature(),
+        )
+    }
+}
+
+/** Semantically complete resource-free configuration used to validate checkpoint reuse. */
+public class LayoutConfigurationSignature private constructor(
+    private val value: LayoutConfigurationValue,
+) {
+    /** Compares all layout inputs that can affect line breaking or final geometry. */
+    override fun equals(other: Any?): Boolean =
+        other is LayoutConfigurationSignature && value == other.value
+
+    /** Returns a stable hash of all captured layout inputs. */
+    override fun hashCode(): Int = value.hashCode()
+
+    /** Factories for request configuration signatures. */
+    public companion object {
+        /** Captures constraints, font catalogue, resolution policy, geometry, features, and shaping configuration. */
+        public fun from(
+            input: LayoutInput,
+            constraints: HorizontalParagraphConstraints,
+        ): LayoutConfigurationSignature = LayoutConfigurationSignature(
+            LayoutConfigurationValue(
+                constraints = constraints,
+                fontCatalogGeneration = input.typography.fontCatalog.generation,
+                resolutionPolicyId = input.typography.resolutionPolicy.policyId,
+                resolutionPolicyVersion = input.typography.resolutionPolicy.version,
+                fontInstanceDescriptor = input.typography.fontInstanceDescriptor,
+                features = input.typography.features,
+                shapingConfigurationIdentity = input.typography.shapingConfigurationIdentity,
+            ),
+        )
+    }
+}
+
 /**
  * Resource-free capability for reusing a prior layout state.
  *
@@ -351,11 +488,33 @@ public class LayoutStateHandle(
     public val checkpoint: LayoutCheckpoint,
     /** Complete-line text coverage available in the state. */
     public val coverage: LayoutCoverage,
+    /** Complete semantic configuration required to reuse this state. */
+    public val configuration: LayoutConfigurationSignature? = null,
+    lineCheckpoints: List<LineCheckpointSignature> = emptyList(),
 ) {
+    /** Immutable complete-line signatures ordered in logical source order. */
+    public val lineCheckpoints: List<LineCheckpointSignature> = lineCheckpoints.immutableListSnapshot()
+
     init {
         require(identity.isNotBlank()) { "Layout state identity must not be blank." }
         require(checkpoint.textVersion == coverage.textVersion) {
             "Layout state checkpoint and coverage must use the same text version."
+        }
+        require(this.lineCheckpoints.all { signature ->
+            signature.range.start.sharesVersionWith(coverage.range.start)
+        }) {
+            "Layout state line checkpoints must use the coverage text version."
+        }
+        require(this.lineCheckpoints.all { signature ->
+            signature.range.start >= coverage.range.start &&
+                signature.range.endExclusive <= coverage.range.endExclusive
+        }) {
+            "Layout state line checkpoints must stay within complete published coverage."
+        }
+        require(this.lineCheckpoints.zipWithNext().all { (left, right) ->
+            left.range.endExclusive <= right.range.start
+        }) {
+            "Layout state line checkpoints must be ordered and non-overlapping."
         }
     }
 }
@@ -465,9 +624,26 @@ public interface IncrementalLayout {
     /** Complete-line coverage published by this output. */
     public val coverage: LayoutCoverage
 
+    /** Complete immutable lines published in logical and physical order. */
+    public val lines: List<LineLayout>
+
+    /** Exact range derived from the first and last published complete lines. */
+    public val coveredRange: TextRange
+        get() = coverage.range
+
     /** Resource-free state metadata available for a later request. */
     public val state: LayoutStateHandle
 }
+
+/** Observable decisions made while producing one incremental result. */
+public data class IncrementalLayoutDiagnostics(
+    /** Exact target boundary from which complete-line recomposition began. */
+    public val reflowStart: TextIndex,
+    /** Whether prior state could not prove a safe checkpoint. */
+    public val usedConservativeInvalidation: Boolean,
+    /** Boundary after a semantically matching line proved the remaining continuation stable. */
+    public val stabilizedAt: TextIndex? = null,
+)
 
 /** Typed reason an incremental layout contract or operation could not produce output. */
 public sealed interface IncrementalLayoutError {
@@ -516,6 +692,8 @@ public sealed interface IncrementalLayoutResult {
     public data class Success(
         /** Published layout. */
         public val layout: IncrementalLayout,
+        /** Exact incremental orchestration diagnostics. */
+        public val diagnostics: IncrementalLayoutDiagnostics,
     ) : IncrementalLayoutResult
 
     /** No layout was published because validation or layout failed. */
@@ -527,6 +705,204 @@ public sealed interface IncrementalLayoutResult {
     /** No layout was published because cooperative cancellation was observed. */
     public data object Cancelled : IncrementalLayoutResult
 }
+
+private data class LayoutConfigurationValue(
+    val constraints: HorizontalParagraphConstraints,
+    val fontCatalogGeneration: FontCatalogGeneration,
+    val resolutionPolicyId: String,
+    val resolutionPolicyVersion: String,
+    val fontInstanceDescriptor: FontInstanceDescriptor,
+    val features: List<OpenTypeFeature>,
+    val shapingConfigurationIdentity: String,
+)
+
+private data class RelativeRange(val start: Int, val endExclusive: Int)
+
+private data class ShapedGlyphSignature(
+    val glyphId: GlyphId,
+    val xAdvance: LayoutUnit,
+    val yAdvance: LayoutUnit,
+    val xOffset: LayoutUnit,
+    val yOffset: LayoutUnit,
+    val safetyFlags: ShapingSafetyFlags,
+    val clusterTokens: List<ShaperClusterToken>,
+)
+
+private data class ClusterSignature(
+    val token: ShaperClusterToken,
+    val sourceRange: RelativeRange,
+    val scalarRanges: List<RelativeRange>,
+    val admissibleGraphemeBoundaries: List<Int>,
+)
+
+private data class LigatureCaretSignature(
+    val glyphIndex: Int,
+    val state: GdefLigatureCaretState,
+    val logicalSourceBoundaries: List<Int>,
+    val positions: List<LayoutUnit>,
+)
+
+private data class ShapedRunSignature(
+    val range: RelativeRange,
+    val fontInstanceKey: FontInstanceKey,
+    val backendIdentity: ShapingBackendIdentity,
+    val direction: ShapingDirection,
+    val script: OpenTypeScript,
+    val language: String,
+    val bidiLevel: Int,
+    val bot: Boolean,
+    val eot: Boolean,
+    val featurePolicy: ShapingFeaturePolicy,
+    val features: List<OpenTypeFeature>,
+    val graphemeClusters: List<RelativeRange>,
+    val glyphs: List<ShapedGlyphSignature>,
+    val clusters: List<ClusterSignature>,
+    val ligatureCarets: List<LigatureCaretSignature>,
+)
+
+private data class PositionedGlyphSignature(
+    val shapedGlyph: ShapedGlyphSignature,
+    val sourceClusters: List<ClusterSignature>,
+    val origin: LayoutPoint,
+    val advance: LayoutVector,
+    val renderAssetKey: FontRenderAssetKey?,
+    val materializationCertificate: GlyphMaterializationCertificate?,
+)
+
+private data class PositionedRunSignature(
+    val sourceRun: ShapedRunSignature,
+    val visualOrder: Int,
+    val renderAssetKey: FontRenderAssetKey?,
+    val glyphs: List<PositionedGlyphSignature>,
+)
+
+private data class CaretSignature(
+    val boundary: Int,
+    val affinity: CaretAffinity,
+    val geometry: LayoutSegment,
+    val visualOrder: Int,
+    val visualRunOrder: Int,
+    val bidiLevel: Int,
+    val direction: ShapingDirection,
+    val strength: CaretStrength,
+    val edge: CaretBoundaryEdge,
+)
+
+private data class DiagnosticSignature(
+    val code: String,
+    val severity: EditableLineDiagnosticSeverity,
+    val message: String,
+    val sourceRange: RelativeRange?,
+    val glyphId: GlyphId?,
+)
+
+private data class ObservableLineSignature(
+    val baseDirection: ShapingDirection,
+    val verticalMetrics: LineVerticalMetrics,
+    val positionedRuns: List<PositionedRunSignature>,
+    val carets: List<CaretSignature>,
+    val diagnostics: List<DiagnosticSignature>,
+    val baseline: LayoutPoint,
+    val contentMetrics: LineContentMetrics,
+    val lineBox: LayoutRect,
+    val designInkBounds: LayoutBounds,
+)
+
+private fun LineLayout.toObservableSignature(): ObservableLineSignature {
+    val base = range.start.ordinal
+    return ObservableLineSignature(
+        baseDirection = baseDirection,
+        verticalMetrics = verticalMetrics,
+        positionedRuns = positionedGlyphRuns.map { run -> run.toSignature(base) },
+        carets = allCaretCandidates.map { candidate ->
+            CaretSignature(
+                boundary = candidate.position.index.ordinal - base,
+                affinity = candidate.position.affinity,
+                geometry = candidate.geometry,
+                visualOrder = candidate.visualOrder,
+                visualRunOrder = candidate.visualRunOrder,
+                bidiLevel = candidate.bidiLevel,
+                direction = candidate.direction,
+                strength = candidate.strength,
+                edge = candidate.edge,
+            )
+        },
+        diagnostics = diagnostics.map { diagnostic ->
+            DiagnosticSignature(
+                code = diagnostic.code,
+                severity = diagnostic.severity,
+                message = diagnostic.message,
+                sourceRange = diagnostic.sourceRange?.relativeTo(base),
+                glyphId = diagnostic.glyphId,
+            )
+        },
+        baseline = baseline,
+        contentMetrics = contentMetrics,
+        lineBox = lineBox,
+        designInkBounds = designInkBounds,
+    )
+}
+
+private fun PositionedGlyphRun.toSignature(base: Int): PositionedRunSignature = PositionedRunSignature(
+    sourceRun = sourceRun.toSignature(base),
+    visualOrder = visualOrder,
+    renderAssetKey = renderAssetKey,
+    glyphs = glyphs.map { glyph -> glyph.toSignature(base) },
+)
+
+private fun ShapedGlyphRun.toSignature(base: Int): ShapedRunSignature = ShapedRunSignature(
+    range = range.relativeTo(base),
+    fontInstanceKey = fontInstanceKey,
+    backendIdentity = backendIdentity,
+    direction = direction,
+    script = script,
+    language = language,
+    bidiLevel = bidiLevel,
+    bot = bot,
+    eot = eot,
+    featurePolicy = featurePolicy,
+    features = features,
+    graphemeClusters = graphemeClusters.map { it.relativeTo(base) },
+    glyphs = glyphs.map(ShapedGlyph::toSignature),
+    clusters = clusters.map { it.toSignature(base) },
+    ligatureCarets = ligatureCaretFacts.map { fact ->
+        LigatureCaretSignature(
+            glyphIndex = fact.glyphIndex,
+            state = fact.state,
+            logicalSourceBoundaries = fact.logicalSourceBoundaries.map { it.ordinal - base },
+            positions = fact.positions,
+        )
+    },
+)
+
+private fun ShapedGlyph.toSignature(): ShapedGlyphSignature = ShapedGlyphSignature(
+    glyphId = glyphId,
+    xAdvance = xAdvance,
+    yAdvance = yAdvance,
+    xOffset = xOffset,
+    yOffset = yOffset,
+    safetyFlags = safetyFlags,
+    clusterTokens = clusterTokens,
+)
+
+private fun ShaperCluster.toSignature(base: Int): ClusterSignature = ClusterSignature(
+    token = token,
+    sourceRange = sourceRange.relativeTo(base),
+    scalarRanges = scalarRanges.map { it.relativeTo(base) },
+    admissibleGraphemeBoundaries = admissibleGraphemeBoundaries.map { it.ordinal - base },
+)
+
+private fun PositionedGlyph.toSignature(base: Int): PositionedGlyphSignature = PositionedGlyphSignature(
+    shapedGlyph = shapedGlyph.toSignature(),
+    sourceClusters = sourceClusters.map { it.toSignature(base) },
+    origin = origin,
+    advance = advance,
+    renderAssetKey = renderAssetKey,
+    materializationCertificate = materializationCertificate,
+)
+
+private fun TextRange.relativeTo(base: Int): RelativeRange =
+    RelativeRange(start.ordinal - base, endExclusive.ordinal - base)
 
 private fun validateRangeDomain(
     snapshot: TextSnapshot,
@@ -546,6 +922,9 @@ private fun TextRange.isEmpty(): Boolean = start == endExclusive
 
 private fun TextRange.usesVersion(version: TextVersion): Boolean =
     start.sharesVersionWith(TextIndex(version, 0))
+
+private fun TextIndex.usesVersion(version: TextVersion): Boolean =
+    sharesVersionWith(TextIndex(version, 0))
 
 private fun unchangedScalarsMatch(
     source: TextSnapshot,
