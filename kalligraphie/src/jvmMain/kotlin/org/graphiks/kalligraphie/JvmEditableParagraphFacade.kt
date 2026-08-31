@@ -130,6 +130,10 @@ public object JvmEditableParagraphFacade {
                         request.snapshot,
                         UnicodeAnalysisRequest(request.baseDirection, request.language),
                     )
+                    val canonicalLanguage = unicodeAnalysis.scriptLanguageRuns
+                        .firstOrNull()
+                        ?.language
+                        ?: JvmUnicodeAnalyzer.canonicalizeLanguageTag(request.language)
                     val lineBreakAnalysis = JvmLineBreakAnalyzer.create().analyze(
                         request.snapshot,
                         unicodeAnalysis,
@@ -141,7 +145,7 @@ public object JvmEditableParagraphFacade {
                         lineBreakAnalysis = lineBreakAnalysis,
                         constraints = request.constraints,
                         baseDirection = request.baseDirection,
-                        language = request.language,
+                        language = canonicalLanguage,
                         featurePolicy = backend.identity.featurePolicy,
                         features = request.features,
                         fontCatalog = request.fontCatalog,

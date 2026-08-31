@@ -61,6 +61,40 @@ class JvmEditableParagraphFacadeTest {
     }
 
     @Test
+    fun publicFacadeCanonicalizesBcp47LanguageForPopulatedAndEmptySnapshots() {
+        val populatedFixture = multiFaceFixture("fi")
+        val populated = assertIs<ParagraphLayoutResult.Success>(
+            JvmEditableParagraphFacade.layout(
+                request(
+                    fixture = populatedFixture,
+                    constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
+                    language = "EN-us",
+                ),
+            ),
+        )
+        assertEquals(
+            setOf("en-US"),
+            populated.layout.lines
+                .flatMap(LineLayout::positionedGlyphRuns)
+                .map { run -> run.sourceRun.language }
+                .toSet(),
+        )
+
+        val emptyFixture = multiFaceFixture("")
+        val empty = assertIs<ParagraphLayoutResult.Success>(
+            JvmEditableParagraphFacade.layout(
+                request(
+                    fixture = emptyFixture,
+                    constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
+                    language = "EN-us",
+                ),
+            ),
+        )
+        assertEquals(listOf(emptyFixture.snapshot.range), empty.layout.lines.map(LineLayout::range))
+        assertTrue(empty.layout.lines.single().positionedGlyphRuns.isEmpty())
+    }
+
+    @Test
     fun publicFacadePublishesMixedScriptFallbackGeometryAndMultilineEditing() {
         val fixture = multiFaceFixture("fi \u0633\u0644\u0627\u0645")
 
@@ -131,11 +165,19 @@ class JvmEditableParagraphFacadeTest {
         })
 
         val firstStart = first.allCaretCandidates.first()
+        val secondInterior = second.allCaretCandidates.single { candidate ->
+            candidate.position.index == fixture.snapshot.textIndexAtScalarBoundary(5)
+        }
+        val secondMidlineY = LayoutUnit((second.lineBox.top.value + second.lineBox.bottom.value) / 2f)
         val secondEnd = second.allCaretCandidates.last()
         assertSame(firstStart, paragraph.hitTest(LayoutPoint(firstStart.geometry.start.x, LayoutUnit(-500f))))
         assertSame(
             firstStart,
             paragraph.hitTest(LayoutPoint(firstStart.geometry.start.x, first.lineBox.bottom)),
+        )
+        assertSame(
+            secondInterior,
+            paragraph.hitTest(LayoutPoint(secondInterior.geometry.start.x, secondMidlineY)),
         )
         assertSame(secondEnd, paragraph.hitTest(LayoutPoint(secondEnd.geometry.start.x, LayoutUnit(3_000f))))
     }
@@ -253,12 +295,13 @@ class JvmEditableParagraphFacadeTest {
         sourceRange: TextRange = fixture.snapshot.range,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
         cancellationToken: CancellationToken = CancellationToken.none,
+        language: String = "ar",
     ): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
         snapshot = fixture.snapshot,
         sourceRange = sourceRange,
         constraints = constraints,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
-        language = "ar",
+        language = language,
         fontCatalog = fixture.catalog,
         resolutionPolicy = fixture.policy,
         fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
