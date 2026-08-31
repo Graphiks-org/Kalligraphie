@@ -522,6 +522,23 @@ public class LayoutConfigurationSignature private constructor(
     /** Returns a stable hash of all captured layout inputs. */
     override fun hashCode(): Int = value.hashCode()
 
+    /**
+     * Checks that [target] differs only by the exact font-resolution policy transition in [delta].
+     *
+     * Both policy snapshots are compared by catalogue generation, identity, version, complete
+     * candidate order, and last-resort face. Every non-policy configuration component must match.
+     */
+    public fun validatesFontResolutionPolicyTransition(
+        target: LayoutConfigurationSignature,
+        delta: FontResolutionPolicyDelta,
+    ): Boolean {
+        val sourcePolicy = delta.source.toConfigurationValue()
+        val targetPolicy = delta.target.toConfigurationValue()
+        return value.resolutionPolicy == sourcePolicy &&
+            target.value.resolutionPolicy == targetPolicy &&
+            value.copy(resolutionPolicy = targetPolicy) == target.value
+    }
+
     /** Factories for request configuration signatures. */
     public companion object {
         /** Captures constraints, font catalogue, resolution policy, geometry, features, and shaping configuration. */
@@ -531,9 +548,7 @@ public class LayoutConfigurationSignature private constructor(
         ): LayoutConfigurationSignature = LayoutConfigurationSignature(
             LayoutConfigurationValue(
                 constraints = constraints,
-                fontCatalogGeneration = input.typography.fontCatalog.generation,
-                resolutionPolicyId = input.typography.resolutionPolicy.policyId,
-                resolutionPolicyVersion = input.typography.resolutionPolicy.version,
+                resolutionPolicy = input.typography.resolutionPolicy.toConfigurationValue(),
                 fontInstanceDescriptor = input.typography.fontInstanceDescriptor,
                 features = input.typography.features,
                 shapingConfigurationIdentity = input.typography.shapingConfigurationIdentity,
@@ -545,8 +560,9 @@ public class LayoutConfigurationSignature private constructor(
 /**
  * Resource-free capability for reusing a prior layout state.
  *
- * Only immutable identity, version checkpoint, and coverage metadata are exposed; no document,
- * resolver, renderer, or platform resource can be reached through this handle.
+ * It exposes immutable identity, version checkpoint, coverage, semantic configuration,
+ * continuation, and complete-line checkpoints. All values are resource-free: no document,
+ * resolver, renderer, font handle, or platform resource can be reached through this handle.
  */
 public class LayoutStateHandle(
     /** Stable implementation-defined state identity. */
@@ -783,13 +799,28 @@ public sealed interface IncrementalLayoutResult {
 
 private data class LayoutConfigurationValue(
     val constraints: HorizontalParagraphConstraints,
-    val fontCatalogGeneration: FontCatalogGeneration,
-    val resolutionPolicyId: String,
-    val resolutionPolicyVersion: String,
+    val resolutionPolicy: ResolutionPolicyConfigurationValue,
     val fontInstanceDescriptor: FontInstanceDescriptor,
     val features: List<OpenTypeFeature>,
     val shapingConfigurationIdentity: String,
 )
+
+private data class ResolutionPolicyConfigurationValue(
+    val generation: FontCatalogGeneration,
+    val policyId: String,
+    val version: String,
+    val candidates: List<FontResolutionCandidate>,
+    val lastResortFace: FontFaceId,
+)
+
+private fun FontResolutionPolicySnapshot.toConfigurationValue(): ResolutionPolicyConfigurationValue =
+    ResolutionPolicyConfigurationValue(
+        generation = generation,
+        policyId = policyId,
+        version = version,
+        candidates = candidates,
+        lastResortFace = lastResortFace,
+    )
 
 private data class RelativeRange(val start: Int, val endExclusive: Int)
 

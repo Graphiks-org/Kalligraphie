@@ -27,10 +27,12 @@ import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontInstanceKey
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontResolutionCandidate
+import org.graphiks.kalligraphie.api.FontResolutionPolicyDelta
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
+import org.graphiks.kalligraphie.api.IncrementalLayoutError
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
 import org.graphiks.kalligraphie.api.LayoutBounds
@@ -77,6 +79,52 @@ import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 
 class IncrementalParagraphLayoutEngineTest {
+    @Test
+    fun emptyDocumentPublishesItsCanonicalEmptyLine() {
+        val fixture = fixture("", listOf(0 to 0))
+
+        val result = fixture.engine.layout(fixture.request(0, 0), fixture.computer())
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(listOf(range(fixture.snapshot, 0, 0)), success.layout.lines.map(LineLayout::range))
+        assertEquals(range(fixture.snapshot, 0, 0), success.layout.coveredRange)
+        assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, success.layout.coverage.tailState)
+    }
+
+    @Test
+    fun terminalNewlinePublishesItsFinalEmptyLineAfterContiguousContent() {
+        val fixture = fixture("\n", listOf(0 to 1, 1 to 1))
+
+        val result = fixture.engine.layout(fixture.request(1, 1, beforeAndAfter = 1), fixture.computer())
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 1), range(fixture.snapshot, 1, 1)),
+            success.layout.lines.map(LineLayout::range),
+        )
+        assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, success.layout.coverage.tailState)
+    }
+
+    @Test
+    fun caretOnlyRequestAtDocumentEndSelectsTheFinalNonEmptyLine() {
+        val fixture = fixture("abc", listOf(0 to 3))
+
+        val result = fixture.engine.layout(fixture.request(3, 3), fixture.computer())
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(listOf(range(fixture.snapshot, 0, 3)), success.layout.lines.map(LineLayout::range))
+        assertEquals(range(fixture.snapshot, 0, 3), success.layout.coveredRange)
+    }
+
+    @Test
+    fun emptyLineInsideDocumentContentIsRejected() {
+        val fixture = fixture("abc", listOf(0 to 1, 1 to 1, 1 to 3))
+
+        val result = fixture.engine.layout(fixture.request(0, 3), fixture.computer())
+
+        assertIs<IncrementalLayoutError.InvalidRange>(assertIs<IncrementalLayoutResult.Failure>(result).error)
+    }
+
     @Test
     fun requestedMiddleRangePublishesOnlyWholeLinesAndReportsExactCoverage() {
         val fixture = fixture("abcdefghijklm", listOf(0 to 4, 4 to 8, 8 to 13))
@@ -294,6 +342,227 @@ class IncrementalParagraphLayoutEngineTest {
     }
 
     @Test
+    fun provenFontResolutionPolicyTransitionReusesTheLocalizedCheckpoint() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(source.request(0, 12), source.computer()),
+        )
+        val targetSnapshot = decode("abcdefghijkl")
+        val textDelta = replacementProof(source.snapshot, targetSnapshot, 6, 7)
+        val targetPolicy = policyLike(source.typography.resolutionPolicy, version = "2")
+        val targetTypography = typography(
+            version = TypographyVersion.create(),
+            like = source.typography,
+            resolutionPolicy = targetPolicy,
+        )
+        val target = fixture(
+            "abcdefghijkl",
+            listOf(0 to 4, 4 to 8, 8 to 12),
+            engine = engine,
+            typography = targetTypography,
+            version = targetSnapshot.version,
+        )
+        val rangeChange = RangeChange.from(textDelta)
+        val typographyDelta = TypographyDelta(
+            sourceVersion = source.typography.version,
+            targetVersion = targetTypography.version,
+            rangeChange = rangeChange,
+            fontResolutionPolicy = FontResolutionPolicyDelta(
+                source = source.typography.resolutionPolicy,
+                target = targetPolicy,
+                provenRanges = rangeChange,
+            ),
+        )
+
+        val result = engine.layout(
+            target.request(
+                4,
+                5,
+                previousState = initial.layout.state,
+                delta = LayoutDelta(textDelta, typographyDelta),
+            ),
+            target.computer(),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(target.snapshot.textIndexAtScalarBoundary(4), success.diagnostics.reflowStart)
+        assertFalse(success.diagnostics.usedConservativeInvalidation)
+    }
+
+    @Test
+    fun mismatchedPolicyDeltaUsesConservativeReflow() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(source.request(0, 12), source.computer()),
+        )
+        val targetSnapshot = decode("abcdefghijkl")
+        val textDelta = replacementProof(source.snapshot, targetSnapshot, 1, 2)
+        val targetPolicy = policyLike(source.typography.resolutionPolicy, version = "2")
+        val unrelatedPolicy = policyLike(source.typography.resolutionPolicy, version = "unrelated")
+        val targetTypography = typography(
+            version = TypographyVersion.create(),
+            like = source.typography,
+            resolutionPolicy = targetPolicy,
+        )
+        val target = fixture(
+            "abcdefghijkl",
+            listOf(0 to 4, 4 to 8, 8 to 12),
+            engine = engine,
+            typography = targetTypography,
+            version = targetSnapshot.version,
+        )
+        val rangeChange = RangeChange.from(textDelta)
+        val typographyDelta = TypographyDelta(
+            sourceVersion = source.typography.version,
+            targetVersion = targetTypography.version,
+            rangeChange = rangeChange,
+            fontResolutionPolicy = FontResolutionPolicyDelta(
+                source = unrelatedPolicy,
+                target = targetPolicy,
+                provenRanges = rangeChange,
+            ),
+        )
+
+        val result = engine.layout(
+            target.request(
+                4,
+                5,
+                previousState = initial.layout.state,
+                delta = LayoutDelta(textDelta, typographyDelta),
+            ),
+            target.computer(),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(target.snapshot.range.start, success.diagnostics.reflowStart)
+        assertTrue(success.diagnostics.usedConservativeInvalidation)
+    }
+
+    @Test
+    fun policyProofDifferentFromTypographyProofUsesConservativeReflow() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(source.request(0, 12), source.computer()),
+        )
+        val targetSnapshot = decode("abcdefghijkl")
+        val textDelta = replacementProof(source.snapshot, targetSnapshot, 1, 2)
+        val otherProof = replacementProof(source.snapshot, targetSnapshot, 2, 3)
+        val targetPolicy = policyLike(source.typography.resolutionPolicy, version = "2")
+        val targetTypography = typography(
+            version = TypographyVersion.create(),
+            like = source.typography,
+            resolutionPolicy = targetPolicy,
+        )
+        val target = fixture(
+            "abcdefghijkl",
+            listOf(0 to 4, 4 to 8, 8 to 12),
+            engine = engine,
+            typography = targetTypography,
+            version = targetSnapshot.version,
+        )
+        val rangeChange = RangeChange.from(textDelta)
+        val typographyDelta = TypographyDelta(
+            sourceVersion = source.typography.version,
+            targetVersion = targetTypography.version,
+            rangeChange = rangeChange,
+            fontResolutionPolicy = FontResolutionPolicyDelta(
+                source = source.typography.resolutionPolicy,
+                target = targetPolicy,
+                provenRanges = RangeChange.from(otherProof),
+            ),
+        )
+
+        val result = engine.layout(
+            target.request(
+                4,
+                5,
+                previousState = initial.layout.state,
+                delta = LayoutDelta(textDelta, typographyDelta),
+            ),
+            target.computer(),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(target.snapshot.range.start, success.diagnostics.reflowStart)
+        assertTrue(success.diagnostics.usedConservativeInvalidation)
+    }
+
+    @Test
+    fun policyDeltaDoesNotHideAnotherConfigurationChange() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(source.request(0, 12), source.computer()),
+        )
+        val targetSnapshot = decode("abcdefghijkl")
+        val textDelta = replacementProof(source.snapshot, targetSnapshot, 6, 7)
+        val targetPolicy = policyLike(source.typography.resolutionPolicy, version = "2")
+        val targetTypography = typography(
+            version = TypographyVersion.create(),
+            like = source.typography,
+            resolutionPolicy = targetPolicy,
+            shapingConfigurationIdentity = "different-shaping",
+        )
+        val target = fixture(
+            "abcdefghijkl",
+            listOf(0 to 4, 4 to 8, 8 to 12),
+            engine = engine,
+            typography = targetTypography,
+            version = targetSnapshot.version,
+        )
+        val rangeChange = RangeChange.from(textDelta)
+        val typographyDelta = TypographyDelta(
+            sourceVersion = source.typography.version,
+            targetVersion = targetTypography.version,
+            rangeChange = rangeChange,
+            fontResolutionPolicy = FontResolutionPolicyDelta(
+                source = source.typography.resolutionPolicy,
+                target = targetPolicy,
+                provenRanges = rangeChange,
+            ),
+        )
+
+        val result = engine.layout(
+            target.request(
+                4,
+                5,
+                previousState = initial.layout.state,
+                delta = LayoutDelta(textDelta, typographyDelta),
+            ),
+            target.computer(),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(target.snapshot.range.start, success.diagnostics.reflowStart)
+        assertTrue(success.diagnostics.usedConservativeInvalidation)
+    }
+
+    @Test
+    fun stabilizationIsPublishedAtCoveredEndWhenOverscanExtendsPastAnEarlierMatch() {
+        val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
+        val fixture = fixture("abcdefghijklmnop", listOf(0 to 4, 4 to 8, 8 to 12, 12 to 16), engine = engine)
+        val initial = assertIs<IncrementalLayoutResult.Success>(
+            engine.layout(fixture.request(0, 16), fixture.computer()),
+        )
+
+        val result = engine.layout(
+            fixture.request(4, 5, beforeAndAfter = 1, previousState = initial.layout.state),
+            fixture.computer(),
+        )
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(range(fixture.snapshot, 0, 12), success.layout.coveredRange)
+        assertEquals(fixture.snapshot.textIndexAtScalarBoundary(12), success.diagnostics.stabilizedAt)
+        assertEquals(
+            LayoutTailState.Stable(range(fixture.snapshot, 12, 16)),
+            success.layout.coverage.tailState,
+        )
+    }
+
+    @Test
     fun cacheEvictionDoesNotChangeCheckpointOrTailObservables() {
         val warmEngine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
         val coldEngine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 0)
@@ -350,13 +619,29 @@ class IncrementalParagraphLayoutEngineTest {
             continuationValues: List<String> = lineBoundaries.map { (_, end) -> "after-$end" },
         ): IncrementalParagraphComputer =
             IncrementalParagraphComputer { target, overscan, _ ->
-                val requestedFirst = lineBoundaries.indexOfFirst { (start, end) ->
-                    start < scalarOrdinal(snapshot, target.requestedRange.endExclusive) &&
-                        scalarOrdinal(snapshot, target.requestedRange.start) < end
+                val requestedStart = scalarOrdinal(snapshot, target.requestedRange.start)
+                val requestedEnd = scalarOrdinal(snapshot, target.requestedRange.endExclusive)
+                val exactEmpty = if (requestedStart == requestedEnd) {
+                    lineBoundaries.indexOfFirst { (start, end) -> start == requestedStart && end == requestedEnd }
+                } else {
+                    -1
                 }
-                val requestedLast = lineBoundaries.indexOfLast { (start, end) ->
-                    start < scalarOrdinal(snapshot, target.requestedRange.endExclusive) &&
-                        scalarOrdinal(snapshot, target.requestedRange.start) < end
+                val requestedFirst = if (exactEmpty >= 0) {
+                    exactEmpty
+                } else {
+                    lineBoundaries.indexOfFirst { (start, end) ->
+                        if (requestedStart == requestedEnd) {
+                            start <= requestedStart &&
+                                (requestedStart < end || requestedStart == snapshot.scalars.size && end == requestedStart)
+                        } else {
+                            start < requestedEnd && requestedStart < end
+                        }
+                    }
+                }
+                val requestedLast = if (requestedStart == requestedEnd) {
+                    requestedFirst
+                } else {
+                    lineBoundaries.indexOfLast { (start, end) -> start < requestedEnd && requestedStart < end }
                 }
                 val first = maxOf(0, requestedFirst - overscan.lineCount)
                 val endExclusive = minOf(lineBoundaries.size, requestedLast + overscan.lineCount + 1)
@@ -437,15 +722,18 @@ class IncrementalParagraphLayoutEngineTest {
         fun typography(
             version: TypographyVersion = TypographyVersion.create(),
             like: TypographySnapshot? = null,
+            resolutionPolicy: FontResolutionPolicySnapshot? = null,
+            shapingConfigurationIdentity: String? = null,
         ): TypographySnapshot {
             if (like != null) {
                 return TypographySnapshot(
                     version = version,
                     fontCatalog = like.fontCatalog,
-                    resolutionPolicy = like.resolutionPolicy,
+                    resolutionPolicy = resolutionPolicy ?: like.resolutionPolicy,
                     fontInstanceDescriptor = like.fontInstanceDescriptor,
                     features = like.features,
-                    shapingConfigurationIdentity = like.shapingConfigurationIdentity,
+                    shapingConfigurationIdentity = shapingConfigurationIdentity
+                        ?: like.shapingConfigurationIdentity,
                 )
             }
             val generation = FontCatalogGeneration("fixture")
@@ -478,6 +766,30 @@ class IncrementalParagraphLayoutEngineTest {
             )
         }
 
+        fun policyLike(
+            source: FontResolutionPolicySnapshot,
+            version: String,
+        ): FontResolutionPolicySnapshot = FontResolutionPolicySnapshot(
+            generation = source.generation,
+            policyId = source.policyId,
+            version = version,
+            candidates = source.candidates,
+            lastResortFace = source.lastResortFace,
+        )
+
+        fun replacementProof(
+            source: TextSnapshot,
+            target: TextSnapshot,
+            start: Int,
+            endExclusive: Int,
+        ): TextChangeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source,
+                target,
+                listOf(TextChange(range(source, start, endExclusive), range(target, start, endExclusive))),
+            ),
+        ).value
+
         fun line(
             snapshot: TextSnapshot,
             start: Int,
@@ -486,6 +798,7 @@ class IncrementalParagraphLayoutEngineTest {
             glyphId: Int,
         ): LineLayout {
             val sourceRange = range(snapshot, start, endExclusive)
+            if (start == endExclusive) return emptyLine(sourceRange, baselineY)
             val token = ShaperClusterToken(0)
             val cluster = ShaperCluster(
                 token = token,
@@ -543,6 +856,48 @@ class IncrementalParagraphLayoutEngineTest {
                 contentMetrics = LineContentMetrics(LayoutUnit(8f), LayoutUnit(2f), LayoutUnit(10f)),
                 lineBox = LayoutRect(LayoutUnit(0f), LayoutUnit(baselineY - 8f), LayoutUnit(100f), LayoutUnit(baselineY + 2f)),
                 designInkBounds = LayoutBounds(LayoutUnit(0f), LayoutUnit(baselineY - 8f), LayoutUnit(10f), LayoutUnit(baselineY + 2f)),
+            )
+        }
+
+        fun emptyLine(sourceRange: TextRange, baselineY: Float): LineLayout {
+            val editable = EditableLine(
+                range = sourceRange,
+                baseDirection = ShapingDirection.LEFT_TO_RIGHT,
+                verticalMetrics = constraints.lineMetrics,
+                positionedGlyphRuns = emptyList(),
+                caretCandidates = listOf(
+                    CaretCandidate(
+                        position = CaretPosition(sourceRange.start, CaretAffinity.DOWNSTREAM),
+                        geometry = LayoutSegment(
+                            LayoutPoint(LayoutUnit(0f), LayoutUnit(-8f)),
+                            LayoutPoint(LayoutUnit(0f), LayoutUnit(2f)),
+                        ),
+                        visualOrder = 0,
+                        visualRunOrder = CaretCandidate.NO_POSITIONED_RUN,
+                        bidiLevel = 0,
+                        direction = ShapingDirection.LEFT_TO_RIGHT,
+                        strength = CaretStrength.STRONG,
+                        edge = CaretBoundaryEdge.INTERNAL,
+                    ),
+                ),
+            )
+            val baseline = LayoutPoint(LayoutUnit(0f), LayoutUnit(baselineY))
+            return LineLayout(
+                line = editable,
+                baseline = baseline,
+                contentMetrics = LineContentMetrics(LayoutUnit(8f), LayoutUnit(2f), LayoutUnit(0f)),
+                lineBox = LayoutRect(
+                    LayoutUnit(0f),
+                    LayoutUnit(baselineY - 8f),
+                    LayoutUnit(100f),
+                    LayoutUnit(baselineY + 2f),
+                ),
+                designInkBounds = LayoutBounds(
+                    LayoutUnit(0f),
+                    LayoutUnit(baselineY),
+                    LayoutUnit(0f),
+                    LayoutUnit(baselineY),
+                ),
             )
         }
 

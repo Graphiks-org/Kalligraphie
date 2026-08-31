@@ -217,10 +217,10 @@ public class IncrementalParagraphLayoutEngine(
         configuration: LayoutConfigurationSignature,
     ): LayoutStateHandle? {
         val previous = request.previousState ?: return null
-        if (previous.configuration != configuration) return null
+        val previousConfiguration = previous.configuration ?: return null
         if (previous.lineCheckpoints.isEmpty() || previous.continuation == null) return null
         if (!textTransitionIsProven(previous, request)) return null
-        if (!typographyTransitionIsProven(previous, request)) return null
+        if (!typographyTransitionIsProven(previous, previousConfiguration, configuration, request)) return null
         return previous
     }
 
@@ -240,20 +240,30 @@ public class IncrementalParagraphLayoutEngine(
 
     private fun typographyTransitionIsProven(
         previous: LayoutStateHandle,
+        previousConfiguration: LayoutConfigurationSignature,
+        targetConfiguration: LayoutConfigurationSignature,
         request: IncrementalLayoutRequest,
     ): Boolean {
         val source = previous.checkpoint.typographyVersion
         val target = request.input.typography.version
         val delta = request.delta?.typography
-        if (source == target && delta == null) return true
+        if (source == target && delta == null) return previousConfiguration == targetConfiguration
         if (delta == null || delta.sourceVersion != source || delta.targetVersion != target) return false
         val proven = delta.rangeChange as? RangeChange.Proven ?: return false
         if (proven.sourceRanges.isEmpty() || proven.targetRanges.isEmpty()) return false
-        return proven.sourceRanges.all { range ->
+        val rangesUseExpectedVersions = proven.sourceRanges.all { range ->
             range.start.sharesVersionWith(previous.coverage.range.start)
         } && proven.targetRanges.all { range ->
             range.start.sharesVersionWith(request.input.text.range.start)
         }
+        if (!rangesUseExpectedVersions) return false
+
+        val policyDelta = delta.fontResolutionPolicy
+            ?: return previousConfiguration == targetConfiguration
+        val policyRanges = policyDelta.rangeChange as? RangeChange.Proven ?: return false
+        return previousConfiguration.validatesFontResolutionPolicyTransition(targetConfiguration, policyDelta) &&
+            policyRanges.sourceRanges == proven.sourceRanges &&
+            policyRanges.targetRanges == proven.targetRanges
     }
 
     private fun firstAffectedTargetBoundary(request: IncrementalLayoutRequest): TextIndex {
@@ -298,15 +308,13 @@ public class IncrementalParagraphLayoutEngine(
     ): TextIndex? {
         if (request.previousState?.coverage?.tailState is LayoutTailState.Invalidated) return null
         val affectedEnd = lastAffectedTargetBoundary(request)
-        return published.firstNotNullOfOrNull { current ->
-            if (current.range.endExclusive < affectedEnd) return@firstNotNullOfOrNull null
-            val matchingPrevious = previous.firstOrNull { old ->
+        val current = published.lastOrNull() ?: return null
+        if (current.range.endExclusive < affectedEnd) return null
+        return previous.firstOrNull { old ->
                 mapSourceRange(old.range, request.input, request.delta?.text) == current.range &&
                     old.hasSameObservableLayout(current) &&
                     old.continuation.hasSameSemantics(current.continuation)
-            }
-            matchingPrevious?.let { current.range.endExclusive }
-        }
+            }?.let { current.range.endExclusive }
     }
 
     private fun validateComputerOutput(
@@ -328,17 +336,26 @@ public class IncrementalParagraphLayoutEngine(
                 "Incremental paragraph computer output must not precede its reflow boundary.",
             )
         }
+        val documentEnd = request.input.text.range.endExclusive
         var expectedStart = first.start
-        computation.lines.forEach { computed ->
+        computation.lines.forEachIndexed { index, computed ->
             val line = computed.line
             if (!line.range.start.sharesVersionWith(request.input.text.range.start)) {
                 return IncrementalLayoutError.VersionMismatch(
                     "Every computed line must use the request text revision.",
                 )
             }
-            if (line.range.start != expectedStart || line.range.endExclusive <= line.range.start) {
+            val isEmpty = line.range.start == line.range.endExclusive
+            val isCanonicalTerminalEmpty = isEmpty &&
+                index == computation.lines.lastIndex &&
+                line.range.start == documentEnd &&
+                line.range.start == expectedStart
+            if (
+                line.range.start != expectedStart ||
+                (!isCanonicalTerminalEmpty && line.range.endExclusive <= line.range.start)
+            ) {
                 return IncrementalLayoutError.InvalidRange(
-                    "Incremental paragraph computer lines must be complete, contiguous, and ordered.",
+                    "Computed lines must be non-empty, contiguous, and ordered, except for one final empty line at document end.",
                 )
             }
             if (computed.continuation.boundary != line.range.endExclusive) {
@@ -353,7 +370,6 @@ public class IncrementalParagraphLayoutEngine(
                 "Incremental paragraph computer output must cover the requested target range.",
             )
         }
-        val documentEnd = request.input.text.range.endExclusive
         return when (val tail = computation.tail) {
             IncrementalComputationTail.MaterializedThroughDocumentEnd -> if (expectedStart != documentEnd) {
                 IncrementalLayoutError.InvalidRange(
@@ -379,12 +395,20 @@ public class IncrementalParagraphLayoutEngine(
         computed: List<IncrementalComputedLine>,
     ): List<IncrementalComputedLine>? {
         val requested = request.requestedRange
-        val first = computed.indexOfFirst { value -> value.line.range.intersectsOrContains(requested) }
+        val first = if (requested.start == requested.endExclusive) {
+            computed.indexOfFirst { value -> value.line.range == requested }
+                .takeIf { it >= 0 }
+                ?: computed.indexOfFirst { value ->
+                    value.line.range.containsCaret(requested.start, request.input.text.range.endExclusive)
+                }
+        } else {
+            computed.indexOfFirst { value -> value.line.range.intersects(requested) }
+        }
         if (first < 0) return null
         val last = if (requested.start == requested.endExclusive) {
             first
         } else {
-            computed.indexOfLast { value -> value.line.range.intersectsOrContains(requested) }
+            computed.indexOfLast { value -> value.line.range.intersects(requested) }
         }
         if (last < first) return null
         val start = maxOf(0, first - request.overscan.lineCount)
@@ -402,11 +426,11 @@ private class PublishedIncrementalLayout(
     override val lines: List<LineLayout> = lines.immutableSnapshot()
 }
 
-private fun TextRange.intersectsOrContains(other: TextRange): Boolean = if (other.start == other.endExclusive) {
-    other.start >= start && other.start < endExclusive
-} else {
+private fun TextRange.intersects(other: TextRange): Boolean =
     start < other.endExclusive && other.start < endExclusive
-}
+
+private fun TextRange.containsCaret(caret: TextIndex, documentEnd: TextIndex): Boolean =
+    caret >= start && (caret < endExclusive || caret == documentEnd && caret == endExclusive)
 
 private fun covers(coverage: TextRange, requested: TextRange): Boolean =
     coverage.start <= requested.start && coverage.endExclusive >= requested.endExclusive
