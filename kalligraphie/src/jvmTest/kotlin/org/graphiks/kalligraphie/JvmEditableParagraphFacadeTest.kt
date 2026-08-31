@@ -32,6 +32,7 @@ import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
 import org.graphiks.kalligraphie.api.ParagraphLayoutError
+import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
@@ -61,7 +62,7 @@ class JvmEditableParagraphFacadeTest {
     }
 
     @Test
-    fun publicFacadeCanonicalizesBcp47LanguageForPopulatedAndEmptySnapshots() {
+    fun publicFacadeCanonicalizesBcp47LanguageForPopulatedSnapshot() {
         val populatedFixture = multiFaceFixture("fi")
         val populated = assertIs<ParagraphLayoutResult.Success>(
             JvmEditableParagraphFacade.layout(
@@ -79,19 +80,31 @@ class JvmEditableParagraphFacadeTest {
                 .map { run -> run.sourceRun.language }
                 .toSet(),
         )
+    }
 
+    @Test
+    fun emptyFacadeSuppliesCanonicalLanguageToParagraphLayoutRequest() {
         val emptyFixture = multiFaceFixture("")
-        val empty = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
-                request(
-                    fixture = emptyFixture,
-                    constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
-                    language = "EN-us",
-                ),
+        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        var suppliedRequest: ParagraphLayoutRequest? = null
+
+        val result = JvmEditableParagraphFacade.layout(
+            request = request(
+                fixture = emptyFixture,
+                constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
+                language = "EN-us",
             ),
+            backend = backend,
+            paragraphLayout = { paragraphRequest, _ ->
+                suppliedRequest = paragraphRequest
+                ParagraphLayoutResult.Cancelled()
+            },
         )
-        assertEquals(listOf(emptyFixture.snapshot.range), empty.layout.lines.map(LineLayout::range))
-        assertTrue(empty.layout.lines.single().positionedGlyphRuns.isEmpty())
+
+        assertIs<ParagraphLayoutResult.Cancelled>(result)
+        assertEquals("en-US", assertNotNull(suppliedRequest).language)
     }
 
     @Test

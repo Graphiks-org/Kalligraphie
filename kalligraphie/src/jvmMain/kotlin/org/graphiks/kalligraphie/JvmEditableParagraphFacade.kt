@@ -118,6 +118,8 @@ public object JvmEditableParagraphFacade {
     internal fun layout(
         request: JvmEditableParagraphFacadeRequest,
         backend: ShapingBackend,
+        paragraphLayout: (ParagraphLayoutRequest, EditableLineMaterialization) -> ParagraphLayoutResult =
+            ParagraphComposer::layout,
     ): ParagraphLayoutResult {
         var result: ParagraphLayoutResult? = null
         var closeResult: FontOperationResult<Unit>? = null
@@ -157,7 +159,7 @@ public object JvmEditableParagraphFacade {
                         continuation = request.continuation,
                         cancellationToken = request.cancellationToken,
                     )
-                    ParagraphComposer.layout(paragraphRequest, request.materialization)
+                    paragraphLayout(paragraphRequest, request.materialization)
                 }
             } catch (error: IllegalArgumentException) {
                 ParagraphLayoutResult.Failure(
