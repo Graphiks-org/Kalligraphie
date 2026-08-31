@@ -1,13 +1,19 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontCatalogGeneration
+import org.graphiks.kalligraphie.api.FontDiagnostic
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
+import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.TextDecodingResult
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
+import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
+import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 
@@ -74,15 +80,57 @@ public object Kalligraphie {
     public fun embedded(
         sourceBytes: ByteArray,
         provenance: FontSourceProvenance,
-    ): FontOperationResult<FontCatalogSnapshot> {
-        val source = FontSource(sourceBytes = sourceBytes, provenance = provenance)
-        return when (val parsed = SfntReader.readMetadata(source)) {
-            is FontOperationResult.Success<*> -> {
-                val parsedFont = parsed.value as org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
-                FontOperationResult.Success(EmbeddedFontCatalog(source, parsedFont), parsed.diagnostics)
-            }
-            is FontOperationResult.Failure -> parsed
-            is FontOperationResult.Cancelled -> parsed
+    ): FontOperationResult<FontCatalogSnapshot> = embedded(
+        listOf(FontSource(sourceBytes = sourceBytes, provenance = provenance)),
+    )
+
+    /**
+     * Loads an ordered immutable catalog from multiple in-memory TrueType [sources].
+     *
+     * The list is captured before parsing and each [FontSource] already owns a defensive byte
+     * copy. Provider order is preserved as the standard deterministic fallback order from which
+     * callers can build a `FontResolutionPolicySnapshot`. Every source contributes exactly one
+     * face; duplicate source content, an empty list, malformed data, and unsupported containers
+     * produce typed [FontOperationResult.Failure] values. A successful catalog retains no native
+     * handle or renderer resource and is safe to share between threads.
+     */
+    public fun embedded(sources: List<FontSource>): FontOperationResult<FontCatalogSnapshot> {
+        val capturedSources = sources.toList()
+        if (capturedSources.isEmpty()) {
+            return embeddedCatalogFailure("An embedded font catalog requires at least one source.")
         }
+        if (capturedSources.map(FontSource::id).distinct().size != capturedSources.size) {
+            return embeddedCatalogFailure("An embedded font catalog must not contain the same source twice.")
+        }
+
+        val diagnostics = mutableListOf<FontDiagnostic>()
+        val entries = mutableListOf<EmbeddedFontCatalogEntry>()
+        capturedSources.forEach { source ->
+            when (val parsed = SfntReader.readMetadata(source)) {
+                is FontOperationResult.Success<*> -> {
+                    entries += EmbeddedFontCatalogEntry(source, parsed.value as ParsedTrueTypeFont)
+                    diagnostics += parsed.diagnostics
+                }
+
+                is FontOperationResult.Failure -> return FontOperationResult.Failure(
+                    parsed.error,
+                    diagnostics + parsed.diagnostics,
+                )
+
+                is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(
+                    diagnostics + parsed.diagnostics,
+                )
+            }
+        }
+
+        val generation = FontCatalogGeneration(
+            capturedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
+                (source.id as FontSourceId.Portable).contentDigest.value
+            },
+        )
+        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries), diagnostics)
     }
+
+    private fun embeddedCatalogFailure(message: String): FontOperationResult.Failure =
+        FontOperationResult.Failure(FontError.InvalidFontData(message))
 }

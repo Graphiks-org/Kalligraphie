@@ -22,6 +22,16 @@ import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 public object JvmUnicodeAnalyzer {
     /** Creates an analyzer backed internally by ICU4J 77.1 and Unicode 16.0 data. */
     public fun create(): UnicodeAnalyzer = IcuUnicodeAnalyzer()
+
+    /**
+     * Validates [language] and returns the canonical BCP 47 form used by this JVM analyzer.
+     *
+     * This stateless operation uses the same pinned ICU4J parser as [create], retains no ICU
+     * resource, and is safe for concurrent calls.
+     *
+     * @throws IllegalArgumentException when [language] is not a well-formed BCP 47 tag.
+     */
+    public fun canonicalizeLanguageTag(language: String): String = parseLanguage(language).toLanguageTag()
 }
 
 internal class IcuUnicodeAnalyzer : UnicodeAnalyzer {

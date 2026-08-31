@@ -97,7 +97,8 @@ asset key. A resolver may reopen such a key only in the captured generation;
 a detached asset remains independently usable after its originating resolver
 closes.
 
-Out of scope: wrapping, paragraphs, hyphenation,
+Out of scope for the editable-line API: hyphenation,
 justification, vertical writing, rendering pixels, GPU APIs, TTC/OTC,
 CFF/CFF2, variations, synthetic styles, COLR, SVG, bitmap glyphs, and system
-fonts.
+fonts. See [Editable Paragraphs](editable-paragraphs.md) for the JVM multiline
+paragraph route.

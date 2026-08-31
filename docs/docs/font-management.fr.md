@@ -116,7 +116,8 @@ fonte) réelle ; chaque glyphe rendable porte un certificat lié à sa clé d’
 uniquement dans la génération capturée ; un asset détaché reste utilisable de
 façon indépendante après la fermeture de son gestionnaire d’origine.
 
-Hors périmètre : renvoi à la ligne, paragraphes, césure,
+Hors périmètre de l’API de ligne éditable : césure,
 justification, écriture verticale, rendu en pixels, API GPU, TTC/OTC,
 CFF/CFF2, variations, styles synthétiques, COLR, SVG, glyphes matriciels et
-fontes système.
+fontes système. Consultez [Paragraphes éditables](editable-paragraphs.md) pour
+le parcours multiligne JVM.

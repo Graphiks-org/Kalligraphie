@@ -43,6 +43,14 @@ import org.graphiks.kalligraphie.api.TextRange
  * the published line.
  */
 public object ExactEditableLineLayouter : EditableLineLayouter {
+    /** Returns the deterministic physical advance of an already finalized line. */
+    internal fun inlineAdvance(line: EditableLine): LayoutUnit {
+        val advance = line.positionedGlyphRuns.sumOf { run ->
+            run.glyphs.sumOf { glyph -> glyph.advance.x.value.toDouble() }
+        }
+        return finiteUnit(advance, "line inline advance")
+    }
+
     /**
      * Resolves and positions one line from a captured catalogue and deterministic policy.
      *
@@ -604,7 +612,7 @@ private fun ShapedGlyphRun.clusterFor(token: org.graphiks.kalligraphie.api.Shape
 private fun containedBy(owner: TextRange, item: TextRange): Boolean =
     item.start.sharesVersionWith(owner.start) && item.start >= owner.start && item.endExclusive <= owner.endExclusive
 
-private fun fontDiagnostic(diagnostic: org.graphiks.kalligraphie.api.FontDiagnostic): EditableLineDiagnostic =
+internal fun fontDiagnostic(diagnostic: org.graphiks.kalligraphie.api.FontDiagnostic): EditableLineDiagnostic =
     EditableLineDiagnostic(
         code = diagnostic.code,
         severity = if (diagnostic.severity == org.graphiks.kalligraphie.api.FontDiagnosticSeverity.ERROR) {
