@@ -1,4 +1,4 @@
-# Mesure du layout incrémental
+# Mesure du layout (mise en page) incrémental
 
 Kalligraphie fournit un point d’entrée JVM opt-in (activé explicitement) pour
 une mesure engine-only (moteur uniquement) du layout incrémental. Cet outil
@@ -14,7 +14,10 @@ fontes, deltas et requêtes sont construits avant le départ du chronomètre. Il
 termine seulement après vérification de la couverture complète demandée et
 consommation des lignes, runs (séquences typographiques), glyphes, carets
 (repères d’insertion), diagnostics et état du suffixe. Le scheduling
-(ordonnancement applicatif) et le renderer (moteur de rendu) sont exclus.
+(ordonnancement applicatif) et le renderer (moteur de rendu) sont exclus. Pour
+`Cancellation`, la latence du profil couvre toujours l’entrée de l’appel
+jusqu’au retour d’annulation typé, tandis que le champ distinct de délai
+d’annulation couvre le premier signal d’annulation jusqu’à ce retour.
 
 ## Profils
 
@@ -28,11 +31,12 @@ consommation des lignes, runs (séquences typographiques), glyphes, carets
   résultat annulé typé est accepté ; une couverture partielle ne compte jamais
   comme succès rapide.
 
-Chaque profil ouvre une nouvelle session. Une initialisation non chronométrée,
-si nécessaire, puis le warmup (préchauffage) configuré précèdent les itérations
-mesurées. L’état du cache (mémoire interne de réutilisation) mesuré est donc
-indiqué comme chaud. Deux demandes `System.gc()` sont effectuées avant et après
-chaque profil, jamais entre les itérations mesurées.
+Chaque profil ouvre une nouvelle session. Avant de pouvoir annoncer un état de
+cache (mémoire interne de réutilisation) chaud, chaque profil, y compris
+`Cancellation`, termine dans cette session une mise en page complète,
+non chronométrée et non annulée. Le warmup (préchauffage) configuré précède
+ensuite les itérations mesurées. Deux demandes `System.gc()` sont effectuées
+avant et après chaque profil, jamais entre les itérations mesurées.
 
 ## Exécution reproductible
 
@@ -60,7 +64,8 @@ permet aucune revendication de cible de latence.
 Le rapport Markdown contient :
 
 - le commit Git (révision) mesuré, la machine, l’OS, l’architecture et la JVM ;
-- les versions Unicode et HarfBuzz ;
+- la version des données Unicode, l’implémentation Unicode et sa version exacte,
+  ainsi que la version HarfBuzz ;
 - le hash SHA-256 (empreinte cryptographique) de chaque fonte ;
 - l’identité, la description et les nombres de scalaires et paragraphes du
   corpus ;
@@ -71,7 +76,8 @@ Le rapport Markdown contient :
 - la variation signée du tas JVM après les demandes de GC documentées ;
 - un état explicitement indisponible pour la mémoire native retenue, que le
   backend (composant d’exécution) n’expose pas ;
-- le délai p95 de retour après annulation pour `Cancellation` ;
+- le délai p95 entre le premier signal d’annulation et le retour d’annulation
+  typé pour `Cancellation`, distinct de la latence totale du profil ;
 - les moyennes de scalaires, lignes et paragraphes rematérialisés pour les
   profils réussis, ou un état indisponible lorsque l’annulation masque
   volontairement les diagnostics partiels.
@@ -81,7 +87,8 @@ revue :
 
 ```text
 Commit / machine / OS / JVM :
-Unicode / HarfBuzz / SHA-256 des fontes :
+Données Unicode / implémentation / version d’implémentation :
+HarfBuzz / SHA-256 des fontes :
 Corpus / couverture / overscan :
 État du cache / warmup / itérations / politique GC :
 p50 / p95 / p99 :

@@ -9,6 +9,8 @@ import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -40,6 +42,8 @@ class IncrementalLayoutBenchmarkTest {
                 operatingSystem = "FixedOS 1.0",
                 jvm = "FixedVM 21",
                 unicodeVersion = "16.0",
+                unicodeImplementation = "ICU4J",
+                unicodeImplementationVersion = "77.1",
                 harfBuzzVersion = "14.3.0",
                 fontHashes = mapOf("Fixture.ttf" to "abc123"),
                 gcPolicy = "between profiles",
@@ -67,6 +71,8 @@ class IncrementalLayoutBenchmarkTest {
         assertTrue(report.metadata.jvm.isNotBlank())
         assertTrue(report.metadata.fontHashes.isNotEmpty())
         assertTrue(report.metadata.unicodeVersion.isNotBlank())
+        assertTrue(report.metadata.unicodeImplementation.isNotBlank())
+        assertTrue(report.metadata.unicodeImplementationVersion.isNotBlank())
         assertTrue(report.metadata.harfBuzzVersion.isNotBlank())
         assertTrue(report.metadata.gcPolicy.isNotBlank())
         assertTrue(report.corpus.id.isNotBlank())
@@ -89,6 +95,40 @@ class IncrementalLayoutBenchmarkTest {
                 profile.rematerializedLines.state.isNotBlank() &&
                 profile.rematerializedParagraphs.state.isNotBlank()
         })
+        assertTrue(report.toMarkdown().contains("- Unicode implementation: ICU4J 77.1"))
+    }
+
+    @Test
+    fun cancellationDelayStartsWhenTheTokenSignalsRatherThanAtCallEntry() {
+        var now = 100L
+        val token = CancellationSignalToken(allowedChecks = 1) { now }
+
+        assertFalse(token.isCancellationRequested())
+        now = 700L
+        assertTrue(token.isCancellationRequested())
+
+        assertEquals(700L, token.signaledAtNanos)
+        assertEquals(300L, token.delayUntil(returnedAtNanos = 1_000L))
+        assertEquals(900L, 1_000L - 100L)
+    }
+
+    @Test
+    fun warmCancellationCacheStateRequiresAnUncancelledSuccessfulSeed() {
+        assertFailsWith<IllegalArgumentException> {
+            IncrementalLayoutBenchmark.preparedCacheState(
+                profileName = "Cancellation",
+                successfulUncancelledSeed = false,
+                warmupIterations = 2,
+            )
+        }
+        assertEquals(
+            "warm: Cancellation completed one untimed uncancelled seed layout, then 2 warmup iterations",
+            IncrementalLayoutBenchmark.preparedCacheState(
+                profileName = "Cancellation",
+                successfulUncancelledSeed = true,
+                warmupIterations = 2,
+            ),
+        )
     }
 
     @Test
@@ -159,6 +199,8 @@ internal data class MeasurementEnvironment(
     val operatingSystem: String,
     val jvm: String,
     val unicodeVersion: String,
+    val unicodeImplementation: String,
+    val unicodeImplementationVersion: String,
     val harfBuzzVersion: String,
     val fontHashes: Map<String, String>,
     val gcPolicy: String,
@@ -220,6 +262,7 @@ internal data class IncrementalLayoutMeasurementReport(
         appendLine("- OS: ${metadata.operatingSystem}")
         appendLine("- JVM: ${metadata.jvm}")
         appendLine("- Unicode: ${metadata.unicodeVersion}")
+        appendLine("- Unicode implementation: ${metadata.unicodeImplementation} ${metadata.unicodeImplementationVersion}")
         appendLine("- HarfBuzz: ${metadata.harfBuzzVersion}")
         appendLine("- GC policy: ${metadata.gcPolicy}")
         appendLine("- Corpus: `${corpus.id}` — ${corpus.description}")
@@ -279,6 +322,8 @@ internal object IncrementalLayoutBenchmark {
             "Measurement reports must contain the required profiles in their documented order."
         }
         require(environment.fontHashes.isNotEmpty()) { "At least one font hash is required." }
+        require(environment.unicodeImplementation.isNotBlank()) { "A Unicode implementation is required." }
+        require(environment.unicodeImplementationVersion.isNotBlank()) { "A Unicode implementation version is required." }
         require(profiles.all { it.warmupIterations > 0 && it.iterations > 0 }) {
             "Warmup and measured iteration counts must be positive."
         }
@@ -291,10 +336,10 @@ internal object IncrementalLayoutBenchmark {
 
         val source = incrementalRealFontFixture(SOURCE_TEXT, MEASUREMENT_FONTS)
         val target = source.withText(TARGET_TEXT)
-        val unicodeVersion = JvmUnicodeAnalyzer.create().analyze(
+        val unicodeData = JvmUnicodeAnalyzer.create().analyze(
             source.snapshot,
             UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, "en"),
-        ).unicodeData.unicodeVersion
+        ).unicodeData
         val harfBuzzVersion = openedHarfBuzzVersion()
         val corpus = MeasurementCorpus(
             id = CORPUS_ID,
@@ -308,7 +353,9 @@ internal object IncrementalLayoutBenchmark {
             operatingSystem = "${System.getProperty("os.name")} ${System.getProperty("os.version")} " +
                 "(${System.getProperty("os.arch")})",
             jvm = "${System.getProperty("java.vm.name")} ${System.getProperty("java.runtime.version")}",
-            unicodeVersion = unicodeVersion,
+            unicodeVersion = unicodeData.unicodeVersion,
+            unicodeImplementation = unicodeData.implementation,
+            unicodeImplementationVersion = unicodeData.implementationVersion,
             harfBuzzVersion = harfBuzzVersion,
             fontHashes = FONT_PATHS.mapValues { (_, relativePath) -> fixtureBytes(relativePath).sha256Hex() },
             gcPolicy = GC_POLICY,
@@ -339,6 +386,11 @@ internal object IncrementalLayoutBenchmark {
                 var current = success(
                     session.layout(request(source, source.snapshot.incrementalRange(0, 18), overscan = 1)),
                 )
+                val cacheState = preparedCacheState(
+                    profileName = "InteractiveEdit",
+                    successfulUncancelledSeed = true,
+                    warmupIterations = warmupIterations,
+                )
                 repeat(warmupIterations + iterations) { index ->
                     val nextFixture = if (currentFixture === source) target else source
                     val delta = if (currentFixture === source) forward else reverse
@@ -360,6 +412,7 @@ internal object IncrementalLayoutBenchmark {
                         record(sample.withDiagnostics(materializationDiagnostics(sample.value, nextFixture.snapshot)))
                     }
                 }
+                cacheState
             }
         },
     )
@@ -377,6 +430,11 @@ internal object IncrementalLayoutBenchmark {
             openSession().use { session ->
                 var current = success(
                     session.layout(request(fixture, fixture.snapshot.incrementalRange(0, 18), overscan = 2)),
+                )
+                val cacheState = preparedCacheState(
+                    profileName = "ViewportLayout",
+                    successfulUncancelledSeed = true,
+                    warmupIterations = warmupIterations,
                 )
                 repeat(warmupIterations + iterations) { index ->
                     val requested = if (index % 2 == 0) {
@@ -400,6 +458,7 @@ internal object IncrementalLayoutBenchmark {
                         record(sample.withDiagnostics(materializationDiagnostics(sample.value, fixture.snapshot)))
                     }
                 }
+                cacheState
             }
         },
     )
@@ -416,8 +475,17 @@ internal object IncrementalLayoutBenchmark {
             "token cancels after 3 cooperative checks; no partial coverage accepted",
         runOperations = { record ->
             openSession().use { session ->
+                val seed = success(
+                    session.layout(request(fixture, fixture.snapshot.range, overscan = 0)),
+                )
+                consume(seed)
+                val cacheState = preparedCacheState(
+                    profileName = "Cancellation",
+                    successfulUncancelledSeed = true,
+                    warmupIterations = warmupIterations,
+                )
                 repeat(warmupIterations + iterations) { index ->
-                    val token = CancelAfterChecks(3)
+                    val token = CancellationSignalToken(3)
                     val prepared = request(
                         fixture = fixture,
                         requestedRange = fixture.snapshot.range,
@@ -430,9 +498,15 @@ internal object IncrementalLayoutBenchmark {
                         }
                     }
                     if (index >= warmupIterations) {
-                        record(sample.withDiagnostics(MaterializationDiagnostics.unavailableAfterCancellation()))
+                        record(
+                            sample.withDiagnostics(
+                                diagnostics = MaterializationDiagnostics.unavailableAfterCancellation(),
+                                cancellationDelayNanos = token.delayUntil(sample.completedAtNanos),
+                            ),
+                        )
                     }
                 }
+                cacheState
             }
         },
         cancellation = true,
@@ -444,12 +518,12 @@ internal object IncrementalLayoutBenchmark {
         iterations: Int,
         coverage: String,
         cancellation: Boolean = false,
-        runOperations: ((Sample) -> Unit) -> Unit,
+        runOperations: ((Sample) -> Unit) -> String,
     ): MeasurementProfileReport {
         forceGc()
         val retainedBefore = usedHeapBytes()
         val samples = mutableListOf<Sample>()
-        runOperations(samples::add)
+        val cacheState = runOperations(samples::add)
         forceGc()
         val retainedAfter = usedHeapBytes()
         check(samples.size == iterations) { "Profile $name recorded ${samples.size} of $iterations iterations." }
@@ -465,7 +539,7 @@ internal object IncrementalLayoutBenchmark {
             warmupIterations = warmupIterations,
             iterations = iterations,
             coverage = coverage,
-            cacheState = "new session, one untimed seed where applicable, then profile-local warmup; measured state warm",
+            cacheState = cacheState,
             latency = percentiles(latencies),
             allocations = allocations,
             retainedJvmMemory = MeasurementValue.available(
@@ -476,7 +550,12 @@ internal object IncrementalLayoutBenchmark {
                 "the JVM HarfBuzz backend exposes identity and lifecycle, not retained native byte accounting",
             ),
             cancellationDelay = if (cancellation) {
-                MeasurementValue.available(percentiles(latencies).p95Nanos, "p95 nanoseconds from call entry to typed cancellation return")
+                val delays = samples.mapNotNull(Sample::cancellationDelayNanos)
+                check(delays.size == samples.size) { "Every cancellation sample must record signal-to-return delay." }
+                MeasurementValue.available(
+                    percentiles(delays).p95Nanos,
+                    "p95 nanoseconds from the first cancellation signal to typed cancellation return",
+                )
             } else {
                 MeasurementValue.unavailable("profile does not signal cancellation")
             },
@@ -502,18 +581,21 @@ internal object IncrementalLayoutBenchmark {
         val allocationBefore = ThreadAllocationProbe.currentBytes()
         val startedAt = System.nanoTime()
         val value = operation()
-        val elapsed = System.nanoTime() - startedAt
+        val completedAt = System.nanoTime()
+        val elapsed = completedAt - startedAt
         val allocationAfter = ThreadAllocationProbe.currentBytes()
         val allocated = if (allocationBefore != null && allocationAfter != null) {
             max(0L, allocationAfter - allocationBefore)
         } else {
             null
         }
-        return RawSample(value, max(1L, elapsed), allocated)
+        return RawSample(value, max(1L, elapsed), allocated, completedAt)
     }
 
-    private fun <Value> RawSample<Value>.withDiagnostics(diagnostics: MaterializationDiagnostics): Sample =
-        Sample(elapsedNanos, allocatedBytes, diagnostics)
+    private fun <Value> RawSample<Value>.withDiagnostics(
+        diagnostics: MaterializationDiagnostics,
+        cancellationDelayNanos: Long? = null,
+    ): Sample = Sample(elapsedNanos, allocatedBytes, diagnostics, cancellationDelayNanos)
 
     private fun consume(result: IncrementalLayoutResult.Success) {
         check(result.layout.coverage.isComplete) { "A fast incomplete result is not a successful measurement sample." }
@@ -685,25 +767,28 @@ internal object IncrementalLayoutBenchmark {
         return runtime.totalMemory() - runtime.freeMemory()
     }
 
-    private class CancelAfterChecks(private val allowedChecks: Int) : CancellationToken {
-        private var checks: Int = 0
-
-        override fun isCancellationRequested(): Boolean {
-            checks += 1
-            return checks > allowedChecks
-        }
+    internal fun preparedCacheState(
+        profileName: String,
+        successfulUncancelledSeed: Boolean,
+        warmupIterations: Int,
+    ): String {
+        require(successfulUncancelledSeed) { "A warm cache state requires an untimed uncancelled successful seed." }
+        return "warm: $profileName completed one untimed uncancelled seed layout, then " +
+            "$warmupIterations warmup iterations"
     }
 
     private data class RawSample<Value>(
         val value: Value,
         val elapsedNanos: Long,
         val allocatedBytes: Long?,
+        val completedAtNanos: Long,
     )
 
     private data class Sample(
         val elapsedNanos: Long,
         val allocatedBytes: Long?,
         val diagnostics: MaterializationDiagnostics,
+        val cancellationDelayNanos: Long?,
     )
 
     private data class MaterializationDiagnostics(
@@ -732,4 +817,31 @@ internal object IncrementalLayoutBenchmark {
 
     @Volatile
     private var blackhole: Long = 0L
+}
+
+internal class CancellationSignalToken(
+    private val allowedChecks: Int,
+    private val nanoTime: () -> Long = System::nanoTime,
+) : CancellationToken {
+    private var checks: Int = 0
+
+    var signaledAtNanos: Long? = null
+        private set
+
+    init {
+        require(allowedChecks >= 0) { "Allowed cancellation checks must be non-negative." }
+    }
+
+    override fun isCancellationRequested(): Boolean {
+        checks += 1
+        val cancelled = checks > allowedChecks
+        if (cancelled && signaledAtNanos == null) signaledAtNanos = nanoTime()
+        return cancelled
+    }
+
+    fun delayUntil(returnedAtNanos: Long): Long {
+        val signaled = checkNotNull(signaledAtNanos) { "Cancellation delay requires an observed signal." }
+        require(returnedAtNanos >= signaled) { "Cancellation return cannot precede its signal." }
+        return returnedAtNanos - signaled
+    }
 }

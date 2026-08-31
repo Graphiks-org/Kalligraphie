@@ -10,7 +10,10 @@ The timed interval starts immediately before `session.layout(...)`. Snapshots,
 font catalogs, deltas, and requests are constructed before the clock starts.
 The interval ends only after a successful result has complete requested
 coverage and its lines, runs, glyphs, carets, diagnostics, and tail state have
-been consumed. Application scheduling and rendering are excluded.
+been consumed. For `Cancellation`, the profile latency still covers call entry
+through the typed cancellation return, while the separate cancellation-delay
+field covers the first cancellation signal through that return. Application
+scheduling and rendering are excluded.
 
 ## Profiles
 
@@ -23,9 +26,11 @@ been consumed. Application scheduling and rendering are excluded.
   accepted; no partial coverage counts as a fast success.
 
 Each profile gets a new session. Untimed seed work, where applicable, and the
-configured warmup precede measured iterations. The measured cache state is
-therefore reported as warm. Two explicit `System.gc()` requests are made before
-and after each profile, never between measured iterations.
+configured warmup precede measured iterations. Every profile, including
+`Cancellation`, completes one untimed, uncancelled full-layout seed in that
+session before it may report a warm cache state. Two explicit `System.gc()`
+requests are made before and after each profile, never between measured
+iterations.
 
 ## Reproducible invocation
 
@@ -53,7 +58,8 @@ smoke report to claim a latency target.
 The Markdown report records:
 
 - measured Git commit, host, OS, architecture, and JVM;
-- Unicode and HarfBuzz versions;
+- Unicode data version, Unicode implementation and its exact version, and
+  HarfBuzz version;
 - SHA-256 hashes for every font fixture;
 - corpus identity, description, scalar count, and paragraph count;
 - requested coverage, overscan, cache state, GC policy, warmup, and iterations;
@@ -62,7 +68,8 @@ The Markdown report records:
 - a signed used-heap delta sampled after the documented forced-GC requests;
 - an explicit unavailable state for retained native memory, which the backend
   does not expose;
-- p95 cancellation return delay for `Cancellation`;
+- p95 delay from the first cancellation signal to the typed cancellation
+  return for `Cancellation`, distinct from the total profile latency;
 - average rematerialized scalars, lines, and paragraphs for successful
   profiles, or an explicit unavailable state when cancellation intentionally
   withholds partial diagnostics.
@@ -71,7 +78,8 @@ Use this structure when copying a result into a review description:
 
 ```text
 Commit / machine / OS / JVM:
-Unicode / HarfBuzz / font SHA-256:
+Unicode data / implementation / implementation version:
+HarfBuzz / font SHA-256:
 Corpus / coverage / overscan:
 Cache state / warmup / iterations / GC policy:
 p50 / p95 / p99:
