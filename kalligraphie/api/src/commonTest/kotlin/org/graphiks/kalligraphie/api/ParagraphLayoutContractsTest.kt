@@ -30,6 +30,25 @@ class ParagraphLayoutContractsTest {
     }
 
     @Test
+    fun paragraphRequestRetainsOnlyAResourceFreeMaterializationIdentity() {
+        val fixture = fixture("a")
+        val identity = ParagraphMaterializationIdentity.Renderable(
+            variant = FontRenderVariantKey("editor"),
+            outlineProfile = OutlineProfile(
+                maxBytes = 1_024,
+                maxContours = 16,
+                maxPoints = 64,
+                maxCompositeDepth = 4,
+                maxCompositeComponents = 8,
+            ),
+        )
+
+        val request = fixture.request(materializationIdentity = identity)
+
+        assertSame(identity, request.materializationIdentity)
+    }
+
+    @Test
     fun lineLayoutPublishesGlyphsAndCaretsTranslatedFromTheLocalBaseline() {
         val fixture = fixture("a")
 
@@ -72,13 +91,27 @@ class ParagraphLayoutContractsTest {
     }
 
     @Test
+    fun paragraphRequestsAndLayoutsRejectSameVersionRangesBeyondTheSnapshot() {
+        val sharedVersion = TextVersion.create()
+        val fixture = fixture("a", sharedVersion)
+        val largerSnapshot = fixture("ab", sharedVersion)
+
+        assertFailsWith<IllegalArgumentException> {
+            fixture.request(sourceRange = largerSnapshot.snapshot.range)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(largerSnapshot.lineLayout()))
+        }
+    }
+
+    @Test
     fun continueIsTheOnlyOverflowPolicyUntilAnotherPolicyHasEndToEndSemantics() {
         assertEquals(listOf(OverflowPolicy.CONTINUE), enumValues<OverflowPolicy>().toList())
     }
 
     @Test
     fun resumedRequestRejectsAContinuationFromAnotherVersionOrGeometryConfiguration() {
-        val fixture = fixture("")
+        val fixture = fixture("a")
         val initial = fixture.request()
         val continuation = LayoutContinuation.create(initial, fixture.snapshot.range)
 
@@ -109,6 +142,35 @@ class ParagraphLayoutContractsTest {
     }
 
     @Test
+    fun continuationRejectsAnEmptyRemainder() {
+        val fixture = fixture("a")
+        val end = fixture.snapshot.range.endExclusive
+
+        assertFailsWith<IllegalArgumentException> {
+            LayoutContinuation.create(fixture.request(), TextRange(end, end))
+        }
+    }
+
+    @Test
+    fun partialResultRequiresLayoutAndContinuationToPartitionTheOriginalRequestRange() {
+        val fixture = fixture("abc")
+        val first = fixture.snapshot.textIndexAtScalarBoundary(1)
+        val second = fixture.snapshot.textIndexAtScalarBoundary(2)
+        val remaining = TextRange(second, fixture.snapshot.range.endExclusive)
+        val continuation = LayoutContinuation.create(fixture.request(), remaining)
+        val incompletePublishedRange = TextRange(first, second)
+        val incompleteLayout = TestParagraphLayout(
+            fixture.snapshot,
+            incompletePublishedRange,
+            listOf(fixture.lineLayout(incompletePublishedRange)),
+        )
+
+        assertFailsWith<IllegalArgumentException> {
+            ParagraphLayoutResult.Success(incompleteLayout, CoverageStatus.PARTIAL, continuation)
+        }
+    }
+
+    @Test
     fun paragraphConstraintsRejectEmptyPhysicalRegions() {
         assertFailsWith<IllegalArgumentException> {
             HorizontalParagraphConstraints(
@@ -124,6 +186,54 @@ class ParagraphLayoutContractsTest {
         }
     }
 
+    @Test
+    fun selectionRectanglesAreOrderedByPhysicalLineThenVisualRun() {
+        val fixture = fixture("ab")
+        val middle = fixture.snapshot.textIndexAtScalarBoundary(1)
+        val firstLine = fixture.lineLayout(TextRange(fixture.snapshot.range.start, middle), baselineY = 20f)
+        val secondLine = fixture.lineLayout(TextRange(middle, fixture.snapshot.range.endExclusive), baselineY = 30f)
+        val layout = TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(firstLine, secondLine))
+
+        val rectangles = layout.selectionGeometry(
+            firstLine.allCaretCandidates.first().position,
+            secondLine.allCaretCandidates.last().position,
+        )
+
+        assertEquals(
+            listOf(
+                LayoutRect(LayoutUnit(10f), LayoutUnit(18f), LayoutUnit(15f), LayoutUnit(21f)),
+                LayoutRect(LayoutUnit(10f), LayoutUnit(28f), LayoutUnit(15f), LayoutUnit(31f)),
+            ),
+            rectangles,
+        )
+    }
+
+    @Test
+    fun hitTestDefinesLineAndCandidateTieBreaksOutsideAndBetweenLines() {
+        val fixture = fixture("ab")
+        val middle = fixture.snapshot.textIndexAtScalarBoundary(1)
+        val firstLine = fixture.lineLayout(TextRange(fixture.snapshot.range.start, middle), baselineY = 20f)
+        val secondLine = fixture.lineLayout(TextRange(middle, fixture.snapshot.range.endExclusive), baselineY = 30f)
+        val layout = TestParagraphLayout(fixture.snapshot, fixture.snapshot.range, listOf(firstLine, secondLine))
+
+        assertSame(
+            firstLine.allCaretCandidates.first(),
+            layout.hitTest(LayoutPoint(LayoutUnit(10f), LayoutUnit(0f))),
+        )
+        assertSame(
+            secondLine.allCaretCandidates.last(),
+            layout.hitTest(LayoutPoint(LayoutUnit(15f), LayoutUnit(100f))),
+        )
+        assertSame(
+            firstLine.allCaretCandidates.first(),
+            layout.hitTest(LayoutPoint(LayoutUnit(10f), LayoutUnit(24.5f))),
+        )
+        assertSame(
+            firstLine.allCaretCandidates.first(),
+            layout.hitTest(LayoutPoint(LayoutUnit(12.5f), LayoutUnit(20f))),
+        )
+    }
+
     private class TestParagraphLayout(
         snapshot: TextSnapshot,
         range: TextRange,
@@ -134,10 +244,6 @@ class ParagraphLayoutContractsTest {
         override fun nextVisual(candidate: CaretCandidate, direction: VisualNavigationDirection): CaretCandidate? = null
 
         override fun caretCandidates(position: CaretPosition): List<CaretCandidate> = emptyList()
-
-        override fun selectionGeometry(anchor: CaretPosition, focus: CaretPosition): List<LayoutRect> = emptyList()
-
-        override fun hitTest(point: LayoutPoint): CaretCandidate = error("Not exercised by contract tests.")
     }
 
     private class Fixture(
@@ -155,6 +261,7 @@ class ParagraphLayoutContractsTest {
             sourceRange: TextRange = snapshot.range,
             constraints: HorizontalParagraphConstraints = this.constraints,
             features: List<OpenTypeFeature> = emptyList(),
+            materializationIdentity: ParagraphMaterializationIdentity = ParagraphMaterializationIdentity.LayoutOnly,
             continuation: LayoutContinuation? = null,
         ): ParagraphLayoutRequest = ParagraphLayoutRequest(
             snapshot = snapshot,
@@ -170,41 +277,62 @@ class ParagraphLayoutContractsTest {
             resolutionPolicy = policy,
             fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(12f)),
             shapingBackend = backend,
-            materialization = EditableLineMaterialization.LayoutOnly,
+            materializationIdentity = materializationIdentity,
             continuation = continuation,
         )
 
-        fun lineLayout(): LineLayout {
-            val localLine = editableLine()
+        fun lineLayout(
+            range: TextRange = snapshot.range,
+            baselineY: Float = 20f,
+        ): LineLayout {
+            val localLine = editableLine(range)
             return LineLayout(
                 line = localLine,
-                baseline = LayoutPoint(LayoutUnit(10f), LayoutUnit(20f)),
+                baseline = LayoutPoint(LayoutUnit(10f), LayoutUnit(baselineY)),
                 contentMetrics = LineContentMetrics(
                     ascent = LayoutUnit(2f),
                     descent = LayoutUnit(1f),
                     inlineAdvance = LayoutUnit(5f),
                 ),
-                lineBox = LayoutRect(LayoutUnit(10f), LayoutUnit(18f), LayoutUnit(20f), LayoutUnit(21f)),
-                designInkBounds = LayoutBounds(LayoutUnit(11f), LayoutUnit(18f), LayoutUnit(16f), LayoutUnit(21f)),
+                lineBox = LayoutRect(
+                    LayoutUnit(10f),
+                    LayoutUnit(baselineY - 2f),
+                    LayoutUnit(20f),
+                    LayoutUnit(baselineY + 1f),
+                ),
+                designInkBounds = LayoutBounds(
+                    LayoutUnit(11f),
+                    LayoutUnit(baselineY - 2f),
+                    LayoutUnit(16f),
+                    LayoutUnit(baselineY + 1f),
+                ),
             )
         }
 
-        private fun editableLine(): EditableLine {
-            if (snapshot.range.start == snapshot.range.endExclusive) {
+        private fun editableLine(range: TextRange): EditableLine {
+            if (range.start == range.endExclusive) {
                 return EditableLine(
-                    range = snapshot.range,
+                    range = range,
                     baseDirection = ShapingDirection.LEFT_TO_RIGHT,
                     verticalMetrics = lineMetrics,
                     positionedGlyphRuns = emptyList(),
-                    caretCandidates = listOf(candidate(snapshot.range.start, 0, 0f, CaretBoundaryEdge.INTERNAL)),
+                    caretCandidates = listOf(
+                        candidate(
+                            range.start,
+                            0,
+                            0f,
+                            CaretBoundaryEdge.INTERNAL,
+                            CaretCandidate.NO_POSITIONED_RUN,
+                        ),
+                    ),
                 )
             }
             val token = ShaperClusterToken(0)
             val cluster = ShaperCluster(
                 token = token,
-                sourceRange = snapshot.range,
-                scalarRanges = listOf(snapshot.range),
-                admissibleGraphemeBoundaries = listOf(snapshot.range.start, snapshot.range.endExclusive),
+                sourceRange = range,
+                scalarRanges = listOf(range),
+                admissibleGraphemeBoundaries = listOf(range.start, range.endExclusive),
             )
             val glyph = ShapedGlyph(
                 glyphId = GlyphId(7),
@@ -216,7 +344,7 @@ class ParagraphLayoutContractsTest {
                 clusterTokens = listOf(token),
             )
             val shapedRun = ShapedGlyphRun(
-                range = snapshot.range,
+                range = range,
                 fontInstanceKey = fontKey,
                 backendIdentity = backend.identity,
                 direction = ShapingDirection.LEFT_TO_RIGHT,
@@ -227,7 +355,7 @@ class ParagraphLayoutContractsTest {
                 eot = true,
                 featurePolicy = backend.identity.featurePolicy,
                 features = emptyList(),
-                graphemeClusters = listOf(snapshot.range),
+                graphemeClusters = listOf(range),
                 glyphs = listOf(glyph),
                 clusters = listOf(cluster),
             )
@@ -240,18 +368,24 @@ class ParagraphLayoutContractsTest {
                 materializationCertificate = null,
             )
             return EditableLine(
-                range = snapshot.range,
+                range = range,
                 baseDirection = ShapingDirection.LEFT_TO_RIGHT,
                 verticalMetrics = lineMetrics,
                 positionedGlyphRuns = listOf(PositionedGlyphRun(shapedRun, 0, null, listOf(positioned))),
                 caretCandidates = listOf(
-                    candidate(snapshot.range.start, 0, 0f, CaretBoundaryEdge.LOGICAL_START),
-                    candidate(snapshot.range.endExclusive, 1, 5f, CaretBoundaryEdge.LOGICAL_END),
+                    candidate(range.start, 0, 0f, CaretBoundaryEdge.LOGICAL_START, 0),
+                    candidate(range.endExclusive, 1, 5f, CaretBoundaryEdge.LOGICAL_END, 0),
                 ),
             )
         }
 
-        private fun candidate(index: TextIndex, order: Int, x: Float, edge: CaretBoundaryEdge): CaretCandidate =
+        private fun candidate(
+            index: TextIndex,
+            order: Int,
+            x: Float,
+            edge: CaretBoundaryEdge,
+            visualRunOrder: Int,
+        ): CaretCandidate =
             CaretCandidate(
                 position = CaretPosition(index, if (order == 0) CaretAffinity.DOWNSTREAM else CaretAffinity.UPSTREAM),
                 geometry = LayoutSegment(
@@ -259,11 +393,7 @@ class ParagraphLayoutContractsTest {
                     LayoutPoint(LayoutUnit(x), LayoutUnit(1f)),
                 ),
                 visualOrder = order,
-                visualRunOrder = if (snapshot.range.start == snapshot.range.endExclusive) {
-                    CaretCandidate.NO_POSITIONED_RUN
-                } else {
-                    0
-                },
+                visualRunOrder = visualRunOrder,
                 bidiLevel = 0,
                 direction = ShapingDirection.LEFT_TO_RIGHT,
                 strength = CaretStrength.STRONG,
@@ -271,8 +401,10 @@ class ParagraphLayoutContractsTest {
             )
     }
 
-    private fun fixture(text: String): Fixture {
-        val version = TextVersion.create()
+    private fun fixture(
+        text: String,
+        version: TextVersion = TextVersion.create(),
+    ): Fixture {
         val scalars = text.map(Char::code)
         val sourceRanges = scalars.indices.map { ordinal ->
             SourceRange(

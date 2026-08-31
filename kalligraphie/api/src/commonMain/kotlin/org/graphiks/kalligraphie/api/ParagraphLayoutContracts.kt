@@ -189,17 +189,75 @@ public abstract class ParagraphLayout protected constructor(
      * Returns only non-empty visual-run rectangles between [anchor] and [focus].
      *
      * Geometry is in paragraph coordinates and never fills gaps between disjoint BiDi segments
-     * or consults glyph ink, a renderer, device pixels, or platform state.
+     * or consults glyph ink, a renderer, device pixels, or platform state. Results are ordered by
+     * physical line from top to bottom, then by [PositionedGlyphRun.visualOrder] within that line;
+     * reversing anchor and focus does not reverse this geometry order.
      */
-    public abstract fun selectionGeometry(anchor: CaretPosition, focus: CaretPosition): List<LayoutRect>
+    public fun selectionGeometry(anchor: CaretPosition, focus: CaretPosition): List<LayoutRect> {
+        require(lines.any { line -> line.allCaretCandidates.any { candidate -> candidate.position == anchor } }) {
+            "Selection anchor must be a paragraph-local caret position."
+        }
+        require(lines.any { line -> line.allCaretCandidates.any { candidate -> candidate.position == focus } }) {
+            "Selection focus must be a paragraph-local caret position."
+        }
+        if (anchor.index == focus.index) return emptyList()
+        val selectedStart = if (anchor.index < focus.index) anchor.index else focus.index
+        val selectedEnd = if (anchor.index < focus.index) focus.index else anchor.index
+        return lines.flatMap { line ->
+            line.positionedGlyphRuns.mapNotNull { run ->
+                val runStart = maxParagraphIndex(selectedStart, run.sourceRun.range.start)
+                val runEnd = minParagraphIndex(selectedEnd, run.sourceRun.range.endExclusive)
+                if (runStart >= runEnd) return@mapNotNull null
+                val caretCoordinates = line.allCaretCandidates.asSequence()
+                    .filter { candidate ->
+                        candidate.visualRunOrder == run.visualOrder &&
+                            candidate.position.index >= runStart &&
+                            candidate.position.index <= runEnd
+                    }
+                    .map { candidate -> candidate.geometry.start.x }
+                    .toList()
+                val coordinates = if (caretCoordinates.size >= 2) {
+                    caretCoordinates
+                } else {
+                    caretCoordinates + run.glyphs.flatMap { glyph ->
+                        listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+                    }
+                }
+                val left = coordinates.minOrNull() ?: return@mapNotNull null
+                val right = coordinates.maxOrNull() ?: return@mapNotNull null
+                if (left == right) null else LayoutRect(left, line.lineBox.top, right, line.lineBox.bottom)
+            }
+        }.immutableListSnapshot()
+    }
 
     /**
      * Maps a physical paragraph [point] to one deterministic final caret candidate.
      *
-     * Implementations first select the relevant final line and then apply candidate tie-breaks;
-     * points above, below, or between lines still return a candidate for a non-empty layout.
+     * Line selection minimizes vertical distance to each closed line-box span; equal distance
+     * selects the earlier physical line. Consequently a point above or below selects the first
+     * or last line, and a point exactly midway between lines selects the preceding line. Within
+     * that line candidates are ordered by squared distance to their vertical segment, then
+     * [CaretCandidate.visualOrder], logical [TextIndex], and [CaretAffinity.DOWNSTREAM] before
+     * [CaretAffinity.UPSTREAM].
      */
-    public abstract fun hitTest(point: LayoutPoint): CaretCandidate
+    public fun hitTest(point: LayoutPoint): CaretCandidate {
+        require(lines.isNotEmpty()) { "Hit testing requires a paragraph with a final line." }
+        val line = lines.withIndex().minWith { left, right ->
+            val distance = verticalDistanceToRect(point, left.value.lineBox)
+                .compareTo(verticalDistanceToRect(point, right.value.lineBox))
+            if (distance != 0) distance else left.index.compareTo(right.index)
+        }.value
+        return line.allCaretCandidates.minWith { left, right ->
+            val distance = paragraphSquaredDistanceToSegment(point, left.geometry)
+                .compareTo(paragraphSquaredDistanceToSegment(point, right.geometry))
+            if (distance != 0) return@minWith distance
+            val visual = left.visualOrder.compareTo(right.visualOrder)
+            if (visual != 0) return@minWith visual
+            val index = left.position.index.compareTo(right.position.index)
+            if (index != 0) return@minWith index
+            paragraphAffinityRank(left.position.affinity).compareTo(paragraphAffinityRank(right.position.affinity))
+        }
+    }
 }
 
 /** Whether a successful result covers all requested source or leaves an exact remainder. */
@@ -227,16 +285,30 @@ public sealed interface ParagraphMaterializationIdentity {
         /** Outline constraints that must be replayed. */
         public val outlineProfile: OutlineProfile,
     ) : ParagraphMaterializationIdentity
+
+    /** Factories that discard borrowed operational capability after capturing immutable identity. */
+    public companion object {
+        /**
+         * Captures only the configuration identity of [materialization].
+         *
+         * A renderable resolver is inspected neither here nor later retained by the returned
+         * value; the live capability must be supplied separately to [ParagraphLayouter.layout].
+         */
+        public fun from(materialization: EditableLineMaterialization): ParagraphMaterializationIdentity =
+            materialization.toParagraphIdentity()
+    }
 }
 
 /**
  * Immutable capability for resuming an incompletely covered paragraph request.
  *
- * The continuation records the original [TextVersion], exact [remainingSourceRange], compatible
- * rectangle width and line metrics, and every configuration identity that can affect observable
- * line breaking or final glyph geometry. It stores no text history, incremental-edit state,
- * borrowed resolver, native handle, renderer, or platform object. Collections are defensively
- * captured, making this value safe for concurrent reads.
+ * The continuation records the original [TextVersion], exact [originalSourceRange] and
+ * [remainingSourceRange], compatible rectangle width and line metrics, and every configuration
+ * identity that can affect observable line breaking or final glyph geometry. The remainder is a
+ * non-empty exact suffix of [originalSourceRange], so a partial layout prefix plus this value
+ * partitions the complete source requested by the call that created it. It stores no text
+ * history, incremental-edit state, borrowed resolver, native handle, renderer, or platform
+ * object. Collections are defensively captured, making this value safe for concurrent reads.
  *
  * Create continuations only with [create]; a resumed [ParagraphLayoutRequest] rejects any
  * incompatible version, remaining range, geometry, Unicode data, font policy, shaping backend,
@@ -245,6 +317,8 @@ public sealed interface ParagraphMaterializationIdentity {
 public class LayoutContinuation private constructor(
     /** Original immutable source revision. */
     public val originalVersion: TextVersion,
+    /** Complete source range requested by the call that produced this continuation. */
+    public val originalSourceRange: TextRange,
     /** Exact unconsumed suffix, including its original end boundary. */
     public val remainingSourceRange: TextRange,
     /** Exact rectangle width required by a compatible resumed request. */
@@ -294,7 +368,7 @@ public class LayoutContinuation private constructor(
             request.shapingBackend.identity == shapingBackendIdentity &&
             request.featurePolicy == featurePolicy &&
             request.features == features &&
-            request.materialization.toParagraphIdentity() == materializationIdentity &&
+            request.materializationIdentity == materializationIdentity &&
             request.overflowPolicy == overflowPolicy
 
     /** Factories that capture compatibility inputs from validated paragraph requests. */
@@ -318,8 +392,12 @@ public class LayoutContinuation private constructor(
             ) {
                 "A continuation remainder must be an exact suffix of the request source range."
             }
+            require(remainingSourceRange.start < remainingSourceRange.endExclusive) {
+                "A continuation remainder must contain unconsumed source."
+            }
             return LayoutContinuation(
-                originalVersion = request.continuation?.originalVersion ?: request.snapshot.version,
+                originalVersion = request.snapshot.version,
+                originalSourceRange = request.sourceRange,
                 remainingSourceRange = remainingSourceRange,
                 regionWidth = request.constraints.width,
                 lineMetrics = request.constraints.lineMetrics,
@@ -333,7 +411,7 @@ public class LayoutContinuation private constructor(
                 shapingBackendIdentity = request.shapingBackend.identity,
                 featurePolicy = request.featurePolicy,
                 features = request.features,
-                materializationIdentity = request.materialization.toParagraphIdentity(),
+                materializationIdentity = request.materializationIdentity,
                 overflowPolicy = request.overflowPolicy,
             )
         }
@@ -346,9 +424,10 @@ public class LayoutContinuation private constructor(
  * The request binds [sourceRange] to [snapshot], requires complete Unicode and line-break
  * analyses for that same revision, and captures all font, shaping, feature, materialization,
  * cancellation, and geometry inputs required for deterministic replay. The shaping backend and
- * renderable resolver are borrowed for the synchronous call only; a layouter must neither close
- * nor retain them. All caller collections are defensively copied. Invalid ranges or mismatched
- * identities are programming errors reported during construction.
+ * backend is borrowed for composition. A renderable resolver is deliberately absent and is
+ * supplied only to the synchronous [ParagraphLayouter.layout] call. All caller collections are
+ * defensively copied. Invalid ranges or mismatched identities are programming errors reported
+ * during construction.
  */
 public class ParagraphLayoutRequest(
     /** Immutable canonical source revision. */
@@ -376,8 +455,8 @@ public class ParagraphLayoutRequest(
     public val fontInstanceDescriptor: FontInstanceDescriptor,
     /** Borrowed portable backend used for provisional and final shaping. */
     public val shapingBackend: ShapingBackend,
-    /** Layout-only or synchronously outline-validated publication mode. */
-    public val materialization: EditableLineMaterialization,
+    /** Resource-free identity of layout-only or outline-validated publication. */
+    public val materializationIdentity: ParagraphMaterializationIdentity,
     /** Only supported behavior when complete source coverage exceeds the region. */
     public val overflowPolicy: OverflowPolicy = OverflowPolicy.CONTINUE,
     /** Exact prior result capability when this request resumes partial coverage. */
@@ -411,11 +490,6 @@ public class ParagraphLayoutRequest(
         }
         require(resolutionPolicy.candidates.all { candidate -> candidate.faceId in fontCatalog.faces.map(FontFaceRecord::id) }) {
             "Every paragraph font candidate must belong to the captured font catalog."
-        }
-        if (materialization is EditableLineMaterialization.Renderable) {
-            require(materialization.resolver.generation == fontCatalog.generation) {
-                "Paragraph materialization resolver must use the captured font catalog generation."
-            }
         }
         require(continuation == null || continuation.isCompatibleWith(this)) {
             "Paragraph continuation is incompatible with the request revision, remainder, geometry, or configuration."
@@ -480,8 +554,14 @@ public sealed interface ParagraphLayoutResult {
                 require(layout.version == continuation.originalVersion) {
                     "A partial paragraph and its continuation must use the same source revision."
                 }
+                require(layout.range.start == continuation.originalSourceRange.start) {
+                    "A partial paragraph must begin at the original requested source boundary."
+                }
                 require(layout.range.endExclusive == continuation.remainingSourceRange.start) {
                     "A partial paragraph must end exactly where its continuation begins."
+                }
+                require(continuation.remainingSourceRange.endExclusive == continuation.originalSourceRange.endExclusive) {
+                    "A partial paragraph continuation must retain the original requested end boundary."
                 }
             }
         }
@@ -509,14 +589,19 @@ public sealed interface ParagraphLayoutResult {
 /** Portable boundary implemented by a pure, renderer-independent paragraph layout module. */
 public interface ParagraphLayouter {
     /**
-     * Composes [request] synchronously into complete immutable lines.
+     * Composes [request] synchronously into complete immutable lines using [materialization].
      *
-     * Implementations may borrow the request's shaping backend and materialization resolver only
-     * for this call. They publish neither a current partial line nor a native/platform resource:
-     * interruption returns [ParagraphLayoutResult.Cancelled], and any failure while finalizing a
-     * line returns [ParagraphLayoutResult.Failure].
+     * [materialization] is the only parameter allowed to carry a live resolver. Its immutable
+     * identity must equal [ParagraphLayoutRequest.materializationIdentity], and a renderable
+     * resolver must use the request catalog generation. Implementations borrow it only for this
+     * call and must neither close nor retain it. They publish neither a current partial line nor
+     * a native/platform resource: interruption returns [ParagraphLayoutResult.Cancelled], and
+     * any failure while finalizing a line returns [ParagraphLayoutResult.Failure].
      */
-    public fun layout(request: ParagraphLayoutRequest): ParagraphLayoutResult
+    public fun layout(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+    ): ParagraphLayoutResult
 }
 
 private fun PositionedGlyphRun.translatedBy(baseline: LayoutPoint): PositionedGlyphRun =
@@ -553,6 +638,31 @@ private fun CaretCandidate.translatedBy(baseline: LayoutPoint): CaretCandidate =
 
 private fun LayoutPoint.translatedBy(offset: LayoutPoint): LayoutPoint =
     LayoutPoint(LayoutUnit(x.value + offset.x.value), LayoutUnit(y.value + offset.y.value))
+
+private fun verticalDistanceToRect(point: LayoutPoint, rect: LayoutRect): Double = when {
+    point.y < rect.top -> rect.top.value.toDouble() - point.y.value.toDouble()
+    point.y > rect.bottom -> point.y.value.toDouble() - rect.bottom.value.toDouble()
+    else -> 0.0
+}
+
+private fun paragraphSquaredDistanceToSegment(point: LayoutPoint, segment: LayoutSegment): Double {
+    val xDistance = point.x.value.toDouble() - segment.start.x.value.toDouble()
+    val verticalDistance = when {
+        point.y < segment.start.y -> segment.start.y.value.toDouble() - point.y.value.toDouble()
+        point.y > segment.end.y -> point.y.value.toDouble() - segment.end.y.value.toDouble()
+        else -> 0.0
+    }
+    return xDistance * xDistance + verticalDistance * verticalDistance
+}
+
+private fun paragraphAffinityRank(affinity: CaretAffinity): Int = when (affinity) {
+    CaretAffinity.DOWNSTREAM -> 0
+    CaretAffinity.UPSTREAM -> 1
+}
+
+private fun maxParagraphIndex(first: TextIndex, second: TextIndex): TextIndex = if (first >= second) first else second
+
+private fun minParagraphIndex(first: TextIndex, second: TextIndex): TextIndex = if (first <= second) first else second
 
 private fun EditableLineMaterialization.toParagraphIdentity(): ParagraphMaterializationIdentity = when (this) {
     EditableLineMaterialization.LayoutOnly -> ParagraphMaterializationIdentity.LayoutOnly
