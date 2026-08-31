@@ -8,9 +8,12 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontContentDigest
+import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicyDelta
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
+import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutError
@@ -23,6 +26,7 @@ import org.graphiks.kalligraphie.api.LayoutStateHandle
 import org.graphiks.kalligraphie.api.LayoutTailState
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
+import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
@@ -91,64 +95,53 @@ class IncrementalLayoutEditorJourneyTest {
     }
 
     @Test
-    fun editsAtVisibleBeginningMiddleAndEndPreserveAuditedLineGeometry() {
-        val initial = incrementalRealFontFixture("fi\nfi\nfi")
-        val atBeginning = initial.withText("ii\nfi\nfi")
-        val atMiddle = atBeginning.withText("ii\nii\nfi")
-        val atEnd = atMiddle.withText("ii\nii\nii")
-
-        openSession().use { session ->
-            val first = success(session.layout(request(initial)))
-            val beginning = success(
-                session.layout(
-                    request(
-                        atBeginning,
-                        requestedRange = atBeginning.snapshot.incrementalRange(0, 2),
-                        previousState = first.layout.state,
-                        delta = LayoutDelta(text = change(initial, atBeginning, 0, 1, 0, 1)),
-                    ),
-                ),
-            )
-            assertEquivalentToFull(beginning, fullLayout(atBeginning, incrementalTestConstraints()))
-            val middle = success(
-                session.layout(
-                    request(
-                        atMiddle,
-                        requestedRange = atMiddle.snapshot.incrementalRange(3, 5),
-                        previousState = beginning.layout.state,
-                        delta = LayoutDelta(text = change(atBeginning, atMiddle, 3, 4, 3, 4)),
-                    ),
-                ),
-            )
-            assertEquivalentToFull(middle, fullLayout(atMiddle, incrementalTestConstraints()))
-            val end = success(
-                session.layout(
-                    request(
-                        atEnd,
-                        requestedRange = atEnd.snapshot.incrementalRange(6, 8),
-                        previousState = middle.layout.state,
-                        delta = LayoutDelta(text = change(atMiddle, atEnd, 6, 7, 6, 7)),
-                    ),
-                ),
-            )
-            assertEquivalentToFull(end, fullLayout(atEnd, incrementalTestConstraints()))
-
-            assertEquals(listOf(atEnd.snapshot.incrementalRange(6, 8)), end.layout.lines.map(LineLayout::range))
-            assertEquals(atEnd.snapshot.incrementalRange(6, 8), end.layout.coveredRange)
-            assertEquals(
-                LayoutRect(LayoutUnit(100f), LayoutUnit(2_450f), LayoutUnit(1_500f), LayoutUnit(3_650f)),
-                end.layout.lines.single().lineBox,
-            )
-            assertEquals(3, end.layout.lines.single().allCaretCandidates.size)
-        }
+    fun editAtBeginningOfFixedVisibleRangePreservesAuditedGeometry() {
+        assertFixedVisibleEdit(
+            targetText = "ii\nfi\nfi",
+            sourceStart = 0,
+            sourceEnd = 1,
+            targetStart = 0,
+            targetEnd = 1,
+            editedLineIndex = 0,
+            expectedTop = 50f,
+            expectedCaretOrdinals = listOf(0, 1, 2, 3),
+        )
     }
 
     @Test
-    fun insertionReflowsSeveralSoftWrappedLinesAndStillMatchesFullComposition() {
+    fun editAtMiddleOfFixedVisibleRangePreservesAuditedGeometry() {
+        assertFixedVisibleEdit(
+            targetText = "fi\nff\nfi",
+            sourceStart = 4,
+            sourceEnd = 5,
+            targetStart = 4,
+            targetEnd = 5,
+            editedLineIndex = 1,
+            expectedTop = 1_250f,
+            expectedCaretOrdinals = listOf(3, 4, 5, 6),
+        )
+    }
+
+    @Test
+    fun editAtEndOfFixedVisibleRangePreservesAuditedGeometry() {
+        assertFixedVisibleEdit(
+            targetText = "fi\nfi\nff",
+            sourceStart = 7,
+            sourceEnd = 8,
+            targetStart = 7,
+            targetEnd = 8,
+            editedLineIndex = 2,
+            expectedTop = 2_450f,
+            expectedCaretOrdinals = listOf(6, 7, 8),
+        )
+    }
+
+    @Test
+    fun multipleSoftWrappedLinesReflowBeforeAnAuditedStableSuffixRejoins() {
         val fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans"))
-        val initial = incrementalRealFontFixture("one two three", fonts)
-        val target = initial.withText("one twenty two three")
-        val constraints = incrementalTestConstraints(width = 3_000f, height = 8_400f)
+        val initial = incrementalRealFontFixture("one two three four\nstable tail\nsuffix", fonts)
+        val target = initial.withText("one twenty x three\nstable tail\nsuffix")
+        val constraints = incrementalTestConstraints(width = 3_000f, height = 12_000f)
 
         openSession().use { session ->
             val first = success(session.layout(request(initial, constraints = constraints, language = "en")))
@@ -156,7 +149,11 @@ class IncrementalLayoutEditorJourneyTest {
                 listOf(
                     initial.snapshot.incrementalRange(0, 4),
                     initial.snapshot.incrementalRange(4, 8),
-                    initial.snapshot.incrementalRange(8, 13),
+                    initial.snapshot.incrementalRange(8, 14),
+                    initial.snapshot.incrementalRange(14, 19),
+                    initial.snapshot.incrementalRange(19, 26),
+                    initial.snapshot.incrementalRange(26, 31),
+                    initial.snapshot.incrementalRange(31, 37),
                 ),
                 first.layout.lines.map(LineLayout::range),
             )
@@ -165,25 +162,35 @@ class IncrementalLayoutEditorJourneyTest {
                     request(
                         target,
                         constraints = constraints,
+                        requestedRange = target.snapshot.incrementalRange(4, 20),
                         previousState = first.layout.state,
-                        delta = LayoutDelta(text = change(initial, target, 4, 4, 4, 11)),
+                        delta = LayoutDelta(text = change(initial, target, 4, 18, 4, 18)),
                         language = "en",
                     ),
                 ),
             )
             assertEquivalentToFull(edited, fullLayout(target, constraints, language = "en"))
-            assertEquals(target.snapshot.range, edited.layout.coveredRange)
-            assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+            assertEquals(target.snapshot.textIndexAtScalarBoundary(4), edited.diagnostics.reflowStart)
+            assertEquals(false, edited.diagnostics.usedConservativeInvalidation)
             assertEquals(
                 listOf(
-                    target.snapshot.incrementalRange(0, 4),
                     target.snapshot.incrementalRange(4, 11),
-                    target.snapshot.incrementalRange(11, 15),
-                    target.snapshot.incrementalRange(15, 20),
+                    target.snapshot.incrementalRange(11, 13),
+                    target.snapshot.incrementalRange(13, 19),
+                    target.snapshot.incrementalRange(19, 26),
                 ),
                 edited.layout.lines.map(LineLayout::range),
             )
-            assertEquals(LayoutUnit(100f), edited.layout.lines.first().lineBox.left)
+            assertEquals(target.snapshot.incrementalRange(4, 26), edited.layout.coveredRange)
+            assertEquals(target.snapshot.textIndexAtScalarBoundary(26), edited.diagnostics.stabilizedAt)
+            assertEquals(
+                target.snapshot.incrementalRange(26, 37),
+                assertIs<LayoutTailState.Stable>(edited.layout.coverage.tailState).range,
+            )
+            assertEquals(
+                listOf(LayoutUnit(1_250f), LayoutUnit(2_450f), LayoutUnit(3_650f), LayoutUnit(4_850f)),
+                edited.layout.lines.map { it.lineBox.top },
+            )
         }
     }
 
@@ -251,42 +258,86 @@ class IncrementalLayoutEditorJourneyTest {
     }
 
     @Test
-    fun bidiDirectionalContextEditMatchesFullVisualRuns() {
+    fun bidiDirectionalContextEditReusesPriorCheckpointAndMatchesFullVisualRuns() {
         val fonts = listOf(IncrementalFontFixture("liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular"))
-        val initial = incrementalRealFontFixture("abc \u05D0\u05D1\u05D2   \u05E9\u05DC\u05D5\u05DD", fonts)
-        val target = initial.withText("\u05D0abc \u05D0\u05D1\u05D2   \u05E9\u05DC\u05D5\u05DD")
-        val constraints = incrementalTestConstraints(width = 4_500f, height = 3_600f)
+        val initial = incrementalRealFontFixture("abc\nabc \u05D0\u05D1\u05D2", fonts)
+        val target = initial.withText("abc\na\u05D0c \u05D0\u05D1\u05D2")
+        val constraints = incrementalTestConstraints(width = 10_000f, height = 3_600f)
 
         openSession().use { session ->
-            val first = success(session.layout(request(initial, constraints = constraints, language = "he")))
+            val first = success(
+                session.layout(
+                    request(
+                        initial,
+                        constraints = constraints,
+                        baseDirection = BaseDirection.RIGHT_TO_LEFT,
+                        language = "he",
+                    ),
+                ),
+            )
             val edited = success(
                 session.layout(
                     request(
                         target,
                         constraints = constraints,
+                        requestedRange = target.snapshot.incrementalRange(4, 11),
                         previousState = first.layout.state,
-                        delta = LayoutDelta(text = change(initial, target, 0, 0, 0, 1)),
+                        delta = LayoutDelta(text = change(initial, target, 5, 6, 5, 6)),
                         baseDirection = BaseDirection.RIGHT_TO_LEFT,
                         language = "he",
                     ),
                 ),
             )
             assertEquivalentToFull(edited, fullLayout(target, constraints, BaseDirection.RIGHT_TO_LEFT, "he"))
-            assertEquals(target.snapshot.range, edited.layout.coveredRange)
-            assertEquals(listOf(1, 2, 1), edited.layout.lines.first().positionedGlyphRuns.map { it.sourceRun.bidiLevel })
-            assertEquals(listOf(0, 1, 2), edited.layout.lines.first().positionedGlyphRuns.map { it.visualOrder })
+            assertEquals(target.snapshot.textIndexAtScalarBoundary(4), edited.diagnostics.reflowStart)
+            assertEquals(false, edited.diagnostics.usedConservativeInvalidation)
+            assertEquals(target.snapshot.incrementalRange(4, 11), edited.layout.coveredRange)
+            assertEquals(org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT, edited.layout.lines.single().baseDirection)
+            assertEquals(
+                LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+                edited.layout.lines.single().verticalMetrics,
+            )
+            assertEquals(
+                List(7) { "font.fallback-last-resort" },
+                edited.layout.lines.single().diagnostics.map { it.code },
+            )
+            assertTrue(edited.layout.lines.single().diagnostics.all { it.sourceRange == null && it.glyphId == null })
+            assertEquals(
+                listOf(1, 1, 2, 1, 2),
+                edited.layout.lines.single().positionedGlyphRuns.map { it.sourceRun.bidiLevel },
+            )
+            assertEquals(
+                listOf(0, 1, 2, 3, 4),
+                edited.layout.lines.single().positionedGlyphRuns.map { it.visualOrder },
+            )
+            assertEquals(
+                listOf(
+                    target.snapshot.incrementalRange(8, 11),
+                    target.snapshot.incrementalRange(7, 8),
+                    target.snapshot.incrementalRange(6, 7),
+                    target.snapshot.incrementalRange(5, 6),
+                    target.snapshot.incrementalRange(4, 5),
+                ),
+                edited.layout.lines.single().positionedGlyphRuns.map { it.sourceRun.range },
+            )
+            assertEquals(
+                listOf(1282, 1281, 1280, 3, 70, 1280, 68),
+                edited.layout.lines.single().glyphIds(),
+            )
         }
     }
 
     @Test
     fun fallbackPolicyAndTypographyChangeForceDocumentStartReflow() {
         val initial = incrementalRealFontFixture("fi \u0633\u0644\u0627\u0645")
+        val gdefFace = auditedFace("c9f28286059cf869a80340af0edd035cfb83d10da586f67c728234f2d63b90a8")
+        val amiriFace = auditedFace("ab391c4147d054c48976e98322ad0eefe1427aa0e0502a12a4c75d80a70cfcd7")
         val reversedPolicy = FontResolutionPolicySnapshot(
             generation = initial.catalog.generation,
             policyId = "incremental-session-fixture-reversed",
             version = "2",
-            candidates = initial.faces.reversed().map(::FontResolutionCandidate),
-            lastResortFace = initial.faces.first(),
+            candidates = listOf(amiriFace, gdefFace).map(::FontResolutionCandidate),
+            lastResortFace = gdefFace,
         )
         val target = initial.withTypography(
             policy = reversedPolicy,
@@ -298,22 +349,48 @@ class IncrementalLayoutEditorJourneyTest {
             targetVersion = target.typography.version,
             fontResolutionPolicy = FontResolutionPolicyDelta(initial.policy, reversedPolicy),
         )
+        val constraints = incrementalTestConstraints(width = 10_000f)
 
         openSession().use { session ->
-            val first = success(session.layout(request(initial)))
+            val first = success(session.layout(request(initial, constraints = constraints)))
+            assertEquivalentToFull(first, fullLayout(initial, constraints))
+            assertEquals(listOf(initial.snapshot.incrementalRange(0, 7)), first.layout.lines.map(LineLayout::range))
+            assertEquals(
+                listOf(gdefFace, amiriFace, amiriFace),
+                first.layout.lines.single().positionedGlyphRuns.map { it.fontInstanceKey.face },
+            )
+            assertEquals(listOf(3, 1, 85, 3080, 3075, 1919), first.layout.lines.single().glyphIds())
             val edited = success(
                 session.layout(
                     request(
                         target,
+                        constraints = constraints,
                         previousState = first.layout.state,
                         delta = LayoutDelta(typography = typographyDelta),
                     ),
                 ),
             )
-            assertEquivalentToFull(edited, fullLayout(target, incrementalTestConstraints()))
+            assertEquivalentToFull(edited, fullLayout(target, constraints))
             assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
             assertTrue(edited.diagnostics.usedConservativeInvalidation)
             assertEquals(target.snapshot.range, edited.layout.coveredRange)
+            assertEquals(
+                setOf(amiriFace),
+                edited.layout.lines.flatMap { it.positionedGlyphRuns }.map { it.fontInstanceKey.face }.toSet(),
+            )
+            assertEquals(
+                listOf(target.snapshot.incrementalRange(0, 3), target.snapshot.incrementalRange(3, 7)),
+                edited.layout.lines.single().positionedGlyphRuns.map { it.sourceRun.range },
+            )
+            assertEquals(
+                listOf(6261, 6264, 1, 85, 3080, 3075, 1919),
+                edited.layout.lines.single().glyphIds(),
+            )
+            assertEquals(
+                listOf(360f, 315.6f, 350.4f, 542.4f, 535.2f, 294f, 681.6f),
+                edited.layout.lines.single().glyphAdvances(),
+            )
+            assertEquals(listOf(target.snapshot.incrementalRange(0, 7)), edited.layout.lines.map(LineLayout::range))
             assertEquals(
                 setOf(LayoutUnit(1_200f)),
                 edited.layout.lines.flatMap { it.positionedGlyphRuns }.map { it.fontInstanceKey.layoutSize }.toSet(),
@@ -551,6 +628,79 @@ class IncrementalLayoutEditorJourneyTest {
             JvmIncrementalParagraphLayoutSession.open(),
         ).value
 
+    private fun auditedFace(contentDigest: String): FontFaceId = FontFaceId(
+        FontSourceId.Portable(FontContentDigest(contentDigest)),
+        faceIndex = 0,
+    )
+
+    private fun assertFixedVisibleEdit(
+        targetText: String,
+        sourceStart: Int,
+        sourceEnd: Int,
+        targetStart: Int,
+        targetEnd: Int,
+        editedLineIndex: Int,
+        expectedTop: Float,
+        expectedCaretOrdinals: List<Int>,
+    ) {
+        val initial = incrementalRealFontFixture("fi\nfi\nfi")
+        val target = initial.withText(targetText)
+        val constraints = incrementalTestConstraints()
+        val fixedVisibleRange = target.snapshot.incrementalRange(0, 8)
+
+        openSession().use { session ->
+            val previous = success(session.layout(request(initial, constraints = constraints)))
+            val edited = success(
+                session.layout(
+                    request(
+                        target,
+                        constraints = constraints,
+                        requestedRange = fixedVisibleRange,
+                        previousState = previous.layout.state,
+                        delta = LayoutDelta(
+                            text = change(
+                                initial,
+                                target,
+                                sourceStart,
+                                sourceEnd,
+                                targetStart,
+                                targetEnd,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+
+            assertEquivalentToFull(edited, fullLayout(target, constraints))
+            assertEquals(
+                listOf(
+                    target.snapshot.incrementalRange(0, 3),
+                    target.snapshot.incrementalRange(3, 6),
+                    target.snapshot.incrementalRange(6, 8),
+                ),
+                edited.layout.lines.map(LineLayout::range),
+            )
+            assertEquals(fixedVisibleRange, edited.layout.coveredRange)
+            assertEquals(
+                LayoutRect(
+                    LayoutUnit(100f),
+                    LayoutUnit(expectedTop),
+                    LayoutUnit(1_500f),
+                    LayoutUnit(expectedTop + 1_200f),
+                ),
+                edited.layout.lines[editedLineIndex].lineBox,
+            )
+            assertEquals(
+                expectedCaretOrdinals,
+                edited.layout.lines[editedLineIndex].allCaretCandidates.map { candidate ->
+                    expectedCaretOrdinals.single { ordinal ->
+                        candidate.position.index == target.snapshot.textIndexAtScalarBoundary(ordinal)
+                    }
+                },
+            )
+        }
+    }
+
     private fun request(
         fixture: IncrementalRealFontFixture,
         constraints: HorizontalParagraphConstraints = incrementalTestConstraints(),
@@ -635,10 +785,13 @@ class IncrementalLayoutEditorJourneyTest {
 
     private fun lineFingerprint(line: LineLayout): List<Any> = listOf(
         line.range,
+        line.baseDirection,
+        line.verticalMetrics,
         line.baseline,
         line.contentMetrics,
         line.lineBox,
         line.designInkBounds,
+        line.diagnostics,
         line.positionedGlyphRuns.map { run ->
             listOf(
                 run.sourceRun.range,
@@ -653,7 +806,19 @@ class IncrementalLayoutEditorJourneyTest {
                 run.sourceRun.featurePolicy,
                 run.sourceRun.features,
                 run.sourceRun.graphemeClusters,
+                run.sourceRun.clusters.map { cluster ->
+                    listOf(
+                        cluster.token,
+                        cluster.sourceRange,
+                        cluster.scalarRanges,
+                        cluster.admissibleGraphemeBoundaries,
+                    )
+                },
+                run.sourceRun.ligatureCaretFacts.map { fact ->
+                    listOf(fact.glyphIndex, fact.state, fact.logicalSourceBoundaries, fact.positions)
+                },
                 run.visualOrder,
+                run.renderAssetKey,
                 run.glyphs.map { glyph ->
                     listOf(
                         glyph.shapedGlyph.glyphId,
@@ -665,6 +830,8 @@ class IncrementalLayoutEditorJourneyTest {
                         glyph.shapedGlyph.clusterTokens,
                         glyph.advance,
                         glyph.origin,
+                        glyph.renderAssetKey,
+                        glyph.materializationCertificate,
                         glyph.sourceClusters.map { cluster ->
                             listOf(
                                 cluster.sourceRange,
@@ -676,7 +843,18 @@ class IncrementalLayoutEditorJourneyTest {
                 },
             )
         },
-        line.allCaretCandidates.map { candidate -> candidate.position to candidate.geometry },
+        line.allCaretCandidates.map { candidate ->
+            listOf(
+                candidate.position,
+                candidate.geometry,
+                candidate.visualOrder,
+                candidate.visualRunOrder,
+                candidate.bidiLevel,
+                candidate.direction,
+                candidate.strength,
+                candidate.edge,
+            )
+        },
     )
 
     private class CancelAfterChecks(private val allowedChecks: Int) : CancellationToken {
