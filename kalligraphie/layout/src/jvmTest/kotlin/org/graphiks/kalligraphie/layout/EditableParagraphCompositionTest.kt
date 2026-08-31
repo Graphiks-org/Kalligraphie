@@ -461,6 +461,30 @@ class EditableParagraphCompositionTest {
     }
 
     @Test
+    fun extremeFiniteCaretProjectionReturnsTypedOverflow() {
+        val fixture = fixture(" ", width = 1_000f, height = 1_000f)
+        val request = copyRequest(
+            fixture.request,
+            constraints = HorizontalParagraphConstraints(
+                region = LayoutRect(
+                    LayoutUnit(3.3e38f),
+                    LayoutUnit(50f),
+                    LayoutUnit(3.4e38f),
+                    LayoutUnit(1_050f),
+                ),
+                lineMetrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
+            ),
+            fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1.0e38f)),
+        )
+
+        assertIs<ParagraphCompositionResult.Success>(ParagraphComposer.compose(request, EditableLineMaterialization.LayoutOnly))
+        val result = ParagraphComposer.layout(request, EditableLineMaterialization.LayoutOnly)
+
+        val failure = assertIs<ParagraphLayoutResult.Failure>(result)
+        assertIs<ParagraphLayoutError.GeometryOverflow>(failure.error)
+    }
+
+    @Test
     fun continuationPublishesCompleteLinesAndResumesAsTheSameTallComposition() {
         val fixture = fixture("one two three", width = 3_000f, height = 1_000f)
 

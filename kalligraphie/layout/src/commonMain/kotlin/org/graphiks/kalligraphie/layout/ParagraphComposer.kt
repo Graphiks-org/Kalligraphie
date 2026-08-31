@@ -288,15 +288,24 @@ public object ParagraphComposer : ParagraphLayouter {
             ),
             inlineAdvance = composed.inlineAdvance,
         )
-        return ProjectedLine.Success(
-            LineLayout(
-                line = composed.line,
-                baseline = composed.baseline,
-                contentMetrics = contentMetrics,
-                lineBox = composed.lineBox,
-                designInkBounds = inkBounds,
-            ),
-        )
+        return try {
+            ProjectedLine.Success(
+                LineLayout(
+                    line = composed.line,
+                    baseline = composed.baseline,
+                    contentMetrics = contentMetrics,
+                    lineBox = composed.lineBox,
+                    designInkBounds = inkBounds,
+                ),
+            )
+        } catch (invalidGeometry: IllegalArgumentException) {
+            ProjectedLine.Failure(
+                ParagraphLayoutError.GeometryOverflow(
+                    "Final line geometry could not be represented with finite layout coordinates: " +
+                        (invalidGeometry.message ?: "invalid final line geometry."),
+                ),
+            )
+        }
     }
 
     private fun translatedGlyphBounds(origin: LayoutPoint, bounds: LayoutBounds): LayoutBounds = LayoutBounds(
