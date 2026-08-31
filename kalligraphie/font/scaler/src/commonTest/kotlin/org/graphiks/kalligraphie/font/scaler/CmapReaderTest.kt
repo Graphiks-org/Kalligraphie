@@ -206,6 +206,32 @@ class CmapReaderTest {
         assertEquals(5, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x2764, 0xFE0E)).value.glyphId.value)
         assertEquals(0, assertIs<FontOperationResult.Success<GlyphLookupResult>>(lookup.resolveGlyphId(0x2764, 0xFE01)).value.glyphId.value)
     }
+
+    @Test
+    fun rejectsFormat14VariationSelectorsOutsideTheRequiredStrictOrder() {
+        val result = CmapReader.readUnicodeCmap(
+            cmapTable(
+                format4SubtableWithRangeOffset(startCode = 0x2764, endCode = 0x2764, glyphId = 5),
+                format14SubtableWithUnorderedSelectors(),
+            ),
+            numGlyphs = 7,
+        )
+
+        assertIs<FontOperationResult.Failure>(result)
+    }
+
+    @Test
+    fun rejectsFormat14DefaultAndNonDefaultMappingsForTheSameUnicodeValue() {
+        val result = CmapReader.readUnicodeCmap(
+            cmapTable(
+                format4SubtableWithRangeOffset(startCode = 0x2764, endCode = 0x2764, glyphId = 5),
+                format14SubtableWithOverlappingDefaultAndNonDefaultMappings(),
+            ),
+            numGlyphs = 7,
+        )
+
+        assertIs<FontOperationResult.Failure>(result)
+    }
 }
 
 private fun cmapTable(vararg subtables: CmapSubtable): ByteArray {
@@ -374,6 +400,33 @@ private fun format14Subtable(
     bytes.writeUInt32(mappingOffset, 1)
     bytes.writeUInt24(mappingOffset + 4, baseCodePoint)
     bytes.writeUInt16(mappingOffset + 7, glyphId)
+    return CmapSubtable(platformId = 0, encodingId = 5, bytes = bytes)
+}
+
+private fun format14SubtableWithUnorderedSelectors(): CmapSubtable =
+    format14Subtable(variationSelector = 0xFE0F, baseCodePoint = 0x2764, glyphId = 6).also { subtable ->
+        subtable.bytes.writeUInt24(10, 0xFE0F)
+        subtable.bytes.writeUInt24(21, 0xFE0E)
+    }
+
+private fun format14SubtableWithOverlappingDefaultAndNonDefaultMappings(): CmapSubtable {
+    val recordOffset = 10
+    val defaultOffset = recordOffset + 11
+    val nonDefaultOffset = defaultOffset + 4 + 4
+    val length = nonDefaultOffset + 4 + 5
+    val bytes = ByteArray(length)
+    bytes.writeUInt16(0, 14)
+    bytes.writeUInt32(2, length)
+    bytes.writeUInt32(6, 1)
+    bytes.writeUInt24(recordOffset, 0xFE0F)
+    bytes.writeUInt32(recordOffset + 3, defaultOffset)
+    bytes.writeUInt32(recordOffset + 7, nonDefaultOffset)
+    bytes.writeUInt32(defaultOffset, 1)
+    bytes.writeUInt24(defaultOffset + 4, 0x2764)
+    bytes[defaultOffset + 7] = 0
+    bytes.writeUInt32(nonDefaultOffset, 1)
+    bytes.writeUInt24(nonDefaultOffset + 4, 0x2764)
+    bytes.writeUInt16(nonDefaultOffset + 7, 6)
     return CmapSubtable(platformId = 0, encodingId = 5, bytes = bytes)
 }
 

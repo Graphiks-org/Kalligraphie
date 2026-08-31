@@ -400,11 +400,12 @@ internal object CmapReader {
             ?: return failure(FontError.InvalidFontData("Format 14 variation selector records are truncated.", CMAP_LOCATION))
         val selectors = mutableMapOf<Int, VariationSelectorMapping>()
         var offset = FORMAT_14_HEADER_BYTES.toInt()
+        var previousSelector = -1
         repeat(selectorCount.toInt()) {
             val selector = readUInt24(subtable, offset)
                 ?: return failure(FontError.InvalidFontData("Format 14 variation selector is truncated.", CMAP_LOCATION))
-            if (!selector.isVariationSelector() || selector in selectors) {
-                return failure(FontError.InvalidFontData("Format 14 variation selector is invalid or repeated.", CMAP_LOCATION))
+            if (!selector.isVariationSelector() || selector <= previousSelector) {
+                return failure(FontError.InvalidFontData("Format 14 variation selectors are invalid or unsorted.", CMAP_LOCATION))
             }
             val defaultOffset = readUInt32(subtable, offset + 3)?.toLong()
                 ?: return failure(FontError.InvalidFontData("Format 14 default UVS offset is truncated.", CMAP_LOCATION))
@@ -420,10 +421,29 @@ internal object CmapReader {
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
             }
+            if (hasOverlappingVariationMappings(defaults, nonDefaults)) {
+                return failure(FontError.InvalidFontData("Format 14 default and non-default UVS mappings overlap.", CMAP_LOCATION))
+            }
             selectors[selector] = VariationSelectorMapping(defaults, nonDefaults)
+            previousSelector = selector
             offset += FORMAT_14_SELECTOR_RECORD_BYTES.toInt()
         }
         return FontOperationResult.Success(VariationCmapMapping(selectors))
+    }
+
+    private fun hasOverlappingVariationMappings(
+        defaults: List<DefaultVariationRange>,
+        nonDefaults: List<NonDefaultVariationMapping>,
+    ): Boolean {
+        var rangeIndex = 0
+        for (mapping in nonDefaults) {
+            while (rangeIndex < defaults.size && defaults[rangeIndex].end < mapping.codePoint) {
+                rangeIndex += 1
+            }
+            val range = defaults.getOrNull(rangeIndex) ?: return false
+            if (mapping.codePoint >= range.start) return true
+        }
+        return false
     }
 
     private fun decodeDefaultUvs(

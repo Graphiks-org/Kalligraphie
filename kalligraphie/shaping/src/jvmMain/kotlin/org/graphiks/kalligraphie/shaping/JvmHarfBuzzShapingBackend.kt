@@ -12,7 +12,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.io.path.absolutePathString
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -70,7 +69,12 @@ private class HarfBuzzJvmBackend(
     private val nativeLibrary: HarfBuzzNativeLibrary,
 ) : ShapingBackend {
     override val identity: ShapingBackendIdentity = nativeLibrary.identity
-    private val preparedFonts: ConcurrentHashMap<FontInstanceKey, PreparedHarfBuzzFont> = ConcurrentHashMap()
+    private val preparedFonts = BoundedPreparedResourceCache<FontInstanceKey, PreparedHarfBuzzFont>(
+        maximumEntries = PREPARED_FONT_CACHE_MAX_ENTRIES,
+        maximumWeightBytes = PREPARED_FONT_CACHE_MAX_BYTES,
+        weightInBytes = PreparedHarfBuzzFont::retainedByteCount,
+        release = PreparedHarfBuzzFont::close,
+    )
     private val lifecycle = ReentrantReadWriteLock()
     private var closed: Boolean = false
 
@@ -104,13 +108,17 @@ private class HarfBuzzJvmBackend(
             }
 
             return try {
-                val prepared = preparedFonts[request.font.key] ?: prepareFont(request, layoutSize)
-                FontOperationResult.Success(
-                    nativeLibrary.shape(
-                        request = request,
-                        preparedFont = prepared,
-                    ),
-                )
+                val prepared = preparedFonts.acquire(request.font.key) { prepareFont(request, layoutSize) }
+                try {
+                    FontOperationResult.Success(
+                        nativeLibrary.shape(
+                            request = request,
+                            preparedFont = prepared.value,
+                        ),
+                    )
+                } finally {
+                    prepared.close()
+                }
             } catch (failure: PreparedFontFailure) {
                 failure.result
             } catch (cancelled: PreparedFontCancelled) {
@@ -131,17 +139,7 @@ private class HarfBuzzJvmBackend(
         try {
             if (closed) return FontOperationResult.Success(Unit)
             closed = true
-            val prepared = preparedFonts.values.toList()
-            preparedFonts.clear()
-            var releaseFailure: Throwable? = null
-            prepared.forEach { font ->
-                try {
-                    font.close()
-                } catch (error: Throwable) {
-                    if (releaseFailure == null) releaseFailure = error
-                }
-            }
-            return releaseFailure?.let { error ->
+            return preparedFonts.close().firstOrNull()?.let { error ->
                 FontOperationResult.Failure(
                     FontError.FontDataFailure(
                         code = "font.shaping-native-release-failed",
@@ -156,8 +154,6 @@ private class HarfBuzzJvmBackend(
     }
 
     private fun prepareFont(request: ShapingRequest, layoutSize: Float): PreparedHarfBuzzFont {
-        val existing = preparedFonts[request.font.key]
-        if (existing != null) return existing
         val fontData = when (val result = request.font.copyOpenTypeData()) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> throw PreparedFontFailure(result)
@@ -171,13 +167,160 @@ private class HarfBuzzJvmBackend(
                 ),
             )
         }
-        val prepared = nativeLibrary.prepare(fontData.copyBytes(), layoutSize)
-        val raced = preparedFonts.putIfAbsent(request.font.key, prepared)
-        if (raced != null) {
-            prepared.close()
-            return raced
+        return nativeLibrary.prepare(fontData.copyBytes(), layoutSize)
+    }
+}
+
+private const val PREPARED_FONT_CACHE_MAX_ENTRIES: Int = 16
+private const val PREPARED_FONT_CACHE_MAX_BYTES: Long = 64L * 1024L * 1024L
+
+/**
+ * Bounded least-recently-used cache whose resources stay alive only while retained or leased.
+ *
+ * An active lease prevents eviction and release. Once a lease ends, the cache evicts idle
+ * resources until both bounds hold. Closing the cache prevents future acquisition, releases
+ * idle resources immediately, and defers active-resource release until their last lease ends.
+ */
+internal class BoundedPreparedResourceCache<Key : Any, Value : Any>(
+    private val maximumEntries: Int,
+    private val maximumWeightBytes: Long,
+    private val weightInBytes: (Value) -> Long,
+    private val release: (Value) -> Unit,
+) {
+    private val lock = Any()
+    private val entries = LinkedHashMap<Key, Entry<Value>>(16, 0.75f, true)
+    private var cachedWeightBytes: Long = 0L
+    private var closed: Boolean = false
+
+    init {
+        require(maximumEntries > 0) { "The prepared resource cache must retain at least one entry." }
+        require(maximumWeightBytes > 0L) { "The prepared resource cache weight bound must be positive." }
+    }
+
+    /** Acquires a lease for [key], preparing and retaining a resource when it is absent. */
+    fun acquire(key: Key, create: () -> Value): Lease<Value> {
+        synchronized(lock) {
+            entries[key]?.let { entry ->
+                entry.activeLeaseCount += 1
+                return leaseFor(entry)
+            }
+            check(!closed) { "The prepared resource cache is closed." }
         }
-        return prepared
+
+        val created = create()
+        var redundant: Value? = null
+        var evicted: List<Value> = emptyList()
+        var rejected = false
+        val lease = synchronized(lock) {
+            if (closed) {
+                redundant = created
+                rejected = true
+                null
+            } else {
+                entries[key]?.let { entry ->
+                    entry.activeLeaseCount += 1
+                    redundant = created
+                    return@synchronized leaseFor(entry)
+                }
+                val weight = weightInBytes(created)
+                require(weight >= 0L) { "A prepared resource cache weight must not be negative." }
+                val entry = Entry(value = created, weightBytes = weight, activeLeaseCount = 1)
+                entries[key] = entry
+                cachedWeightBytes = saturatedAdd(cachedWeightBytes, weight)
+                evicted = evictIdleEntriesLocked()
+                leaseFor(entry)
+            }
+        }
+        val releaseFailures = releaseAll(listOfNotNull(redundant) + evicted)
+        if (rejected) {
+            val closedError = IllegalStateException("The prepared resource cache closed while a resource was being prepared.")
+            releaseFailures.forEach(closedError::addSuppressed)
+            throw closedError
+        }
+        releaseFailures.firstOrNull()?.let { throw it }
+        return checkNotNull(lease)
+    }
+
+    /** Releases all retained idle resources and defers active-resource release to their leases. */
+    fun close(): List<Throwable> {
+        val idleResources = synchronized(lock) {
+            if (closed) return emptyList()
+            closed = true
+            val values = entries.values.mapNotNull { entry ->
+                entry.retained = false
+                entry.value.takeIf { entry.activeLeaseCount == 0 }
+            }
+            entries.clear()
+            cachedWeightBytes = 0L
+            values
+        }
+        return releaseAll(idleResources)
+    }
+
+    private fun leaseFor(entry: Entry<Value>): Lease<Value> = Lease(entry.value) {
+        releaseLease(entry)
+    }
+
+    private fun releaseLease(entry: Entry<Value>) {
+        val resourcesToRelease = synchronized(lock) {
+            check(entry.activeLeaseCount > 0) { "A prepared resource lease was released more than once." }
+            entry.activeLeaseCount -= 1
+            when {
+                entry.activeLeaseCount == 0 && !entry.retained -> listOf(entry.value)
+                else -> evictIdleEntriesLocked()
+            }
+        }
+        releaseAll(resourcesToRelease).firstOrNull()?.let { throw it }
+    }
+
+    private fun evictIdleEntriesLocked(): List<Value> {
+        val evicted = mutableListOf<Value>()
+        while (entries.size > maximumEntries || cachedWeightBytes > maximumWeightBytes) {
+            val candidate = entries.entries.firstOrNull { (_, entry) -> entry.activeLeaseCount == 0 } ?: break
+            entries.remove(candidate.key)
+            candidate.value.retained = false
+            cachedWeightBytes -= candidate.value.weightBytes
+            evicted += candidate.value.value
+        }
+        return evicted
+    }
+
+    private fun releaseAll(values: List<Value>): List<Throwable> = buildList {
+        values.forEach { value ->
+            try {
+                release(value)
+            } catch (error: Throwable) {
+                add(error)
+            }
+        }
+    }
+
+    private fun saturatedAdd(left: Long, right: Long): Long =
+        if (left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
+
+    private data class Entry<Value>(
+        val value: Value,
+        val weightBytes: Long,
+        var activeLeaseCount: Int,
+        var retained: Boolean = true,
+    )
+
+    /** Handle that protects one prepared resource against release until [close]. */
+    internal class Lease<Value> internal constructor(
+        val value: Value,
+        private val release: () -> Unit,
+    ) : AutoCloseable {
+        private var closed: Boolean = false
+
+        override fun close() {
+            val shouldRelease = synchronized(this) {
+                if (closed) false else {
+                    closed = true
+                    true
+                }
+            }
+            if (shouldRelease) release()
+        }
     }
 }
 
@@ -477,7 +620,15 @@ internal class HarfBuzzNativeLibrary(
             font = requireNativeHandle(address(fontCreate, face), "font")
             callVoid(otFontSetFuncs, font)
             callVoid(fontSetScale, font, designToLayout.unitsPerEm, designToLayout.unitsPerEm)
-            return PreparedHarfBuzzFont(this, arena, blob, face, font, designToLayout)
+            return PreparedHarfBuzzFont(
+                nativeLibrary = this,
+                arena = arena,
+                blob = blob,
+                face = face,
+                font = font,
+                designToLayout = designToLayout,
+                retainedByteCount = fontBytes.size.toLong(),
+            )
         } catch (error: Throwable) {
             if (font != MemorySegment.NULL) callVoid(fontDestroy, font)
             if (face != MemorySegment.NULL) callVoid(faceDestroy, face)
@@ -712,6 +863,7 @@ internal class PreparedHarfBuzzFont(
     internal val face: MemorySegment,
     internal val font: MemorySegment,
     internal val designToLayout: DesignToLayoutScale,
+    internal val retainedByteCount: Long,
 ) {
     fun close() {
         nativeLibrary.release(this)

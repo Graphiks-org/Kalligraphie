@@ -25,6 +25,9 @@ import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.unicode.TextSnapshots
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -51,6 +54,81 @@ class HarfBuzzJvmBackendTest {
 
         val failure = assertIs<FontOperationResult.Failure>(backend.shape(request))
         assertIs<FontError.ResourceClosed>(failure.error)
+    }
+
+    @Test
+    fun preparedFontCacheEvictsTheLeastRecentlyUsedIdleResourceWithinItsBound() {
+        val released = mutableListOf<String>()
+        val cache = BoundedPreparedResourceCache<String, CachedResource>(
+            maximumEntries = 1,
+            maximumWeightBytes = 1,
+            weightInBytes = { resource -> resource.weight },
+            release = { resource -> released += resource.name },
+        )
+
+        cache.acquire("first") { CachedResource("first", weight = 1) }.close()
+        cache.acquire("second") { CachedResource("second", weight = 1) }.close()
+
+        assertEquals(listOf("first"), released)
+        assertEquals(emptyList(), cache.close())
+        assertEquals(listOf("first", "second"), released)
+    }
+
+    @Test
+    fun preparedFontCacheDefersReleaseUntilTheLastActiveLeaseEnds() {
+        val released = mutableListOf<String>()
+        val cache = BoundedPreparedResourceCache<String, CachedResource>(
+            maximumEntries = 1,
+            maximumWeightBytes = 1,
+            weightInBytes = { resource -> resource.weight },
+            release = { resource -> released += resource.name },
+        )
+
+        val first = cache.acquire("first") { CachedResource("first", weight = 1) }
+        cache.acquire("second") { CachedResource("second", weight = 1) }.close()
+
+        assertEquals(listOf("second"), released)
+        assertEquals(emptyList(), cache.close())
+        assertEquals(listOf("second"), released)
+
+        first.close()
+        assertEquals(listOf("second", "first"), released)
+    }
+
+    @Test
+    fun preparedFontCacheDefersAnActiveLeaseReleaseAcrossConcurrentClose() {
+        val released = mutableListOf<String>()
+        val cache = BoundedPreparedResourceCache<String, CachedResource>(
+            maximumEntries = 1,
+            maximumWeightBytes = 1,
+            weightInBytes = { resource -> resource.weight },
+            release = { resource -> synchronized(released) { released += resource.name } },
+        )
+        val acquired = CountDownLatch(1)
+        val releaseLease = CountDownLatch(1)
+        val threadFailure = AtomicReference<Throwable?>(null)
+        val holder = Thread {
+            try {
+                cache.acquire("first") { CachedResource("first", weight = 1) }.use {
+                    acquired.countDown()
+                    check(releaseLease.await(5, TimeUnit.SECONDS)) { "The test did not release the cache lease." }
+                }
+            } catch (error: Throwable) {
+                threadFailure.set(error)
+            }
+        }
+
+        holder.start()
+        assertTrue(acquired.await(5, TimeUnit.SECONDS))
+        cache.acquire("second") { CachedResource("second", weight = 1) }.close()
+        assertEquals(emptyList(), cache.close())
+        assertEquals(listOf("second"), synchronized(released) { released.toList() })
+
+        releaseLease.countDown()
+        holder.join(5_000)
+        assertTrue(!holder.isAlive)
+        assertEquals(null, threadFailure.get())
+        assertEquals(listOf("second", "first"), synchronized(released) { released.toList() })
     }
 
     @Test
@@ -584,6 +662,11 @@ class HarfBuzzJvmBackendTest {
             TextRange(snapshot.textIndexAtScalarBoundary(scalar), snapshot.textIndexAtScalarBoundary(scalar + 1))
         }
     }
+
+    private data class CachedResource(
+        val name: String,
+        val weight: Long,
+    )
 
     private fun org.graphiks.kalligraphie.api.ShapingSafetyFlags.mask(): Int =
         (if (unsafeToBreak) 1 else 0) or (if (unsafeToConcat) 2 else 0)

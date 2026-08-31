@@ -27,6 +27,7 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
@@ -115,31 +116,57 @@ public object JvmEditableLineFacade {
             is FontOperationResult.Failure -> return shapingFailure(opened)
             is FontOperationResult.Cancelled -> return EditableLineResult.Cancelled(opened.diagnostics.toEditableDiagnostics())
         }
-        return try {
-            val shapedRuns = when (val shaped = shapeRuns(request, analysis, backend)) {
-                is ShapingRunsResult.Success -> shaped.runs
-                is ShapingRunsResult.Failure -> return shapingFailure(shaped.result)
-                is ShapingRunsResult.Cancelled -> return EditableLineResult.Cancelled(shaped.result.diagnostics.toEditableDiagnostics())
-            }
-            try {
-                ExactEditableLineLayouter.layout(
-                    EditableLineRequest(
-                        unicodeAnalysis = analysis,
-                        shapedGlyphRuns = shapedRuns,
-                        baseDirection = request.baseDirection.toShapingDirection(),
-                        emptyLineBidiLevel = request.emptyLineBidiLevel,
-                        font = request.font,
-                        verticalMetrics = request.verticalMetrics,
-                        materialization = request.materialization,
-                        cancellationToken = request.cancellationToken,
-                    ),
-                )
-            } catch (error: IllegalArgumentException) {
-                invalidInput(error)
+        return layout(request, analysis, backend)
+    }
+
+    internal fun layout(
+        request: JvmEditableLineFacadeRequest,
+        backend: ShapingBackend,
+    ): EditableLineResult {
+        val analysis = try {
+            JvmUnicodeAnalyzer.create().analyze(
+                snapshot = request.snapshot,
+                request = UnicodeAnalysisRequest(request.baseDirection, request.language),
+            )
+        } catch (error: IllegalArgumentException) {
+            return invalidInput(error)
+        }
+        return layout(request, analysis, backend)
+    }
+
+    private fun layout(
+        request: JvmEditableLineFacadeRequest,
+        analysis: UnicodeAnalysis,
+        backend: ShapingBackend,
+    ): EditableLineResult {
+        var layoutResult: EditableLineResult? = null
+        var closeResult: FontOperationResult<Unit>? = null
+        try {
+            layoutResult = when (val shaped = shapeRuns(request, analysis, backend)) {
+                is ShapingRunsResult.Success -> try {
+                    ExactEditableLineLayouter.layout(
+                        EditableLineRequest(
+                            unicodeAnalysis = analysis,
+                            shapedGlyphRuns = shaped.runs,
+                            baseDirection = request.baseDirection.toShapingDirection(),
+                            emptyLineBidiLevel = request.emptyLineBidiLevel,
+                            font = request.font,
+                            verticalMetrics = request.verticalMetrics,
+                            materialization = request.materialization,
+                            cancellationToken = request.cancellationToken,
+                        ),
+                    )
+                } catch (error: IllegalArgumentException) {
+                    invalidInput(error)
+                }
+
+                is ShapingRunsResult.Failure -> shapingFailure(shaped.result)
+                is ShapingRunsResult.Cancelled -> EditableLineResult.Cancelled(shaped.result.diagnostics.toEditableDiagnostics())
             }
         } finally {
-            backend.close()
+            closeResult = backend.close()
         }
+        return includeBackendCloseResult(checkNotNull(layoutResult), checkNotNull(closeResult))
     }
 
     private fun shapeRuns(
@@ -220,6 +247,48 @@ public object JvmEditableLineFacade {
             error = EditableLineError.ShapingFailure(result.error),
             diagnostics = result.diagnostics.toEditableDiagnostics(),
         )
+
+    private fun includeBackendCloseResult(
+        result: EditableLineResult,
+        closeResult: FontOperationResult<Unit>,
+    ): EditableLineResult = when (closeResult) {
+        is FontOperationResult.Success -> result
+        is FontOperationResult.Failure -> {
+            val closeDiagnostics = closeResult.diagnostics
+                .ifEmpty { listOf(closeResult.error.toDiagnostic()) }
+                .toEditableDiagnostics()
+            when (result) {
+                is EditableLineResult.Success -> EditableLineResult.Failure(
+                    error = EditableLineError.ShapingFailure(closeResult.error),
+                    diagnostics = closeDiagnostics,
+                )
+
+                is EditableLineResult.Failure -> EditableLineResult.Failure(
+                    error = result.error,
+                    diagnostics = result.diagnostics + closeDiagnostics,
+                )
+
+                is EditableLineResult.Cancelled -> EditableLineResult.Cancelled(
+                    diagnostics = result.diagnostics + closeDiagnostics,
+                )
+            }
+        }
+
+        is FontOperationResult.Cancelled -> {
+            val closeDiagnostics = closeResult.diagnostics.toEditableDiagnostics()
+            when (result) {
+                is EditableLineResult.Success -> EditableLineResult.Cancelled(closeDiagnostics)
+                is EditableLineResult.Failure -> EditableLineResult.Failure(
+                    error = result.error,
+                    diagnostics = result.diagnostics + closeDiagnostics,
+                )
+
+                is EditableLineResult.Cancelled -> EditableLineResult.Cancelled(
+                    diagnostics = result.diagnostics + closeDiagnostics,
+                )
+            }
+        }
+    }
 }
 
 private sealed interface ShapingRunsResult {

@@ -4,6 +4,7 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
@@ -11,6 +12,7 @@ import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -21,6 +23,9 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -135,6 +140,39 @@ class JvmEditableLineFacadeTest {
         }
     }
 
+    @Test
+    fun doesNotPublishASuccessfulLineWhenClosingTheShapingBackendFails() {
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf(0x41))),
+        ).snapshot
+        val fixture = renderableFixture()
+        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(JvmHarfBuzzShapingBackend.open()).value
+        try {
+            val result = JvmEditableLineFacade.layout(
+                JvmEditableLineFacadeRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    features = emptyList(),
+                    verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                ),
+                CloseFailingBackend(backend),
+            )
+
+            val failure = assertIs<EditableLineResult.Failure>(result)
+            val shapingFailure = assertIs<EditableLineError.ShapingFailure>(failure.error)
+            assertEquals("font.test-close-failure", shapingFailure.fontError.code)
+            assertEquals("font.test-close-failure", failure.diagnostics.single().code)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(backend.close())
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
     private fun renderableFixture(): RenderableFixture {
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
             Kalligraphie.embedded(
@@ -162,6 +200,22 @@ class JvmEditableLineFacadeTest {
         val font: FontInstance,
         val resolver: FontAssetResolverHandle,
     )
+
+    private class CloseFailingBackend(
+        private val delegate: ShapingBackend,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> = delegate.shape(request)
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Failure(
+            FontError.FontDataFailure(
+                code = "font.test-close-failure",
+                message = "The test backend could not close.",
+                location = org.graphiks.kalligraphie.api.FontDiagnosticLocation.Source,
+            ),
+        )
+    }
 
     private companion object {
         val OUTLINE_PROFILE: OutlineProfile = OutlineProfile(

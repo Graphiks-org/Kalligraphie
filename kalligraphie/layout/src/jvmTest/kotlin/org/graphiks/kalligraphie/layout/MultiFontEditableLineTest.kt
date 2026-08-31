@@ -20,6 +20,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.TextVersion
@@ -29,6 +30,7 @@ import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -36,6 +38,15 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class MultiFontEditableLineTest {
+    private val backends = mutableListOf<ShapingBackend>()
+
+    @AfterTest
+    fun closeOpenedBackends() {
+        backends.asReversed().forEach { backend ->
+            assertIs<FontOperationResult.Success<Unit>>(backend.close())
+        }
+    }
+
     @Test
     fun renderableMultiscriptLineSelectsLatinAndArabicFacesWithCertifiedFinalGlyphs() {
         val latin = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
@@ -74,7 +85,7 @@ class MultiFontEditableLineTest {
                     fontCatalog = catalog,
                     resolutionPolicy = policy,
                     fontInstanceDescriptor = FontInstanceDescriptor(layoutSize = LayoutUnit(1000f)),
-                    shapingBackend = JvmHarfBuzzShapingBackend.open().successValue(),
+                    shapingBackend = backend(),
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
                     materialization = EditableLineMaterialization.Renderable(
@@ -183,7 +194,7 @@ class MultiFontEditableLineTest {
         )
         val text = text("fi")
         val analysis = analyze(text, "en")
-        val backend = JvmHarfBuzzShapingBackend.open().successValue()
+        val backend = backend()
         val profile = outlineProfile(maxContours = 1)
 
         val layoutOnly = ExactEditableLineLayouter.layout(
@@ -255,7 +266,7 @@ class MultiFontEditableLineTest {
         )
         val text = text("سلام")
         val analysis = analyze(text, "ar")
-        val backend = JvmHarfBuzzShapingBackend.open().successValue()
+        val backend = backend()
         val resolver = catalog.openAssetResolver().successValue()
         try {
             val results = List(6) {
@@ -310,7 +321,7 @@ class MultiFontEditableLineTest {
         )
         val text = text("سلام")
         val result = ExactEditableLineLayouter.layout(
-            request(text, analyze(text, "ar"), catalog, policy, JvmHarfBuzzShapingBackend.open().successValue(), EditableLineMaterialization.LayoutOnly),
+            request(text, analyze(text, "ar"), catalog, policy, backend(), EditableLineMaterialization.LayoutOnly),
         )
 
         val failure = assertIs<EditableLineResult.Failure>(result)
@@ -341,7 +352,7 @@ class MultiFontEditableLineTest {
             candidates = listOf(FontResolutionCandidate(selectiveFace), FontResolutionCandidate(completeFace)),
             lastResortFace = completeFace,
         )
-        val backend = JvmHarfBuzzShapingBackend.open().successValue()
+        val backend = backend()
 
         listOf(
             "f\u0301" to completeFace,
@@ -383,7 +394,7 @@ class MultiFontEditableLineTest {
 
         val line = assertIs<EditableLineResult.Success>(
             ExactEditableLineLayouter.layout(
-                request(source, analyze(source, "und"), catalog, policy, JvmHarfBuzzShapingBackend.open().successValue(), EditableLineMaterialization.LayoutOnly),
+                request(source, analyze(source, "und"), catalog, policy, backend(), EditableLineMaterialization.LayoutOnly),
             ),
         ).line
 
@@ -416,7 +427,7 @@ class MultiFontEditableLineTest {
 
         val line = assertIs<EditableLineResult.Success>(
             ExactEditableLineLayouter.layout(
-                request(source, analyze(source, "en"), catalog, policy, JvmHarfBuzzShapingBackend.open().successValue(), EditableLineMaterialization.LayoutOnly),
+                request(source, analyze(source, "en"), catalog, policy, backend(), EditableLineMaterialization.LayoutOnly),
             ),
         ).line
 
@@ -452,7 +463,7 @@ class MultiFontEditableLineTest {
                     analyze(source, "und", BaseDirection.RIGHT_TO_LEFT),
                     catalog,
                     policy,
-                    JvmHarfBuzzShapingBackend.open().successValue(),
+                    backend(),
                     EditableLineMaterialization.LayoutOnly,
                     BaseDirection.RIGHT_TO_LEFT,
                 ),
@@ -481,6 +492,8 @@ class MultiFontEditableLineTest {
 
     private fun <T> FontOperationResult<T>.successValue(): T =
         assertIs<FontOperationResult.Success<T>>(this).value
+
+    private fun backend(): ShapingBackend = JvmHarfBuzzShapingBackend.open().successValue().also(backends::add)
 
     private fun text(value: String) = TextSnapshots.decodeUtf16(
         version = TextVersion.create(),
