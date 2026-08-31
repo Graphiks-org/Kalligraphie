@@ -6,7 +6,6 @@ import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
-import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontGeometryParameters
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -183,7 +182,9 @@ class GlyphMetricsContractTest {
                     sourceBytes = bytes,
                     provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
                 ),
-            ).value.resolveFace(FontFaceRequest(faceIndex = 0), FontAccessRequirementsSnapshot.layoutOnly()),
+            ).value.let { catalog ->
+                catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly())
+            },
         ).value
 
     private fun fixtureBytes(): ByteArray =

@@ -12,10 +12,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.io.path.absolutePathString
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontInstanceKey
 import org.graphiks.kalligraphie.api.GdefLigatureCaretFact
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.GlyphId
@@ -67,57 +69,275 @@ private class HarfBuzzJvmBackend(
     private val nativeLibrary: HarfBuzzNativeLibrary,
 ) : ShapingBackend {
     override val identity: ShapingBackendIdentity = nativeLibrary.identity
+    private val preparedFonts = BoundedPreparedResourceCache<FontInstanceKey, PreparedHarfBuzzFont>(
+        maximumEntries = PREPARED_FONT_CACHE_MAX_ENTRIES,
+        maximumWeightBytes = PREPARED_FONT_CACHE_MAX_BYTES,
+        weightInBytes = PreparedHarfBuzzFont::retainedByteCount,
+        release = PreparedHarfBuzzFont::close,
+    )
+    private val lifecycle = ReentrantReadWriteLock()
+    private var closed: Boolean = false
 
     override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
-        if (request.featurePolicy != identity.featurePolicy) {
-            return shapingFailure(
-                code = "font.shaping-feature-policy-unsupported",
-                message = "The requested OpenType feature policy is not implemented by this pinned HarfBuzz backend.",
-            )
-        }
-        if (request.features.any { feature -> feature.tag in NON_DETERMINISTIC_FEATURES }) {
-            return shapingFailure(
-                code = "font.shaping-feature-not-deterministic",
-                message = "The requested OpenType feature is non-deterministic and cannot be shaped reproducibly.",
-            )
-        }
+        lifecycle.readLock().lock()
+        try {
+            if (closed) {
+                return FontOperationResult.Failure(
+                    FontError.ResourceClosed("The pinned HarfBuzz backend is closed."),
+                )
+            }
+            if (request.featurePolicy != identity.featurePolicy) {
+                return shapingFailure(
+                    code = "font.shaping-feature-policy-unsupported",
+                    message = "The requested OpenType feature policy is not implemented by this pinned HarfBuzz backend.",
+                )
+            }
+            if (request.features.any { feature -> feature.tag in NON_DETERMINISTIC_FEATURES }) {
+                return shapingFailure(
+                    code = "font.shaping-feature-not-deterministic",
+                    message = "The requested OpenType feature is non-deterministic and cannot be shaped reproducibly.",
+                )
+            }
 
+            val layoutSize = request.font.key.layoutSize.value
+            if (!layoutSize.isFinite() || layoutSize <= 0f) {
+                return shapingFailure(
+                    code = "font.shaping-scale-invalid",
+                    message = "The font instance layout size must be finite and positive.",
+                )
+            }
+
+            return try {
+                val prepared = preparedFonts.acquire(request.font.key) { prepareFont(request, layoutSize) }
+                try {
+                    FontOperationResult.Success(
+                        nativeLibrary.shape(
+                            request = request,
+                            preparedFont = prepared.value,
+                        ),
+                    )
+                } finally {
+                    prepared.close()
+                }
+            } catch (failure: PreparedFontFailure) {
+                failure.result
+            } catch (cancelled: PreparedFontCancelled) {
+                cancelled.result
+            } catch (error: Throwable) {
+                shapingFailure(
+                    code = "font.shaping-native-failure",
+                    message = "The pinned HarfBuzz backend failed while shaping: ${error.message ?: error::class.simpleName}.",
+                )
+            }
+        } finally {
+            lifecycle.readLock().unlock()
+        }
+    }
+
+    override fun close(): FontOperationResult<Unit> {
+        lifecycle.writeLock().lock()
+        try {
+            if (closed) return FontOperationResult.Success(Unit)
+            closed = true
+            return preparedFonts.close().firstOrNull()?.let { error ->
+                FontOperationResult.Failure(
+                    FontError.FontDataFailure(
+                        code = "font.shaping-native-release-failed",
+                        message = "The pinned HarfBuzz backend could not release its native resources: ${error.message ?: error::class.simpleName}.",
+                        location = FontDiagnosticLocation.Source,
+                    ),
+                )
+            } ?: FontOperationResult.Success(Unit)
+        } finally {
+            lifecycle.writeLock().unlock()
+        }
+    }
+
+    private fun prepareFont(request: ShapingRequest, layoutSize: Float): PreparedHarfBuzzFont {
         val fontData = when (val result = request.font.copyOpenTypeData()) {
             is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return result
-            is FontOperationResult.Cancelled -> return result
+            is FontOperationResult.Failure -> throw PreparedFontFailure(result)
+            is FontOperationResult.Cancelled -> throw PreparedFontCancelled(result)
         }
         if (fontData.face != request.font.key.face) {
-            return shapingFailure(
-                code = "font.shaping-font-data-mismatch",
-                message = "The OpenType bytes do not identify the requested font instance face.",
-            )
-        }
-
-        val layoutSize = request.font.key.layoutSize.value
-        if (!layoutSize.isFinite() || layoutSize <= 0f) {
-            return shapingFailure(
-                code = "font.shaping-scale-invalid",
-                message = "The font instance layout size must be finite and positive.",
-            )
-        }
-
-        return try {
-            FontOperationResult.Success(
-                nativeLibrary.shape(
-                    request = request,
-                    fontBytes = fontData.copyBytes(),
-                    layoutSize = layoutSize,
+            throw PreparedFontFailure(
+                shapingFailure(
+                    code = "font.shaping-font-data-mismatch",
+                    message = "The OpenType bytes do not identify the requested font instance face.",
                 ),
             )
-        } catch (error: Throwable) {
-            shapingFailure(
-                code = "font.shaping-native-failure",
-                message = "The pinned HarfBuzz backend failed while shaping: ${error.message ?: error::class.simpleName}.",
-            )
+        }
+        return nativeLibrary.prepare(fontData.copyBytes(), layoutSize)
+    }
+}
+
+private const val PREPARED_FONT_CACHE_MAX_ENTRIES: Int = 16
+private const val PREPARED_FONT_CACHE_MAX_BYTES: Long = 64L * 1024L * 1024L
+
+/**
+ * Bounded least-recently-used cache whose resources stay alive only while retained or leased.
+ *
+ * An active lease prevents eviction and release. Once a lease ends, the cache evicts idle
+ * resources until both bounds hold. Closing the cache prevents future acquisition, releases
+ * idle resources immediately, and defers active-resource release until their last lease ends.
+ */
+internal class BoundedPreparedResourceCache<Key : Any, Value : Any>(
+    private val maximumEntries: Int,
+    private val maximumWeightBytes: Long,
+    private val weightInBytes: (Value) -> Long,
+    private val release: (Value) -> Unit,
+) {
+    private val lock = Any()
+    private val entries = LinkedHashMap<Key, Entry<Value>>(16, 0.75f, true)
+    private var cachedWeightBytes: Long = 0L
+    private var closed: Boolean = false
+
+    init {
+        require(maximumEntries > 0) { "The prepared resource cache must retain at least one entry." }
+        require(maximumWeightBytes > 0L) { "The prepared resource cache weight bound must be positive." }
+    }
+
+    /** Acquires a lease for [key], preparing and retaining a resource when it is absent. */
+    fun acquire(key: Key, create: () -> Value): Lease<Value> {
+        synchronized(lock) {
+            entries[key]?.let { entry ->
+                entry.activeLeaseCount += 1
+                return leaseFor(entry)
+            }
+            check(!closed) { "The prepared resource cache is closed." }
+        }
+
+        val created = create()
+        var redundant: Value? = null
+        var evicted: List<Value> = emptyList()
+        var rejected = false
+        val lease = synchronized(lock) {
+            if (closed) {
+                redundant = created
+                rejected = true
+                null
+            } else {
+                entries[key]?.let { entry ->
+                    entry.activeLeaseCount += 1
+                    redundant = created
+                    return@synchronized leaseFor(entry)
+                }
+                val weight = weightInBytes(created)
+                require(weight >= 0L) { "A prepared resource cache weight must not be negative." }
+                val entry = Entry(value = created, weightBytes = weight, activeLeaseCount = 1)
+                entries[key] = entry
+                cachedWeightBytes = saturatedAdd(cachedWeightBytes, weight)
+                evicted = evictIdleEntriesLocked()
+                leaseFor(entry)
+            }
+        }
+        val releaseFailures = releaseAll(listOfNotNull(redundant) + evicted)
+        if (rejected) {
+            val closedError = IllegalStateException("The prepared resource cache closed while a resource was being prepared.")
+            releaseFailures.forEach(closedError::addSuppressed)
+            throw closedError
+        }
+        releaseFailures.firstOrNull()?.let { releaseFailure ->
+            try {
+                checkNotNull(lease).close()
+            } catch (cleanupFailure: Throwable) {
+                releaseFailure.addSuppressed(cleanupFailure)
+            }
+            throw releaseFailure
+        }
+        return checkNotNull(lease)
+    }
+
+    /** Releases all retained idle resources and defers active-resource release to their leases. */
+    fun close(): List<Throwable> {
+        val idleResources = synchronized(lock) {
+            if (closed) return emptyList()
+            closed = true
+            val values = entries.values.mapNotNull { entry ->
+                entry.retained = false
+                entry.value.takeIf { entry.activeLeaseCount == 0 }
+            }
+            entries.clear()
+            cachedWeightBytes = 0L
+            values
+        }
+        return releaseAll(idleResources)
+    }
+
+    private fun leaseFor(entry: Entry<Value>): Lease<Value> = Lease(entry.value) {
+        releaseLease(entry)
+    }
+
+    private fun releaseLease(entry: Entry<Value>) {
+        val resourcesToRelease = synchronized(lock) {
+            check(entry.activeLeaseCount > 0) { "A prepared resource lease was released more than once." }
+            entry.activeLeaseCount -= 1
+            when {
+                entry.activeLeaseCount == 0 && !entry.retained -> listOf(entry.value)
+                else -> evictIdleEntriesLocked()
+            }
+        }
+        releaseAll(resourcesToRelease).firstOrNull()?.let { throw it }
+    }
+
+    private fun evictIdleEntriesLocked(): List<Value> {
+        val evicted = mutableListOf<Value>()
+        while (entries.size > maximumEntries || cachedWeightBytes > maximumWeightBytes) {
+            val candidate = entries.entries.firstOrNull { (_, entry) -> entry.activeLeaseCount == 0 } ?: break
+            entries.remove(candidate.key)
+            candidate.value.retained = false
+            cachedWeightBytes -= candidate.value.weightBytes
+            evicted += candidate.value.value
+        }
+        return evicted
+    }
+
+    private fun releaseAll(values: List<Value>): List<Throwable> = buildList {
+        values.forEach { value ->
+            try {
+                release(value)
+            } catch (error: Throwable) {
+                add(error)
+            }
+        }
+    }
+
+    private fun saturatedAdd(left: Long, right: Long): Long =
+        if (left > Long.MAX_VALUE - right) Long.MAX_VALUE else left + right
+
+    private data class Entry<Value>(
+        val value: Value,
+        val weightBytes: Long,
+        var activeLeaseCount: Int,
+        var retained: Boolean = true,
+    )
+
+    /** Handle that protects one prepared resource against release until [close]. */
+    internal class Lease<Value> internal constructor(
+        val value: Value,
+        private val release: () -> Unit,
+    ) : AutoCloseable {
+        private var closed: Boolean = false
+
+        override fun close() {
+            val shouldRelease = synchronized(this) {
+                if (closed) false else {
+                    closed = true
+                    true
+                }
+            }
+            if (shouldRelease) release()
         }
     }
 }
+
+private class PreparedFontFailure(
+    val result: FontOperationResult.Failure,
+) : RuntimeException()
+
+private class PreparedFontCancelled(
+    val result: FontOperationResult.Cancelled,
+) : RuntimeException()
 
 internal data class HarfBuzzPlatform(
     val osName: String,
@@ -393,41 +613,53 @@ internal class HarfBuzzNativeLibrary(
 
     fun versionString(): String = address(versionString).reinterpret(MAX_VERSION_BYTES).getString(0)
 
-    fun shape(request: ShapingRequest, fontBytes: ByteArray, layoutSize: Float): ShapedGlyphRun = Arena.ofConfined().use { arena ->
-        val copiedFont = arena.allocate(fontBytes.size.toLong(), 1)
-        copiedFont.copyFrom(MemorySegment.ofArray(fontBytes))
-        val blob = requireNativeHandle(address(blobCreate, copiedFont, fontBytes.size, HB_MEMORY_MODE_READONLY, MemorySegment.NULL, MemorySegment.NULL), "blob")
+    fun prepare(fontBytes: ByteArray, layoutSize: Float): PreparedHarfBuzzFont {
+        val arena = Arena.ofShared()
+        var blob: MemorySegment = MemorySegment.NULL
+        var face: MemorySegment = MemorySegment.NULL
+        var font: MemorySegment = MemorySegment.NULL
         try {
-            val face = requireNativeHandle(address(faceCreate, blob, 0), "face")
-            try {
-                val designToLayout = DesignToLayoutScale.create(layoutSize, int(faceGetUpem, face))
-                val font = requireNativeHandle(address(fontCreate, face), "font")
-                try {
-                    callVoid(otFontSetFuncs, font)
-                    callVoid(fontSetScale, font, designToLayout.unitsPerEm, designToLayout.unitsPerEm)
-                    val buffer = requireNativeHandle(address(bufferCreate), "buffer")
-                    try {
-                        configureBuffer(arena, buffer, request)
-                        val scalarRanges = request.snapshot.scalarRanges(request.range)
-                        request.snapshot.scalarValues(request.range).forEachIndexed { tokenValue, scalar ->
-                            callVoid(bufferAdd, buffer, scalar, tokenValue)
-                        }
-                        val features = featureArray(arena, request.features)
-                        check(shapeWithExplicitOpenTypeShaper(arena, font, buffer, features, request.features.size)) {
-                            "HarfBuzz did not accept the explicit OpenType shaper configuration."
-                        }
-                        shapedRun(arena, request, font, buffer, scalarRanges, designToLayout)
-                    } finally {
-                        callVoid(bufferDestroy, buffer)
-                    }
-                } finally {
-                    callVoid(fontDestroy, font)
-                }
-            } finally {
-                callVoid(faceDestroy, face)
+            val copiedFont = arena.allocate(fontBytes.size.toLong(), 1)
+            copiedFont.copyFrom(MemorySegment.ofArray(fontBytes))
+            blob = requireNativeHandle(address(blobCreate, copiedFont, fontBytes.size, HB_MEMORY_MODE_READONLY, MemorySegment.NULL, MemorySegment.NULL), "blob")
+            face = requireNativeHandle(address(faceCreate, blob, 0), "face")
+            val designToLayout = DesignToLayoutScale.create(layoutSize, int(faceGetUpem, face))
+            font = requireNativeHandle(address(fontCreate, face), "font")
+            callVoid(otFontSetFuncs, font)
+            callVoid(fontSetScale, font, designToLayout.unitsPerEm, designToLayout.unitsPerEm)
+            return PreparedHarfBuzzFont(
+                nativeLibrary = this,
+                arena = arena,
+                blob = blob,
+                face = face,
+                font = font,
+                designToLayout = designToLayout,
+                retainedByteCount = fontBytes.size.toLong(),
+            )
+        } catch (error: Throwable) {
+            if (font != MemorySegment.NULL) callVoid(fontDestroy, font)
+            if (face != MemorySegment.NULL) callVoid(faceDestroy, face)
+            if (blob != MemorySegment.NULL) callVoid(blobDestroy, blob)
+            arena.close()
+            throw error
+        }
+    }
+
+    fun shape(request: ShapingRequest, preparedFont: PreparedHarfBuzzFont): ShapedGlyphRun = Arena.ofConfined().use { arena ->
+        val buffer = requireNativeHandle(address(bufferCreate), "buffer")
+        try {
+            configureBuffer(arena, buffer, request)
+            val scalarRanges = request.snapshot.scalarRanges(request.range)
+            request.snapshot.scalarValues(request.range).forEachIndexed { tokenValue, scalar ->
+                callVoid(bufferAdd, buffer, scalar, tokenValue)
             }
+            val features = featureArray(arena, request.features)
+            check(shapeWithExplicitOpenTypeShaper(arena, preparedFont.font, buffer, features, request.features.size)) {
+                "HarfBuzz did not accept the explicit OpenType shaper configuration."
+            }
+            shapedRun(arena, request, preparedFont.font, buffer, scalarRanges, preparedFont.designToLayout)
         } finally {
-            callVoid(blobDestroy, blob)
+            callVoid(bufferDestroy, buffer)
         }
     }
 
@@ -622,6 +854,27 @@ internal class HarfBuzzNativeLibrary(
 
     private fun handle(lookup: SymbolLookup, name: String, descriptor: FunctionDescriptor): MethodHandle =
         linker.downcallHandle(lookup.findOrThrow(name), descriptor)
+
+    fun release(preparedFont: PreparedHarfBuzzFont) {
+        callVoid(fontDestroy, preparedFont.font)
+        callVoid(faceDestroy, preparedFont.face)
+        callVoid(blobDestroy, preparedFont.blob)
+        preparedFont.arena.close()
+    }
+}
+
+internal class PreparedHarfBuzzFont(
+    private val nativeLibrary: HarfBuzzNativeLibrary,
+    internal val arena: Arena,
+    internal val blob: MemorySegment,
+    internal val face: MemorySegment,
+    internal val font: MemorySegment,
+    internal val designToLayout: DesignToLayoutScale,
+    internal val retainedByteCount: Long,
+) {
+    fun close() {
+        nativeLibrary.release(this)
+    }
 }
 
 private data class NativeGlyphRecord(
@@ -712,7 +965,7 @@ private fun advancesMatch(shapedAdvance: Int, unshapedAdvance: Int): Boolean =
 private fun absoluteMagnitude(value: Int): Long =
     value.toLong().let { if (it < 0L) -it else it }
 
-private class DesignToLayoutScale private constructor(
+internal class DesignToLayoutScale private constructor(
     private val layoutSize: Double,
     val unitsPerEm: Int,
 ) {

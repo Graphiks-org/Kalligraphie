@@ -2,14 +2,20 @@ package org.graphiks.kalligraphie.font.core
 
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
-import org.graphiks.kalligraphie.api.FontFaceRequest
+import org.graphiks.kalligraphie.api.FontFaceCapabilities
+import org.graphiks.kalligraphie.api.FontFaceId
+import org.graphiks.kalligraphie.api.FontFaceRecord
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontRenderAssetHandle
+import org.graphiks.kalligraphie.api.FontRenderAssetKey
+import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.sortedDiagnostics
@@ -20,7 +26,7 @@ import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
 /**
- * Catalog implementation for an immutable embedded TrueType source.
+ * Catalog implementation for immutable embedded TrueType sources.
  *
  * The catalog keeps the parsed snapshot and an explicit shared resource
  * owner. Faces and instances are immutable views of that owner; they do not
@@ -28,41 +34,80 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * handles acquire independent leases, and a detached asset never stores a
  * reference to this catalog.
  *
- * @param source captured source bytes and provenance used to build the catalog.
- * @param parsedFont validated metadata describing [source].
+ * @param generation stable identifier for this immutable catalog generation.
+ * @param entries captured source bytes, provenance, and parsed metadata for every face.
  */
 public class EmbeddedFontCatalog(
-    source: FontSource,
-    parsedFont: ParsedTrueTypeFont,
+    override val generation: FontCatalogGeneration,
+    entries: List<EmbeddedFontCatalogEntry>,
 ) : FontCatalogSnapshot {
-    private val resource = PreparedFontResource(PreparedTrueTypeFont(source, parsedFont))
-    private val catalogSourceId: FontSourceId = source.id
+    private val resources: Map<FontFaceId, PreparedFontResource>
+    private val parsedFonts: Map<FontFaceId, ParsedTrueTypeFont>
+    private val resolvedFaces: Map<FontFaceId, TrueTypeFace>
 
-    private val face: TrueTypeFace by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        TrueTypeFace(
-            sourceId = catalogSourceId,
-            parsedFont = parsedFont,
-            resource = resource,
-        )
+    /** Stable records for every captured embedded face, in supplied order. */
+    override val faces: List<FontFaceRecord>
+
+    init {
+        require(entries.isNotEmpty()) { "An embedded font catalog must contain at least one face." }
+        val capturedEntries = entries.toList()
+        val ids = capturedEntries.map { entry ->
+            require(entry.source.id !is FontSourceId.Opaque) {
+                "The embedded OpenType provider requires a portable source identity."
+            }
+            FontFaceId(entry.source.id, 0)
+        }
+        require(ids.distinct().size == ids.size) {
+            "An embedded font catalog must not contain the same source twice."
+        }
+        resources = ids.zip(capturedEntries).associate { (id, entry) ->
+            id to PreparedFontResource(PreparedTrueTypeFont(entry.source, entry.parsedFont))
+        }
+        parsedFonts = ids.zip(capturedEntries).associate { (id, entry) -> id to entry.parsedFont }
+        resolvedFaces = ids.associateWith { id ->
+            TrueTypeFace(
+                faceId = id,
+                generation = generation,
+                parsedFont = parsedFonts.getValue(id),
+                resource = resources.getValue(id),
+            )
+        }
+        faces = ids.map { id ->
+            FontFaceRecord(
+                id = id,
+                metadata = parsedFonts.getValue(id).metadata,
+                capabilities = FontFaceCapabilities(
+                    characterMapping = true,
+                    shaping = true,
+                    outline = true,
+                ),
+            )
+        }
     }
 
-    /** Identifier of the embedded source. */
-    override val sourceId: FontSourceId = catalogSourceId
+    /** Creates a one-face embedded catalogue with a deterministic content-derived generation. */
+    public constructor(
+        source: FontSource,
+        parsedFont: ParsedTrueTypeFont,
+    ) : this(
+        generation = FontCatalogGeneration("embedded-${(source.id as FontSourceId.Portable).contentDigest.value}"),
+        entries = listOf(EmbeddedFontCatalogEntry(source, parsedFont)),
+    )
 
     /** Opens a resolver backed by the embedded source. */
     override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> =
-        FontOperationResult.Success(EmbeddedFontAssetResolver(catalogSourceId, resource))
+        FontOperationResult.Success(EmbeddedFontAssetResolver(generation, resources))
 
-    /** Resolves face zero when the requested access profile is supported. */
+    /** Resolves a face when the requested access profile is supported. */
     override fun resolveFace(
-        request: FontFaceRequest,
+        faceId: FontFaceId,
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontFace> {
-        if (request.faceIndex != 0) {
+        if (faceId !in faces.map(FontFaceRecord::id)) {
             return failure(
                 FontError.InvalidFontData(
-                    message = "Only face index 0 is supported by this embedded TrueType catalog.",
-                    location = FontDiagnosticLocation.Face(request.faceIndex),
+                    message = "The requested face does not belong to this embedded catalog generation.",
+                    location = FontDiagnosticLocation.Source,
                 ),
             )
         }
@@ -70,19 +115,19 @@ public class EmbeddedFontCatalog(
             return failure(
                 FontError.UnsupportedRepresentationProfile(
                     message = "Unsupported font access requirements for this embedded TrueType catalog.",
-                    location = FontDiagnosticLocation.Face(request.faceIndex),
+                    location = FontDiagnosticLocation.Source,
                 ),
                 diagnostics = listOf(
                     FontDiagnostic(
                         code = "font.unsupported-representation-profile",
                         severity = FontDiagnosticSeverity.ERROR,
-                        location = FontDiagnosticLocation.Face(request.faceIndex),
+                        location = FontDiagnosticLocation.Source,
                         message = "Only LAYOUT_ONLY and schemaVersion=1 renderable outline profiles are supported.",
                     ),
                 ),
             )
         }
-        return FontOperationResult.Success(face)
+        return FontOperationResult.Success(resolvedFaces.getValue(faceId))
     }
 
     private fun FontAccessRequirementsSnapshot.isSupportedForEmbeddedTrueType(): Boolean =
@@ -95,23 +140,60 @@ public class EmbeddedFontCatalog(
         FontOperationResult.Failure(error, diagnostics.sortedDiagnostics())
 }
 
+/**
+ * One audited OpenType source included in an [EmbeddedFontCatalog].
+ *
+ * The provider captures both values while creating its immutable generation. The source owns a
+ * defensive copy of its bytes and parsed metadata is immutable; callers retain no provider
+ * resource by retaining this entry.
+ */
+public data class EmbeddedFontCatalogEntry(
+    /** Captured portable font source. */
+    public val source: FontSource,
+    /** Parsed metadata for the source's sole TrueType face. */
+    public val parsedFont: ParsedTrueTypeFont,
+)
+
 internal class EmbeddedFontAssetResolver(
-    override val sourceId: FontSourceId,
-    resource: PreparedFontResource,
+    override val generation: FontCatalogGeneration,
+    private val resources: Map<FontFaceId, PreparedFontResource>,
 ) : FontAssetResolverHandle {
-    private var resourceLease: PreparedFontResourceLease? = resource.acquireLease()
-    private val lifecycle = FontHandleLifecycle(::releaseResourceLease)
+    private val resourceLeases: MutableMap<FontFaceId, PreparedFontResourceLease> =
+        resources.mapValues { (_, resource) -> resource.acquireLease() }.toMutableMap()
+    private val lifecycle = FontHandleLifecycle(::releaseResourceLeases)
 
     val isClosed: Boolean
         get() = !lifecycle.isOpenForNewOperations()
 
-    fun acquireAssetLease(): PreparedFontResourceLease? {
+    fun acquireAssetLease(faceId: FontFaceId): PreparedFontResourceLease? {
         val operationLease = lifecycle.acquireLease() ?: return null
         return try {
-            resourceLease?.resource?.acquireLease()
+            resourceLeases[faceId]?.resource?.acquireLease()
         } finally {
             operationLease.release()
         }
+    }
+
+    override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> {
+        if (key.generation != generation) {
+            return failure(FontError.IncompatibleCatalogGeneration("Asset key does not belong to this catalog generation."))
+        }
+        if (!isReopenableEmbeddedKey(key)) {
+            return failure(FontError.AssetUnavailable("Asset key does not identify an embedded TrueType render asset in this catalog generation."))
+        }
+        val lease = acquireAssetLease(key.fontInstanceKey.face)
+            ?: return if (lifecycle.isOpenForNewOperations()) {
+                failure(FontError.AssetUnavailable("The asset face is not available in this catalog generation."))
+            } else {
+                failure(FontError.ResourceClosed("Asset resolver is closed."))
+            }
+        return FontOperationResult.Success(
+            TrueTypeRenderAssetHandle(
+                faceId = key.fontInstanceKey.face,
+                resourceLease = lease,
+                key = key,
+            ),
+        )
     }
 
     override fun close(): FontOperationResult<Unit> {
@@ -119,9 +201,23 @@ internal class EmbeddedFontAssetResolver(
         return FontOperationResult.Success(Unit)
     }
 
-    private fun releaseResourceLease() {
-        resourceLease?.release()
-        resourceLease = null
+    private fun releaseResourceLeases() {
+        resourceLeases.values.forEach(PreparedFontResourceLease::release)
+        resourceLeases.clear()
+    }
+
+    private fun isReopenableEmbeddedKey(key: FontRenderAssetKey): Boolean {
+        val instance = key.fontInstanceKey
+        return key.variant == FontRenderVariantKey.default &&
+            key.outlineProfile.schemaVersion == 1 &&
+            instance.face in resources &&
+            instance.interpretation.pipelineId == "org.graphiks.kalligraphie.true-type" &&
+            instance.interpretation.version == "1" &&
+            instance.layoutSize.value.isFinite() &&
+            instance.layoutSize.value > 0f &&
+            instance.geometry.normalizedAxes.isEmpty() &&
+            !instance.geometry.syntheticBold &&
+            !instance.geometry.syntheticItalic
     }
 }
 

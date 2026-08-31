@@ -6,7 +6,6 @@ import org.graphiks.kalligraphie.api.FontAssetResolverHandle
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
-import org.graphiks.kalligraphie.api.FontFaceRequest
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -45,7 +44,7 @@ class DetachedRenderAssetContractTest {
     fun detachedAssetResolvesAfterResolverAndAttachedHandleClose() {
         val catalog = catalogFor(fixtureBytes())
         val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.renderable(outlineProfile())))
+        val face = success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(outlineProfile())))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
         val attached = success(
             instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, FontAccessRequirementsSnapshot.renderable(outlineProfile())),
@@ -166,7 +165,7 @@ class DetachedRenderAssetContractTest {
         val catalog = catalogFor(fixtureBytes())
         val resolver = success(catalog.openAssetResolver())
         val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile(maxContours = 1))
-        val face = success(catalog.resolveFace(FontFaceRequest(0), requirements))
+        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
         val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
 
@@ -181,7 +180,7 @@ class DetachedRenderAssetContractTest {
     private fun openRenderableFont(bytes: ByteArray, size: Float): DetachedFontResources {
         val catalog = catalogFor(bytes)
         val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.renderable(outlineProfile())))
+        val face = success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(outlineProfile())))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(size))))
         val asset = success(
             instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, FontAccessRequirementsSnapshot.renderable(outlineProfile())),
@@ -192,7 +191,7 @@ class DetachedRenderAssetContractTest {
     private fun detachedAssetAfterOwnersClose(): FontRenderAssetHandle {
         val catalog = catalogFor(fixtureBytes())
         val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.renderable(outlineProfile())))
+        val face = success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(outlineProfile())))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
         val attached = success(
             instance.acquireRenderAsset(
@@ -209,7 +208,9 @@ class DetachedRenderAssetContractTest {
     }
 
     private fun faceFor(bytes: ByteArray): FontFace =
-        success(catalogFor(bytes).resolveFace(FontFaceRequest(0), FontAccessRequirementsSnapshot.layoutOnly()))
+        catalogFor(bytes).let { catalog ->
+            success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()))
+        }
 
     private fun catalogFor(bytes: ByteArray): FontCatalogSnapshot =
         success(Kalligraphie.embedded(bytes, FontSourceProvenance(declaredName = "Liberation Sans Regular")))

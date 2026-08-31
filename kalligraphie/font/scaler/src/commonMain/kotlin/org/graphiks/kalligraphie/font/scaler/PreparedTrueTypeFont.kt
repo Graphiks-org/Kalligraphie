@@ -100,6 +100,31 @@ public class PreparedTrueTypeFont internal constructor(
         }
 
     /**
+     * Resolves one declared Unicode variation sequence without rescanning the face's `cmap` table.
+     *
+     * @param codePoint base Unicode scalar value.
+     * @param variationSelector standard or ideographic variation selector paired with [codePoint].
+     * @return the selected variation glyph, a typed malformed-data failure, or glyph zero when
+     * the exact pair is not declared by the face.
+     */
+    public fun resolveGlyph(
+        codePoint: Int,
+        variationSelector: Int,
+    ): FontOperationResult<GlyphResolution> =
+        when (val result = cmapResult) {
+            is FontOperationResult.Success -> when (val lookup = result.value.resolveGlyphId(codePoint, variationSelector)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(
+                    GlyphResolution(codePoint, lookup.value.glyphId),
+                    lookup.diagnostics,
+                )
+                is FontOperationResult.Failure -> lookup
+                is FontOperationResult.Cancelled -> lookup
+            }
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
+
+    /**
      * Reads glyph metrics using the face-level cached metric and offset tables.
      *
      * @param glyphId glyph identifier in the parsed face.

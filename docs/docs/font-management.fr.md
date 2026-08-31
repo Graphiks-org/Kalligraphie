@@ -5,7 +5,7 @@ Kalligraphie propose une prise en charge de fontes TrueType embarquées via
 machine virtuelle Java (JVM). Les contrats publics restent portables, mais
 cette prise en charge exécutable est limitée à la JVM. L’utilisateur de la
 bibliothèque fournit des octets SFNT capturés à `Kalligraphie.embedded(...)`,
-sélectionne la face `0` (variante de fonte), crée une instance de fonte, puis utilise une
+sélectionne un enregistrement de face stable, crée une instance de fonte, puis utilise une
 ressource de rendu pour matérialiser les contours décrits par
 `GlyphOutlineIR`.
 
@@ -13,7 +13,7 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;
 - fontes TrueType SFNT statiques uniquement : `0x00010000` et `true` ;
-- une source embarquée et l’index de face `0` ;
+- des sources OpenType embarquées, avec l’index de face `0` pour chaque source ;
 - `LAYOUT_ONLY` pour la table `cmap` (correspondance entre caractères et
   glyphes) et les métriques ;
 - `RENDERABLE` uniquement avec la version `1` du schéma `OutlineProfile` ;
@@ -24,7 +24,7 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 
 ```kotlin
 val catalogResult = Kalligraphie.embedded(bytes, provenance)
-val faceRequest = FontFaceRequest(0)
+val faceId = catalog.faces.single().id
 val size = FontInstanceDescriptor(LayoutUnit(2048f))
 val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile)
 ```
@@ -94,7 +94,29 @@ Android et Apple ne possèdent pas encore d’adapter (adaptateur de plateforme)
 de composition exécutable : ce parcours ne doit donc pas être considéré comme
 conforme sur ces plateformes.
 
-Hors périmètre : renvoi à la ligne, paragraphes, repli entre fontes, césure,
+## Repli déterministe entre fontes
+
+`EmbeddedFontCatalog` peut capturer plusieurs sources OpenType auditées dans
+une `FontCatalogGeneration` (génération immuable du catalogue).
+`FontResolutionPolicySnapshot` associe à cette génération un ordre total de
+candidats versionné et une face explicite de dernier recours.
+`ExactEditableLineLayouter.layout(MultiFontEditableLineRequest)` dérive des
+unités de repli à partir de l’analyse réelle des grappes de graphèmes Unicode,
+attribue chaque unité à une seule face, puis compose le contexte contigu
+affecté.
+
+En mode `LAYOUT_ONLY`, un candidat doit couvrir et composer toute l’unité. En
+mode `RENDERABLE`, il doit aussi matérialiser chaque glyphe final composé dans
+le profil de contour demandé. Les candidats rejetés sont placés dans une
+blacklist (liste d’exclusion) propre à l’opération et ne sont jamais réessayés
+silencieusement pour la même unité et le même profil. Chaque
+`PositionedGlyphRun` publié identifie sa `FontInstanceKey` (clé d’instance de
+fonte) réelle ; chaque glyphe rendable porte un certificat lié à sa clé d’asset
+(ressource) et à sa génération exactes. Un gestionnaire peut rouvrir cette clé
+uniquement dans la génération capturée ; un asset détaché reste utilisable de
+façon indépendante après la fermeture de son gestionnaire d’origine.
+
+Hors périmètre : renvoi à la ligne, paragraphes, césure,
 justification, écriture verticale, rendu en pixels, API GPU, TTC/OTC,
 CFF/CFF2, variations, styles synthétiques, COLR, SVG, glyphes matriciels et
 fontes système.

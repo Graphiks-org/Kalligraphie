@@ -59,6 +59,12 @@ public sealed interface FontDiagnosticLocation {
         }
     }
 
+    /** A face identified by its complete portable semantic identity. */
+    public data class FaceId(
+        /** Stable source-and-index identity of the selected face. */
+        public val faceId: FontFaceId,
+    ) : FontDiagnosticLocation
+
     /** A glyph selected by its numeric identifier. */
     public data class Glyph(
         /** Non-negative glyph identifier. */
@@ -222,6 +228,36 @@ public sealed interface FontError {
     ) : FontError {
         override val code: String = "font.cancelled"
     }
+
+    /** A key cannot be reopened because its asset is no longer available in this generation. */
+    public data class AssetUnavailable(
+        /** Error message explaining why the asset cannot be reopened. */
+        override val message: String,
+        /** Location associated with the missing asset. */
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source,
+    ) : FontError {
+        override val code: String = "font.asset-unavailable"
+    }
+
+    /** A resolver and an asset key belong to different immutable catalogue generations. */
+    public data class IncompatibleCatalogGeneration(
+        /** Error message identifying the incompatible generations. */
+        override val message: String,
+        /** Location associated with the incompatible request. */
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source,
+    ) : FontError {
+        override val code: String = "font.incompatible-catalog-generation"
+    }
+
+    /** Every deterministic candidate was rejected for one indivisible fallback unit. */
+    public data class UnrenderableFontResolution(
+        /** Error message describing the exhausted fallback operation. */
+        override val message: String,
+        /** Location associated with the unresolved source range. */
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source,
+    ) : FontError {
+        override val code: String = "font.unrenderable-font-resolution"
+    }
 }
 
 /** Outcome of a font operation, including diagnostics. */
@@ -360,5 +396,6 @@ private fun FontDiagnosticLocation.sortKey(): String =
         FontDiagnosticLocation.Source -> "source"
         is FontDiagnosticLocation.Table -> "table:$tag"
         is FontDiagnosticLocation.Face -> "face:$faceIndex"
+        is FontDiagnosticLocation.FaceId -> "face-id:${faceId.source}:${faceId.faceIndex}"
         is FontDiagnosticLocation.Glyph -> "glyph:$glyphId"
     }

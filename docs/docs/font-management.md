@@ -4,14 +4,14 @@ Kalligraphie exposes an embedded TrueType path through
 `org.graphiks:kalligraphie` on the JVM reference target only. The public
 contracts stay portable, but this executable route is JVM-only. A
 consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
-resolves face `0`, creates a font instance, and uses a render asset handle to
+selects a stable face record, creates a font instance, and uses a render asset handle to
 materialize `GlyphOutlineIR` outlines.
 
 The supported functional scope is intentionally narrow:
 
 - JVM reference target only;
 - static SFNT TrueType only: `0x00010000` and `true`;
-- one embedded source and face index `0`;
+- embedded OpenType sources with face index `0` for each source;
 - `LAYOUT_ONLY` for cmap and metrics;
 - `RENDERABLE` only with `OutlineProfile` schema version `1`;
 - glyph outlines in design units, with separately scaled `LayoutUnit`
@@ -21,7 +21,7 @@ The supported functional scope is intentionally narrow:
 
 ```kotlin
 val catalogResult = Kalligraphie.embedded(bytes, provenance)
-val faceRequest = FontFaceRequest(0)
+val faceId = catalog.faces.single().id
 val size = FontInstanceDescriptor(LayoutUnit(2048f))
 val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile)
 ```
@@ -78,7 +78,26 @@ through a system-library search. Public contracts contain no JNI or native
 types. Android and Apple do not yet provide executable shaping adapters, so
 this route must not be treated as conformant on those platforms.
 
-Out of scope: wrapping, paragraphs, fallback across fonts, hyphenation,
+## Deterministic multi-font fallback
+
+`EmbeddedFontCatalog` can capture several audited OpenType sources in one
+`FontCatalogGeneration`. `FontResolutionPolicySnapshot` binds a complete,
+versioned candidate order and an explicit final last-resort face to that exact
+generation. `ExactEditableLineLayouter.layout(MultiFontEditableLineRequest)`
+derives fallback units from Unicode grapheme analysis, assigns every unit to
+one face, and shapes the affected contiguous context.
+
+In `LAYOUT_ONLY`, a candidate must map and shape the complete unit. In
+`RENDERABLE`, it must additionally materialize every final shaped glyph with
+the requested outline profile. Failed candidates are blacklisted for the
+operation and never silently retried for the same unit and profile. The
+published `PositionedGlyphRun` records its actual `FontInstanceKey`; every
+renderable glyph carries a certificate tied to its exact generation-bound
+asset key. A resolver may reopen such a key only in the captured generation;
+a detached asset remains independently usable after its originating resolver
+closes.
+
+Out of scope: wrapping, paragraphs, hyphenation,
 justification, vertical writing, rendering pixels, GPU APIs, TTC/OTC,
 CFF/CFF2, variations, synthetic styles, COLR, SVG, bitmap glyphs, and system
 fonts.
