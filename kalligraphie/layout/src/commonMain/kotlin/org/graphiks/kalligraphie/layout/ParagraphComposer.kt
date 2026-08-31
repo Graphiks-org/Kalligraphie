@@ -2,20 +2,33 @@ package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
+import org.graphiks.kalligraphie.api.CaretCandidate
+import org.graphiks.kalligraphie.api.CaretPosition
+import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLine
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GdefLigatureCaretFact
+import org.graphiks.kalligraphie.api.LayoutBounds
+import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBreakKind
+import org.graphiks.kalligraphie.api.LineContentMetrics
+import org.graphiks.kalligraphie.api.LineLayout
+import org.graphiks.kalligraphie.api.LogicalNavigationDirection
+import org.graphiks.kalligraphie.api.ParagraphLayout
+import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ParagraphLayouter
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
 import org.graphiks.kalligraphie.api.ShapedGlyph
@@ -26,6 +39,7 @@ import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.VisualNavigationDirection
 
 /** One finalized line and its physical placement, before content/ink metric enrichment. */
 internal class ComposedParagraphLine(
@@ -33,6 +47,7 @@ internal class ComposedParagraphLine(
     val baseline: LayoutPoint,
     val lineBox: LayoutRect,
     val inlineAdvance: LayoutUnit,
+    val fontInstances: List<FontInstance> = emptyList(),
 ) {
     init {
         require(lineBox.left == baseline.x)
@@ -65,9 +80,37 @@ internal sealed interface ParagraphCompositionResult {
     }
 }
 
-/** Selects, finally shapes, positions, and physically stacks complete editable lines. */
-internal object ParagraphComposer {
-    fun compose(
+/**
+ * Pure portable [ParagraphLayouter] that finalizes complete paragraph lines and editing geometry.
+ *
+ * It retains no font instance, renderer, platform state, or mutable text after a call returns.
+ * Published glyphs, carets, boxes, and ink bounds are all finite paragraph coordinates bound to
+ * the request snapshot. Font and geometry failures are reported through [ParagraphLayoutResult].
+ */
+public object ParagraphComposer : ParagraphLayouter {
+    override fun layout(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+    ): ParagraphLayoutResult {
+        val composition = try {
+            compose(request, materialization)
+        } catch (overflow: ParagraphGeometryOverflowException) {
+            return ParagraphLayoutResult.Failure(
+                ParagraphLayoutError.GeometryOverflow(overflow.message ?: "Paragraph geometry overflowed."),
+            )
+        }
+        return when (composition) {
+            is ParagraphCompositionResult.Failure -> ParagraphLayoutResult.Failure(
+                composition.error.toParagraphError(),
+                composition.diagnostics,
+            )
+
+            is ParagraphCompositionResult.Cancelled -> ParagraphLayoutResult.Cancelled(composition.diagnostics)
+            is ParagraphCompositionResult.Success -> projectComposition(request, composition)
+        }
+    }
+
+    internal fun compose(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
     ): ParagraphCompositionResult {
@@ -153,7 +196,7 @@ internal object ParagraphComposer {
                     check(selected.line.range.endExclusive > lineStart) {
                         "Paragraph composition must strictly advance at every selected line."
                     }
-                    placed += place(selected.line, region, lineTop)
+                    placed += place(selected.line, region, lineTop, selected.fontInstances)
                     lineStart = selected.line.range.endExclusive
                 }
                 is FinalizationResult.Failure -> return ParagraphCompositionResult.Failure(selected.error, selected.diagnostics)
@@ -177,6 +220,106 @@ internal object ParagraphComposer {
             }
         }
         return ParagraphCompositionResult.Success(placed, remainingSourceRange = null)
+    }
+
+    private fun projectComposition(
+        request: ParagraphLayoutRequest,
+        composition: ParagraphCompositionResult.Success,
+    ): ParagraphLayoutResult {
+        val projectedLines = mutableListOf<LineLayout>()
+        composition.lines.forEach { composed ->
+            when (val projected = projectLine(composed)) {
+                is ProjectedLine.Success -> projectedLines += projected.line
+                is ProjectedLine.Failure -> return ParagraphLayoutResult.Failure(projected.error)
+                is ProjectedLine.Cancelled -> return ParagraphLayoutResult.Cancelled()
+            }
+        }
+        val remaining = composition.remainingSourceRange ?: composition.takeIf { it.hasUnplacedTrailingEmptyLine }
+            ?.let { TextRange(request.sourceRange.endExclusive, request.sourceRange.endExclusive) }
+        val continuation = remaining?.let { LayoutContinuation.create(request, it) }
+        val range = if (remaining == null) {
+            request.sourceRange
+        } else {
+            TextRange(request.sourceRange.start, remaining.start)
+        }
+        val layout = FinalParagraphLayout(request.snapshot, range, projectedLines)
+        return ParagraphLayoutResult.Success(
+            layout = layout,
+            coverageStatus = if (continuation == null) CoverageStatus.COMPLETE else CoverageStatus.PARTIAL,
+            continuation = continuation,
+        )
+    }
+
+    private fun projectLine(composed: ComposedParagraphLine): ProjectedLine {
+        val instances = composed.fontInstances.associateBy(FontInstance::key)
+        val glyphBounds = mutableListOf<LayoutBounds>()
+        composed.line.positionedGlyphRuns.forEach { run ->
+            val instance = instances[run.fontInstanceKey]
+                ?: return ProjectedLine.Failure(
+                    ParagraphLayoutError.FontFailure(
+                        FontError.InvalidFontData("No resolved font instance matches a final positioned glyph run."),
+                    ),
+                )
+            run.glyphs.forEach { glyph ->
+                when (val metrics = instance.metrics(glyph.shapedGlyph.glyphId)) {
+                    is FontOperationResult.Success -> glyphBounds += translatedGlyphBounds(
+                        LayoutPoint(
+                            finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
+                            finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
+                        ),
+                        metrics.value.scaledBounds,
+                    )
+                    is FontOperationResult.Failure -> return ProjectedLine.Failure(ParagraphLayoutError.FontFailure(metrics.error))
+                    is FontOperationResult.Cancelled -> return ProjectedLine.Cancelled
+                }
+            }
+        }
+        val inkBounds = glyphBounds.unionOrBaseline(composed.baseline)
+        val contentMetrics = LineContentMetrics(
+            ascent = finiteUnit(
+                maxOf(0.0, composed.baseline.y.value.toDouble() - inkBounds.minY.value.toDouble()),
+                "line content ascent",
+            ),
+            descent = finiteUnit(
+                maxOf(0.0, inkBounds.maxY.value.toDouble() - composed.baseline.y.value.toDouble()),
+                "line content descent",
+            ),
+            inlineAdvance = composed.inlineAdvance,
+        )
+        return ProjectedLine.Success(
+            LineLayout(
+                line = composed.line,
+                baseline = composed.baseline,
+                contentMetrics = contentMetrics,
+                lineBox = composed.lineBox,
+                designInkBounds = inkBounds,
+            ),
+        )
+    }
+
+    private fun translatedGlyphBounds(origin: LayoutPoint, bounds: LayoutBounds): LayoutBounds = LayoutBounds(
+        minX = finiteUnit(origin.x.value.toDouble() + bounds.minX.value.toDouble(), "glyph ink min x"),
+        minY = finiteUnit(origin.y.value.toDouble() - bounds.maxY.value.toDouble(), "glyph ink min y"),
+        maxX = finiteUnit(origin.x.value.toDouble() + bounds.maxX.value.toDouble(), "glyph ink max x"),
+        maxY = finiteUnit(origin.y.value.toDouble() - bounds.minY.value.toDouble(), "glyph ink max y"),
+    )
+
+    private fun List<LayoutBounds>.unionOrBaseline(baseline: LayoutPoint): LayoutBounds {
+        if (isEmpty()) {
+            return LayoutBounds(baseline.x, baseline.y, baseline.x, baseline.y)
+        }
+        return LayoutBounds(
+            minX = minOf { it.minX },
+            minY = minOf { it.minY },
+            maxX = maxOf { it.maxX },
+            maxY = maxOf { it.maxY },
+        )
+    }
+
+    private sealed interface ProjectedLine {
+        data class Success(val line: LineLayout) : ProjectedLine
+        data class Failure(val error: ParagraphLayoutError) : ProjectedLine
+        data object Cancelled : ProjectedLine
     }
 
     private fun candidatesForLine(request: ParagraphLayoutRequest, start: TextIndex): List<TextIndex> {
@@ -272,7 +415,7 @@ internal object ParagraphComposer {
             )
         ) {
             is EditableLineResult.Success -> FinalizationResult.Success(
-                EditableLine(
+                line = EditableLine(
                     range = positioned.line.range,
                     baseDirection = positioned.line.baseDirection,
                     verticalMetrics = positioned.line.verticalMetrics,
@@ -280,6 +423,7 @@ internal object ParagraphComposer {
                     caretCandidates = positioned.line.allCaretCandidates,
                     diagnostics = positioned.line.diagnostics + diagnostics,
                 ),
+                fontInstances = uniqueInstances,
             )
             is EditableLineResult.Failure -> FinalizationResult.Failure(positioned.error, diagnostics + positioned.diagnostics)
             is EditableLineResult.Cancelled -> FinalizationResult.Cancelled(diagnostics + positioned.diagnostics)
@@ -535,7 +679,12 @@ internal object ParagraphComposer {
         ),
     )
 
-    private fun place(line: EditableLine, region: LayoutRect, top: LayoutUnit): ComposedParagraphLine {
+    private fun place(
+        line: EditableLine,
+        region: LayoutRect,
+        top: LayoutUnit,
+        fontInstances: List<FontInstance> = emptyList(),
+    ): ComposedParagraphLine {
         val baseline = LayoutPoint(
             region.left,
             finiteUnit(top.value.toDouble() + line.verticalMetrics.ascent.value.toDouble(), "paragraph baseline"),
@@ -546,6 +695,7 @@ internal object ParagraphComposer {
             baseline = baseline,
             lineBox = LayoutRect(region.left, top, region.right, bottom),
             inlineAdvance = ExactEditableLineLayouter.inlineAdvance(line),
+            fontInstances = fontInstances,
         )
     }
 
@@ -642,10 +792,69 @@ internal object ParagraphComposer {
     }
 
     private sealed interface FinalizationResult {
-        data class Success(val line: EditableLine) : FinalizationResult
+        data class Success(
+            val line: EditableLine,
+            val fontInstances: List<FontInstance>,
+        ) : FinalizationResult
         data class Failure(val error: EditableLineError, val diagnostics: List<EditableLineDiagnostic>) : FinalizationResult
         data class Cancelled(val diagnostics: List<EditableLineDiagnostic>) : FinalizationResult
     }
+}
+
+/** Final immutable paragraph projection whose editing operations use paragraph-coordinate values. */
+private class FinalParagraphLayout(
+    snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
+    range: TextRange,
+    lines: List<LineLayout>,
+) : ParagraphLayout(snapshot, range, lines) {
+    override fun nextLogical(
+        position: CaretPosition,
+        direction: LogicalNavigationDirection,
+    ): CaretPosition? {
+        require(candidatesAt(position).isNotEmpty()) { "Logical navigation requires a paragraph-local caret position." }
+        val boundaries = allCandidates().map { it.position.index }.distinct().sortedWith(TextIndex::compareTo)
+        val current = boundaries.indexOf(position.index)
+        val target = when (direction) {
+            LogicalNavigationDirection.FORWARD -> boundaries.getOrNull(current + 1)
+            LogicalNavigationDirection.BACKWARD -> boundaries.getOrNull(current - 1)
+        } ?: return null
+        return allCandidates().firstOrNull { candidate ->
+            candidate.position.index == target && candidate.position.affinity == position.affinity
+        }?.position ?: allCandidates().first { it.position.index == target }.position
+    }
+
+    override fun nextVisual(
+        candidate: CaretCandidate,
+        direction: VisualNavigationDirection,
+    ): CaretCandidate? {
+        val candidates = allCandidates()
+        val current = candidates.indexOfFirst { it === candidate }
+        require(current >= 0) { "Visual navigation requires a candidate returned by this paragraph." }
+        return when (direction) {
+            VisualNavigationDirection.FORWARD -> candidates.getOrNull(current + 1)
+            VisualNavigationDirection.BACKWARD -> candidates.getOrNull(current - 1)
+        }
+    }
+
+    override fun caretCandidates(position: CaretPosition): List<CaretCandidate> {
+        require(position.index.sharesVersionWith(range.start)) { "Caret positions must use the paragraph source revision." }
+        val candidates = candidatesAt(position)
+        require(candidates.isNotEmpty()) { "Caret candidates require a paragraph-local caret position." }
+        return candidates.immutableSnapshot()
+    }
+
+    private fun candidatesAt(position: CaretPosition): List<CaretCandidate> =
+        allCandidates().filter { it.position == position }
+
+    private fun allCandidates(): List<CaretCandidate> = lines.flatMap(LineLayout::allCaretCandidates)
+}
+
+private fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
+    is EditableLineError.InvalidInput -> ParagraphLayoutError.InvalidInput(message)
+    is EditableLineError.GeometryOverflow -> ParagraphLayoutError.GeometryOverflow(message)
+    is EditableLineError.FontMaterializationFailure -> ParagraphLayoutError.FontFailure(fontError)
+    is EditableLineError.ShapingFailure -> ParagraphLayoutError.FontFailure(fontError)
+    is EditableLineError.FontResolutionFailure -> ParagraphLayoutError.FontFailure(fontError)
 }
 
 private class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)

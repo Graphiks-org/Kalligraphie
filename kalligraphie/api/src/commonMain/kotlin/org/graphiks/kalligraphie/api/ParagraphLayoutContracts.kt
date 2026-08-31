@@ -304,9 +304,10 @@ public sealed interface ParagraphMaterializationIdentity {
  *
  * The continuation records the original [TextVersion], exact [originalSourceRange] and
  * [remainingSourceRange], compatible rectangle width and line metrics, and every configuration
- * identity that can affect observable line breaking or final glyph geometry. The remainder is a
- * non-empty exact suffix of [originalSourceRange], so a partial layout prefix plus this value
- * partitions the complete source requested by the call that created it. It stores no text
+ * identity that can affect observable line breaking or final glyph geometry. The remainder is an
+ * exact suffix of [originalSourceRange]; it is empty only when a required terminal empty physical
+ * line remains. A partial layout prefix plus this value partitions the complete source requested
+ * by the call that created it. It stores no text
  * history, incremental-edit state, borrowed resolver, native handle, renderer, or platform
  * object. Collections are defensively captured, making this value safe for concurrent reads.
  *
@@ -377,7 +378,9 @@ public class LayoutContinuation private constructor(
          * Captures an exact unconsumed suffix of [request].
          *
          * [remainingSourceRange] must be a suffix of the current request range and may equal the
-         * full range when the region cannot publish even one complete line.
+         * full range when the region cannot publish even one complete line. An empty remainder is
+         * valid only to resume the required terminal physical empty line of an empty paragraph or
+         * a source range ending at a mandatory line-break boundary.
          */
         public fun create(
             request: ParagraphLayoutRequest,
@@ -392,8 +395,12 @@ public class LayoutContinuation private constructor(
             ) {
                 "A continuation remainder must be an exact suffix of the request source range."
             }
-            require(remainingSourceRange.start < remainingSourceRange.endExclusive) {
-                "A continuation remainder must contain unconsumed source."
+            val terminalEmptyLineRequired = request.sourceRange.start == request.sourceRange.endExclusive ||
+                request.lineBreakAnalysis.opportunities.any { opportunity ->
+                    opportunity.boundary == request.sourceRange.endExclusive && opportunity.kind == LineBreakKind.MANDATORY
+                }
+            require(remainingSourceRange.start < remainingSourceRange.endExclusive || terminalEmptyLineRequired) {
+                "An empty continuation remainder requires a terminal physical empty line."
             }
             return LayoutContinuation(
                 originalVersion = request.snapshot.version,
@@ -678,11 +685,24 @@ private fun requireCompleteLinePartition(range: TextRange, lines: List<LineLayou
     }
     require(lines.isNotEmpty()) { "A non-empty paragraph layout requires complete final lines." }
     var expectedStart = range.start
-    lines.forEach { line ->
+    var terminalEmptyLineSeen = false
+    lines.forEachIndexed { index, line ->
         require(line.range.start.sharesVersionWith(range.start)) {
             "Every paragraph line must use the layout source revision."
         }
-        require(line.range.start == expectedStart && line.range.start < line.range.endExclusive) {
+        if (line.range.start == line.range.endExclusive) {
+            require(
+                !terminalEmptyLineSeen &&
+                    index == lines.lastIndex &&
+                    expectedStart == range.endExclusive &&
+                    line.range == TextRange(range.endExclusive, range.endExclusive),
+            ) {
+                "Only one terminal empty line may follow complete non-empty paragraph coverage."
+            }
+            terminalEmptyLineSeen = true
+            return@forEachIndexed
+        }
+        require(!terminalEmptyLineSeen && line.range.start == expectedStart && line.range.start < line.range.endExclusive) {
             "Paragraph lines must be non-empty, contiguous, and ordered in logical source order."
         }
         require(line.range.endExclusive <= range.endExclusive) {

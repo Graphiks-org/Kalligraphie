@@ -8,20 +8,26 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.LayoutPoint
+import org.graphiks.kalligraphie.api.LayoutBounds
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
@@ -365,10 +371,204 @@ class EditableParagraphCompositionTest {
         assertEquals(3, result.lines.size)
     }
 
+    @Test
+    fun publishedLineUsesRealGlyphMetricsForDistinctContentBoxAndInkGeometry() {
+        val fixture = fixture("Ag", width = 3_000f, height = 1_000f)
+
+        val result = assertIs<ParagraphLayoutResult.Success>(
+            ParagraphComposer.layout(fixture.request, EditableLineMaterialization.LayoutOnly),
+        )
+        val line = result.layout.lines.single()
+        val glyphBounds = trueGlyphBounds(fixture, line)
+        val expectedInk = LayoutBounds(
+            glyphBounds.minOf { it.minX },
+            glyphBounds.minOf { it.minY },
+            glyphBounds.maxOf { it.maxX },
+            glyphBounds.maxOf { it.maxY },
+        )
+
+        assertEquals(expectedInk, line.designInkBounds)
+        assertEquals(
+            LayoutUnit(line.baseline.y.value - expectedInk.minY.value),
+            line.contentMetrics.ascent,
+        )
+        assertEquals(
+            LayoutUnit(expectedInk.maxY.value - line.baseline.y.value),
+            line.contentMetrics.descent,
+        )
+        assertEquals(
+            LayoutUnit(
+                line.positionedGlyphRuns.sumOf { run ->
+                    run.glyphs.sumOf { glyph -> glyph.advance.x.value.toDouble() }
+                }.toFloat(),
+            ),
+            line.contentMetrics.inlineAdvance,
+        )
+        assertEquals(fixture.request.constraints.region, line.lineBox)
+        assertTrue(line.designInkBounds != LayoutBounds.empty)
+        assertTrue(line.contentMetrics.ascent != line.verticalMetrics.ascent)
+        assertTrue(line.contentMetrics.descent != line.verticalMetrics.descent)
+        // The oracle is the actual DejaVu TrueType instance used by shaping, not an empty
+        // placeholder or a renderer-dependent raster bound.
+    }
+
+    @Test
+    fun continuationPublishesCompleteLinesAndResumesAsTheSameTallComposition() {
+        val fixture = fixture("one two three", width = 3_000f, height = 1_000f)
+
+        val partial = layout(fixture.request)
+        val continuation = checkNotNull(partial.continuation)
+        val resumed = layout(
+            copyRequest(
+                fixture.request,
+                sourceRange = continuation.remainingSourceRange,
+                constraints = constraints(width = 3_000f, top = 1_050f, height = 2_000f),
+                continuation = continuation,
+            ),
+        )
+        val full = layout(
+            copyRequest(
+                fixture.request,
+                constraints = constraints(width = 3_000f, top = 50f, height = 3_000f),
+            ),
+        )
+
+        assertEquals(CoverageStatus.PARTIAL, partial.coverageStatus)
+        assertEquals(listOf(range(fixture.snapshot, 0, 4)), partial.layout.lines.map { it.range })
+        assertEquals(range(fixture.snapshot, 4, 13), continuation.remainingSourceRange)
+        assertEquals(CoverageStatus.COMPLETE, resumed.coverageStatus)
+        assertEquals(
+            full.layout.lines.map(::lineFingerprint),
+            (partial.layout.lines + resumed.layout.lines).map(::lineFingerprint),
+        )
+        assertFailsWith<IllegalArgumentException> {
+            copyRequest(
+                fixture.request,
+                sourceRange = continuation.remainingSourceRange,
+                constraints = constraints(width = 2_999f, top = 1_050f, height = 2_000f),
+                continuation = continuation,
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            copyRequest(
+                fixture.request,
+                sourceRange = continuation.remainingSourceRange,
+                constraints = HorizontalParagraphConstraints(
+                    region = LayoutRect(LayoutUnit(100f), LayoutUnit(1_050f), LayoutUnit(3_100f), LayoutUnit(3_050f)),
+                    lineMetrics = LineVerticalMetrics(LayoutUnit(700f), LayoutUnit(300f)),
+                ),
+                continuation = continuation,
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            copyRequest(
+                fixture.request,
+                sourceRange = continuation.remainingSourceRange,
+                constraints = constraints(width = 3_000f, top = 1_050f, height = 2_000f),
+                materializationIdentity = ParagraphMaterializationIdentity.Renderable(
+                    FontRenderVariantKey.default,
+                    OutlineProfile(
+                        maxBytes = 1_024,
+                        maxContours = 16,
+                        maxPoints = 64,
+                        maxCompositeDepth = 4,
+                        maxCompositeComponents = 8,
+                    ),
+                ),
+                continuation = continuation,
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            val foreign = fixture("one two three", width = 3_000f, height = 2_000f)
+            copyRequest(
+                foreign.request,
+                sourceRange = foreign.snapshot.range,
+                continuation = continuation,
+            )
+        }
+    }
+
+    @Test
+    fun mandatoryTerminalEmptyLineIsProjectedAndCanContinueWhenItsBoxDoesNotFit() {
+        val completeFixture = fixture("a\n", width = 3_000f, height = 2_000f)
+        val complete = layout(completeFixture.request)
+        val end = completeFixture.snapshot.range.endExclusive
+
+        assertEquals(
+            listOf(completeFixture.snapshot.range, TextRange(end, end)),
+            complete.layout.lines.map { it.range },
+        )
+
+        val partialFixture = fixture("a\n", width = 3_000f, height = 1_000f)
+        val partial = layout(partialFixture.request)
+        val continuation = checkNotNull(partial.continuation)
+        val resumed = layout(
+            copyRequest(
+                partialFixture.request,
+                sourceRange = continuation.remainingSourceRange,
+                constraints = constraints(width = 3_000f, top = 1_050f, height = 1_000f),
+                continuation = continuation,
+            ),
+        )
+
+        assertEquals(CoverageStatus.PARTIAL, partial.coverageStatus)
+        assertEquals(listOf(partialFixture.snapshot.range), partial.layout.lines.map { it.range })
+        assertEquals(TextRange(partialFixture.snapshot.range.endExclusive, partialFixture.snapshot.range.endExclusive), continuation.remainingSourceRange)
+        assertEquals(CoverageStatus.COMPLETE, resumed.coverageStatus)
+        assertEquals(1, resumed.layout.lines.size)
+        assertEquals(continuation.remainingSourceRange, resumed.layout.lines.single().range)
+    }
+
     private fun compose(fixture: Fixture): ParagraphCompositionResult.Success =
         assertIs(
             ParagraphComposer.compose(fixture.request, EditableLineMaterialization.LayoutOnly),
         )
+
+    private fun layout(request: ParagraphLayoutRequest): ParagraphLayoutResult.Success = assertIs(
+        ParagraphComposer.layout(request, EditableLineMaterialization.LayoutOnly),
+    )
+
+    private fun copyRequest(
+        request: ParagraphLayoutRequest,
+        sourceRange: TextRange = request.sourceRange,
+        constraints: HorizontalParagraphConstraints = request.constraints,
+        materializationIdentity: ParagraphMaterializationIdentity = request.materializationIdentity,
+        continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
+    ): ParagraphLayoutRequest = ParagraphLayoutRequest(
+        snapshot = request.snapshot,
+        sourceRange = sourceRange,
+        unicodeAnalysis = request.unicodeAnalysis,
+        lineBreakAnalysis = request.lineBreakAnalysis,
+        constraints = constraints,
+        baseDirection = request.baseDirection,
+        language = request.language,
+        featurePolicy = request.featurePolicy,
+        features = request.features,
+        fontCatalog = request.fontCatalog,
+        resolutionPolicy = request.resolutionPolicy,
+        fontInstanceDescriptor = request.fontInstanceDescriptor,
+        shapingBackend = request.shapingBackend,
+        materializationIdentity = materializationIdentity,
+        overflowPolicy = request.overflowPolicy,
+        continuation = continuation,
+        cancellationToken = request.cancellationToken,
+    )
+
+    private fun constraints(width: Float, top: Float, height: Float): HorizontalParagraphConstraints =
+        HorizontalParagraphConstraints(
+            region = LayoutRect(LayoutUnit(100f), LayoutUnit(top), LayoutUnit(100f + width), LayoutUnit(top + height)),
+            lineMetrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
+        )
+
+    private fun lineFingerprint(line: org.graphiks.kalligraphie.api.LineLayout): List<Any> = listOf(
+        line.range,
+        line.baseline,
+        line.contentMetrics,
+        line.lineBox,
+        line.designInkBounds,
+        line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId to glyph.origin } },
+        line.allCaretCandidates.map { candidate -> candidate.position to candidate.geometry },
+    )
 
     private fun fixture(
         value: String,
@@ -441,6 +641,29 @@ class EditableParagraphCompositionTest {
 
     private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange =
         TextRange(snapshot.textIndexAtScalarBoundary(start), snapshot.textIndexAtScalarBoundary(endExclusive))
+
+    private fun trueGlyphBounds(
+        fixture: Fixture,
+        line: org.graphiks.kalligraphie.api.LineLayout,
+    ): List<LayoutBounds> {
+        val face = fixture.request.fontCatalog.faces.single().id
+        val instance = fixture.request.fontCatalog.resolveFace(face, FontAccessRequirementsSnapshot.layoutOnly())
+            .successValue()
+            .instantiate(fixture.request.fontInstanceDescriptor)
+            .successValue()
+        return line.positionedGlyphRuns.flatMap { run ->
+            check(run.fontInstanceKey == instance.key)
+            run.glyphs.map { glyph ->
+                val metrics = instance.metrics(glyph.shapedGlyph.glyphId).successValue()
+                LayoutBounds(
+                    minX = LayoutUnit(glyph.origin.x.value + metrics.scaledBounds.minX.value),
+                    minY = LayoutUnit(glyph.origin.y.value - metrics.scaledBounds.maxY.value),
+                    maxX = LayoutUnit(glyph.origin.x.value + metrics.scaledBounds.maxX.value),
+                    maxY = LayoutUnit(glyph.origin.y.value - metrics.scaledBounds.minY.value),
+                )
+            }
+        }
+    }
 
     private fun source(resource: String, declaredName: String): FontSource =
         FontSource(checkNotNull(javaClass.getResourceAsStream(resource)).use { it.readBytes() }, FontSourceProvenance(declaredName))
