@@ -231,6 +231,83 @@ class IncrementalLayoutContractsTest {
     }
 
     @Test
+    fun requestRejectsTypographyProofFromAForeignSourceTextSpace() {
+        val fixture = deltaFixture("abc")
+        val foreignSource = decode("abc")
+        val typographyDelta = fixture.typographyDelta(
+            rangeChange = proof(foreignSource, fixture.target, 1, 2),
+        )
+
+        val result = fixture.request(typographyDelta)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestRejectsTypographyProofFromAForeignTargetTextSpace() {
+        val fixture = deltaFixture("abc")
+        val foreignTarget = decode("abc")
+        val typographyDelta = fixture.typographyDelta(
+            rangeChange = proof(fixture.source, foreignTarget, 1, 2),
+        )
+
+        val result = fixture.request(typographyDelta)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestRejectsPolicyProofFromAForeignSourceTextSpace() {
+        val fixture = deltaFixture("abc")
+        val foreignSource = decode("abc")
+        val typographyDelta = fixture.typographyDelta(
+            rangeChange = fixture.provenRanges,
+            policyRangeChange = proof(foreignSource, fixture.target, 1, 2),
+        )
+
+        val result = fixture.request(typographyDelta)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestRejectsPolicyProofFromAForeignTargetTextSpace() {
+        val fixture = deltaFixture("abc")
+        val foreignTarget = decode("abc")
+        val typographyDelta = fixture.typographyDelta(
+            rangeChange = fixture.provenRanges,
+            policyRangeChange = proof(fixture.source, foreignTarget, 1, 2),
+        )
+
+        val result = fixture.request(typographyDelta)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
+    fun requestRejectsDifferentTypographyAndPolicyProofsInTheSameTextSpaces() {
+        val fixture = deltaFixture("abcd")
+        val typographyDelta = fixture.typographyDelta(
+            rangeChange = fixture.provenRanges,
+            policyRangeChange = proof(fixture.source, fixture.target, 2, 3),
+        )
+
+        val result = fixture.request(typographyDelta)
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.InvalidRange>(it.error)
+        }
+    }
+
+    @Test
     fun layoutCoverageFactoryRejectsARangeFromAnotherVersion() {
         val text = decode("abc")
         val foreign = decode("abc")
@@ -336,6 +413,74 @@ class IncrementalLayoutContractsTest {
             snapshot.textIndexAtScalarBoundary(start),
             snapshot.textIndexAtScalarBoundary(endExclusive),
         )
+
+    private data class DeltaFixture(
+        val source: TextSnapshot,
+        val target: TextSnapshot,
+        val sourceTypographyVersion: TypographyVersion,
+        val targetTypography: TypographySnapshot,
+        val textDelta: TextChangeSet,
+        val provenRanges: RangeChange.Proven,
+    ) {
+        fun typographyDelta(
+            rangeChange: RangeChange,
+            policyRangeChange: RangeChange.Proven? = null,
+        ): TypographyDelta = TypographyDelta(
+            sourceVersion = sourceTypographyVersion,
+            targetVersion = targetTypography.version,
+            rangeChange = rangeChange,
+            fontResolutionPolicy = policyRangeChange?.let { ranges ->
+                FontResolutionPolicyDelta(
+                    source = targetTypography.resolutionPolicy,
+                    target = targetTypography.resolutionPolicy,
+                    provenRanges = ranges,
+                )
+            },
+        )
+
+    }
+
+    private fun DeltaFixture.request(
+        typographyDelta: TypographyDelta,
+    ): LayoutContractResult<IncrementalLayoutRequest> = request(
+        input = LayoutInput(target, targetTypography),
+        previousState = state(source, sourceTypographyVersion),
+        delta = LayoutDelta(textDelta, typographyDelta),
+    )
+
+    private fun deltaFixture(text: String): DeltaFixture {
+        val source = decode(text)
+        val target = decode(text)
+        val textDelta = replacementDelta(source, target, 1, 2)
+        return DeltaFixture(
+            source = source,
+            target = target,
+            sourceTypographyVersion = TypographyVersion.create(),
+            targetTypography = typography(TypographyVersion.create()),
+            textDelta = textDelta,
+            provenRanges = RangeChange.from(textDelta),
+        )
+    }
+
+    private fun proof(
+        source: TextSnapshot,
+        target: TextSnapshot,
+        start: Int,
+        endExclusive: Int,
+    ): RangeChange.Proven = RangeChange.from(replacementDelta(source, target, start, endExclusive))
+
+    private fun replacementDelta(
+        source: TextSnapshot,
+        target: TextSnapshot,
+        start: Int,
+        endExclusive: Int,
+    ): TextChangeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+        TextChangeSet.create(
+            source,
+            target,
+            listOf(TextChange(range(source, start, endExclusive), range(target, start, endExclusive))),
+        ),
+    ).value
 
     private fun policy(version: String): FontResolutionPolicySnapshot {
         val face = FontFaceId(

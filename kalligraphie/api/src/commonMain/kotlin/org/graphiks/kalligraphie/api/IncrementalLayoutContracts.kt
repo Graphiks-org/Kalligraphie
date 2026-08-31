@@ -694,6 +694,10 @@ public fun createIncrementalLayoutRequest(
             IncrementalLayoutError.VersionMismatch("Typography delta source does not match the previous layout checkpoint."),
         )
     }
+    if (previousState != null && delta?.typography != null) {
+        val proofError = validateTypographyProofs(previousState, input.text, delta.typography)
+        if (proofError != null) return LayoutContractResult.Failure(proofError)
+    }
     return LayoutContractResult.Success(
         IncrementalLayoutRequest(
             input,
@@ -705,6 +709,61 @@ public fun createIncrementalLayoutRequest(
             cancellationToken,
         ),
     )
+}
+
+private fun validateTypographyProofs(
+    previousState: LayoutStateHandle,
+    target: TextSnapshot,
+    typographyDelta: TypographyDelta,
+): IncrementalLayoutError? {
+    val typographyError = validateProvenRangeSpaces(
+        label = "Typography delta",
+        rangeChange = typographyDelta.rangeChange,
+        sourceVersion = previousState.checkpoint.textVersion,
+        target = target,
+    )
+    if (typographyError != null) return typographyError
+
+    val policyChange = typographyDelta.fontResolutionPolicy?.rangeChange ?: return null
+    val policyError = validateProvenRangeSpaces(
+        label = "Font resolution policy delta",
+        rangeChange = policyChange,
+        sourceVersion = previousState.checkpoint.textVersion,
+        target = target,
+    )
+    if (policyError != null) return policyError
+    if (!typographyDelta.rangeChange.hasSameRangesAs(policyChange)) {
+        return IncrementalLayoutError.InvalidRange(
+            "Typography and font resolution policy deltas must declare the same affected ranges.",
+        )
+    }
+    return null
+}
+
+private fun validateProvenRangeSpaces(
+    label: String,
+    rangeChange: RangeChange,
+    sourceVersion: TextVersion,
+    target: TextSnapshot,
+): IncrementalLayoutError? {
+    val proven = rangeChange as? RangeChange.Proven ?: return null
+    if (proven.sourceRanges.any { range -> !range.usesVersion(sourceVersion) }) {
+        return IncrementalLayoutError.VersionMismatch(
+            "$label source ranges must use the previous layout text revision.",
+        )
+    }
+    proven.targetRanges.forEach { range ->
+        val error = validateRangeDomain(target, range, "$label target range")
+        if (error != null) return error
+    }
+    return null
+}
+
+private fun RangeChange.hasSameRangesAs(other: RangeChange): Boolean = when {
+    this === RangeChange.FullInvalidation && other === RangeChange.FullInvalidation -> true
+    this is RangeChange.Proven && other is RangeChange.Proven ->
+        sourceRanges == other.sourceRanges && targetRanges == other.targetRanges
+    else -> false
 }
 
 /** Immutable published incremental layout metadata. */

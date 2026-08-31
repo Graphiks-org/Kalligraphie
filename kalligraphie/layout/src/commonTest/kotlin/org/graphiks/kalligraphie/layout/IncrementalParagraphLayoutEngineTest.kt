@@ -441,7 +441,7 @@ class IncrementalParagraphLayoutEngineTest {
     }
 
     @Test
-    fun policyProofDifferentFromTypographyProofUsesConservativeReflow() {
+    fun policyProofDifferentFromTypographyProofCannotReachTheEngine() {
         val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
         val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
         val initial = assertIs<IncrementalLayoutResult.Success>(
@@ -475,19 +475,14 @@ class IncrementalParagraphLayoutEngineTest {
             ),
         )
 
-        val result = engine.layout(
-            target.request(
-                4,
-                5,
-                previousState = initial.layout.state,
-                delta = LayoutDelta(textDelta, typographyDelta),
-            ),
-            target.computer(),
+        val result = target.requestResult(
+            4,
+            5,
+            previousState = initial.layout.state,
+            delta = LayoutDelta(textDelta, typographyDelta),
         )
 
-        val success = assertIs<IncrementalLayoutResult.Success>(result)
-        assertEquals(target.snapshot.range.start, success.diagnostics.reflowStart)
-        assertTrue(success.diagnostics.usedConservativeInvalidation)
+        assertIs<IncrementalLayoutError.InvalidRange>(assertIs<LayoutContractResult.Failure>(result).error)
     }
 
     @Test
@@ -603,6 +598,16 @@ class IncrementalParagraphLayoutEngineTest {
             previousState: LayoutStateHandle? = null,
             delta: LayoutDelta? = null,
         ): IncrementalLayoutRequest = assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(
+            requestResult(start, endExclusive, beforeAndAfter, previousState, delta),
+        ).value
+
+        fun requestResult(
+            start: Int,
+            endExclusive: Int,
+            beforeAndAfter: Int = 0,
+            previousState: LayoutStateHandle? = null,
+            delta: LayoutDelta? = null,
+        ): LayoutContractResult<IncrementalLayoutRequest> =
             createIncrementalLayoutRequest(
                 input = LayoutInput(snapshot, typography),
                 requestedRange = range(snapshot, start, endExclusive),
@@ -611,8 +616,7 @@ class IncrementalParagraphLayoutEngineTest {
                 previousState = previousState,
                 delta = delta,
                 cancellationToken = CancellationToken.none,
-            ),
-        ).value
+            )
 
         fun computer(
             glyphIds: List<Int> = lineBoundaries.map { 7 },
