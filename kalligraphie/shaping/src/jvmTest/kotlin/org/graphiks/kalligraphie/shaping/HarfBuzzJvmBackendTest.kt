@@ -28,6 +28,7 @@ import org.graphiks.kalligraphie.unicode.TextSnapshots
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -35,6 +36,15 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class HarfBuzzJvmBackendTest {
+    private val backends = mutableListOf<ShapingBackend>()
+
+    @AfterTest
+    fun closeOpenedBackends() {
+        backends.asReversed().forEach { backend ->
+            assertIs<FontOperationResult.Success<Unit>>(backend.close())
+        }
+    }
+
     @Test
     fun closingTheBackendReleasesPreparedFontsAndRejectsLaterShaping() {
         val backend = backend()
@@ -568,7 +578,7 @@ class HarfBuzzJvmBackendTest {
         assertEquals("font.shaping-native-platform-unsupported", failure.error.code)
     }
 
-    private fun backend(): ShapingBackend = JvmHarfBuzzShapingBackend.open().successValue()
+    private fun backend(): ShapingBackend = JvmHarfBuzzShapingBackend.open().successValue().also(backends::add)
 
     private fun shape(
         backend: ShapingBackend,
