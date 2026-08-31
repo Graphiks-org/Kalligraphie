@@ -1,0 +1,357 @@
+package org.graphiks.kalligraphie
+
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
+import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.CoverageStatus
+import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
+import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontFaceId
+import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontResolutionCandidate
+import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
+import org.graphiks.kalligraphie.api.FontSource
+import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
+import org.graphiks.kalligraphie.api.LayoutPoint
+import org.graphiks.kalligraphie.api.LayoutRect
+import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineLayout
+import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.LogicalNavigationDirection
+import org.graphiks.kalligraphie.api.ParagraphLayoutError
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.TextRange
+import org.graphiks.kalligraphie.api.TextSlice
+import org.graphiks.kalligraphie.api.TextSnapshot
+import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.VisualNavigationDirection
+import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+
+class JvmEditableParagraphFacadeTest {
+    @Test
+    fun mainArtifactSnapshotsAnOrderedMultiFaceCatalogFromRealFonts() {
+        val latin = fontSource("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val arabic = fontSource("amiri/Amiri-Regular.ttf", "Amiri Regular")
+        val mutableSources = mutableListOf(latin, arabic)
+
+        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+            Kalligraphie.embedded(mutableSources),
+        ).value
+        mutableSources.clear()
+
+        assertEquals(listOf(latin.id, arabic.id), catalog.faces.map { face -> face.id.source })
+        // Both artifacts are checked-in, licensed TrueType fonts. Their order is the public
+        // fallback order input; no internal SFNT reader or embedded provider is used here.
+    }
+
+    @Test
+    fun publicFacadePublishesMixedScriptFallbackGeometryAndMultilineEditing() {
+        val fixture = multiFaceFixture("fi \u0633\u0644\u0627\u0645")
+
+        val result = layout(fixture, constraints(width = 1_400f, top = 50f, height = 2_400f))
+        val paragraph = result.layout
+        val first = paragraph.lines[0]
+        val second = paragraph.lines[1]
+
+        assertEquals(CoverageStatus.COMPLETE, result.coverageStatus)
+        assertNull(result.continuation)
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 3), range(fixture.snapshot, 3, 7)),
+            paragraph.lines.map(LineLayout::range),
+        )
+        assertEquals(
+            listOf(fixture.latinFace, fixture.arabicFace),
+            paragraph.lines.flatMap(LineLayout::positionedGlyphRuns)
+                .map { run -> run.fontInstanceKey.face }
+                .distinct(),
+        )
+        val latinRun = paragraph.lines.flatMap(LineLayout::positionedGlyphRuns)
+            .single { run -> run.fontInstanceKey.face == fixture.latinFace }
+        val arabicRun = paragraph.lines.flatMap(LineLayout::positionedGlyphRuns)
+            .single { run -> run.fontInstanceKey.face == fixture.arabicFace && run.sourceRun.range == second.range }
+        assertEquals(listOf(3), latinRun.glyphs.map { glyph -> glyph.shapedGlyph.glyphId.value })
+        assertEquals(listOf(900f), latinRun.glyphs.map { glyph -> glyph.advance.x.value })
+        assertEquals(listOf(85, 3080, 3075, 1919), arabicRun.glyphs.map { glyph -> glyph.shapedGlyph.glyphId.value })
+        assertEquals(listOf(452f, 446f, 245f, 568f), arabicRun.glyphs.map { glyph -> glyph.advance.x.value })
+        // Frozen external HarfBuzz 14.3/14.4 oracles are documented with both checked-in fonts.
+
+        assertEquals(
+            listOf(
+                LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(1_500f), LayoutUnit(1_250f)),
+                LayoutRect(LayoutUnit(100f), LayoutUnit(1_250f), LayoutUnit(1_500f), LayoutUnit(2_450f)),
+            ),
+            paragraph.lines.map(LineLayout::lineBox),
+        )
+        assertEquals(
+            listOf(LayoutUnit(950f), LayoutUnit(2_150f)),
+            paragraph.lines.map { line -> line.baseline.y },
+        )
+        assertTrue(paragraph.lines.all { line -> line.designInkBounds.minX < line.designInkBounds.maxX })
+        assertTrue(paragraph.lines.all { line -> line.contentMetrics.inlineAdvance.value > 0f })
+        assertTrue(paragraph.lines.any { line ->
+            line.contentMetrics.ascent != line.verticalMetrics.ascent ||
+                line.contentMetrics.descent != line.verticalMetrics.descent
+        })
+        assertFailsWith<UnsupportedOperationException> {
+            @Suppress("UNCHECKED_CAST")
+            (paragraph.lines as MutableList<LineLayout>).clear()
+        }
+
+        val firstEnd = first.allCaretCandidates.single { candidate -> candidate.position.index == first.range.endExclusive }
+        assertEquals(
+            fixture.snapshot.textIndexAtScalarBoundary(4),
+            assertNotNull(paragraph.nextLogical(firstEnd.position, LogicalNavigationDirection.FORWARD)).index,
+        )
+        assertSame(second.allCaretCandidates.first(), paragraph.nextVisual(firstEnd, VisualNavigationDirection.FORWARD))
+
+        val selection = paragraph.selectionGeometry(
+            first.allCaretCandidates.single { candidate -> candidate.position.index == first.range.start }.position,
+            second.allCaretCandidates.single { candidate -> candidate.position.index == second.range.endExclusive }.position,
+        )
+        assertTrue(selection.isNotEmpty())
+        assertEquals(setOf(first.lineBox.top, second.lineBox.top), selection.map { rectangle -> rectangle.top }.toSet())
+        assertTrue(selection.none { rectangle ->
+            rectangle.top < first.lineBox.bottom && rectangle.bottom > second.lineBox.top
+        })
+
+        val firstStart = first.allCaretCandidates.first()
+        val secondEnd = second.allCaretCandidates.last()
+        assertSame(firstStart, paragraph.hitTest(LayoutPoint(firstStart.geometry.start.x, LayoutUnit(-500f))))
+        assertSame(
+            firstStart,
+            paragraph.hitTest(LayoutPoint(firstStart.geometry.start.x, first.lineBox.bottom)),
+        )
+        assertSame(secondEnd, paragraph.hitTest(LayoutPoint(secondEnd.geometry.start.x, LayoutUnit(3_000f))))
+    }
+
+    @Test
+    fun publicFacadeContinuationReplaysAsTheSameTallComposition() {
+        val fixture = multiFaceFixture("fi \u0633\u0644\u0627\u0645")
+        val partial = layout(fixture, constraints(width = 1_400f, top = 50f, height = 1_200f))
+        val continuation = assertNotNull(partial.continuation)
+        val resumed = assertIs<ParagraphLayoutResult.Success>(
+            JvmEditableParagraphFacade.layout(
+                request(
+                    fixture = fixture,
+                    constraints = constraints(width = 1_400f, top = 1_250f, height = 1_200f),
+                    sourceRange = continuation.remainingSourceRange,
+                    continuation = continuation,
+                ),
+            ),
+        )
+        val full = layout(fixture, constraints(width = 1_400f, top = 50f, height = 2_400f))
+
+        assertEquals(CoverageStatus.PARTIAL, partial.coverageStatus)
+        assertEquals(range(fixture.snapshot, 3, 7), continuation.remainingSourceRange)
+        assertEquals(CoverageStatus.COMPLETE, resumed.coverageStatus)
+        assertEquals(
+            full.layout.lines.map(::lineFingerprint),
+            (partial.layout.lines + resumed.layout.lines).map(::lineFingerprint),
+        )
+
+        val incompatible = JvmEditableParagraphFacade.layout(
+            request(
+                fixture = fixture,
+                constraints = constraints(width = 1_399f, top = 1_250f, height = 1_200f),
+                sourceRange = continuation.remainingSourceRange,
+                continuation = continuation,
+            ),
+        )
+        assertIs<ParagraphLayoutError.InvalidInput>(
+            assertIs<ParagraphLayoutResult.Failure>(incompatible).error,
+        )
+    }
+
+    @Test
+    fun publicFacadeReturnsTypedCancellationAndInvalidClusterRange() {
+        val fixture = multiFaceFixture("f\u0301")
+        val cancelled = JvmEditableParagraphFacade.layout(
+            request(
+                fixture,
+                constraints(width = 1_400f, top = 50f, height = 1_200f),
+                cancellationToken = CancellationToken.cancelled,
+            ),
+        )
+        assertIs<ParagraphLayoutResult.Cancelled>(cancelled)
+
+        val splitCluster = JvmEditableParagraphFacade.layout(
+            request(
+                fixture,
+                constraints(width = 1_400f, top = 50f, height = 1_200f),
+                sourceRange = range(fixture.snapshot, 1, 2),
+            ),
+        )
+        assertIs<ParagraphLayoutError.InvalidInput>(
+            assertIs<ParagraphLayoutResult.Failure>(splitCluster).error,
+        )
+    }
+
+    @Test
+    fun publicFacadePublishesEmptyAndMandatoryTrailingEmptyLines() {
+        val emptyFixture = multiFaceFixture("")
+        val empty = layout(emptyFixture, constraints(width = 1_400f, top = 50f, height = 1_200f))
+        assertEquals(listOf(emptyFixture.snapshot.range), empty.layout.lines.map(LineLayout::range))
+        assertTrue(empty.layout.lines.single().positionedGlyphRuns.isEmpty())
+
+        val terminatedFixture = multiFaceFixture("fi\n")
+        val terminated = layout(terminatedFixture, constraints(width = 1_400f, top = 50f, height = 2_400f))
+        val end = terminatedFixture.snapshot.range.endExclusive
+        assertEquals(
+            listOf(terminatedFixture.snapshot.range, TextRange(end, end)),
+            terminated.layout.lines.map(LineLayout::range),
+        )
+        assertTrue(terminated.layout.lines.last().positionedGlyphRuns.isEmpty())
+    }
+
+    @Test
+    fun ownedBackendCloseFailureCannotPublishAParagraphSuccess() {
+        val fixture = multiFaceFixture("fi")
+        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        try {
+            val result = JvmEditableParagraphFacade.layout(
+                request(fixture, constraints(width = 1_400f, top = 50f, height = 1_200f)),
+                CloseFailingBackend(backend),
+            )
+
+            val failure = assertIs<ParagraphLayoutResult.Failure>(result)
+            val fontFailure = assertIs<ParagraphLayoutError.FontFailure>(failure.error)
+            assertEquals("font.test-close-failure", fontFailure.fontError.code)
+            assertEquals("font.test-close-failure", failure.diagnostics.single().code)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(backend.close())
+        }
+    }
+
+    private fun layout(
+        fixture: ParagraphFixture,
+        constraints: HorizontalParagraphConstraints,
+    ): ParagraphLayoutResult.Success = assertIs(
+        JvmEditableParagraphFacade.layout(request(fixture, constraints)),
+    )
+
+    private fun request(
+        fixture: ParagraphFixture,
+        constraints: HorizontalParagraphConstraints,
+        sourceRange: TextRange = fixture.snapshot.range,
+        continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
+        snapshot = fixture.snapshot,
+        sourceRange = sourceRange,
+        constraints = constraints,
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "ar",
+        fontCatalog = fixture.catalog,
+        resolutionPolicy = fixture.policy,
+        fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+        materialization = EditableLineMaterialization.LayoutOnly,
+        continuation = continuation,
+        cancellationToken = cancellationToken,
+    )
+
+    private fun multiFaceFixture(value: String): ParagraphFixture {
+        val latin = fontSource("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val arabic = fontSource("amiri/Amiri-Regular.ttf", "Amiri Regular")
+        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+            Kalligraphie.embedded(listOf(latin, arabic)),
+        ).value
+        val latinFace = FontFaceId(latin.id, 0)
+        val arabicFace = FontFaceId(arabic.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = catalog.generation,
+            policyId = "public-multiscript-fixture",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(latinFace), FontResolutionCandidate(arabicFace)),
+            lastResortFace = arabicFace,
+        )
+        val snapshot = Kalligraphie.decodeUtf16(
+            TextVersion.create(),
+            listOf(TextSlice.Utf16(value.toCharArray())),
+        ).snapshot
+        return ParagraphFixture(snapshot, catalog, policy, latinFace, arabicFace)
+    }
+
+    private fun constraints(
+        width: Float,
+        top: Float,
+        height: Float,
+    ): HorizontalParagraphConstraints = HorizontalParagraphConstraints(
+        region = LayoutRect(LayoutUnit(100f), LayoutUnit(top), LayoutUnit(100f + width), LayoutUnit(top + height)),
+        lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+    )
+
+    private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange = TextRange(
+        snapshot.textIndexAtScalarBoundary(start),
+        snapshot.textIndexAtScalarBoundary(endExclusive),
+    )
+
+    private fun lineFingerprint(line: LineLayout): List<Any> = listOf(
+        line.range,
+        line.baseline,
+        line.contentMetrics,
+        line.lineBox,
+        line.designInkBounds,
+        line.positionedGlyphRuns.flatMap { run ->
+            run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId to glyph.origin }
+        },
+        line.allCaretCandidates.map { candidate -> candidate.position to candidate.geometry },
+    )
+
+    private fun fontSource(relativePath: String, declaredName: String): FontSource = FontSource(
+        sourceBytes = fixtureBytes(relativePath),
+        provenance = FontSourceProvenance(declaredName),
+    )
+
+    private fun fixtureBytes(relativePath: String): ByteArray {
+        val classpathPath = "/fonts/$relativePath"
+        javaClass.getResourceAsStream(classpathPath)?.use { stream -> return stream.readBytes() }
+        val sourceCandidates = listOf(
+            Path.of("shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+            Path.of("kalligraphie", "shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+        )
+        val source = sourceCandidates.firstOrNull(Files::isRegularFile)
+        return Files.readAllBytes(checkNotNull(source) { "fixture font is missing: $relativePath" })
+    }
+
+    private data class ParagraphFixture(
+        val snapshot: TextSnapshot,
+        val catalog: FontCatalogSnapshot,
+        val policy: FontResolutionPolicySnapshot,
+        val latinFace: FontFaceId,
+        val arabicFace: FontFaceId,
+    )
+
+    private class CloseFailingBackend(
+        private val delegate: ShapingBackend,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> = delegate.shape(request)
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Failure(
+            FontError.FontDataFailure(
+                code = "font.test-close-failure",
+                message = "The test backend could not close.",
+                location = FontDiagnosticLocation.Source,
+            ),
+        )
+    }
+}

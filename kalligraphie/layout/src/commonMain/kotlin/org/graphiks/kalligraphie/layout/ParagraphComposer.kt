@@ -89,6 +89,14 @@ internal sealed interface ParagraphCompositionResult {
  * the request snapshot. Font and geometry failures are reported through [ParagraphLayoutResult].
  */
 public object ParagraphComposer : ParagraphLayouter {
+    /**
+     * Finalizes complete paragraph lines from the versioned analyses and borrowed backend in
+     * [request]. [materialization] is borrowed synchronously and must match the resource-free
+     * identity captured by the request. Success publishes only immutable glyph, caret, metric,
+     * and geometry values in paragraph coordinates; no font instance, resolver, backend, native
+     * handle, or partial current line is retained. Invalid input, font failure, finite-coordinate
+     * overflow, and cancellation are returned through [ParagraphLayoutResult].
+     */
     override fun layout(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
