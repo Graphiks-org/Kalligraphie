@@ -31,6 +31,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
+import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
@@ -105,6 +106,26 @@ class JvmEditableParagraphFacadeTest {
 
         assertIs<ParagraphLayoutResult.Cancelled>(result)
         assertEquals("en-US", assertNotNull(suppliedRequest).language)
+    }
+
+    @Test
+    fun facadeRequestFeaturesAreAnImmutableDefensiveSnapshot() {
+        val fixture = multiFaceFixture("fi")
+        val supplied = mutableListOf(OpenTypeFeature("kern", 1), OpenTypeFeature("liga", 0))
+
+        val facadeRequest = request(
+            fixture = fixture,
+            constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
+            features = supplied,
+        )
+        supplied.clear()
+
+        assertEquals(listOf(OpenTypeFeature("kern", 1), OpenTypeFeature("liga", 0)), facadeRequest.features)
+        assertFailsWith<UnsupportedOperationException> {
+            @Suppress("UNCHECKED_CAST")
+            (facadeRequest.features as MutableList<OpenTypeFeature>).clear()
+        }
+        assertEquals(listOf(OpenTypeFeature("kern", 1), OpenTypeFeature("liga", 0)), facadeRequest.features)
     }
 
     @Test
@@ -193,6 +214,183 @@ class JvmEditableParagraphFacadeTest {
             paragraph.hitTest(LayoutPoint(secondInterior.geometry.start.x, secondMidlineY)),
         )
         assertSame(secondEnd, paragraph.hitTest(LayoutPoint(secondEnd.geometry.start.x, LayoutUnit(3_000f))))
+    }
+
+    @Test
+    fun publicFacadeChoosesTheLastLegalBreakThatFits() {
+        val fixture = fontFixture(
+            value = "one two three",
+            fonts = listOf(FontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+
+        val result = layout(
+            fixture,
+            constraints(width = 3_000f, top = 50f, height = 3_600f),
+            language = "en",
+        )
+
+        assertEquals(CoverageStatus.COMPLETE, result.coverageStatus)
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 4), range(fixture.snapshot, 4, 8), range(fixture.snapshot, 8, 13)),
+            result.layout.lines.map(LineLayout::range),
+        )
+    }
+
+    @Test
+    fun publicFacadePublishesAnOverwideIndivisibleUnitWhole() {
+        val fixture = fontFixture(
+            value = "Supercalifragilistic",
+            fonts = listOf(FontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+
+        val result = layout(
+            fixture,
+            constraints(width = 100f, top = 50f, height = 1_200f),
+            language = "en",
+        )
+        val line = result.layout.lines.single()
+
+        assertEquals(CoverageStatus.COMPLETE, result.coverageStatus)
+        assertEquals(fixture.snapshot.range, line.range)
+        assertTrue(line.contentMetrics.inlineAdvance > LayoutUnit(100f))
+        assertTrue(line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.isNotEmpty())
+    }
+
+    @Test
+    fun publicFacadeKeepsCombiningVariationAndEmojiZwJUnitsWholeOnNarrowLines() {
+        val fixture = fontFixture(
+            value = "f\u0301 \u2764\uFE0F\u200D\u2764\uFE0F x",
+            fonts = listOf(
+                FontFixture("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture"),
+                FontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+            ),
+        )
+
+        val result = layout(
+            fixture,
+            constraints(width = 100f, top = 50f, height = 3_600f),
+            language = "en",
+        )
+
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 3), range(fixture.snapshot, 3, 9), range(fixture.snapshot, 9, 10)),
+            result.layout.lines.map(LineLayout::range),
+        )
+        assertEquals(
+            listOf(listOf(73, 5923, 3), listOf(6, 6, 3), listOf(91)),
+            result.layout.lines.map { line -> line.glyphIds() },
+        )
+        assertEquals(
+            listOf(
+                listOf(352.05078f, 0f, 317.8711f),
+                listOf(900f, 900f, 317.8711f),
+                listOf(591.7969f),
+            ),
+            result.layout.lines.map { line -> line.glyphAdvances() },
+        )
+        // Frozen Unicode 16 UAX #14 and HarfBuzz oracle over the checked-in real GDEF/DejaVu
+        // fixtures; only public paragraph lines are observed here.
+    }
+
+    @Test
+    fun publicFacadeReshapesAnUnsafeBreakWithFinalBotAndEotGlyphs() {
+        val fixture = fontFixture(
+            value = "office-office",
+            fonts = listOf(FontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+
+        val result = layout(
+            fixture,
+            constraints(width = 3_200f, top = 50f, height = 2_400f),
+            language = "en",
+        )
+
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 7), range(fixture.snapshot, 7, 13)),
+            result.layout.lines.map(LineLayout::range),
+        )
+        assertEquals(
+            listOf(listOf(82, 5044, 70, 72, 16), listOf(82, 5044, 70, 72)),
+            result.layout.lines.map { line -> line.glyphIds() },
+        )
+        assertEquals(
+            listOf(
+                listOf(611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+                listOf(611.8164f, 966.7969f, 549.8047f, 615.2344f),
+            ),
+            result.layout.lines.map { line -> line.glyphAdvances() },
+        )
+        assertTrue(result.layout.lines.all { line ->
+            line.positionedGlyphRuns.first().sourceRun.bot && line.positionedGlyphRuns.last().sourceRun.eot
+        })
+        // Frozen HarfBuzz 14.3.0 oracle for separate BOT/EOT shaping of the selected lines.
+    }
+
+    @Test
+    fun publicFacadeBacktracksFromAFinalEotAdvanceThatWouldOverflow() {
+        val fixture = fontFixture(
+            value = "A-V-AV",
+            fonts = listOf(FontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+
+        val result = layout(
+            fixture,
+            constraints(width = 1_940f, top = 50f, height = 3_600f),
+            language = "en",
+        )
+
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 2), range(fixture.snapshot, 2, 4), range(fixture.snapshot, 4, 6)),
+            result.layout.lines.map(LineLayout::range),
+        )
+        assertEquals(
+            listOf(1_022.9492f, 986.3281f, 1_304.1992f),
+            result.layout.lines.map { line -> line.contentMetrics.inlineAdvance.value },
+        )
+        assertTrue(result.layout.lines.all { line -> line.contentMetrics.inlineAdvance <= LayoutUnit(1_940f) })
+        // Frozen HarfBuzz 14.3.0 oracle: final EOT shaping makes `A-V-` too wide, so the
+        // published first line must backtrack to the preceding legal boundary `A-`.
+    }
+
+    @Test
+    fun publicFacadeAppliesTheExactPerLineBidiOracle() {
+        val fixture = fontFixture(
+            value = "abc \u05D0\u05D1\u05D2   \u05E9\u05DC\u05D5\u05DD",
+            fonts = listOf(FontFixture("liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")),
+        )
+
+        val result = layout(
+            fixture,
+            constraints(width = 4_500f, top = 50f, height = 2_400f),
+            language = "he",
+        )
+        val first = result.layout.lines.first()
+
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 10), range(fixture.snapshot, 10, 14)),
+            result.layout.lines.map(LineLayout::range),
+        )
+        assertEquals(listOf(0, 1, 0), first.positionedGlyphRuns.map { run -> run.sourceRun.bidiLevel })
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 4), range(fixture.snapshot, 4, 7), range(fixture.snapshot, 7, 10)),
+            first.positionedGlyphRuns.map { run -> run.sourceRun.range },
+        )
+        assertEquals(
+            listOf(
+                listOf(68, 69, 70, 3, 1282, 1281, 1280, 3, 3, 3),
+                listOf(1293, 1285, 1292, 1305),
+            ),
+            result.layout.lines.map { line -> line.glyphIds() },
+        )
+        assertEquals(
+            listOf(
+                listOf(556.15234f, 556.15234f, 500f, 277.83203f, 422.85156f, 598.14453f, 627.9297f, 277.83203f, 277.83203f, 277.83203f),
+                listOf(678.22266f, 259.76562f, 529.78516f, 729.98047f),
+            ),
+            result.layout.lines.map { line -> line.glyphAdvances() },
+        )
+        assertEquals(listOf(0, 1, 2), first.positionedGlyphRuns.map { run -> run.visualOrder })
+        // Frozen UAX #9 L1/L2 and HarfBuzz 14.3.0 oracle, asserted only through public lines.
     }
 
     @Test
@@ -298,8 +496,10 @@ class JvmEditableParagraphFacadeTest {
     private fun layout(
         fixture: ParagraphFixture,
         constraints: HorizontalParagraphConstraints,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language: String = "ar",
     ): ParagraphLayoutResult.Success = assertIs(
-        JvmEditableParagraphFacade.layout(request(fixture, constraints)),
+        JvmEditableParagraphFacade.layout(request(fixture, constraints, baseDirection = baseDirection, language = language)),
     )
 
     private fun request(
@@ -309,40 +509,54 @@ class JvmEditableParagraphFacadeTest {
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
         cancellationToken: CancellationToken = CancellationToken.none,
         language: String = "ar",
+        features: List<OpenTypeFeature> = emptyList(),
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
     ): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
         snapshot = fixture.snapshot,
         sourceRange = sourceRange,
         constraints = constraints,
-        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        baseDirection = baseDirection,
         language = language,
         fontCatalog = fixture.catalog,
         resolutionPolicy = fixture.policy,
         fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+        features = features,
         materialization = EditableLineMaterialization.LayoutOnly,
         continuation = continuation,
         cancellationToken = cancellationToken,
     )
 
-    private fun multiFaceFixture(value: String): ParagraphFixture {
-        val latin = fontSource("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
-        val arabic = fontSource("amiri/Amiri-Regular.ttf", "Amiri Regular")
+    private fun multiFaceFixture(value: String): ParagraphFixture = fontFixture(
+        value = value,
+        fonts = listOf(
+            FontFixture("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture"),
+            FontFixture("amiri/Amiri-Regular.ttf", "Amiri Regular"),
+        ),
+        policyId = "public-multiscript-fixture",
+    )
+
+    private fun fontFixture(
+        value: String,
+        fonts: List<FontFixture>,
+        policyId: String = "public-paragraph-fixture",
+    ): ParagraphFixture {
+        val sources = fonts.map { font -> fontSource(font.relativePath, font.declaredName) }
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
-            Kalligraphie.embedded(listOf(latin, arabic)),
+            Kalligraphie.embedded(sources),
         ).value
-        val latinFace = FontFaceId(latin.id, 0)
-        val arabicFace = FontFaceId(arabic.id, 0)
+        val faces = sources.map { source -> FontFaceId(source.id, 0) }
         val policy = FontResolutionPolicySnapshot(
             generation = catalog.generation,
-            policyId = "public-multiscript-fixture",
+            policyId = policyId,
             version = "1",
-            candidates = listOf(FontResolutionCandidate(latinFace), FontResolutionCandidate(arabicFace)),
-            lastResortFace = arabicFace,
+            candidates = faces.map(::FontResolutionCandidate),
+            lastResortFace = faces.last(),
         )
         val snapshot = Kalligraphie.decodeUtf16(
             TextVersion.create(),
             listOf(TextSlice.Utf16(value.toCharArray())),
         ).snapshot
-        return ParagraphFixture(snapshot, catalog, policy, latinFace, arabicFace)
+        return ParagraphFixture(snapshot, catalog, policy, faces.first(), faces.last())
     }
 
     private fun constraints(
@@ -371,6 +585,14 @@ class JvmEditableParagraphFacadeTest {
         line.allCaretCandidates.map { candidate -> candidate.position to candidate.geometry },
     )
 
+    private fun LineLayout.glyphIds(): List<Int> = positionedGlyphRuns.flatMap { run ->
+        run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId.value }
+    }
+
+    private fun LineLayout.glyphAdvances(): List<Float> = positionedGlyphRuns.flatMap { run ->
+        run.glyphs.map { glyph -> glyph.advance.x.value }
+    }
+
     private fun fontSource(relativePath: String, declaredName: String): FontSource = FontSource(
         sourceBytes = fixtureBytes(relativePath),
         provenance = FontSourceProvenance(declaredName),
@@ -393,6 +615,11 @@ class JvmEditableParagraphFacadeTest {
         val policy: FontResolutionPolicySnapshot,
         val latinFace: FontFaceId,
         val arabicFace: FontFaceId,
+    )
+
+    private data class FontFixture(
+        val relativePath: String,
+        val declaredName: String,
     )
 
     private class CloseFailingBackend(

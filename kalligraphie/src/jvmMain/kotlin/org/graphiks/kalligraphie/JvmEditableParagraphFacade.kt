@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie
 
+import java.util.Collections
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
@@ -72,8 +73,8 @@ public class JvmEditableParagraphFacadeRequest(
     /** Cooperative signal checked before and during bounded composition work. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
 ) {
-    /** Immutable deterministic OpenType feature overrides in caller order. */
-    public val features: List<OpenTypeFeature> = features.toList()
+    /** Immutable defensive snapshot of deterministic OpenType feature overrides in caller order. */
+    public val features: List<OpenTypeFeature> = Collections.unmodifiableList(features.toList())
 }
 
 /**
