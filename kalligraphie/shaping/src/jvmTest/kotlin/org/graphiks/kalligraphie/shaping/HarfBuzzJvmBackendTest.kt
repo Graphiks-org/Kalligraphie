@@ -132,6 +132,29 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
+    fun preparedFontCacheDoesNotStrandAnActiveLeaseWhenEvictionReleaseFails() {
+        val released = mutableListOf<String>()
+        val cache = BoundedPreparedResourceCache<String, CachedResource>(
+            maximumEntries = 1,
+            maximumWeightBytes = 1,
+            weightInBytes = { resource -> resource.weight },
+            release = { resource ->
+                released += resource.name
+                if (resource.name == "first") error("The first resource cannot be released.")
+            },
+        )
+
+        cache.acquire("first") { CachedResource("first", weight = 1) }.close()
+
+        assertFailsWith<IllegalStateException> {
+            cache.acquire("second") { CachedResource("second", weight = 1) }
+        }
+
+        assertEquals(emptyList(), cache.close())
+        assertEquals(listOf("first", "second"), released)
+    }
+
+    @Test
     fun explicitPinnedDefaultFeaturePolicyShapesTheAuditedDefaultLigature() {
         val backend = backend()
         val policy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy

@@ -237,7 +237,14 @@ internal class BoundedPreparedResourceCache<Key : Any, Value : Any>(
             releaseFailures.forEach(closedError::addSuppressed)
             throw closedError
         }
-        releaseFailures.firstOrNull()?.let { throw it }
+        releaseFailures.firstOrNull()?.let { releaseFailure ->
+            try {
+                checkNotNull(lease).close()
+            } catch (cleanupFailure: Throwable) {
+                releaseFailure.addSuppressed(cleanupFailure)
+            }
+            throw releaseFailure
+        }
         return checkNotNull(lease)
     }
 
