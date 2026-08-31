@@ -2,10 +2,11 @@
 
 ## État
 
-DONE après fix round 3/5. L’engine commun et synchrone matérialise une cible bornée avec
+DONE après fix round 4/5. L’engine commun et synchrone matérialise une cible bornée avec
 overscan, publie un suffixe explicite et ne dérive la reprise que du `LayoutStateHandle` et de la
 requête. Les documents vides, lignes terminales vides et transitions de font-resolution policy
-prouvées sont couverts. Les vérifications JVM et iOS sont vertes.
+prouvées sont couverts. La factory rejette aussi les preuves typographiques étrangères même sans
+état antérieur. Les vérifications JVM et iOS sont vertes.
 
 ## Commits
 
@@ -13,6 +14,7 @@ prouvées sont couverts. Les vérifications JVM et iOS sont vertes.
 - `97d4dac fix(font): bound incremental paragraph reuse`
 - `bf32c75 fix(font): handle terminal lines and policy deltas`
 - `6b5cd6a fix(font): validate typography proof spaces`
+- `884b610 fix(font): validate typography proofs without state`
 
 ## Preuves RED
 
@@ -64,6 +66,17 @@ typographiques liées à des espaces source ou cible étrangers, les preuves pol
 deux preuves valides mais différentes. Ces requêtes pouvaient donc atteindre les comparaisons de
 `TextIndex` de l’engine.
 
+RED du fix round 4/5 :
+
+```text
+rtk ./gradlew :kalligraphie:api:jvmTest --tests org.graphiks.kalligraphie.api.IncrementalLayoutContractsTest --no-daemon
+```
+
+Résultat observé : exit code 1, `27 tests completed, 3 failed`. Sans `previousState`, la factory
+acceptait encore une preuve typographique dont la source ou la cible appartenait à un autre espace
+texte, ainsi que des preuves typography/policy divergentes. La requête initiale sans delta restait
+verte.
+
 ## Preuves GREEN
 
 Test focalisé frais du fix :
@@ -97,6 +110,17 @@ Résultat : exit code 0, `BUILD SUCCESSFUL`; 23 contract tests et 20 engine test
 Le test layout prouve explicitement qu’une divergence de preuves retourne `InvalidRange` lors de
 la construction et ne peut pas appeler l’engine.
 
+Tests ciblés frais du fix round 4/5 :
+
+```text
+rtk ./gradlew :kalligraphie:api:jvmTest --tests org.graphiks.kalligraphie.api.IncrementalLayoutContractsTest :kalligraphie:layout:jvmTest --tests org.graphiks.kalligraphie.layout.IncrementalParagraphLayoutEngineTest --no-daemon
+```
+
+Résultat : exit code 0, `BUILD SUCCESSFUL`; 27 contract tests et 20 engine tests JVM réussissent.
+Les trois nouvelles régressions obtiennent `VersionMismatch` pour les espaces source/cible non
+vérifiables et `InvalidRange` pour des preuves typography/policy divergentes; aucune requête
+invalide n’est construite pour l’engine. La requête initiale sans état ni delta reste acceptée.
+
 Suites complètes API et layout :
 
 ```text
@@ -105,7 +129,7 @@ rtk ./gradlew :kalligraphie:api:check :kalligraphie:layout:check --no-daemon
 
 Résultat : exit code 0, `BUILD SUCCESSFUL`; 65 tâches, dont `jvmTest`,
 `iosSimulatorArm64Test`, `allTests` et `check`, réussissent pour les deux modules. La suite de
-contrats incrémentaux contient 23 tests JVM et la suite de l’engine incrémental 20 tests JVM, sans
+contrats incrémentaux contient 27 tests JVM et la suite de l’engine incrémental 20 tests JVM, sans
 failure, error ou skipped test.
 
 Vérification du diff :
@@ -144,9 +168,11 @@ Résultat : exit code 0, aucune erreur de whitespace.
   reproduit exactement les mêmes plages prouvées que le delta typographique, si les snapshots
   source/cible correspondent aux signatures (generation, id, version, candidates, last-resort) et
   si contraintes, font instance, features et shaping configuration restent identiques.
-- Le boundary public valide désormais les espaces de chaque `RangeChange.Proven` : toutes les
-  ranges source utilisent la `TextVersion` du checkpoint précédent et toutes les ranges cible
-  appartiennent au `TextSnapshot` cible. Une violation retourne `VersionMismatch` avant l’engine.
+- Le boundary public valide les espaces de chaque `RangeChange.Proven`, avec ou sans état
+  antérieur. La source autoritative est le checkpoint, sinon la source du `TextChangeSet`, sinon la
+  version du texte cible pour un changement typographique sur texte inchangé. Toutes les ranges
+  cible appartiennent au `TextSnapshot` cible. Une preuve étrangère ou non vérifiable retourne
+  `VersionMismatch` avant l’engine.
 - Lorsqu’un `FontResolutionPolicyDelta` est présent, sa preuve doit être sémantiquement identique à
   celle de `TypographyDelta` : `FullInvalidation` des deux côtés ou mêmes listes source/cible
   `Proven`. Les modes mixtes ou listes divergentes retournent `InvalidRange`; les fallbacks
@@ -181,6 +207,9 @@ source-compatibles. Aucun claim de compatibilité ABI globale n’est fait.
 
 - L’adaptateur réel entre `IncrementalParagraphComputer` et `ParagraphComposer` reste volontairement
   hors de cette unité; les fixtures prouvent le contrat avec des lignes complètes et portables.
+- Sans état antérieur ni delta texte, une preuve source n’est vérifiable que dans la version du
+  texte cible. Cette règle conservatrice autorise le changement typographique sur texte inchangé et
+  refuse qu’un espace source opaque influence le calcul.
 - Le computer borné reste l’autorité qui décide qu’une ligne vide terminale est canonique; l’engine
   vérifie sa position et sa contiguïté mais ne duplique pas l’analyse UAX #14 du composer.
 - Le build émet l’avertissement Gradle préexistant concernant des fonctionnalités dépréciées
