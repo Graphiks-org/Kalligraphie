@@ -25,6 +25,8 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
@@ -147,6 +149,57 @@ class EditableParagraphCompositionTest {
     }
 
     @Test
+    fun finalEotAdvanceBacktracksFromAProvisionallyFittingHyphenBreak() {
+        val fixture = fixture("A-V-AV", width = 1_940f, height = 3_000f)
+
+        val result = compose(fixture)
+
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 2), range(fixture.snapshot, 2, 4), range(fixture.snapshot, 4, 6)),
+            result.lines.map { it.line.range },
+        )
+        assertEquals(
+            listOf(1_022.9492f, 986.3281f, 1_304.1992f),
+            result.lines.map { it.inlineAdvance.value },
+        )
+        assertTrue(result.lines.all { line -> line.inlineAdvance.value <= fixture.request.constraints.width.value })
+        // Frozen HarfBuzz 14.3.0 oracle at size 1000: paragraph-wide `A-V-` is
+        // 1928.7109, but final EOT shaping makes its hyphen 739 design units and
+        // the line 1950.6836 wide. The preceding legal `A-` candidate is 1022.9492.
+    }
+
+    @Test
+    fun unsafeFlagsExpandOnlyTheBoundedFinalContextAfterASafePrefix() {
+        val fixture = fixture(
+            "abc office-office",
+            width = 5_300f,
+            height = 2_000f,
+            recordShapingRequests = true,
+        )
+
+        val result = compose(fixture)
+
+        assertEquals(range(fixture.snapshot, 0, 11), result.lines.first().line.range)
+        assertEquals(
+            listOf(68, 69, 70, 3, 82, 5044, 70, 72, 16),
+            result.lines.first().line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
+        )
+        assertEquals(
+            listOf(612.79297f, 634.7656f, 549.8047f, 317.8711f, 611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+            result.lines.first().line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.advance.x.value } },
+        )
+        val finalEnd = range(fixture.snapshot, 0, 11).endExclusive
+        assertTrue(fixture.recordingBackend!!.requests.any { request ->
+            request.range == range(fixture.snapshot, 3, 11) && request.eot
+        })
+        assertTrue(fixture.recordingBackend.requests.none { request ->
+            request.range == TextRange(fixture.snapshot.range.start, finalEnd) && request.eot
+        })
+        // The provisional real-font flags are safe on `abc`, while the space-to-ligature
+        // suffix is unsafe-to-concat and the selected hyphen boundary is unsafe-to-break.
+    }
+
+    @Test
     fun combiningVariationAndEmojiZwJUnitsRemainWholeAcrossNarrowLines() {
         val fixture = fixture(
             "f\u0301 \u2764\uFE0F\u200D\u2764\uFE0F x",
@@ -212,9 +265,81 @@ class EditableParagraphCompositionTest {
             ),
             result.lines.map { placed -> placed.line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } } },
         )
+        assertEquals(
+            listOf(
+                listOf(556.15234f, 556.15234f, 500f, 277.83203f, 422.85156f, 598.14453f, 627.9297f, 277.83203f, 277.83203f, 277.83203f),
+                listOf(678.22266f, 259.76562f, 529.78516f, 729.98047f),
+            ),
+            result.lines.map { placed -> placed.line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.advance.x.value } } },
+        )
         assertEquals(listOf(0, 1, 2), result.lines.first().line.positionedGlyphRuns.map { it.visualOrder })
         // Frozen external oracle: UAX #9 L1/L2 for the selected 0..<10 line, plus
         // HarfBuzz 14.3.0 Liberation Sans glyph order for Latn/Hebr runs.
+    }
+
+    @Test
+    fun trailingBoundaryNeutralOnAnRtlLineIsResetByRetainedX9L1Handling() {
+        val fixture = fixture(
+            "abc\u00AD def",
+            width = 1_800f,
+            height = 3_000f,
+            baseDirection = BaseDirection.RIGHT_TO_LEFT,
+            language = "he",
+        )
+
+        val result = compose(fixture)
+
+        assertEquals(range(fixture.snapshot, 0, 5), result.lines.first().line.range)
+        val softHyphen = range(fixture.snapshot, 3, 4)
+        val retainedBnRun = result.lines.first().line.positionedGlyphRuns.single { run ->
+            run.sourceRun.clusters.any { cluster -> cluster.sourceRange == softHyphen }
+        }
+        assertEquals(1, retainedBnRun.sourceRun.bidiLevel)
+        // UAX #9 16.0 L1 plus §5.2: retained BN/X9 controls participate in the
+        // trailing reset sequence; U+00AD must therefore use the RTL base level 1.
+    }
+
+    @Test
+    fun fallbackResolutionNeverScansUnrelatedSnapshotTextOutsideSourceRange() {
+        val fixture = fixture(
+            "\u4E00one two",
+            width = 3_000f,
+            height = 2_000f,
+            sourceStartOrdinal = 1,
+        )
+
+        val result = compose(fixture)
+
+        assertEquals(
+            listOf(range(fixture.snapshot, 1, 5), range(fixture.snapshot, 5, 8)),
+            result.lines.map { line -> line.line.range },
+        )
+        assertTrue(result.lines.all { line -> line.line.range.start >= fixture.request.sourceRange.start })
+        // DejaVu Sans has no U+4E00 mapping. The CJK scalar is intentionally present only
+        // outside sourceRange, so a range-local resolver must never reject this paragraph.
+    }
+
+    @Test
+    fun finalRangeLocalFallbackPreservesCandidateRejectionDiagnostics() {
+        val fixture = fixture(
+            "f\u0301 x",
+            width = 3_000f,
+            height = 2_000f,
+            fontResources = listOf(
+                FontFixture("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture"),
+                FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+            ),
+        )
+
+        val result = compose(fixture)
+
+        assertTrue(result.lines.first().line.diagnostics.any { diagnostic ->
+            diagnostic.code == "font.fallback-candidate-rejected"
+        })
+        assertEquals(
+            listOf(73, 5923, 3, 91),
+            result.lines.first().line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
+        )
     }
 
     @Test
@@ -252,6 +377,8 @@ class EditableParagraphCompositionTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "en",
         fontResources: List<FontFixture> = listOf(FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        sourceStartOrdinal: Int = 0,
+        recordShapingRequests: Boolean = false,
     ): Fixture {
         val snapshot = TextSnapshots.decodeUtf16(
             version = TextVersion.create(),
@@ -276,10 +403,13 @@ class EditableParagraphCompositionTest {
             candidates = faces.map(::FontResolutionCandidate),
             lastResortFace = faces.last(),
         )
-        val backend = JvmHarfBuzzShapingBackend.open().successValue().also(openedBackends::add)
+        val nativeBackend = JvmHarfBuzzShapingBackend.open().successValue()
+        val recordingBackend = if (recordShapingRequests) RecordingShapingBackend(nativeBackend) else null
+        val backend = (recordingBackend ?: nativeBackend).also(openedBackends::add)
         val metrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f))
         val request = ParagraphLayoutRequest(
             snapshot = snapshot,
+            sourceRange = range(snapshot, sourceStartOrdinal, snapshot.scalarRanges(snapshot.range).size),
             unicodeAnalysis = unicodeAnalysis,
             lineBreakAnalysis = lineBreakAnalysis,
             constraints = HorizontalParagraphConstraints(
@@ -295,7 +425,7 @@ class EditableParagraphCompositionTest {
             shapingBackend = backend,
             materializationIdentity = ParagraphMaterializationIdentity.LayoutOnly,
         )
-        return Fixture(snapshot, request)
+        return Fixture(snapshot, request, recordingBackend)
     }
 
     private fun assertCompleteClusterCoverage(
@@ -320,7 +450,22 @@ class EditableParagraphCompositionTest {
     private data class Fixture(
         val snapshot: TextSnapshot,
         val request: ParagraphLayoutRequest,
+        val recordingBackend: RecordingShapingBackend?,
     )
 
     private data class FontFixture(val resource: String, val declaredName: String)
+
+    private class RecordingShapingBackend(
+        private val delegate: ShapingBackend,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+        val requests: MutableList<ShapingRequest> = mutableListOf()
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
+            requests += request
+            return delegate.shape(request)
+        }
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
 }

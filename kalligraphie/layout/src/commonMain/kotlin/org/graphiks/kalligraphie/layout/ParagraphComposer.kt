@@ -8,27 +8,21 @@ import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
-import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontDiagnosticLocation
-import org.graphiks.kalligraphie.api.FontError
-import org.graphiks.kalligraphie.api.FontFaceCapabilities
-import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.GdefLigatureCaretFact
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBreakKind
-import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
-import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
+import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapingDirection
-import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
@@ -96,16 +90,24 @@ internal object ParagraphComposer {
             )
         }
 
-        val assignments = when (val resolved = resolveAssignments(request, materialization, sourceClusters)) {
-            is AssignmentResult.Success -> resolved.assignments
-            is AssignmentResult.Failure -> return ParagraphCompositionResult.Failure(resolved.error)
-            AssignmentResult.Cancelled -> return ParagraphCompositionResult.Cancelled()
-        }
         val provisionalAnalysis = analysisForLine(request, request.sourceRange, resetLineTrailingWhitespace = false)
-        val provisionalRuns = when (val shaped = shapeRange(request, request.sourceRange, provisionalAnalysis, assignments)) {
-            is ShapeResult.Success -> shaped.runs
-            is ShapeResult.Failure -> return ParagraphCompositionResult.Failure(shaped.error)
-            ShapeResult.Cancelled -> return ParagraphCompositionResult.Cancelled()
+        val provisionalRuns = when (
+            val resolved = FontFallbackResolver.resolveRange(
+                request = request,
+                sourceRange = request.sourceRange,
+                shapingContextRange = request.sourceRange,
+                unicodeAnalysis = provisionalAnalysis,
+                materialization = materialization,
+            )
+        ) {
+            is FontOperationResult.Success -> resolved.value.shapedRuns
+            is FontOperationResult.Failure -> return ParagraphCompositionResult.Failure(
+                EditableLineError.FontResolutionFailure(resolved.error),
+                resolved.diagnostics.map(::fontDiagnostic),
+            )
+            is FontOperationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(
+                resolved.diagnostics.map(::fontDiagnostic),
+            )
         }
 
         val placed = mutableListOf<ComposedParagraphLine>()
@@ -134,50 +136,30 @@ internal object ParagraphComposer {
         while (lineStart < request.sourceRange.endExclusive) {
             if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
             if (!fullLineFits()) {
-                return ParagraphCompositionResult.Success(
-                    placed,
-                    TextRange(lineStart, request.sourceRange.endExclusive),
-                )
+                return ParagraphCompositionResult.Success(placed, TextRange(lineStart, request.sourceRange.endExclusive))
             }
 
-            val candidates = candidatesForLine(request, lineStart)
-            val selectedEnd = selectBoundary(
-                start = lineStart,
-                candidates = candidates,
-                width = request.constraints.width,
-                provisionalRuns = provisionalRuns,
-            )
-            check(selectedEnd > lineStart) { "Paragraph composition must strictly advance at every selected line." }
-            val lineRange = TextRange(lineStart, selectedEnd)
-            val finalAnalysis = analysisForLine(request, lineRange, resetLineTrailingWhitespace = true)
-            val finalRuns = when (val shaped = shapeRange(request, lineRange, finalAnalysis, assignments)) {
-                is ShapeResult.Success -> shaped.runs
-                is ShapeResult.Failure -> return ParagraphCompositionResult.Failure(shaped.error)
-                ShapeResult.Cancelled -> return ParagraphCompositionResult.Cancelled()
-            }
-            val instances = assignments
-                .filter { assigned -> assigned.range.start >= lineRange.start && assigned.range.endExclusive <= lineRange.endExclusive }
-                .map(AssignedUnit::instance)
-                .distinctBy(FontInstance::key)
-            val lineResult = ExactEditableLineLayouter.layout(
-                EditableLineRequest(
-                    unicodeAnalysis = finalAnalysis,
-                    shapedGlyphRuns = finalRuns,
-                    baseDirection = request.baseDirection.shapingDirection(),
-                    font = instances.firstOrNull(),
-                    fontInstances = instances,
-                    verticalMetrics = metrics,
+            when (
+                val selected = selectFinalLine(
+                    request = request,
+                    start = lineStart,
+                    candidates = candidatesForLine(request, lineStart),
+                    sourceClusters = sourceClusters,
+                    provisionalRuns = provisionalRuns,
                     materialization = materialization,
-                    cancellationToken = request.cancellationToken,
-                ),
-            )
-            when (lineResult) {
-                is EditableLineResult.Success -> placed += place(lineResult.line, region, lineTop)
-                is EditableLineResult.Failure -> return ParagraphCompositionResult.Failure(lineResult.error, lineResult.diagnostics)
-                is EditableLineResult.Cancelled -> return ParagraphCompositionResult.Cancelled(lineResult.diagnostics)
+                )
+            ) {
+                is FinalizationResult.Success -> {
+                    check(selected.line.range.endExclusive > lineStart) {
+                        "Paragraph composition must strictly advance at every selected line."
+                    }
+                    placed += place(selected.line, region, lineTop)
+                    lineStart = selected.line.range.endExclusive
+                }
+                is FinalizationResult.Failure -> return ParagraphCompositionResult.Failure(selected.error, selected.diagnostics)
+                is FinalizationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(selected.diagnostics)
             }
             lineTop = finiteUnit(lineTop.value.toDouble() + metrics.height.value.toDouble(), "paragraph line top")
-            lineStart = selectedEnd
         }
 
         val trailingEmptyRequired = request.lineBreakAnalysis.opportunities.any { opportunity ->
@@ -204,248 +186,252 @@ internal object ParagraphComposer {
         val firstMandatory = opportunities.firstOrNull { it.kind == LineBreakKind.MANDATORY }
         val terminal = firstMandatory?.boundary ?: request.sourceRange.endExclusive
         return buildList {
-            opportunities
-                .takeWhile { opportunity -> opportunity.boundary <= terminal }
-                .forEach { opportunity -> add(opportunity.boundary) }
+            opportunities.takeWhile { opportunity -> opportunity.boundary <= terminal }.forEach { add(it.boundary) }
             if (lastOrNull() != terminal) add(terminal)
         }
     }
 
-    private fun selectBoundary(
+    private fun selectFinalLine(
+        request: ParagraphLayoutRequest,
         start: TextIndex,
         candidates: List<TextIndex>,
-        width: LayoutUnit,
+        sourceClusters: List<TextRange>,
         provisionalRuns: List<ShapedGlyphRun>,
-    ): TextIndex {
+        materialization: EditableLineMaterialization,
+    ): FinalizationResult {
         require(candidates.isNotEmpty())
-        var latestFitting: TextIndex? = null
-        candidates.forEach { boundary ->
-            val advance = measuredAdvance(TextRange(start, boundary), provisionalRuns)
-            if (advance.value <= width.value) latestFitting = boundary
-        }
-        return latestFitting ?: candidates.first()
-    }
-
-    private fun measuredAdvance(range: TextRange, runs: List<ShapedGlyphRun>): LayoutUnit {
-        var sum = 0.0
-        runs.forEach { run ->
-            run.glyphs.forEach { glyph ->
-                val overlaps = glyph.clusterTokens
-                    .map { token -> run.clusters.single { cluster -> cluster.token == token } }
-                    .any { cluster -> cluster.sourceRange.start < range.endExclusive && range.start < cluster.sourceRange.endExclusive }
-                if (overlaps) sum += glyph.xAdvance.value.toDouble()
+        candidates.asReversed().forEach { boundary ->
+            val finalized = finalizeLine(
+                request,
+                TextRange(start, boundary),
+                sourceClusters,
+                provisionalRuns,
+                materialization,
+            )
+            when (finalized) {
+                is FinalizationResult.Success -> {
+                    val fits = ExactEditableLineLayouter.inlineAdvance(finalized.line).value <= request.constraints.width.value
+                    if (fits || boundary == candidates.first()) return finalized
+                }
+                is FinalizationResult.Failure -> return finalized
+                is FinalizationResult.Cancelled -> return finalized
             }
         }
-        return finiteUnit(sum, "provisional line advance")
+        error("The first complete legal line candidate must always be selectable.")
     }
 
-    private fun resolveAssignments(
+    private fun finalizeLine(
         request: ParagraphLayoutRequest,
+        lineRange: TextRange,
+        sourceClusters: List<TextRange>,
+        provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
-        clusters: List<TextRange>,
-    ): AssignmentResult {
-        if (clusters.isEmpty()) return AssignmentResult.Success(emptyList())
-        if (request.snapshot.scalarValues(request.snapshot.range).none { scalar -> scalar.isMandatoryControl() }) {
-            val provisional = FontFallbackResolver.resolve(
-                MultiFontEditableLineRequest(
-                    snapshot = request.snapshot,
-                    unicodeAnalysis = request.unicodeAnalysis,
-                    fontCatalog = request.fontCatalog,
-                    resolutionPolicy = request.resolutionPolicy,
-                    fontInstanceDescriptor = request.fontInstanceDescriptor,
-                    shapingBackend = request.shapingBackend,
-                    baseDirection = request.baseDirection,
+    ): FinalizationResult {
+        val finalAnalysis = analysisForLine(request, lineRange, resetLineTrailingWhitespace = true)
+        val finalRuns = mutableListOf<ShapedGlyphRun>()
+        val instances = mutableListOf<FontInstance>()
+        val diagnostics = mutableListOf<EditableLineDiagnostic>()
+        finalShapingRanges(request, lineRange, sourceClusters, provisionalRuns).forEach { contextRange ->
+            if (request.cancellationToken.isCancellationRequested()) return FinalizationResult.Cancelled(diagnostics)
+            when (
+                val resolved = FontFallbackResolver.resolveRange(
+                    request = request,
+                    sourceRange = contextRange,
+                    shapingContextRange = lineRange,
+                    unicodeAnalysis = finalAnalysis,
+                    materialization = materialization,
+                )
+            ) {
+                is FontOperationResult.Success -> {
+                    finalRuns += resolved.value.shapedRuns
+                    instances += resolved.value.instances
+                    diagnostics += resolved.value.diagnostics.map(::fontDiagnostic)
+                }
+                is FontOperationResult.Failure -> return FinalizationResult.Failure(
+                    EditableLineError.FontResolutionFailure(resolved.error),
+                    diagnostics + resolved.diagnostics.map(::fontDiagnostic),
+                )
+                is FontOperationResult.Cancelled -> return FinalizationResult.Cancelled(
+                    diagnostics + resolved.diagnostics.map(::fontDiagnostic),
+                )
+            }
+        }
+        val uniqueInstances = instances.distinctBy(FontInstance::key)
+        return when (
+            val positioned = ExactEditableLineLayouter.layout(
+                EditableLineRequest(
+                    unicodeAnalysis = finalAnalysis,
+                    shapedGlyphRuns = coalesceRuns(finalRuns),
+                    baseDirection = request.baseDirection.shapingDirection(),
+                    font = uniqueInstances.firstOrNull(),
+                    fontInstances = uniqueInstances,
                     verticalMetrics = request.constraints.lineMetrics,
                     materialization = materialization,
-                    features = request.features,
                     cancellationToken = request.cancellationToken,
                 ),
             )
-            return when (provisional) {
-                is FontOperationResult.Success -> {
-                    val instances = provisional.value.instances.associateBy(FontInstance::key)
-                    AssignmentResult.Success(
-                        clusters.map { cluster ->
-                            val keys = provisional.value.shapedRuns
-                                .filter { run -> overlaps(run.range, cluster) }
-                                .map(ShapedGlyphRun::fontInstanceKey)
-                                .distinct()
-                            check(keys.size == 1) { "A complete fallback unit must resolve to exactly one font instance." }
-                            AssignedUnit(cluster, instances.getValue(keys.single()), controlOnly = false)
-                        },
-                    )
-                }
-                is FontOperationResult.Failure -> AssignmentResult.Failure(
-                    EditableLineError.FontResolutionFailure(provisional.error),
-                )
-                is FontOperationResult.Cancelled -> AssignmentResult.Cancelled
-            }
-        }
-        val requirements = materialization.requirements()
-        val records = request.fontCatalog.faces.associateBy { it.id }
-        val instances = mutableMapOf<FontFaceId, FontInstance>()
-        val assignments = mutableListOf<AssignedUnit>()
-        clusters.forEach { cluster ->
-            if (request.cancellationToken.isCancellationRequested()) return AssignmentResult.Cancelled
-            val controlOnly = request.snapshot.scalarValues(cluster).all { scalar -> scalar.isMandatoryControl() }
-            var selected: AssignedUnit? = null
-            request.resolutionPolicy.candidates.forEach candidateLoop@ { candidate ->
-                if (selected != null) return@candidateLoop
-                val record = records.getValue(candidate.faceId)
-                if (!record.capabilities.supports(requirements)) return@candidateLoop
-                val instance = instances[record.id] ?: when (val face = request.fontCatalog.resolveFace(record.id, requirements)) {
-                    is FontOperationResult.Success -> when (val instantiated = face.value.instantiate(request.fontInstanceDescriptor)) {
-                        is FontOperationResult.Success -> instantiated.value.also { instances[record.id] = it }
-                        is FontOperationResult.Failure -> return@candidateLoop
-                        is FontOperationResult.Cancelled -> return AssignmentResult.Cancelled
-                    }
-                    is FontOperationResult.Failure -> return@candidateLoop
-                    is FontOperationResult.Cancelled -> return AssignmentResult.Cancelled
-                }
-                if (controlOnly || mapsCompleteUnit(request, cluster, instance)) {
-                    selected = AssignedUnit(cluster, instance, controlOnly)
-                }
-            }
-            assignments += selected ?: return AssignmentResult.Failure(
-                EditableLineError.FontResolutionFailure(
-                    FontError.UnrenderableFontResolution(
-                        "No policy candidate covers one complete paragraph fallback unit.",
-                        FontDiagnosticLocation.Source,
-                    ),
+        ) {
+            is EditableLineResult.Success -> FinalizationResult.Success(
+                EditableLine(
+                    range = positioned.line.range,
+                    baseDirection = positioned.line.baseDirection,
+                    verticalMetrics = positioned.line.verticalMetrics,
+                    positionedGlyphRuns = positioned.line.positionedGlyphRuns,
+                    caretCandidates = positioned.line.allCaretCandidates,
+                    diagnostics = positioned.line.diagnostics + diagnostics,
                 ),
             )
+            is EditableLineResult.Failure -> FinalizationResult.Failure(positioned.error, diagnostics + positioned.diagnostics)
+            is EditableLineResult.Cancelled -> FinalizationResult.Cancelled(diagnostics + positioned.diagnostics)
         }
-        return AssignmentResult.Success(assignments)
     }
 
-    private fun mapsCompleteUnit(request: ParagraphLayoutRequest, range: TextRange, instance: FontInstance): Boolean {
-        var precedingScalar: Int? = null
-        request.snapshot.scalarValues(range).forEach { scalar ->
-            if (scalar.isVariationSelector()) {
-                val base = precedingScalar ?: return false
-                when (val mapped = instance.resolveGlyph(base, scalar)) {
-                    is FontOperationResult.Success -> if (mapped.value.glyphId.value == 0) return false
-                    is FontOperationResult.Failure -> return false
-                    is FontOperationResult.Cancelled -> return false
-                }
-                precedingScalar = null
+    private fun coalesceRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> {
+        val result = mutableListOf<ShapedGlyphRun>()
+        runs.forEach { run ->
+            val previous = result.lastOrNull()
+            if (previous != null && canCoalesce(previous, run)) {
+                result[result.lastIndex] = coalesce(previous, run)
             } else {
-                if (!scalar.isFallbackIgnorable()) {
-                    when (val mapped = instance.resolveGlyph(scalar)) {
-                        is FontOperationResult.Success -> if (mapped.value.glyphId.value == 0) return false
-                        is FontOperationResult.Failure -> return false
-                        is FontOperationResult.Cancelled -> return false
-                    }
-                }
-                precedingScalar = scalar.takeUnless { value -> value.isFallbackIgnorable() }
+                result += run
             }
         }
-        return true
+        return result
     }
 
-    private fun shapeRange(
-        request: ParagraphLayoutRequest,
-        range: TextRange,
-        analysis: UnicodeAnalysis,
-        assignments: List<AssignedUnit>,
-    ): ShapeResult {
-        if (range.start == range.endExclusive) return ShapeResult.Success(emptyList())
-        val lineAssignments = assignments.filter { assigned ->
-            assigned.range.start >= range.start && assigned.range.endExclusive <= range.endExclusive
-        }
-        val groups = mutableListOf<MutableList<AssignedUnit>>()
-        lineAssignments.forEach { assigned ->
-            val previous = groups.lastOrNull()?.lastOrNull()
-            if (previous != null && previous.instance.key == assigned.instance.key &&
-                previous.controlOnly == assigned.controlOnly && previous.range.endExclusive == assigned.range.start
-            ) {
-                groups.last() += assigned
-            } else {
-                groups += mutableListOf(assigned)
-            }
-        }
-        val runs = mutableListOf<ShapedGlyphRun>()
-        groups.forEach { group ->
-            val groupRange = TextRange(group.first().range.start, group.last().range.endExclusive)
-            val fragments = shapingFragments(groupRange, analysis)
-            fragments.forEach { fragment ->
-                if (request.cancellationToken.isCancellationRequested()) return ShapeResult.Cancelled
-                if (group.first().controlOnly) {
-                    runs += zeroWidthControlRun(request, fragment, group.first().instance, analysis)
-                    return@forEach
-                }
-                val shaped = request.shapingBackend.shape(
-                    ShapingRequest(
-                        snapshot = request.snapshot,
-                        range = fragment.range,
-                        font = group.first().instance,
-                        direction = fragment.level.direction(),
-                        script = OpenTypeScript(fragment.script),
-                        language = fragment.language,
-                        bidiLevel = fragment.level,
-                        bot = fragment.range.start == range.start,
-                        eot = fragment.range.endExclusive == range.endExclusive,
-                        featurePolicy = request.featurePolicy,
-                        features = request.features,
-                        graphemeClusters = graphemeFragments(fragment.range, analysis.graphemeClusters),
-                    ),
-                )
-                when (shaped) {
-                    is FontOperationResult.Success -> {
-                        if (shaped.value.glyphs.any { glyph -> glyph.glyphId.value == 0 }) {
-                            return ShapeResult.Failure(
-                                EditableLineError.ShapingFailure(
-                                    FontError.InvalidFontData(
-                                        "Final paragraph shaping produced the missing-glyph identifier.",
-                                        FontDiagnosticLocation.Source,
-                                    ),
-                                ),
-                            )
-                        }
-                        runs += shaped.value
-                    }
-                    is FontOperationResult.Failure -> return ShapeResult.Failure(EditableLineError.ShapingFailure(shaped.error))
-                    is FontOperationResult.Cancelled -> return ShapeResult.Cancelled
-                }
-            }
-        }
-        return ShapeResult.Success(runs)
-    }
+    private fun canCoalesce(left: ShapedGlyphRun, right: ShapedGlyphRun): Boolean =
+        left.range.endExclusive == right.range.start &&
+            left.fontInstanceKey == right.fontInstanceKey &&
+            left.backendIdentity == right.backendIdentity &&
+            left.direction == right.direction &&
+            left.script == right.script &&
+            left.language == right.language &&
+            left.bidiLevel == right.bidiLevel &&
+            left.featurePolicy == right.featurePolicy &&
+            left.features == right.features
 
-    private fun zeroWidthControlRun(
-        request: ParagraphLayoutRequest,
-        fragment: ShapingFragment,
-        instance: FontInstance,
-        analysis: UnicodeAnalysis,
-    ): ShapedGlyphRun {
-        val scalarRanges = request.snapshot.scalarRanges(fragment.range)
-        val graphemes = graphemeFragments(fragment.range, analysis.graphemeClusters)
-        val boundaries = graphemes.flatMap { grapheme -> listOf(grapheme.start, grapheme.endExclusive) }.distinct()
+    private fun coalesce(left: ShapedGlyphRun, right: ShapedGlyphRun): ShapedGlyphRun {
+        val nextToken = (left.clusters.maxOfOrNull { cluster -> cluster.token.value } ?: -1) + 1
+        val rightTokens = right.clusters.mapIndexed { index, cluster -> cluster.token to ShaperClusterToken(nextToken + index) }.toMap()
+        val remappedRightGlyphs = right.glyphs.map { glyph ->
+            ShapedGlyph(
+                glyphId = glyph.glyphId,
+                xAdvance = glyph.xAdvance,
+                yAdvance = glyph.yAdvance,
+                xOffset = glyph.xOffset,
+                yOffset = glyph.yOffset,
+                safetyFlags = glyph.safetyFlags,
+                clusterTokens = glyph.clusterTokens.map(rightTokens::getValue),
+            )
+        }
+        val remappedRightClusters = right.clusters.map { cluster ->
+            ShaperCluster(
+                token = rightTokens.getValue(cluster.token),
+                sourceRange = cluster.sourceRange,
+                scalarRanges = cluster.scalarRanges,
+                admissibleGraphemeBoundaries = cluster.admissibleGraphemeBoundaries,
+            )
+        }
+        val rtl = left.direction == ShapingDirection.RIGHT_TO_LEFT
+        val leftFacts = left.ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) right.glyphs.size else 0) }
+        val rightFacts = right.ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) 0 else left.glyphs.size) }
         return ShapedGlyphRun(
-            range = fragment.range,
-            fontInstanceKey = instance.key,
-            backendIdentity = request.shapingBackend.identity,
-            direction = fragment.level.direction(),
-            script = OpenTypeScript(fragment.script),
-            language = fragment.language,
-            bidiLevel = fragment.level,
-            bot = fragment.range.start == analysis.range.start,
-            eot = fragment.range.endExclusive == analysis.range.endExclusive,
-            featurePolicy = request.featurePolicy,
-            features = request.features,
-            graphemeClusters = graphemes,
-            glyphs = emptyList(),
-            clusters = scalarRanges.mapIndexed { index, scalarRange ->
-                ShaperCluster(
-                    token = ShaperClusterToken(index),
-                    sourceRange = scalarRange,
-                    scalarRanges = listOf(scalarRange),
-                    admissibleGraphemeBoundaries = boundaries.filter { boundary ->
-                        boundary >= scalarRange.start && boundary <= scalarRange.endExclusive
-                    },
-                )
-            },
+            range = TextRange(left.range.start, right.range.endExclusive),
+            fontInstanceKey = left.fontInstanceKey,
+            backendIdentity = left.backendIdentity,
+            direction = left.direction,
+            script = left.script,
+            language = left.language,
+            bidiLevel = left.bidiLevel,
+            bot = left.bot,
+            eot = right.eot,
+            featurePolicy = left.featurePolicy,
+            features = left.features,
+            graphemeClusters = left.graphemeClusters + right.graphemeClusters,
+            glyphs = if (rtl) remappedRightGlyphs + left.glyphs else left.glyphs + remappedRightGlyphs,
+            clusters = left.clusters + remappedRightClusters,
+            ligatureCaretFacts = leftFacts + rightFacts,
         )
+    }
+
+    private fun GdefLigatureCaretFact.shifted(glyphOffset: Int): GdefLigatureCaretFact =
+        GdefLigatureCaretFact(
+            glyphIndex = glyphOffset + glyphIndex,
+            state = state,
+            logicalSourceBoundaries = logicalSourceBoundaries,
+            positions = positions,
+        )
+
+    /** Splits at provisionally certified safe boundaries and expands only unsafe edge contexts. */
+    private fun finalShapingRanges(
+        request: ParagraphLayoutRequest,
+        lineRange: TextRange,
+        sourceClusters: List<TextRange>,
+        provisionalRuns: List<ShapedGlyphRun>,
+    ): List<TextRange> {
+        val lineClusters = sourceClusters.filter { cluster ->
+            cluster.start >= lineRange.start && cluster.endExclusive <= lineRange.endExclusive
+        }
+        if (lineClusters.size <= 1) return listOf(lineRange)
+
+        var startContextEnd = lineRange.start
+        if (lineRange.start != request.sourceRange.start) {
+            var index = 0
+            startContextEnd = lineClusters.first().endExclusive
+            while (index + 1 < lineClusters.size) {
+                val nextSafety = safetyFor(lineClusters[index + 1], provisionalRuns)
+                if (!nextSafety.unsafeToBreak && !nextSafety.unsafeToConcat) break
+                index += 1
+                startContextEnd = lineClusters[index].endExclusive
+            }
+        }
+
+        var endContextStart = lineRange.endExclusive
+        if (lineRange.endExclusive != request.sourceRange.endExclusive) {
+            var index = lineClusters.lastIndex
+            endContextStart = lineClusters[index].start
+            val nextCluster = sourceClusters.firstOrNull { cluster -> cluster.start == lineRange.endExclusive }
+            var boundaryUnsafe = nextCluster?.let { safetyFor(it, provisionalRuns).unsafeToBreak } == true
+            while (index > 0) {
+                val currentSafety = safetyFor(lineClusters[index], provisionalRuns)
+                if (!boundaryUnsafe && !currentSafety.unsafeToBreak && !currentSafety.unsafeToConcat) break
+                index -= 1
+                endContextStart = lineClusters[index].start
+                boundaryUnsafe = false
+            }
+        }
+
+        if (startContextEnd >= endContextStart) return listOf(lineRange)
+        return buildList {
+            var cursor = lineRange.start
+            if (startContextEnd > cursor) {
+                add(TextRange(cursor, startContextEnd))
+                cursor = startContextEnd
+            }
+            if (endContextStart > cursor) {
+                add(TextRange(cursor, endContextStart))
+                cursor = endContextStart
+            }
+            if (lineRange.endExclusive > cursor) add(TextRange(cursor, lineRange.endExclusive))
+        }
+    }
+
+    private fun safetyFor(range: TextRange, runs: List<ShapedGlyphRun>): UnitSafety {
+        var unsafeToBreak = false
+        var unsafeToConcat = false
+        runs.filter { run -> overlaps(run.range, range) }.forEach { run ->
+            val clusters = run.clusters.associateBy { it.token }
+            run.glyphs.forEach { glyph ->
+                val overlapsRange = glyph.clusterTokens.any { token ->
+                    clusters[token]?.sourceRange?.let { cluster -> overlaps(cluster, range) } == true
+                }
+                if (overlapsRange) {
+                    unsafeToBreak = unsafeToBreak || glyph.safetyFlags.unsafeToBreak
+                    unsafeToConcat = unsafeToConcat || glyph.safetyFlags.unsafeToConcat
+                }
+            }
+        }
+        return UnitSafety(unsafeToBreak, unsafeToConcat)
     }
 
     private fun analysisForLine(
@@ -463,17 +449,15 @@ internal object ParagraphComposer {
         val baseLevel = if (request.baseDirection == BaseDirection.LEFT_TO_RIGHT) 0 else 1
         val levels = request.snapshot.scalarRanges(range).map { scalarRange ->
             val paragraphLevel = request.unicodeAnalysis.logicalBidiRuns.first { bidi -> overlaps(bidi.range, scalarRange) }.level
-            MutableSourceLevel(scalarRange, paragraphLevel)
+            MutableSourceLevel(scalarRange, paragraphLevel, bidiClass(request.snapshot.scalarValues(scalarRange).single()))
         }.toMutableList()
-        levels.forEach { item ->
-            if (request.snapshot.scalarValues(item.range).all { scalar -> scalar.isMandatoryControl() }) item.level = baseLevel
+
+        // UAX #9 §5.2 retained-X9 model, before applying the per-line L1 reset.
+        levels.forEachIndexed { index, item ->
+            if (item.bidiClass.isRetainedX9()) item.level = levels.getOrNull(index - 1)?.level ?: baseLevel
         }
-        if (resetLineTrailingWhitespace) {
-            for (index in levels.indices.reversed()) {
-                val scalar = request.snapshot.scalarValues(levels[index].range).single()
-                if (isL1TrailingScalar(scalar)) levels[index].level = baseLevel else break
-            }
-        }
+        if (resetLineTrailingWhitespace) applyL1(levels, baseLevel)
+
         val logical = mutableListOf<BidiRun>()
         levels.forEach { item ->
             val previous = logical.lastOrNull()
@@ -493,6 +477,24 @@ internal object ParagraphComposer {
         )
     }
 
+    private fun applyL1(levels: MutableList<MutableSourceLevel>, baseLevel: Int) {
+        levels.indices.forEach { index ->
+            if (levels[index].bidiClass == L1BidiClass.B || levels[index].bidiClass == L1BidiClass.S) {
+                levels[index].level = baseLevel
+                var preceding = index - 1
+                while (preceding >= 0 && levels[preceding].bidiClass.isL1SequenceMember()) {
+                    levels[preceding].level = baseLevel
+                    preceding -= 1
+                }
+            }
+        }
+        var trailing = levels.lastIndex
+        while (trailing >= 0 && levels[trailing].bidiClass.isL1SequenceMember()) {
+            levels[trailing].level = baseLevel
+            trailing -= 1
+        }
+    }
+
     private fun reorderVisualRuns(logical: List<BidiRun>): List<BidiRun> {
         val reordered = logical.toMutableList()
         val maximum = logical.maxOfOrNull(BidiRun::level) ?: return emptyList()
@@ -508,34 +510,6 @@ internal object ParagraphComposer {
             }
         }
         return reordered
-    }
-
-    private fun shapingFragments(range: TextRange, analysis: UnicodeAnalysis): List<ShapingFragment> =
-        scriptFragments(range, analysis.scriptLanguageRuns).flatMap { script ->
-            analysis.logicalBidiRuns.mapNotNull { bidi ->
-                intersection(script.range, bidi.range)?.let { fragment ->
-                    ShapingFragment(fragment, script.script, script.language, bidi.level)
-                }
-            }
-        }
-
-    private fun scriptFragments(range: TextRange, scripts: List<ScriptLanguageRun>): List<ScriptFragment> {
-        val intersections = scripts.mapNotNull { script ->
-            intersection(range, script.range)?.let { clipped -> ScriptFragment(clipped, script.script, script.language) }
-        }
-        val first = intersections.first()
-        var fragmentStart = range.start
-        var active = intersections.firstOrNull { it.script.isExplicitScript() } ?: first
-        val result = mutableListOf<ScriptFragment>()
-        intersections.forEach { fragment ->
-            if (fragment.script.isExplicitScript() && (fragment.script != active.script || fragment.language != active.language)) {
-                result += ScriptFragment(TextRange(fragmentStart, fragment.range.start), active.script, active.language)
-                fragmentStart = fragment.range.start
-                active = fragment
-            }
-        }
-        result += ScriptFragment(TextRange(fragmentStart, range.endExclusive), active.script, active.language)
-        return result
     }
 
     private fun emptyLine(
@@ -592,23 +566,9 @@ internal object ParagraphComposer {
     private fun overlaps(left: TextRange, right: TextRange): Boolean =
         left.start < right.endExclusive && right.start < left.endExclusive
 
-    private fun graphemeFragments(range: TextRange, graphemes: List<TextRange>): List<TextRange> =
-        graphemes.mapNotNull { intersection(it, range) }
-
     private fun BaseDirection.shapingDirection(): ShapingDirection = when (this) {
         BaseDirection.LEFT_TO_RIGHT -> ShapingDirection.LEFT_TO_RIGHT
         BaseDirection.RIGHT_TO_LEFT -> ShapingDirection.RIGHT_TO_LEFT
-    }
-
-    private fun Int.direction(): ShapingDirection =
-        if (this % 2 == 0) ShapingDirection.LEFT_TO_RIGHT else ShapingDirection.RIGHT_TO_LEFT
-
-    private fun FontFaceCapabilities.supports(requirements: FontAccessRequirementsSnapshot): Boolean =
-        characterMapping && shaping && (requirements.mode != FontAccessRequirementsSnapshot.Mode.RENDERABLE || outline)
-
-    private fun EditableLineMaterialization.requirements(): FontAccessRequirementsSnapshot = when (this) {
-        EditableLineMaterialization.LayoutOnly -> FontAccessRequirementsSnapshot.layoutOnly()
-        is EditableLineMaterialization.Renderable -> FontAccessRequirementsSnapshot.renderable(outlineProfile)
     }
 
     private fun EditableLineMaterialization.identity(): ParagraphMaterializationIdentity = when (this) {
@@ -616,63 +576,76 @@ internal object ParagraphComposer {
         is EditableLineMaterialization.Renderable -> ParagraphMaterializationIdentity.Renderable(variant, outlineProfile)
     }
 
-    private fun Int.isVariationSelector(): Boolean = this in 0xFE00..0xFE0F || this in 0xE0100..0xE01EF
-
-    private fun Int.isFallbackIgnorable(): Boolean = this == 0x200D || isMandatoryControl()
-
-    private fun Int.isMandatoryControl(): Boolean = this in MANDATORY_CONTROLS
-
-    private fun isL1TrailingScalar(scalar: Int): Boolean = scalar in L1_TRAILING_SCALARS
-
-    private fun String.isExplicitScript(): Boolean = this != COMMON_SCRIPT && this != INHERITED_SCRIPT
-
-    private data class AssignedUnit(val range: TextRange, val instance: FontInstance, val controlOnly: Boolean)
-    private data class MutableSourceLevel(val range: TextRange, var level: Int)
-    private data class ShapingFragment(val range: TextRange, val script: String, val language: String, val level: Int)
-    private data class ScriptFragment(val range: TextRange, val script: String, val language: String)
-
-    private sealed interface AssignmentResult {
-        data class Success(val assignments: List<AssignedUnit>) : AssignmentResult
-        data class Failure(val error: EditableLineError) : AssignmentResult
-        data object Cancelled : AssignmentResult
+    private fun bidiClass(scalar: Int): L1BidiClass = when (scalar) {
+        0x000A, 0x000D, in 0x001C..0x001E, 0x0085, 0x2029 -> L1BidiClass.B
+        0x0009, 0x000B, 0x001F -> L1BidiClass.S
+        0x000C, 0x0020, 0x1680, in 0x2000..0x200A, 0x2028, 0x205F, 0x3000 -> L1BidiClass.WS
+        0x202A, 0x202B, 0x202C, 0x202D, 0x202E -> L1BidiClass.X9_FORMAT
+        0x2066, 0x2067, 0x2068, 0x2069 -> L1BidiClass.ISOLATE_FORMAT
+        else -> if (scalar.isUnicode16BoundaryNeutral()) L1BidiClass.BN else L1BidiClass.OTHER
     }
 
-    private sealed interface ShapeResult {
-        data class Success(val runs: List<ShapedGlyphRun>) : ShapeResult
-        data class Failure(val error: EditableLineError) : ShapeResult
-        data object Cancelled : ShapeResult
+    /** Exact Unicode 16.0 DerivedBidiClass=BN ranges used by retained-X9 L1 processing. */
+    private fun Int.isUnicode16BoundaryNeutral(): Boolean =
+        this in 0x0000..0x0008 ||
+            this in 0x000E..0x001B ||
+            this in 0x007F..0x0084 ||
+            this in 0x0086..0x009F ||
+            this == 0x00AD ||
+            this == 0x180E ||
+            this in 0x200B..0x200D ||
+            this in 0x2060..0x2065 ||
+            this in 0x206A..0x206F ||
+            this in 0xFDD0..0xFDEF ||
+            this == 0xFEFF ||
+            this in 0xFFF0..0xFFF8 ||
+            this in 0xFFFE..0xFFFF ||
+            this in 0x1BCA0..0x1BCA3 ||
+            this in 0x1D173..0x1D17A ||
+            this in 0x1FFFE..0x1FFFF ||
+            this in 0x2FFFE..0x2FFFF ||
+            this in 0x3FFFE..0x3FFFF ||
+            this in 0x4FFFE..0x4FFFF ||
+            this in 0x5FFFE..0x5FFFF ||
+            this in 0x6FFFE..0x6FFFF ||
+            this in 0x7FFFE..0x7FFFF ||
+            this in 0x8FFFE..0x8FFFF ||
+            this in 0x9FFFE..0x9FFFF ||
+            this in 0xAFFFE..0xAFFFF ||
+            this in 0xBFFFE..0xBFFFF ||
+            this in 0xCFFFE..0xCFFFF ||
+            this in 0xDFFFE..0xE0001 ||
+            this in 0xE0002..0xE007F ||
+            this in 0xE0080..0xE00FF ||
+            this in 0xE01F0..0xE0FFF ||
+            this in 0xEFFFE..0xEFFFF ||
+            this in 0xFFFFE..0xFFFFF ||
+            this in 0x10FFFE..0x10FFFF
+
+    private data class UnitSafety(val unsafeToBreak: Boolean, val unsafeToConcat: Boolean)
+    private data class MutableSourceLevel(val range: TextRange, var level: Int, val bidiClass: L1BidiClass)
+
+    private enum class L1BidiClass {
+        B,
+        S,
+        WS,
+        BN,
+        X9_FORMAT,
+        ISOLATE_FORMAT,
+        OTHER,
+        ;
+
+        fun isRetainedX9(): Boolean = this == BN || this == X9_FORMAT
+
+        fun isL1SequenceMember(): Boolean =
+            this == WS || this == BN || this == X9_FORMAT || this == ISOLATE_FORMAT
     }
 
-    private val MANDATORY_CONTROLS: Set<Int> = setOf(0x000A, 0x000B, 0x000C, 0x000D, 0x0085, 0x2028, 0x2029)
-    private val L1_TRAILING_SCALARS: Set<Int> = MANDATORY_CONTROLS + setOf(
-        0x0009,
-        0x0020,
-        0x1680,
-        0x2000,
-        0x2001,
-        0x2002,
-        0x2003,
-        0x2004,
-        0x2005,
-        0x2006,
-        0x2007,
-        0x2008,
-        0x2009,
-        0x200A,
-        0x205F,
-        0x3000,
-        0x202A,
-        0x202B,
-        0x202C,
-        0x202D,
-        0x202E,
-        0x2066,
-        0x2067,
-        0x2068,
-        0x2069,
-    )
-    private const val COMMON_SCRIPT: String = "Zyyy"
-    private const val INHERITED_SCRIPT: String = "Zinh"
+    private sealed interface FinalizationResult {
+        data class Success(val line: EditableLine) : FinalizationResult
+        data class Failure(val error: EditableLineError, val diagnostics: List<EditableLineDiagnostic>) : FinalizationResult
+        data class Cancelled(val diagnostics: List<EditableLineDiagnostic>) : FinalizationResult
+    }
 }
 
 private class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)

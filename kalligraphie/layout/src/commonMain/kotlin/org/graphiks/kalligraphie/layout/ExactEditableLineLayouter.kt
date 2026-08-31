@@ -612,7 +612,7 @@ private fun ShapedGlyphRun.clusterFor(token: org.graphiks.kalligraphie.api.Shape
 private fun containedBy(owner: TextRange, item: TextRange): Boolean =
     item.start.sharesVersionWith(owner.start) && item.start >= owner.start && item.endExclusive <= owner.endExclusive
 
-private fun fontDiagnostic(diagnostic: org.graphiks.kalligraphie.api.FontDiagnostic): EditableLineDiagnostic =
+internal fun fontDiagnostic(diagnostic: org.graphiks.kalligraphie.api.FontDiagnostic): EditableLineDiagnostic =
     EditableLineDiagnostic(
         code = diagnostic.code,
         severity = if (diagnostic.severity == org.graphiks.kalligraphie.api.FontDiagnosticSeverity.ERROR) {
