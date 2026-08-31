@@ -2,7 +2,7 @@
 
 ## État
 
-DONE après fix round 2/5. L’engine commun et synchrone matérialise une cible bornée avec
+DONE après fix round 3/5. L’engine commun et synchrone matérialise une cible bornée avec
 overscan, publie un suffixe explicite et ne dérive la reprise que du `LayoutStateHandle` et de la
 requête. Les documents vides, lignes terminales vides et transitions de font-resolution policy
 prouvées sont couverts. Les vérifications JVM et iOS sont vertes.
@@ -12,6 +12,7 @@ prouvées sont couverts. Les vérifications JVM et iOS sont vertes.
 - `031b185 feat(font): add incremental paragraph checkpoints`
 - `97d4dac fix(font): bound incremental paragraph reuse`
 - `bf32c75 fix(font): handle terminal lines and policy deltas`
+- `6b5cd6a fix(font): validate typography proof spaces`
 
 ## Preuves RED
 
@@ -52,6 +53,17 @@ document vide, la ligne vide terminale après newline, la requête caret-only à
 la transition positive de font-resolution policy et la stabilisation publiée avant la fin de la
 couverture. Les gardes négatifs de policy et de preuve incohérentes restaient vertes.
 
+RED du fix round 3/5 :
+
+```text
+rtk ./gradlew :kalligraphie:api:jvmTest --tests org.graphiks.kalligraphie.api.IncrementalLayoutContractsTest --no-daemon
+```
+
+Résultat observé : exit code 1, `23 tests completed, 5 failed`. La factory acceptait les preuves
+typographiques liées à des espaces source ou cible étrangers, les preuves policy étrangères et
+deux preuves valides mais différentes. Ces requêtes pouvaient donc atteindre les comparaisons de
+`TextIndex` de l’engine.
+
 ## Preuves GREEN
 
 Test focalisé frais du fix :
@@ -75,6 +87,16 @@ caret/ligne vide, le rejet d’une ligne vide au milieu, la transition policy po
 preuves et autres composants de configuration incohérents, ainsi que la stabilisation exacte à la
 fin d’une couverture étendue par overscan.
 
+Tests ciblés frais du fix round 3/5 :
+
+```text
+rtk ./gradlew :kalligraphie:api:jvmTest --tests org.graphiks.kalligraphie.api.IncrementalLayoutContractsTest :kalligraphie:layout:jvmTest --tests org.graphiks.kalligraphie.layout.IncrementalParagraphLayoutEngineTest --no-daemon
+```
+
+Résultat : exit code 0, `BUILD SUCCESSFUL`; 23 contract tests et 20 engine tests JVM réussissent.
+Le test layout prouve explicitement qu’une divergence de preuves retourne `InvalidRange` lors de
+la construction et ne peut pas appeler l’engine.
+
 Suites complètes API et layout :
 
 ```text
@@ -83,7 +105,7 @@ rtk ./gradlew :kalligraphie:api:check :kalligraphie:layout:check --no-daemon
 
 Résultat : exit code 0, `BUILD SUCCESSFUL`; 65 tâches, dont `jvmTest`,
 `iosSimulatorArm64Test`, `allTests` et `check`, réussissent pour les deux modules. La suite de
-contrats incrémentaux contient 18 tests JVM et la suite de l’engine incrémental 20 tests JVM, sans
+contrats incrémentaux contient 23 tests JVM et la suite de l’engine incrémental 20 tests JVM, sans
 failure, error ou skipped test.
 
 Vérification du diff :
@@ -122,6 +144,13 @@ Résultat : exit code 0, aucune erreur de whitespace.
   reproduit exactement les mêmes plages prouvées que le delta typographique, si les snapshots
   source/cible correspondent aux signatures (generation, id, version, candidates, last-resort) et
   si contraintes, font instance, features et shaping configuration restent identiques.
+- Le boundary public valide désormais les espaces de chaque `RangeChange.Proven` : toutes les
+  ranges source utilisent la `TextVersion` du checkpoint précédent et toutes les ranges cible
+  appartiennent au `TextSnapshot` cible. Une violation retourne `VersionMismatch` avant l’engine.
+- Lorsqu’un `FontResolutionPolicyDelta` est présent, sa preuve doit être sémantiquement identique à
+  celle de `TypographyDelta` : `FullInvalidation` des deux côtés ou mêmes listes source/cible
+  `Proven`. Les modes mixtes ou listes divergentes retournent `InvalidRange`; les fallbacks
+  conservateurs portant des contrats cohérents restent autorisés.
 - Une ligne vide calculée est acceptée uniquement en dernière position, exactement au document
   end. Cela couvre le document vide et la ligne terminale après newline sans autoriser une ligne
   vide au milieu. Une requête caret-only au document end choisit d’abord la ligne terminale vide,
