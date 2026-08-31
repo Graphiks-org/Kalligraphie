@@ -1,0 +1,380 @@
+package org.graphiks.kalligraphie
+
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontFaceId
+import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontResolutionCandidate
+import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
+import org.graphiks.kalligraphie.api.FontSource
+import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
+import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
+import org.graphiks.kalligraphie.api.IncrementalLayoutResult
+import org.graphiks.kalligraphie.api.LayoutContractResult
+import org.graphiks.kalligraphie.api.LayoutDelta
+import org.graphiks.kalligraphie.api.LayoutInput
+import org.graphiks.kalligraphie.api.LayoutRect
+import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineLayout
+import org.graphiks.kalligraphie.api.LineOverscan
+import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.TextRange
+import org.graphiks.kalligraphie.api.TextChange
+import org.graphiks.kalligraphie.api.TextChangeSet
+import org.graphiks.kalligraphie.api.TextIndex
+import org.graphiks.kalligraphie.api.TextSlice
+import org.graphiks.kalligraphie.api.TextSnapshot
+import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.TypographySnapshot
+import org.graphiks.kalligraphie.api.TypographyVersion
+import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
+import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+
+class JvmIncrementalParagraphLayoutSessionTest {
+    @Test
+    fun realFontLayoutPublishesLiteralGlyphsAdvancesRangesAndCoverage() {
+        val fixture = fixture("fi \u0633\u0644\u0627\u0645")
+        val session = openSession()
+
+        session.use { open ->
+            val success = assertIs<IncrementalLayoutResult.Success>(open.layout(request(fixture)))
+
+            assertEquals(
+                listOf(range(fixture.snapshot, 0, 3), range(fixture.snapshot, 3, 7)),
+                success.layout.lines.map(LineLayout::range),
+            )
+            assertEquals(fixture.snapshot.range, success.layout.coveredRange)
+            assertEquals(
+                listOf(listOf(3, 1), listOf(85, 3080, 3075, 1919)),
+                success.layout.lines.map { line -> line.glyphIds() },
+            )
+            assertEquals(
+                listOf(listOf(900f, 292f), listOf(452f, 446f, 245f, 568f)),
+                success.layout.lines.map { line -> line.glyphAdvances() },
+            )
+            assertEquals(fixture.snapshot.version, open.currentLayout()?.layout?.coverage?.textVersion)
+        }
+    }
+
+    @Test
+    fun staleCompletionCannotReplaceANewerPublishedLayout() {
+        val firstFixture = fixture("fi \u0633\u0644\u0627\u0645")
+        val newerFixture = fixture("fi fi")
+        val session = openSession()
+
+        session.use { open ->
+            val first = assertIs<IncrementalLayoutResult.Success>(open.layout(request(firstFixture)))
+            val newer = assertIs<IncrementalLayoutResult.Success>(open.layout(request(newerFixture)))
+
+            val stale = open.publishForTesting(first, generation = 1L)
+
+            assertIs<IncrementalLayoutResult.Obsolete>(stale)
+            assertEquals(newerFixture.snapshot.version, open.currentLayout()?.layout?.coverage?.textVersion)
+            assertEquals(
+                newer.layout.lines.map { line -> line.glyphIds() },
+                open.currentLayout()?.layout?.lines?.map { line -> line.glyphIds() },
+            )
+        }
+    }
+
+    @Test
+    fun cancellationPublishesNothingAndKeepsTheLastCompleteLayout() {
+        val fixture = fixture("fi \u0633\u0644\u0627\u0645")
+        val session = openSession()
+
+        session.use { open ->
+            val published = assertIs<IncrementalLayoutResult.Success>(open.layout(request(fixture)))
+            val token = CancelsAfterChecks(8)
+            val cancelledFixture = fixture("fi \u0633\u0644\u0627\u0645 fi \u0633\u0644\u0627\u0645 fi \u0633\u0644\u0627\u0645")
+
+            val cancelled = open.layout(request(cancelledFixture, cancellationToken = token))
+
+            assertIs<IncrementalLayoutResult.Cancelled>(cancelled)
+            assertTrue(token.checks > 8)
+            assertEquals(published.layout.coveredRange, open.currentLayout()?.layout?.coveredRange)
+            assertEquals(
+                listOf(listOf(3, 1), listOf(85, 3080, 3075, 1919)),
+                open.currentLayout()?.layout?.lines?.map { line -> line.glyphIds() },
+            )
+        }
+    }
+
+    @Test
+    fun alreadyCancelledRequestDoesNotPublishAnInitialLayout() {
+        val fixture = fixture("fi")
+        val session = openSession()
+
+        session.use { open ->
+            assertIs<IncrementalLayoutResult.Cancelled>(
+                open.layout(request(fixture, cancellationToken = CancellationToken.cancelled)),
+            )
+            assertNull(open.currentLayout())
+        }
+    }
+
+    @Test
+    fun completionAttemptAfterCloseIsObsoleteAndCannotRepublish() {
+        val fixture = fixture("fi")
+        val session = openSession()
+        val published = assertIs<IncrementalLayoutResult.Success>(session.layout(request(fixture)))
+
+        session.close()
+        val afterClose = session.publishForTesting(published, generation = 2L)
+
+        assertIs<IncrementalLayoutResult.Obsolete>(afterClose)
+        assertEquals(fixture.snapshot.version, session.currentLayout()?.layout?.coverage?.textVersion)
+    }
+
+    @Test
+    fun documentEndCaretPublishesTheCanonicalTrailingEmptyLine() {
+        val fixture = fixture("fi\n")
+        val end = fixture.snapshot.range.endExclusive
+        val session = openSession()
+
+        session.use { open ->
+            val success = assertIs<IncrementalLayoutResult.Success>(
+                open.layout(request(fixture, requestedRange = TextRange(end, end))),
+            )
+
+            assertEquals(listOf(TextRange(end, end)), success.layout.lines.map(LineLayout::range))
+            assertEquals(TextRange(end, end), success.layout.coveredRange)
+            assertTrue(success.layout.lines.single().positionedGlyphRuns.isEmpty())
+        }
+    }
+
+    @Test
+    fun oneBackendServesSuccessiveLayoutsAndSessionCloseIsIdempotent() {
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = TrackingBackend(delegate)
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val fixture = fixture("fi \u0633\u0644\u0627\u0645")
+
+        try {
+            assertIs<IncrementalLayoutResult.Success>(session.layout(request(fixture)))
+            val shapesAfterFirst = backend.shapeCalls
+            assertIs<IncrementalLayoutResult.Success>(session.layout(request(fixture)))
+
+            assertTrue(shapesAfterFirst > 0)
+            assertTrue(backend.shapeCalls > shapesAfterFirst)
+        } finally {
+            session.close()
+            session.close()
+        }
+
+        assertEquals(1, backend.closeCalls)
+    }
+
+    @Test
+    fun middleEditStartsRealShapingAtTheEngineReflowBoundaryAndReturnsOnlyTheTarget() {
+        val source = fixture("fi \u0633\u0644\u0627\u0645")
+        val target = source.withText("fi \u0633\u0644\u0645")
+        val changeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 5, 6), range(target.snapshot, 5, 5))),
+            ),
+        ).value
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = TrackingBackend(delegate)
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+
+        try {
+            val initial = assertIs<IncrementalLayoutResult.Success>(session.layout(request(source)))
+            backend.clearObservedRanges()
+
+            val edited = assertIs<IncrementalLayoutResult.Success>(
+                session.layout(
+                    request(
+                        fixture = target,
+                        requestedRange = range(target.snapshot, 3, 6),
+                        previousState = initial.layout.state,
+                        delta = LayoutDelta(text = changeSet),
+                    ),
+                ),
+            )
+
+            assertEquals(target.snapshot.textIndexAtScalarBoundary(3), edited.diagnostics.reflowStart)
+            assertEquals(listOf(range(target.snapshot, 3, 6)), edited.layout.lines.map(LineLayout::range))
+            assertEquals(range(target.snapshot, 3, 6), edited.layout.coveredRange)
+            assertTrue(backend.observedRangeStarts.isNotEmpty())
+            assertTrue(backend.observedRangeStarts.all { start ->
+                start >= target.snapshot.textIndexAtScalarBoundary(3)
+            })
+        } finally {
+            session.close()
+        }
+    }
+
+    private fun openSession(): JvmIncrementalParagraphLayoutSession =
+        assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
+            JvmIncrementalParagraphLayoutSession.open(),
+        ).value
+
+    private fun request(
+        fixture: Fixture,
+        cancellationToken: CancellationToken = CancellationToken.none,
+        requestedRange: TextRange = fixture.snapshot.range,
+        previousState: org.graphiks.kalligraphie.api.LayoutStateHandle? = null,
+        delta: LayoutDelta? = null,
+    ): JvmIncrementalParagraphLayoutRequest = JvmIncrementalParagraphLayoutRequest(
+        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta),
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "ar",
+        materialization = EditableLineMaterialization.LayoutOnly,
+    )
+
+    private fun incrementalRequest(
+        fixture: Fixture,
+        cancellationToken: CancellationToken,
+        requestedRange: TextRange,
+        previousState: org.graphiks.kalligraphie.api.LayoutStateHandle?,
+        delta: LayoutDelta?,
+    ): IncrementalLayoutRequest = assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(
+        createIncrementalLayoutRequest(
+            input = LayoutInput(
+                text = fixture.snapshot,
+                typography = fixture.typography,
+            ),
+            requestedRange = requestedRange,
+            constraints = constraints(),
+            overscan = LineOverscan(0),
+            previousState = previousState,
+            delta = delta,
+            cancellationToken = cancellationToken,
+        ),
+    ).value
+
+    private fun fixture(value: String): Fixture {
+        val sources = listOf(
+            fontSource("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture"),
+            fontSource("amiri/Amiri-Regular.ttf", "Amiri Regular"),
+        )
+        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+            Kalligraphie.embedded(sources),
+        ).value
+        val faces = sources.map { source -> FontFaceId(source.id, 0) }
+        val policy = FontResolutionPolicySnapshot(
+            generation = catalog.generation,
+            policyId = "incremental-session-fixture",
+            version = "1",
+            candidates = faces.map(::FontResolutionCandidate),
+            lastResortFace = faces.last(),
+        )
+        val snapshot = Kalligraphie.decodeUtf16(
+            TextVersion.create(),
+            listOf(TextSlice.Utf16(value.toCharArray())),
+        ).snapshot
+        return Fixture(
+            snapshot,
+            catalog,
+            policy,
+            TypographySnapshot(
+                version = TypographyVersion.create(),
+                fontCatalog = catalog,
+                resolutionPolicy = policy,
+                fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+            ),
+        )
+    }
+
+    private fun constraints(): HorizontalParagraphConstraints = HorizontalParagraphConstraints(
+        region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(1_500f), LayoutUnit(3_650f)),
+        lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+    )
+
+    private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange = TextRange(
+        snapshot.textIndexAtScalarBoundary(start),
+        snapshot.textIndexAtScalarBoundary(endExclusive),
+    )
+
+    private fun fontSource(relativePath: String, declaredName: String): FontSource = FontSource(
+        sourceBytes = fixtureBytes(relativePath),
+        provenance = FontSourceProvenance(declaredName),
+    )
+
+    private fun fixtureBytes(relativePath: String): ByteArray {
+        javaClass.getResourceAsStream("/fonts/$relativePath")?.use { stream -> return stream.readBytes() }
+        val candidates = listOf(
+            Path.of("shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+            Path.of("kalligraphie", "shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+        )
+        return Files.readAllBytes(checkNotNull(candidates.firstOrNull(Files::isRegularFile)))
+    }
+
+    private fun LineLayout.glyphIds(): List<Int> = positionedGlyphRuns.flatMap { run ->
+        run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId.value }
+    }
+
+    private fun LineLayout.glyphAdvances(): List<Float> = positionedGlyphRuns.flatMap { run ->
+        run.glyphs.map { glyph -> glyph.advance.x.value }
+    }
+
+    private data class Fixture(
+        val snapshot: TextSnapshot,
+        val catalog: FontCatalogSnapshot,
+        val policy: FontResolutionPolicySnapshot,
+        val typography: TypographySnapshot,
+    ) {
+        fun withText(value: String): Fixture = copy(
+            snapshot = Kalligraphie.decodeUtf16(
+                TextVersion.create(),
+                listOf(TextSlice.Utf16(value.toCharArray())),
+            ).snapshot,
+        )
+    }
+
+    private class CancelsAfterChecks(private val allowedChecks: Int) : CancellationToken {
+        var checks: Int = 0
+            private set
+
+        override fun isCancellationRequested(): Boolean {
+            checks += 1
+            return checks > allowedChecks
+        }
+    }
+
+    private class TrackingBackend(
+        private val delegate: ShapingBackend,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+        var shapeCalls: Int = 0
+            private set
+        var closeCalls: Int = 0
+            private set
+        val observedRangeStarts: MutableList<TextIndex> = mutableListOf()
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
+            shapeCalls += 1
+            observedRangeStarts += request.range.start
+            return delegate.shape(request)
+        }
+
+        fun clearObservedRanges() {
+            observedRangeStarts.clear()
+        }
+
+        override fun close(): FontOperationResult<Unit> {
+            closeCalls += 1
+            return delegate.close()
+        }
+    }
+}

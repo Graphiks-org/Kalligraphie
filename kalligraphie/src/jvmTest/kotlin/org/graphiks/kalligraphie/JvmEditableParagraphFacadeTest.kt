@@ -525,6 +525,29 @@ class JvmEditableParagraphFacadeTest {
         }
     }
 
+    @Test
+    fun borrowedBackendIsNotClosedByTheFacadeSeam() {
+        val fixture = multiFaceFixture("fi")
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = CloseTrackingBackend(delegate)
+
+        try {
+            assertIs<ParagraphLayoutResult.Success>(
+                JvmEditableParagraphFacade.layoutBorrowing(
+                    request(fixture, constraints(width = 1_400f, top = 50f, height = 1_200f)),
+                    backend,
+                ),
+            )
+            assertEquals(0, backend.closeCalls)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(backend.close())
+        }
+
+        assertEquals(1, backend.closeCalls)
+    }
+
     private fun layout(
         fixture: ParagraphFixture,
         constraints: HorizontalParagraphConstraints,
@@ -668,5 +691,20 @@ class JvmEditableParagraphFacadeTest {
                 location = FontDiagnosticLocation.Source,
             ),
         )
+    }
+
+    private class CloseTrackingBackend(
+        private val delegate: ShapingBackend,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+        var closeCalls: Int = 0
+            private set
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> = delegate.shape(request)
+
+        override fun close(): FontOperationResult<Unit> {
+            closeCalls += 1
+            return delegate.close()
+        }
     }
 }

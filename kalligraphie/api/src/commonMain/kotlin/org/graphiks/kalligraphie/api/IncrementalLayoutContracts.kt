@@ -857,6 +857,9 @@ public sealed interface IncrementalLayoutResult {
 
     /** No layout was published because cooperative cancellation was observed. */
     public data object Cancelled : IncrementalLayoutResult
+
+    /** A completed attempt was older than the session's latest accepted attempt and was discarded. */
+    public data object Obsolete : IncrementalLayoutResult
 }
 
 private data class LayoutConfigurationValue(

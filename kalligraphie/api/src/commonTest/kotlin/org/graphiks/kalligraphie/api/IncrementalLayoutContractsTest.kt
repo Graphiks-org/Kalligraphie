@@ -9,6 +9,20 @@ import kotlin.test.assertSame
 
 class IncrementalLayoutContractsTest {
     @Test
+    fun obsoleteOutcomeCarriesNoLayoutOrFailurePayload() {
+        val result: IncrementalLayoutResult = IncrementalLayoutResult.Obsolete
+
+        val classification = when (result) {
+            is IncrementalLayoutResult.Success -> "success"
+            is IncrementalLayoutResult.Failure -> "failure"
+            IncrementalLayoutResult.Cancelled -> "cancelled"
+            IncrementalLayoutResult.Obsolete -> "obsolete"
+        }
+
+        assertEquals("obsolete", classification)
+    }
+
+    @Test
     fun textChangeSetNormalizesAdjacentSourceEditsAndCountsDecodedTargetScalars() {
         val source = decode("abX")
         val target = decode("a😀e")
