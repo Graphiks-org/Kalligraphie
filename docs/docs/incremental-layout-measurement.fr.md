@@ -5,7 +5,7 @@ une mesure engine-only (moteur uniquement) du layout incrémental. Cet outil
 reste dans les sources de test : ce n’est ni un test fonctionnel de latence, ni
 un résultat de benchmark (mesure comparative) publié. Il exécute la vraie
 `JvmIncrementalParagraphLayoutSession`, l’analyse ICU, HarfBuzz embarqué et les
-fixtures (données de test fixes) de fontes GDEF et Amiri versionnées dans le
+fixtures (données de test fixes) de fontes DejaVu et Amiri versionnées dans le
 dépôt.
 
 L’intervalle chronométré commence immédiatement avant
@@ -114,4 +114,3 @@ UAX #14 obligatoire, ou jusqu’à la fin du document lorsqu’il n’en reste a
 Les diagnostics de rematérialisation et la latence peuvent donc croître pour un
 long paragraphe avec soft wrap (retour à la ligne automatique) ; la correction
 reste prioritaire.
-

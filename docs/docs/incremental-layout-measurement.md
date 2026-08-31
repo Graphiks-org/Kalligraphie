@@ -4,7 +4,7 @@ Kalligraphie includes an opt-in, engine-only JVM measurement entry point for
 incremental paragraph layout. It is test-source tooling, not a functional
 latency test and not a published benchmark result. The runner executes the
 real `JvmIncrementalParagraphLayoutSession`, ICU analysis, embedded HarfBuzz,
-and the checked-in GDEF and Amiri font fixtures.
+and the checked-in DejaVu and Amiri font fixtures.
 
 The timed interval starts immediately before `session.layout(...)`. Snapshots,
 font catalogs, deltas, and requests are constructed before the clock starts.
@@ -99,4 +99,3 @@ publication. Exact line selection may conservatively inspect through the next
 mandatory UAX #14 boundary, or through document end when no mandatory boundary
 remains. Consequently, the rematerialization diagnostics and latency may grow
 for a long soft-wrapped paragraph; correctness remains authoritative.
-

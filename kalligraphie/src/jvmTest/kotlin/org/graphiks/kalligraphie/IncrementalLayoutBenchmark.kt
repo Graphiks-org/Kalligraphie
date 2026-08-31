@@ -262,8 +262,12 @@ internal object IncrementalLayoutBenchmark {
     private const val GC_POLICY =
         "System.gc() twice before and after each profile; no requested GC between measured iterations"
     private val FONT_PATHS = linkedMapOf(
-        "GdefKerningFixture.ttf" to "gdef-kern/GdefKerningFixture.ttf",
+        "DejaVuSans.ttf" to "dejavu/DejaVuSans.ttf",
         "Amiri-Regular.ttf" to "amiri/Amiri-Regular.ttf",
+    )
+    private val MEASUREMENT_FONTS = listOf(
+        IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+        IncrementalFontFixture("amiri/Amiri-Regular.ttf", "Amiri Regular"),
     )
 
     fun reportFor(
@@ -285,7 +289,7 @@ internal object IncrementalLayoutBenchmark {
         require(warmupIterations > 0) { "Warmup iterations must be positive." }
         require(iterations > 0) { "Measured iterations must be positive." }
 
-        val source = incrementalRealFontFixture(SOURCE_TEXT)
+        val source = incrementalRealFontFixture(SOURCE_TEXT, MEASUREMENT_FONTS)
         val target = source.withText(TARGET_TEXT)
         val unicodeVersion = JvmUnicodeAnalyzer.create().analyze(
             source.snapshot,
@@ -618,10 +622,19 @@ internal object IncrementalLayoutBenchmark {
         is FontOperationResult.Cancelled -> error("Opening HarfBuzz for metadata was cancelled.")
     }
 
-    private fun fixtureBytes(relativePath: String): ByteArray =
-        checkNotNull(IncrementalLayoutBenchmark::class.java.getResourceAsStream("/fonts/$relativePath")) {
+    private fun fixtureBytes(relativePath: String): ByteArray {
+        IncrementalLayoutBenchmark::class.java.getResourceAsStream("/fonts/$relativePath")?.use { stream ->
+            return stream.readBytes()
+        }
+        val candidates = listOf(
+            Path.of("shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+            Path.of("kalligraphie", "shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+        )
+        val fixture = checkNotNull(candidates.firstOrNull(Files::isRegularFile)) {
             "Missing measurement font fixture /fonts/$relativePath."
-        }.use { stream -> stream.readBytes() }
+        }
+        return Files.readAllBytes(fixture)
+    }
 
     private fun ByteArray.sha256Hex(): String = MessageDigest.getInstance("SHA-256")
         .digest(this)
