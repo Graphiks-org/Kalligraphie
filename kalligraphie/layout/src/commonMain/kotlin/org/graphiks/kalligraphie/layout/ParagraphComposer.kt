@@ -125,6 +125,15 @@ public object ParagraphComposer : ParagraphLayouter {
                 EditableLineError.InvalidInput("Paragraph materialization does not match the captured request identity."),
             )
         }
+        if (materialization is EditableLineMaterialization.Renderable &&
+            materialization.resolver.generation != request.fontCatalog.generation
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput(
+                    "Renderable paragraph materialization resolver must belong to the captured font catalog generation.",
+                ),
+            )
+        }
         if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
 
         val sourceClusters = request.unicodeAnalysis.graphemeClusters.filter { cluster ->
@@ -234,10 +243,11 @@ public object ParagraphComposer : ParagraphLayouter {
     ): ParagraphLayoutResult {
         val projectedLines = mutableListOf<LineLayout>()
         composition.lines.forEach { composed ->
-            when (val projected = projectLine(composed)) {
+            if (request.cancellationToken.isCancellationRequested()) return ParagraphLayoutResult.Cancelled()
+            when (val projected = projectLine(composed, request.cancellationToken)) {
                 is ProjectedLine.Success -> projectedLines += projected.line
-                is ProjectedLine.Failure -> return ParagraphLayoutResult.Failure(projected.error)
-                is ProjectedLine.Cancelled -> return ParagraphLayoutResult.Cancelled()
+                is ProjectedLine.Failure -> return ParagraphLayoutResult.Failure(projected.error, projected.diagnostics)
+                is ProjectedLine.Cancelled -> return ParagraphLayoutResult.Cancelled(projected.diagnostics)
             }
         }
         val remaining = composition.remainingSourceRange ?: composition.takeIf { it.hasUnplacedTrailingEmptyLine }
@@ -256,7 +266,11 @@ public object ParagraphComposer : ParagraphLayouter {
         )
     }
 
-    private fun projectLine(composed: ComposedParagraphLine): ProjectedLine {
+    private fun projectLine(
+        composed: ComposedParagraphLine,
+        cancellationToken: org.graphiks.kalligraphie.api.CancellationToken,
+    ): ProjectedLine {
+        if (cancellationToken.isCancellationRequested()) return ProjectedLine.Cancelled()
         val instances = composed.fontInstances.associateBy(FontInstance::key)
         val glyphBounds = mutableListOf<LayoutBounds>()
         composed.line.positionedGlyphRuns.forEach { run ->
@@ -267,6 +281,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     ),
                 )
             run.glyphs.forEach { glyph ->
+                if (cancellationToken.isCancellationRequested()) return ProjectedLine.Cancelled()
                 when (val metrics = instance.metrics(glyph.shapedGlyph.glyphId)) {
                     is FontOperationResult.Success -> metrics.value.scaledBounds
                         .takeUnless { it == LayoutBounds.empty }
@@ -279,11 +294,17 @@ public object ParagraphComposer : ParagraphLayouter {
                                 bounds,
                             )
                         }
-                    is FontOperationResult.Failure -> return ProjectedLine.Failure(ParagraphLayoutError.FontFailure(metrics.error))
-                    is FontOperationResult.Cancelled -> return ProjectedLine.Cancelled
+                    is FontOperationResult.Failure -> return ProjectedLine.Failure(
+                        ParagraphLayoutError.FontFailure(metrics.error),
+                        metrics.diagnostics.map(::fontDiagnostic),
+                    )
+                    is FontOperationResult.Cancelled -> return ProjectedLine.Cancelled(
+                        metrics.diagnostics.map(::fontDiagnostic),
+                    )
                 }
             }
         }
+        if (cancellationToken.isCancellationRequested()) return ProjectedLine.Cancelled()
         val inkBounds = glyphBounds.unionOrBaseline(composed.baseline)
         val contentMetrics = LineContentMetrics(
             ascent = finiteUnit(
@@ -337,8 +358,18 @@ public object ParagraphComposer : ParagraphLayouter {
 
     private sealed interface ProjectedLine {
         data class Success(val line: LineLayout) : ProjectedLine
-        data class Failure(val error: ParagraphLayoutError) : ProjectedLine
-        data object Cancelled : ProjectedLine
+        class Failure(
+            val error: ParagraphLayoutError,
+            diagnostics: List<EditableLineDiagnostic> = emptyList(),
+        ) : ProjectedLine {
+            val diagnostics: List<EditableLineDiagnostic> = diagnostics.immutableSnapshot()
+        }
+
+        class Cancelled(
+            diagnostics: List<EditableLineDiagnostic> = emptyList(),
+        ) : ProjectedLine {
+            val diagnostics: List<EditableLineDiagnostic> = diagnostics.immutableSnapshot()
+        }
     }
 
     private fun candidatesForLine(request: ParagraphLayoutRequest, start: TextIndex): List<TextIndex> {

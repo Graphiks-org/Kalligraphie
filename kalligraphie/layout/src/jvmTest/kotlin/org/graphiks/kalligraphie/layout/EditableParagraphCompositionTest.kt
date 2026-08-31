@@ -12,7 +12,13 @@ import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontDiagnostic
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
+import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
 import org.graphiks.kalligraphie.api.FontFaceId
+import org.graphiks.kalligraphie.api.FontFace
+import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
@@ -20,6 +26,7 @@ import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutBounds
@@ -373,6 +380,109 @@ class EditableParagraphCompositionTest {
     }
 
     @Test
+    fun publicParagraphLayouterRejectsAWrongGenerationRenderableResolverForAnEmptyParagraph() {
+        val fixture = fixture("", width = 3_000f, height = 1_000f)
+        val foreignFixture = fixture(
+            "",
+            width = 3_000f,
+            height = 1_000f,
+            catalogGeneration = "foreign-empty-renderable-generation",
+        )
+        val profile = OutlineProfile(
+            maxBytes = 1_024,
+            maxContours = 16,
+            maxPoints = 64,
+            maxCompositeDepth = 4,
+            maxCompositeComponents = 8,
+        )
+        val materialization = EditableLineMaterialization.Renderable(
+            foreignFixture.request.fontCatalog.openAssetResolver().successValue(),
+            FontRenderVariantKey.default,
+            profile,
+        )
+        try {
+            val result = ParagraphComposer.layout(
+                copyRequest(
+                    fixture.request,
+                    materializationIdentity = ParagraphMaterializationIdentity.Renderable(
+                        FontRenderVariantKey.default,
+                        profile,
+                    ),
+                ),
+                materialization,
+            )
+
+            assertIs<ParagraphLayoutError.InvalidInput>(
+                assertIs<ParagraphLayoutResult.Failure>(result).error,
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(materialization.resolver.close())
+        }
+    }
+
+    @Test
+    fun publicParagraphLayouterRejectsAWrongGenerationResolverWhenResumingATerminalEmptyLine() {
+        val fixture = fixture("a\n", width = 3_000f, height = 1_000f)
+        val foreignFixture = fixture(
+            "",
+            width = 3_000f,
+            height = 1_000f,
+            catalogGeneration = "foreign-terminal-empty-renderable-generation",
+        )
+        val profile = OutlineProfile(
+            maxBytes = 1_024,
+            maxContours = 16,
+            maxPoints = 64,
+            maxCompositeDepth = 4,
+            maxCompositeComponents = 8,
+        )
+        val materializationIdentity = ParagraphMaterializationIdentity.Renderable(
+            FontRenderVariantKey.default,
+            profile,
+        )
+        val initialRequest = copyRequest(
+            fixture.request,
+            materializationIdentity = materializationIdentity,
+        )
+        val initialMaterialization = EditableLineMaterialization.Renderable(
+            fixture.request.fontCatalog.openAssetResolver().successValue(),
+            FontRenderVariantKey.default,
+            profile,
+        )
+        val continuation = try {
+            val initial = assertIs<ParagraphLayoutResult.Success>(
+                ParagraphComposer.layout(initialRequest, initialMaterialization),
+            )
+            assertEquals(CoverageStatus.PARTIAL, initial.coverageStatus)
+            checkNotNull(initial.continuation)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(initialMaterialization.resolver.close())
+        }
+        val mismatchedMaterialization = EditableLineMaterialization.Renderable(
+            foreignFixture.request.fontCatalog.openAssetResolver().successValue(),
+            FontRenderVariantKey.default,
+            profile,
+        )
+        try {
+            val result = ParagraphComposer.layout(
+                copyRequest(
+                    initialRequest,
+                    sourceRange = continuation.remainingSourceRange,
+                    constraints = constraints(width = 3_000f, top = 1_050f, height = 1_000f),
+                    continuation = continuation,
+                ),
+                mismatchedMaterialization,
+            )
+
+            assertIs<ParagraphLayoutError.InvalidInput>(
+                assertIs<ParagraphLayoutResult.Failure>(result).error,
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(mismatchedMaterialization.resolver.close())
+        }
+    }
+
+    @Test
     fun publishedLineUsesRealGlyphMetricsForDistinctContentBoxAndInkGeometry() {
         val fixture = fixture("Ag", width = 3_000f, height = 1_000f)
 
@@ -418,6 +528,52 @@ class EditableParagraphCompositionTest {
         assertTrue(line.designInkBounds.maxX < LayoutUnit(line.baseline.x.value + line.contentMetrics.inlineAdvance.value))
         // The independent font oracle discards an empty glyph metric before any translation, so
         // a translated zero-area space cannot become a false paragraph-coordinate ink point.
+    }
+
+    @Test
+    fun cancelledFinalMetricProjectionReturnsTheFontCancellationDiagnostic() {
+        val fixture = fixture("A", width = 3_000f, height = 1_000f)
+        val diagnostic = FontDiagnostic(
+            code = "font.test-metric-projection-cancelled",
+            severity = FontDiagnosticSeverity.WARNING,
+            location = FontDiagnosticLocation.Source,
+            message = "The test font instance cancelled metric projection.",
+        )
+
+        val result = ParagraphComposer.layout(
+            copyRequest(
+                fixture.request,
+                fontCatalog = ProjectionMetricCatalog(fixture.request.fontCatalog) { _, _ ->
+                    FontOperationResult.Cancelled(listOf(diagnostic))
+                },
+            ),
+            EditableLineMaterialization.LayoutOnly,
+        )
+
+        assertEquals(
+            listOf("font.test-metric-projection-cancelled"),
+            assertIs<ParagraphLayoutResult.Cancelled>(result).diagnostics.map { it.code },
+        )
+    }
+
+    @Test
+    fun finalMetricProjectionChecksCancellationBetweenGlyphMetricQueries() {
+        val fixture = fixture("Ag", width = 3_000f, height = 1_000f)
+        var cancellationRequested = false
+
+        val result = ParagraphComposer.layout(
+            copyRequest(
+                fixture.request,
+                fontCatalog = ProjectionMetricCatalog(fixture.request.fontCatalog) { instance, glyphId ->
+                    cancellationRequested = true
+                    instance.metrics(glyphId)
+                },
+                cancellationToken = org.graphiks.kalligraphie.api.CancellationToken { cancellationRequested },
+            ),
+            EditableLineMaterialization.LayoutOnly,
+        )
+
+        assertIs<ParagraphLayoutResult.Cancelled>(result)
     }
 
     @Test
@@ -605,6 +761,8 @@ class EditableParagraphCompositionTest {
         sourceRange: TextRange = request.sourceRange,
         constraints: HorizontalParagraphConstraints = request.constraints,
         fontInstanceDescriptor: FontInstanceDescriptor = request.fontInstanceDescriptor,
+        fontCatalog: FontCatalogSnapshot = request.fontCatalog,
+        cancellationToken: org.graphiks.kalligraphie.api.CancellationToken = request.cancellationToken,
         materializationIdentity: ParagraphMaterializationIdentity = request.materializationIdentity,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
     ): ParagraphLayoutRequest = ParagraphLayoutRequest(
@@ -617,14 +775,14 @@ class EditableParagraphCompositionTest {
         language = request.language,
         featurePolicy = request.featurePolicy,
         features = request.features,
-        fontCatalog = request.fontCatalog,
+        fontCatalog = fontCatalog,
         resolutionPolicy = request.resolutionPolicy,
         fontInstanceDescriptor = fontInstanceDescriptor,
         shapingBackend = request.shapingBackend,
         materializationIdentity = materializationIdentity,
         overflowPolicy = request.overflowPolicy,
         continuation = continuation,
-        cancellationToken = request.cancellationToken,
+        cancellationToken = cancellationToken,
     )
 
     private fun constraints(width: Float, top: Float, height: Float): HorizontalParagraphConstraints =
@@ -652,6 +810,7 @@ class EditableParagraphCompositionTest {
         fontResources: List<FontFixture> = listOf(FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")),
         sourceStartOrdinal: Int = 0,
         recordShapingRequests: Boolean = false,
+        catalogGeneration: String = "paragraph-composition-${fontResources.joinToString("-") { it.declaredName }}-v1",
     ): Fixture {
         val snapshot = TextSnapshots.decodeUtf16(
             version = TextVersion.create(),
@@ -663,7 +822,7 @@ class EditableParagraphCompositionTest {
         )
         val lineBreakAnalysis = JvmLineBreakAnalyzer.create().analyze(snapshot, unicodeAnalysis)
         val sources = fontResources.map { font -> source(font.resource, font.declaredName) }
-        val generation = FontCatalogGeneration("paragraph-composition-${fontResources.joinToString("-") { it.declaredName }}-v1")
+        val generation = FontCatalogGeneration(catalogGeneration)
         val catalog = EmbeddedFontCatalog(
             generation,
             sources.map { source -> EmbeddedFontCatalogEntry(source, SfntReader.readMetadata(source).successValue()) },
@@ -780,5 +939,47 @@ class EditableParagraphCompositionTest {
         }
 
         override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
+
+    private class ProjectionMetricCatalog(
+        private val delegate: FontCatalogSnapshot,
+        private val projectMetrics: (FontInstance, org.graphiks.kalligraphie.api.GlyphId) -> FontOperationResult<GlyphMetrics>,
+    ) : FontCatalogSnapshot by delegate {
+        override fun resolveFace(
+            faceId: FontFaceId,
+            requirements: FontAccessRequirementsSnapshot,
+        ): FontOperationResult<FontFace> = when (val resolved = delegate.resolveFace(faceId, requirements)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                ProjectionMetricFace(resolved.value, projectMetrics),
+                resolved.diagnostics,
+            )
+
+            is FontOperationResult.Failure -> resolved
+            is FontOperationResult.Cancelled -> resolved
+        }
+    }
+
+    private class ProjectionMetricFace(
+        private val delegate: FontFace,
+        private val projectMetrics: (FontInstance, org.graphiks.kalligraphie.api.GlyphId) -> FontOperationResult<GlyphMetrics>,
+    ) : FontFace by delegate {
+        override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> =
+            when (val instantiated = delegate.instantiate(descriptor)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(
+                    ProjectionMetricInstance(instantiated.value, projectMetrics),
+                    instantiated.diagnostics,
+                )
+
+                is FontOperationResult.Failure -> instantiated
+                is FontOperationResult.Cancelled -> instantiated
+            }
+    }
+
+    private class ProjectionMetricInstance(
+        private val delegate: FontInstance,
+        private val projectMetrics: (FontInstance, org.graphiks.kalligraphie.api.GlyphId) -> FontOperationResult<GlyphMetrics>,
+    ) : FontInstance by delegate {
+        override fun metrics(glyphId: org.graphiks.kalligraphie.api.GlyphId): FontOperationResult<GlyphMetrics> =
+            projectMetrics(delegate, glyphId)
     }
 }
