@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.IncrementalLayoutError
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
+import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.LayoutContinuationSignature
 import org.graphiks.kalligraphie.api.LayoutRect
@@ -14,9 +15,12 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.OverflowPolicy
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.LayoutStateHandle
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
+import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 import org.graphiks.kalligraphie.layout.IncrementalComputationTail
 import org.graphiks.kalligraphie.layout.IncrementalComputedLine
 import org.graphiks.kalligraphie.layout.IncrementalMaterializationTarget
@@ -94,17 +98,24 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         if (request.request.cancellationToken.isCancellationRequested()) {
             return IncrementalLayoutResult.Cancelled
         }
+        val compositionConfiguration = JvmCompositionConfiguration.from(request)
+        val portableRequest = when (
+            val prepared = requestForEngine(request.request, compositionConfiguration)
+        ) {
+            is LayoutContractResult.Success -> prepared.value
+            is LayoutContractResult.Failure -> return IncrementalLayoutResult.Failure(prepared.error)
+        }
         var completedWork: ComputerWork? = null
         val computer = IncrementalParagraphComputer { target, overscan, portableRequest ->
             composeIncrementally(request, target, overscan, portableRequest).also { work ->
                 if (work.computation is IncrementalParagraphComputation.Success) completedWork = work
             }.computation
         }
-        val result = engine.layout(request.request, computer)
+        val result = engine.layout(portableRequest, computer)
         if (request.request.cancellationToken.isCancellationRequested()) {
             return IncrementalLayoutResult.Cancelled
         }
-        return publish(generation, result, completedWork)
+        return publish(generation, result, completedWork, compositionConfiguration)
     }
 
     /** Returns the latest complete immutable publication atomically, or `null` before first success. */
@@ -129,24 +140,57 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     internal fun publishForTesting(
         candidate: IncrementalLayoutResult.Success,
         generation: Long,
-    ): IncrementalLayoutResult = publish(generation, candidate, completedWork = null)
+    ): IncrementalLayoutResult = publish(
+        generation,
+        candidate,
+        completedWork = null,
+        compositionConfiguration = null,
+    )
 
     private fun publish(
         generation: Long,
         result: IncrementalLayoutResult,
         completedWork: ComputerWork?,
+        compositionConfiguration: JvmCompositionConfiguration?,
     ): IncrementalLayoutResult {
         if (closed || generation < latestAttempt) return IncrementalLayoutResult.Obsolete
         if (result is IncrementalLayoutResult.Success) {
             publication = result
             publicationMetadata = completedWork?.let { work ->
+                val configuration = compositionConfiguration ?: return@let null
                 PublishedWorkMetadata(
-                    stateIdentity = result.layout.state.identity,
+                    state = result.layout.state,
+                    compositionConfiguration = configuration,
                     lineTops = work.lineTops,
                 )
             }
         }
         return result
+    }
+
+    private fun requestForEngine(
+        request: IncrementalLayoutRequest,
+        compositionConfiguration: JvmCompositionConfiguration,
+    ): LayoutContractResult<IncrementalLayoutRequest> {
+        val previous = request.previousState ?: return LayoutContractResult.Success(request)
+        val activeState = publication?.layout?.state
+        val metadata = publicationMetadata
+        if (
+            previous === activeState &&
+            previous === metadata?.state &&
+            compositionConfiguration == metadata.compositionConfiguration
+        ) {
+            return LayoutContractResult.Success(request)
+        }
+        return createIncrementalLayoutRequest(
+            input = request.input,
+            requestedRange = request.requestedRange,
+            constraints = request.constraints,
+            overscan = request.overscan,
+            previousState = null,
+            delta = request.delta,
+            cancellationToken = request.cancellationToken,
+        )
     }
 
     private fun composeIncrementally(
@@ -307,7 +351,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     ): LayoutUnit? {
         if (target.reflowStart == request.input.text.range.start) return request.constraints.region.top
         val metadata = publicationMetadata ?: return null
-        if (request.previousState?.identity != metadata.stateIdentity) return null
+        if (request.previousState !== metadata.state) return null
         return metadata.lineTops.firstNotNullOfOrNull { checkpoint ->
             val mapped = request.delta?.text?.mapSourceBoundaryToTarget(
                 checkpoint.start,
@@ -364,7 +408,8 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             requested.start >= line.start && requested.start < line.endExclusive
         }
     } else {
-        line.endExclusive >= requested.endExclusive
+        line.endExclusive >= requested.endExclusive &&
+            (requested.endExclusive != documentEnd || !hasContinuation)
     }
 
     private fun oneLineConstraints(
@@ -406,22 +451,30 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         /**
          * Opens a reusable JVM incremental paragraph session.
          *
-         * Native-backend failure or cancellation is returned without creating a session. A
-         * successful session must be closed by its owner.
+         * The cache budget is validated before opening native resources. Native-backend failure
+         * or cancellation is returned without creating a session. A successful session must be
+         * closed by its owner.
+         *
+         * @throws IllegalArgumentException when [cacheBudgetBytes] is negative.
          */
         public fun open(cacheBudgetBytes: Long = DEFAULT_CACHE_BUDGET_BYTES):
             FontOperationResult<JvmIncrementalParagraphLayoutSession> =
-            when (val opened = JvmHarfBuzzShapingBackend.open()) {
+            openWithBackendFactory(cacheBudgetBytes) { JvmHarfBuzzShapingBackend.open() }
+
+        internal fun openWithBackendFactory(
+            cacheBudgetBytes: Long,
+            openBackend: () -> FontOperationResult<ShapingBackend>,
+        ): FontOperationResult<JvmIncrementalParagraphLayoutSession> {
+            val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes)
+            return when (val opened = openBackend()) {
                 is FontOperationResult.Success -> FontOperationResult.Success(
-                    JvmIncrementalParagraphLayoutSession(
-                        opened.value,
-                        IncrementalParagraphLayoutEngine(cacheBudgetBytes),
-                    ),
+                    JvmIncrementalParagraphLayoutSession(opened.value, engine),
                     opened.diagnostics,
                 )
                 is FontOperationResult.Failure -> opened
                 is FontOperationResult.Cancelled -> opened
             }
+        }
 
         internal fun openOwnedBackend(
             backend: ShapingBackend,
@@ -445,9 +498,27 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     )
 
     private data class PublishedWorkMetadata(
-        val stateIdentity: String,
+        val state: LayoutStateHandle,
+        val compositionConfiguration: JvmCompositionConfiguration,
         val lineTops: List<LineTop>,
     )
+
+    private data class JvmCompositionConfiguration(
+        val baseDirection: BaseDirection,
+        val language: String,
+        val materializationIdentity: ParagraphMaterializationIdentity,
+        val overflowPolicy: OverflowPolicy,
+    ) {
+        companion object {
+            fun from(request: JvmIncrementalParagraphLayoutRequest): JvmCompositionConfiguration =
+                JvmCompositionConfiguration(
+                    baseDirection = request.baseDirection,
+                    language = request.language,
+                    materializationIdentity = ParagraphMaterializationIdentity.from(request.materialization),
+                    overflowPolicy = request.overflowPolicy,
+                )
+        }
+    }
 }
 
 private fun EditableLineMaterialization.identityForSession(): Any = when (this) {

@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -25,6 +26,7 @@ import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutInput
 import org.graphiks.kalligraphie.api.LayoutRect
+import org.graphiks.kalligraphie.api.LayoutTailState
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
@@ -136,7 +138,8 @@ class JvmIncrementalParagraphLayoutSessionTest {
         val afterClose = session.publishForTesting(published, generation = 2L)
 
         assertIs<IncrementalLayoutResult.Obsolete>(afterClose)
-        assertEquals(fixture.snapshot.version, session.currentLayout()?.layout?.coverage?.textVersion)
+        assertEquals(fixture.snapshot.version, session.currentLayout()?.layout?.inputIdentity?.textVersion)
+        assertEquals(fixture.typography.version, session.currentLayout()?.layout?.inputIdentity?.typographyVersion)
     }
 
     @Test
@@ -154,6 +157,39 @@ class JvmIncrementalParagraphLayoutSessionTest {
             assertEquals(TextRange(end, end), success.layout.coveredRange)
             assertTrue(success.layout.lines.single().positionedGlyphRuns.isEmpty())
         }
+    }
+
+    @Test
+    fun fullRangeEndingInNewlinePublishesContentAndTheCanonicalTerminalEmptyLine() {
+        val fixture = fixture("fi\n")
+        val end = fixture.snapshot.range.endExclusive
+        val session = openSession()
+
+        session.use { open ->
+            val success = assertIs<IncrementalLayoutResult.Success>(open.layout(request(fixture)))
+
+            assertEquals(
+                listOf(range(fixture.snapshot, 0, 3), TextRange(end, end)),
+                success.layout.lines.map(LineLayout::range),
+            )
+            assertEquals(listOf(listOf(3), emptyList()), success.layout.lines.map { line -> line.glyphIds() })
+            assertEquals(fixture.snapshot.range, success.layout.coveredRange)
+            assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, success.layout.coverage.tailState)
+        }
+    }
+
+    @Test
+    fun negativeCacheBudgetIsRejectedBeforeOpeningABackend() {
+        var backendOpenCalls = 0
+
+        assertFailsWith<IllegalArgumentException> {
+            JvmIncrementalParagraphLayoutSession.openWithBackendFactory(cacheBudgetBytes = -1) {
+                backendOpenCalls += 1
+                error("Backend opening must not be attempted for an invalid cache budget.")
+            }
+        }
+
+        assertEquals(0, backendOpenCalls)
     }
 
     @Test
@@ -224,6 +260,137 @@ class JvmIncrementalParagraphLayoutSessionTest {
         }
     }
 
+    @Test
+    fun changedJvmCompositionConfigurationForcesConservativeDocumentStartReflow() {
+        val source = fixture("fi \u0633\u0644\u0627\u0645")
+        val target = source.withText("fi \u0633\u0644\u0645")
+        val changeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 5, 6), range(target.snapshot, 5, 5))),
+            ),
+        ).value
+        val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val backend = TrackingBackend(delegate)
+        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+
+        try {
+            val initial = assertIs<IncrementalLayoutResult.Success>(
+                session.layout(request(source, language = "ar")),
+            )
+            backend.clearObservedRanges()
+
+            val edited = assertIs<IncrementalLayoutResult.Success>(
+                session.layout(
+                    request(
+                        fixture = target,
+                        requestedRange = range(target.snapshot, 3, 6),
+                        previousState = initial.layout.state,
+                        delta = LayoutDelta(text = changeSet),
+                        language = "en",
+                    ),
+                ),
+            )
+
+            assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+            assertTrue(edited.diagnostics.usedConservativeInvalidation)
+            assertNull(edited.diagnostics.stabilizedAt)
+            assertTrue(backend.observedRangeStarts.any { start -> start == target.snapshot.range.start })
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun collidingStateIdentityFromAnotherSessionCannotReuseLocalCheckpointGeometry() {
+        val source = fixture("fi \u0633\u0644\u0627\u0645")
+        val target = source.withText("fi \u0633\u0644\u0645")
+        val changeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 5, 6), range(target.snapshot, 5, 5))),
+            ),
+        ).value
+        val firstConstraints = constraints(top = 50f)
+        val foreignConstraints = constraints(top = 500f)
+        val firstSession = openSession()
+        val foreignSession = openSession()
+
+        try {
+            val local = assertIs<IncrementalLayoutResult.Success>(
+                firstSession.layout(request(source, constraints = firstConstraints)),
+            )
+            val foreign = assertIs<IncrementalLayoutResult.Success>(
+                foreignSession.layout(request(source, constraints = foreignConstraints)),
+            )
+            assertEquals(local.layout.state.identity, foreign.layout.state.identity)
+
+            val result = assertIs<IncrementalLayoutResult.Success>(
+                firstSession.layout(
+                    request(
+                        fixture = target,
+                        requestedRange = range(target.snapshot, 3, 6),
+                        previousState = foreign.layout.state,
+                        delta = LayoutDelta(text = changeSet),
+                        constraints = foreignConstraints,
+                    ),
+                ),
+            )
+
+            assertEquals(target.snapshot.range.start, result.diagnostics.reflowStart)
+            assertTrue(result.diagnostics.usedConservativeInvalidation)
+            assertEquals(LayoutUnit(1_700f), result.layout.lines.single().lineBox.top)
+        } finally {
+            firstSession.close()
+            foreignSession.close()
+        }
+    }
+
+    @Test
+    fun structurallyValidForeignStateFallsBackToSuccessfulFullReflow() {
+        val source = fixture("fi \u0633\u0644\u0627\u0645")
+        val target = source.withText("fi \u0633\u0644\u0645")
+        val changeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 5, 6), range(target.snapshot, 5, 5))),
+            ),
+        ).value
+        val session = openSession()
+
+        session.use { open ->
+            val local = assertIs<IncrementalLayoutResult.Success>(open.layout(request(source)))
+            val localState = local.layout.state
+            val foreign = org.graphiks.kalligraphie.api.LayoutStateHandle(
+                identity = "foreign-state",
+                checkpoint = localState.checkpoint,
+                coverage = localState.coverage,
+                configuration = localState.configuration,
+                continuation = localState.continuation,
+                lineCheckpoints = localState.lineCheckpoints,
+            )
+
+            val result = assertIs<IncrementalLayoutResult.Success>(
+                open.layout(
+                    request(
+                        fixture = target,
+                        requestedRange = range(target.snapshot, 3, 6),
+                        previousState = foreign,
+                        delta = LayoutDelta(text = changeSet),
+                    ),
+                ),
+            )
+
+            assertEquals(target.snapshot.range.start, result.diagnostics.reflowStart)
+            assertTrue(result.diagnostics.usedConservativeInvalidation)
+        }
+    }
+
     private fun openSession(): JvmIncrementalParagraphLayoutSession =
         assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
             JvmIncrementalParagraphLayoutSession.open(),
@@ -235,10 +402,13 @@ class JvmIncrementalParagraphLayoutSessionTest {
         requestedRange: TextRange = fixture.snapshot.range,
         previousState: org.graphiks.kalligraphie.api.LayoutStateHandle? = null,
         delta: LayoutDelta? = null,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language: String = "ar",
+        constraints: HorizontalParagraphConstraints = constraints(),
     ): JvmIncrementalParagraphLayoutRequest = JvmIncrementalParagraphLayoutRequest(
-        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta),
-        baseDirection = BaseDirection.LEFT_TO_RIGHT,
-        language = "ar",
+        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints),
+        baseDirection = baseDirection,
+        language = language,
         materialization = EditableLineMaterialization.LayoutOnly,
     )
 
@@ -248,6 +418,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
         requestedRange: TextRange,
         previousState: org.graphiks.kalligraphie.api.LayoutStateHandle?,
         delta: LayoutDelta?,
+        constraints: HorizontalParagraphConstraints,
     ): IncrementalLayoutRequest = assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(
         createIncrementalLayoutRequest(
             input = LayoutInput(
@@ -255,7 +426,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
                 typography = fixture.typography,
             ),
             requestedRange = requestedRange,
-            constraints = constraints(),
+            constraints = constraints,
             overscan = LineOverscan(0),
             previousState = previousState,
             delta = delta,
@@ -296,8 +467,11 @@ class JvmIncrementalParagraphLayoutSessionTest {
         )
     }
 
-    private fun constraints(): HorizontalParagraphConstraints = HorizontalParagraphConstraints(
-        region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(1_500f), LayoutUnit(3_650f)),
+    private fun constraints(
+        top: Float = 50f,
+        height: Float = 3_600f,
+    ): HorizontalParagraphConstraints = HorizontalParagraphConstraints(
+        region = LayoutRect(LayoutUnit(100f), LayoutUnit(top), LayoutUnit(1_500f), LayoutUnit(top + height)),
         lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
     )
 

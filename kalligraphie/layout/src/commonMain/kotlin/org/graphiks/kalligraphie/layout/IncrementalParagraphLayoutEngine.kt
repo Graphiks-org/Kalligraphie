@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.layout
 import org.graphiks.kalligraphie.api.IncrementalLayout
 import org.graphiks.kalligraphie.api.IncrementalLayoutDiagnostics
 import org.graphiks.kalligraphie.api.IncrementalLayoutError
+import org.graphiks.kalligraphie.api.IncrementalLayoutInputIdentity
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
 import org.graphiks.kalligraphie.api.LayoutCheckpoint
@@ -199,7 +200,10 @@ public class IncrementalParagraphLayoutEngine(
         )
         return IncrementalLayoutResult.Success(
             layout = PublishedIncrementalLayout(
-                request.input,
+                IncrementalLayoutInputIdentity(
+                    request.input.text.version,
+                    request.input.typography.version,
+                ),
                 coverage,
                 published.map(IncrementalComputedLine::line),
                 state,
@@ -411,14 +415,24 @@ public class IncrementalParagraphLayoutEngine(
             computed.indexOfLast { value -> value.line.range.intersects(requested) }
         }
         if (last < first) return null
+        val documentEnd = request.input.text.range.endExclusive
+        val requiredLast = if (
+            requested.start != requested.endExclusive &&
+            requested.endExclusive == documentEnd &&
+            computed.getOrNull(last + 1)?.line?.range == TextRange(documentEnd, documentEnd)
+        ) {
+            last + 1
+        } else {
+            last
+        }
         val start = maxOf(0, first - request.overscan.lineCount)
-        val endExclusive = minOf(computed.size, last + request.overscan.lineCount + 1)
+        val endExclusive = minOf(computed.size, requiredLast + request.overscan.lineCount + 1)
         return computed.subList(start, endExclusive).immutableSnapshot()
     }
 }
 
 private class PublishedIncrementalLayout(
-    override val input: LayoutInput,
+    override val inputIdentity: IncrementalLayoutInputIdentity,
     override val coverage: LayoutCoverage,
     lines: List<LineLayout>,
     override val state: LayoutStateHandle,

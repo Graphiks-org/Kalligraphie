@@ -9,6 +9,17 @@ import kotlin.test.assertSame
 
 class IncrementalLayoutContractsTest {
     @Test
+    fun publishedInputIdentityContainsOnlyTextAndTypographyVersions() {
+        val textVersion = TextVersion.create()
+        val typographyVersion = TypographyVersion.create()
+
+        val identity = IncrementalLayoutInputIdentity(textVersion, typographyVersion)
+
+        assertSame(textVersion, identity.textVersion)
+        assertSame(typographyVersion, identity.typographyVersion)
+    }
+
+    @Test
     fun obsoleteOutcomeCarriesNoLayoutOrFailurePayload() {
         val result: IncrementalLayoutResult = IncrementalLayoutResult.Obsolete
 

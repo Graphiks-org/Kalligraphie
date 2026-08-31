@@ -769,10 +769,23 @@ private fun RangeChange.hasSameRangesAs(other: RangeChange): Boolean = when {
     else -> false
 }
 
+/**
+ * Resource-free identity of the text and typography revisions represented by a publication.
+ *
+ * This value deliberately retains neither a [TextSnapshot] nor any font catalogue, resolver,
+ * backend, text slice, or document capability.
+ */
+public data class IncrementalLayoutInputIdentity(
+    /** Immutable text revision represented by the publication. */
+    public val textVersion: TextVersion,
+    /** Immutable typography revision represented by the publication. */
+    public val typographyVersion: TypographyVersion,
+)
+
 /** Immutable published incremental layout metadata. */
 public interface IncrementalLayout {
-    /** Target input represented by this output. */
-    public val input: LayoutInput
+    /** Resource-free input revision identity represented by this output. */
+    public val inputIdentity: IncrementalLayoutInputIdentity
 
     /** Complete-line coverage published by this output. */
     public val coverage: LayoutCoverage

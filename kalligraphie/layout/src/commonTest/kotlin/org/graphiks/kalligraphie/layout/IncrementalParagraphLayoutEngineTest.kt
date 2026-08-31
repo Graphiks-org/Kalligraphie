@@ -33,6 +33,7 @@ import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.IncrementalLayoutError
+import org.graphiks.kalligraphie.api.IncrementalLayoutInputIdentity
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
 import org.graphiks.kalligraphie.api.LayoutBounds
@@ -89,6 +90,10 @@ class IncrementalParagraphLayoutEngineTest {
         assertEquals(listOf(range(fixture.snapshot, 0, 0)), success.layout.lines.map(LineLayout::range))
         assertEquals(range(fixture.snapshot, 0, 0), success.layout.coveredRange)
         assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, success.layout.coverage.tailState)
+        assertEquals(
+            IncrementalLayoutInputIdentity(fixture.snapshot.version, fixture.typography.version),
+            success.layout.inputIdentity,
+        )
     }
 
     @Test
@@ -102,6 +107,21 @@ class IncrementalParagraphLayoutEngineTest {
             listOf(range(fixture.snapshot, 0, 1), range(fixture.snapshot, 1, 1)),
             success.layout.lines.map(LineLayout::range),
         )
+        assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, success.layout.coverage.tailState)
+    }
+
+    @Test
+    fun fullNonEmptyRangeEndingAtDocumentEndIncludesTheCanonicalTerminalEmptyLine() {
+        val fixture = fixture("\n", listOf(0 to 1, 1 to 1))
+
+        val result = fixture.engine.layout(fixture.request(0, 1), fixture.computer())
+
+        val success = assertIs<IncrementalLayoutResult.Success>(result)
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 1), range(fixture.snapshot, 1, 1)),
+            success.layout.lines.map(LineLayout::range),
+        )
+        assertEquals(range(fixture.snapshot, 0, 1), success.layout.coveredRange)
         assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, success.layout.coverage.tailState)
     }
 
@@ -648,7 +668,16 @@ class IncrementalParagraphLayoutEngineTest {
                     lineBoundaries.indexOfLast { (start, end) -> start < requestedEnd && requestedStart < end }
                 }
                 val first = maxOf(0, requestedFirst - overscan.lineCount)
-                val endExclusive = minOf(lineBoundaries.size, requestedLast + overscan.lineCount + 1)
+                val requiredLast = if (
+                    requestedStart != requestedEnd &&
+                    requestedEnd == snapshot.scalars.size &&
+                    lineBoundaries.getOrNull(requestedLast + 1) == (requestedEnd to requestedEnd)
+                ) {
+                    requestedLast + 1
+                } else {
+                    requestedLast
+                }
+                val endExclusive = minOf(lineBoundaries.size, requiredLast + overscan.lineCount + 1)
                 val computedLines = (first until endExclusive).map { index ->
                     val bounds = lineBoundaries[index]
                     IncrementalComputedLine(
