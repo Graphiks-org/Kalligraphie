@@ -45,7 +45,7 @@ Exécutez explicitement le point d’entrée JUnit opt-in. L’option
 d’environnement ont changé. Conservez le rapport produit hors du dépôt :
 
 ```bash
-rtk env \
+env \
   KALLIGRAPHIE_MEASUREMENT=true \
   KALLIGRAPHIE_MEASUREMENT_WARMUP=5 \
   KALLIGRAPHIE_MEASUREMENT_ITERATIONS=20 \

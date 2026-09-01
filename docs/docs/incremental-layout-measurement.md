@@ -39,7 +39,7 @@ previous Gradle test result cannot suppress a new measurement whose environment
 variables changed. Keep the generated report outside the repository:
 
 ```bash
-rtk env \
+env \
   KALLIGRAPHIE_MEASUREMENT=true \
   KALLIGRAPHIE_MEASUREMENT_WARMUP=5 \
   KALLIGRAPHIE_MEASUREMENT_ITERATIONS=20 \
