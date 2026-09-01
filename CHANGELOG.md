@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JVM reference editable Unicode lines through `org.graphiks:kalligraphie`: canonical UTF-8/UTF-16 decoding, Unicode analysis, pinned HarfBuzz shaping, exact caret and selection geometry, hit testing, and outline-route certification.
 - Clean Architecture / DDD
 - JVM-only autonomous embedded TrueType catalog support through `org.graphiks:kalligraphie`, including immutable source/face/instance data, cmap and metrics, design-unit outlines, and detached render assets.
+- Incremental real-time paragraph layout on the JVM, with versioned edit deltas, reusable checkpoints, cancellation, editor-journey coverage, and opt-in measurement guidance.
 - Maven Central publishing via Vanniktech
 - Legacy JVM font module sources retained under `font/` for reference only.
 - OpenType core and SFNT parsing sources for the JVM font stack.
