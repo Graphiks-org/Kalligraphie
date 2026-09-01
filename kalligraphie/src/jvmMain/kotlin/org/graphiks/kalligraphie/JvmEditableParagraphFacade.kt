@@ -125,52 +125,91 @@ public object JvmEditableParagraphFacade {
         var result: ParagraphLayoutResult? = null
         var closeResult: FontOperationResult<Unit>? = null
         try {
-            result = try {
-                if (request.cancellationToken.isCancellationRequested()) {
-                    ParagraphLayoutResult.Cancelled()
-                } else {
-                    val unicodeAnalysis = JvmUnicodeAnalyzer.create().analyze(
-                        request.snapshot,
-                        UnicodeAnalysisRequest(request.baseDirection, request.language),
-                    )
-                    val canonicalLanguage = unicodeAnalysis.scriptLanguageRuns
-                        .firstOrNull()
-                        ?.language
-                        ?: JvmUnicodeAnalyzer.canonicalizeLanguageTag(request.language)
-                    val lineBreakAnalysis = JvmLineBreakAnalyzer.create().analyze(
-                        request.snapshot,
-                        unicodeAnalysis,
-                    )
-                    val paragraphRequest = ParagraphLayoutRequest(
-                        snapshot = request.snapshot,
-                        sourceRange = request.sourceRange,
-                        unicodeAnalysis = unicodeAnalysis,
-                        lineBreakAnalysis = lineBreakAnalysis,
-                        constraints = request.constraints,
-                        baseDirection = request.baseDirection,
-                        language = canonicalLanguage,
-                        featurePolicy = backend.identity.featurePolicy,
-                        features = request.features,
-                        fontCatalog = request.fontCatalog,
-                        resolutionPolicy = request.resolutionPolicy,
-                        fontInstanceDescriptor = request.fontInstanceDescriptor,
-                        shapingBackend = backend,
-                        materializationIdentity = ParagraphMaterializationIdentity.from(request.materialization),
-                        overflowPolicy = request.overflowPolicy,
-                        continuation = request.continuation,
-                        cancellationToken = request.cancellationToken,
-                    )
-                    paragraphLayout(paragraphRequest, request.materialization)
-                }
-            } catch (error: IllegalArgumentException) {
-                ParagraphLayoutResult.Failure(
-                    ParagraphLayoutError.InvalidInput(error.message ?: "Paragraph input is invalid."),
-                )
-            }
+            result = layoutBorrowing(request, backend, paragraphLayout)
         } finally {
             closeResult = backend.close()
         }
         return includeBackendCloseResult(checkNotNull(result), checkNotNull(closeResult))
+    }
+
+    /**
+     * Composes [request] with a caller-owned [backend] without closing it.
+     *
+     * The backend and any resolver in [request] are borrowed only for this synchronous call. The
+     * caller remains responsible for their lifecycle on success, failure, cancellation, and
+     * exceptions. This seam runs the same Unicode, line-breaking, fallback, shaping, metrics, and
+     * geometry route as the public facade.
+     */
+    internal fun layoutBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+        paragraphLayout: (ParagraphLayoutRequest, EditableLineMaterialization) -> ParagraphLayoutResult =
+            ParagraphComposer::layout,
+    ): ParagraphLayoutResult = try {
+        val paragraphRequest = prepareParagraphRequestBorrowing(request, backend)
+            ?: return ParagraphLayoutResult.Cancelled()
+        paragraphLayout(paragraphRequest, request.materialization)
+    } catch (error: IllegalArgumentException) {
+        ParagraphLayoutResult.Failure(
+            ParagraphLayoutError.InvalidInput(error.message ?: "Paragraph input is invalid."),
+        )
+    }
+
+    /**
+     * Creates a resource-free continuation for a proven line boundary without shaping its prefix.
+     *
+     * Unicode and line-break context are analyzed through the same pinned JVM route. [backend] and
+     * any materialization resolver are borrowed and never closed or retained. `null` reports
+     * cooperative cancellation; invalid boundaries throw [IllegalArgumentException].
+     */
+    internal fun continuationBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+        remainingSourceRange: TextRange,
+        resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
+    ): LayoutContinuation? {
+        val paragraphRequest = prepareParagraphRequestBorrowing(request, backend) ?: return null
+        return LayoutContinuation.create(paragraphRequest, remainingSourceRange, resumptionRegionTop)
+    }
+
+    private fun prepareParagraphRequestBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+    ): ParagraphLayoutRequest? {
+        if (request.cancellationToken.isCancellationRequested()) return null
+        val unicodeAnalysis = JvmUnicodeAnalyzer.create().analyze(
+            request.snapshot,
+            UnicodeAnalysisRequest(request.baseDirection, request.language),
+        )
+        if (request.cancellationToken.isCancellationRequested()) return null
+        val canonicalLanguage = unicodeAnalysis.scriptLanguageRuns
+            .firstOrNull()
+            ?.language
+            ?: JvmUnicodeAnalyzer.canonicalizeLanguageTag(request.language)
+        val lineBreakAnalysis = JvmLineBreakAnalyzer.create().analyze(
+            request.snapshot,
+            unicodeAnalysis,
+        )
+        if (request.cancellationToken.isCancellationRequested()) return null
+        return ParagraphLayoutRequest(
+            snapshot = request.snapshot,
+            sourceRange = request.sourceRange,
+            unicodeAnalysis = unicodeAnalysis,
+            lineBreakAnalysis = lineBreakAnalysis,
+            constraints = request.constraints,
+            baseDirection = request.baseDirection,
+            language = canonicalLanguage,
+            featurePolicy = backend.identity.featurePolicy,
+            features = request.features,
+            fontCatalog = request.fontCatalog,
+            resolutionPolicy = request.resolutionPolicy,
+            fontInstanceDescriptor = request.fontInstanceDescriptor,
+            shapingBackend = backend,
+            materializationIdentity = ParagraphMaterializationIdentity.from(request.materialization),
+            overflowPolicy = request.overflowPolicy,
+            continuation = request.continuation,
+            cancellationToken = request.cancellationToken,
+        )
     }
 
     private fun includeBackendCloseResult(
