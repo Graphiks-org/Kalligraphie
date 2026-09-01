@@ -411,7 +411,7 @@ class IncrementalParagraphLayoutEngineTest {
     }
 
     @Test
-    fun mismatchedPolicyDeltaUsesConservativeReflow() {
+    fun mismatchedPolicyDeltaIsRejectedBeforeReflow() {
         val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes = 64 * 1024)
         val source = fixture("abcdefghijkl", listOf(0 to 4, 4 to 8, 8 to 12), engine = engine)
         val initial = assertIs<IncrementalLayoutResult.Success>(
@@ -455,9 +455,9 @@ class IncrementalParagraphLayoutEngineTest {
             target.computer(),
         )
 
-        val success = assertIs<IncrementalLayoutResult.Success>(result)
-        assertEquals(target.snapshot.range.start, success.diagnostics.reflowStart)
-        assertTrue(success.diagnostics.usedConservativeInvalidation)
+        assertIs<IncrementalLayoutResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
     }
 
     @Test

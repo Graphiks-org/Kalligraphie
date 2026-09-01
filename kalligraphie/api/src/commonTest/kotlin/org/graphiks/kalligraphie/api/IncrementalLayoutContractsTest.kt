@@ -413,6 +413,31 @@ class IncrementalLayoutContractsTest {
     }
 
     @Test
+    fun requestRejectsPolicyDeltaWhoseTargetDoesNotMatchTypographyInput() {
+        val target = decode("abc")
+        val targetTypography = typography(TypographyVersion.create())
+        val policyDelta = FontResolutionPolicyDelta(
+            source = targetTypography.resolutionPolicy,
+            target = policy(version = "2"),
+        )
+        val typographyDelta = TypographyDelta(
+            sourceVersion = TypographyVersion.create(),
+            targetVersion = targetTypography.version,
+            fontResolutionPolicy = policyDelta,
+        )
+
+        val result = request(
+            input = LayoutInput(target, targetTypography),
+            previousState = null,
+            delta = LayoutDelta(typography = typographyDelta),
+        )
+
+        assertIs<LayoutContractResult.Failure>(result).also {
+            assertIs<IncrementalLayoutError.VersionMismatch>(it.error)
+        }
+    }
+
+    @Test
     fun layoutCoverageFactoryRejectsARangeFromAnotherVersion() {
         val text = decode("abc")
         val foreign = decode("abc")

@@ -539,6 +539,10 @@ public class LayoutConfigurationSignature private constructor(
             value.copy(resolutionPolicy = targetPolicy) == target.value
     }
 
+    /** Checks whether this configuration uses exactly [policy] for font resolution. */
+    public fun matchesFontResolutionPolicy(policy: FontResolutionPolicySnapshot): Boolean =
+        value.resolutionPolicy == policy.toConfigurationValue()
+
     /** Factories for request configuration signatures. */
     public companion object {
         /** Captures constraints, font catalogue, resolution policy, geometry, features, and shaping configuration. */
@@ -698,7 +702,12 @@ public fun createIncrementalLayoutRequest(
         val sourceTextVersion = previousState?.checkpoint?.textVersion
             ?: delta.text?.sourceVersion
             ?: input.text.version
-        val proofError = validateTypographyProofs(sourceTextVersion, input.text, delta.typography)
+        val proofError = validateTypographyProofs(
+            sourceTextVersion = sourceTextVersion,
+            target = input.text,
+            targetConfiguration = LayoutConfigurationSignature.from(input, constraints),
+            typographyDelta = delta.typography,
+        )
         if (proofError != null) return LayoutContractResult.Failure(proofError)
     }
     return LayoutContractResult.Success(
@@ -717,6 +726,7 @@ public fun createIncrementalLayoutRequest(
 private fun validateTypographyProofs(
     sourceTextVersion: TextVersion,
     target: TextSnapshot,
+    targetConfiguration: LayoutConfigurationSignature,
     typographyDelta: TypographyDelta,
 ): IncrementalLayoutError? {
     val typographyError = validateProvenRangeSpaces(
@@ -727,7 +737,13 @@ private fun validateTypographyProofs(
     )
     if (typographyError != null) return typographyError
 
-    val policyChange = typographyDelta.fontResolutionPolicy?.rangeChange ?: return null
+    val policyDelta = typographyDelta.fontResolutionPolicy ?: return null
+    if (!targetConfiguration.matchesFontResolutionPolicy(policyDelta.target)) {
+        return IncrementalLayoutError.VersionMismatch(
+            "Font resolution policy delta target does not match the target typography configuration.",
+        )
+    }
+    val policyChange = policyDelta.rangeChange
     val policyError = validateProvenRangeSpaces(
         label = "Font resolution policy delta",
         rangeChange = policyChange,

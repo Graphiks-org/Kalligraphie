@@ -129,6 +129,8 @@ public class IncrementalParagraphLayoutEngine(
         if (request.cancellationToken.isCancellationRequested()) return IncrementalLayoutResult.Cancelled
 
         val configuration = LayoutConfigurationSignature.from(request.input, request.constraints)
+        val policyError = validatePolicyDeltaSource(request)
+        if (policyError != null) return IncrementalLayoutResult.Failure(policyError)
         val reusable = reusableState(request, configuration)
         val affectedStart = firstAffectedTargetBoundary(request)
         val mappedCheckpoints = reusable?.lineCheckpoints
@@ -226,6 +228,18 @@ public class IncrementalParagraphLayoutEngine(
         if (!textTransitionIsProven(previous, request)) return null
         if (!typographyTransitionIsProven(previous, previousConfiguration, configuration, request)) return null
         return previous
+    }
+
+    private fun validatePolicyDeltaSource(request: IncrementalLayoutRequest): IncrementalLayoutError? {
+        val sourceConfiguration = request.previousState?.configuration ?: return null
+        val policyDelta = request.delta?.typography?.fontResolutionPolicy ?: return null
+        return if (sourceConfiguration.matchesFontResolutionPolicy(policyDelta.source)) {
+            null
+        } else {
+            IncrementalLayoutError.VersionMismatch(
+                "Font resolution policy delta source does not match the previous layout configuration.",
+            )
+        }
     }
 
     private fun textTransitionIsProven(
