@@ -113,6 +113,22 @@ class IncrementalLayoutBenchmarkTest {
     }
 
     @Test
+    fun cancellationReportUsesSignalToSessionReturnRatherThanTotalCallLatency() {
+        val report = IncrementalLayoutBenchmark.cancellationReportFor(
+            totalCallLatencyNanos = 900L,
+            signaledAtNanos = 700L,
+            sessionReturnedAtNanos = 1_000L,
+        )
+
+        assertEquals(300L, report.cancellationDelay.value)
+        assertTrue(report.cancellationDelay.value != 900L)
+        assertEquals(
+            "p95 nanoseconds from the first cancellation signal to typed cancellation return",
+            report.cancellationDelay.detail,
+        )
+    }
+
+    @Test
     fun warmCancellationCacheStateRequiresAnUncancelledSuccessfulSeed() {
         assertFailsWith<IllegalArgumentException> {
             IncrementalLayoutBenchmark.preparedCacheState(
@@ -492,16 +508,19 @@ internal object IncrementalLayoutBenchmark {
                         overscan = 0,
                         cancellationToken = token,
                     )
-                    val sample = timed {
-                        check(session.layout(prepared) == IncrementalLayoutResult.Cancelled) {
-                            "Cancellation profile accepted only typed cancelled outcomes."
-                        }
+                    val sample = timed { session.layout(prepared) }
+                    check(sample.value == IncrementalLayoutResult.Cancelled) {
+                        "Cancellation profile accepted only typed cancelled outcomes."
                     }
                     if (index >= warmupIterations) {
                         record(
-                            sample.withDiagnostics(
-                                diagnostics = MaterializationDiagnostics.unavailableAfterCancellation(),
-                                cancellationDelayNanos = token.delayUntil(sample.completedAtNanos),
+                            cancellationSample(
+                                totalCallLatencyNanos = sample.elapsedNanos,
+                                allocatedBytes = sample.allocatedBytes,
+                                signaledAtNanos = checkNotNull(token.signaledAtNanos) {
+                                    "Cancellation profile returned before its token signaled."
+                                },
+                                sessionReturnedAtNanos = sample.completedAtNanos,
                             ),
                         )
                     }
@@ -775,6 +794,57 @@ internal object IncrementalLayoutBenchmark {
         require(successfulUncancelledSeed) { "A warm cache state requires an untimed uncancelled successful seed." }
         return "warm: $profileName completed one untimed uncancelled seed layout, then " +
             "$warmupIterations warmup iterations"
+    }
+
+    /**
+     * Builds a deterministic, one-sample cancellation report for the report-wiring test.
+     *
+     * The production cancellation profile uses the same [cancellationSample] conversion, so
+     * this oracle fails if report wiring regresses to total call latency.
+     */
+    internal fun cancellationReportFor(
+        totalCallLatencyNanos: Long,
+        signaledAtNanos: Long,
+        sessionReturnedAtNanos: Long,
+    ): MeasurementProfileReport = measuredProfile(
+        name = "Cancellation",
+        warmupIterations = 1,
+        iterations = 1,
+        coverage = "deterministic cancellation report wiring fixture",
+        cancellation = true,
+        runOperations = { record ->
+            record(
+                cancellationSample(
+                    totalCallLatencyNanos = totalCallLatencyNanos,
+                    allocatedBytes = null,
+                    signaledAtNanos = signaledAtNanos,
+                    sessionReturnedAtNanos = sessionReturnedAtNanos,
+                ),
+            )
+            "deterministic cancellation report wiring fixture"
+        },
+    )
+
+    private fun cancellationSample(
+        totalCallLatencyNanos: Long,
+        allocatedBytes: Long?,
+        signaledAtNanos: Long,
+        sessionReturnedAtNanos: Long,
+    ): Sample {
+        require(totalCallLatencyNanos > 0L) { "Cancellation call latency must be positive." }
+        require(sessionReturnedAtNanos >= signaledAtNanos) {
+            "Cancellation session return cannot precede its signal."
+        }
+        val signalToReturnDelayNanos = sessionReturnedAtNanos - signaledAtNanos
+        require(totalCallLatencyNanos >= signalToReturnDelayNanos) {
+            "Total cancellation call latency must include the signal-to-return delay."
+        }
+        return Sample(
+            elapsedNanos = totalCallLatencyNanos,
+            allocatedBytes = allocatedBytes,
+            diagnostics = MaterializationDiagnostics.unavailableAfterCancellation(),
+            cancellationDelayNanos = signalToReturnDelayNanos,
+        )
     }
 
     private data class RawSample<Value>(
