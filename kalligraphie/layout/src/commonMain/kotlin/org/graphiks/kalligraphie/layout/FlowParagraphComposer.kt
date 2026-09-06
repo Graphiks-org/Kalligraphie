@@ -16,6 +16,7 @@ import org.graphiks.kalligraphie.api.LayoutSegment
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBand
 import org.graphiks.kalligraphie.api.LineFragment
+import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.NoProgressReason
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphFragment
@@ -76,6 +77,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     previousBandExtent = null
                     previousIntervals = null
                     bandExtent = request.constraints.lineMetrics.height.value
+                    refinements = 0
                     seen.clear()
                     continue
                 }
@@ -83,7 +85,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 FlowRegionResult.EndOfRegion -> return noSpaceForFirstUnit(request)
                 is FlowRegionResult.AvailableIntervals -> {
                     val intervals = regionResult.intervals
-                    if (previousIntervals != null && !intervals.areSubsetOf(previousIntervals)) {
+                    if (previousIntervals != null && !intervals.areCoveredByUnionOf(previousIntervals)) {
                         return nonConvergent(
                             "A growing line band regained logical inline space after it had been excluded.",
                         )
@@ -126,7 +128,8 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         is ParagraphComposer.ProjectedLine.Cancelled ->
                             return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
                     }
-                    val requiredBandExtent = requiredBlockExtent(candidate.line, measured.designInkBounds, measured.baseline)
+                    val requiredMetrics = requiredBlockMetrics(candidate.line, measured.designInkBounds, measured.baseline)
+                    val requiredBandExtent = requiredMetrics.extent
                     if (!requiredBandExtent.isFinite()) {
                         return geometryOverflow("The refined flow line band overflowed finite layout coordinates.")
                     }
@@ -147,7 +150,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         bandExtent = requiredBandExtent
                         continue
                     }
-                    return publish(request, region, currentBlockStart, intervals, candidate)
+                    return publish(request, region, band, intervals, candidate, requiredMetrics)
                 }
             }
         }
@@ -184,16 +187,17 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     private fun publish(
         request: ParagraphLayoutRequest,
         region: FlowRegion,
-        blockStart: Float,
+        acceptedBand: LineBand,
         intervals: List<InlineInterval>,
         candidate: ComposedParagraphLine,
+        requiredMetrics: RequiredBlockMetrics,
     ): FlowCompositionResult<ParagraphFragment> {
         val placed = try {
-            candidate.atFlowPosition(region.bounds, blockStart)
+            candidate.atFlowPosition(region.bounds, acceptedBand, requiredMetrics.fill(acceptedBand.blockExtent))
         } catch (overflow: IllegalArgumentException) {
             return geometryOverflow("The final flow line position overflowed finite layout coordinates.")
         }
-        val projectedFragments = when (val result = fragmentLine(candidate.line, placed.baseline, intervals, request.constraints.writingMode)) {
+        val projectedFragments = when (val result = fragmentLine(placed.line, placed.baseline, intervals, request.constraints.writingMode)) {
             is FragmentProjection.Success -> result.fragments
             is FragmentProjection.Failure -> return FlowCompositionResult.Failure(result.error)
         }
@@ -390,7 +394,11 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         return groups
     }
 
-    private fun requiredBlockExtent(line: EditableLine, ink: LayoutBounds, baseline: LayoutPoint): Float {
+    private fun requiredBlockMetrics(
+        line: EditableLine,
+        ink: LayoutBounds,
+        baseline: LayoutPoint,
+    ): RequiredBlockMetrics {
         var before = line.verticalMetrics.ascent.value.toDouble()
         var after = line.verticalMetrics.descent.value.toDouble()
         when (line.writingMode) {
@@ -414,7 +422,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 }
             }
         }
-        return (before + after).toFloat()
+        return RequiredBlockMetrics(before.toFloat(), after.toFloat())
     }
 
     private fun ParagraphLayoutRequest.withSingleLineExtent(inlineExtent: Float): ParagraphLayoutRequest {
@@ -453,23 +461,27 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         )
     }
 
-    private fun ComposedParagraphLine.atFlowPosition(bounds: LayoutRect, blockStart: Float): ComposedParagraphLine {
-        val metrics = line.verticalMetrics
-        return when (line.writingMode) {
+    private fun ComposedParagraphLine.atFlowPosition(
+        bounds: LayoutRect,
+        band: LineBand,
+        metrics: LineVerticalMetrics,
+    ): ComposedParagraphLine {
+        val refinedLine = line.withVerticalMetrics(metrics)
+        return when (refinedLine.writingMode) {
             WritingMode.HORIZONTAL_TB -> {
-                val top = finite(bounds.top.value.toDouble() + blockStart.toDouble(), "horizontal flow line top")
+                val top = finite(bounds.top.value.toDouble() + band.blockStart.toDouble(), "horizontal flow line top")
                 val baseline = LayoutPoint(
                     bounds.left,
                     finite(top.value.toDouble() + metrics.ascent.value.toDouble(), "horizontal flow baseline"),
                 )
                 ComposedParagraphLine(
-                    line,
+                    refinedLine,
                     baseline,
                     LayoutRect(
                         bounds.left,
                         top,
                         bounds.right,
-                        finite(top.value.toDouble() + metrics.height.value.toDouble(), "horizontal flow line bottom"),
+                        finite(baseline.y.value.toDouble() + metrics.descent.value.toDouble(), "horizontal flow line bottom"),
                     ),
                     inlineAdvance,
                     fontInstances,
@@ -477,16 +489,16 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             }
 
             WritingMode.VERTICAL_RL -> {
-                val right = finite(bounds.right.value.toDouble() - blockStart.toDouble(), "vertical-rl flow line right")
+                val right = finite(bounds.right.value.toDouble() - band.blockStart.toDouble(), "vertical-rl flow line right")
                 val baseline = LayoutPoint(
                     finite(right.value.toDouble() - metrics.descent.value.toDouble(), "vertical-rl flow baseline"),
                     bounds.top,
                 )
                 ComposedParagraphLine(
-                    line,
+                    refinedLine,
                     baseline,
                     LayoutRect(
-                        finite(right.value.toDouble() - metrics.height.value.toDouble(), "vertical-rl flow line left"),
+                        finite(baseline.x.value.toDouble() - metrics.ascent.value.toDouble(), "vertical-rl flow line left"),
                         bounds.top,
                         right,
                         bounds.bottom,
@@ -497,18 +509,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             }
 
             WritingMode.VERTICAL_LR -> {
-                val left = finite(bounds.left.value.toDouble() + blockStart.toDouble(), "vertical-lr flow line left")
+                val left = finite(bounds.left.value.toDouble() + band.blockStart.toDouble(), "vertical-lr flow line left")
                 val baseline = LayoutPoint(
                     finite(left.value.toDouble() + metrics.ascent.value.toDouble(), "vertical-lr flow baseline"),
                     bounds.top,
                 )
                 ComposedParagraphLine(
-                    line,
+                    refinedLine,
                     baseline,
                     LayoutRect(
                         left,
                         bounds.top,
-                        finite(left.value.toDouble() + metrics.height.value.toDouble(), "vertical-lr flow line right"),
+                        finite(baseline.x.value.toDouble() + metrics.descent.value.toDouble(), "vertical-lr flow line right"),
                         bounds.bottom,
                     ),
                     inlineAdvance,
@@ -516,6 +528,45 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 )
             }
         }
+    }
+
+    private fun EditableLine.withVerticalMetrics(metrics: LineVerticalMetrics): EditableLine {
+        if (verticalMetrics == metrics) return this
+        val refinedCarets = allCaretCandidates.map { candidate ->
+            val geometry = when (writingMode) {
+                WritingMode.HORIZONTAL_TB -> LayoutSegment(
+                    LayoutPoint(candidate.geometry.start.x, LayoutUnit(-metrics.ascent.value)),
+                    LayoutPoint(candidate.geometry.end.x, metrics.descent),
+                )
+
+                WritingMode.VERTICAL_RL,
+                WritingMode.VERTICAL_LR,
+                -> LayoutSegment(
+                    LayoutPoint(LayoutUnit(-metrics.ascent.value), candidate.geometry.start.y),
+                    LayoutPoint(metrics.descent, candidate.geometry.end.y),
+                )
+            }
+            CaretCandidate(
+                candidate.position,
+                geometry,
+                candidate.visualOrder,
+                candidate.visualRunOrder,
+                candidate.bidiLevel,
+                candidate.direction,
+                candidate.strength,
+                candidate.edge,
+            )
+        }
+        return EditableLine(
+            range,
+            baseDirection,
+            metrics,
+            writingMode,
+            positionedGlyphRuns,
+            refinedCarets,
+            positionedInlineObjects,
+            diagnostics,
+        )
     }
 
     private fun PositionedGlyph.penStart(writingMode: WritingMode): Double = when (writingMode) {
@@ -653,8 +704,15 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         else -> false
     }
 
-    private fun List<InlineInterval>.areSubsetOf(previous: List<InlineInterval>): Boolean = all { current ->
-        previous.any { old -> current.start >= old.start && current.endExclusive <= old.endExclusive }
+    private fun List<InlineInterval>.areCoveredByUnionOf(previous: List<InlineInterval>): Boolean = all current@ { current ->
+        var coveredThrough = current.start
+        previous.forEach { old ->
+            if (old.endExclusive <= coveredThrough) return@forEach
+            if (old.start > coveredThrough) return@current false
+            coveredThrough = old.endExclusive
+            if (coveredThrough >= current.endExclusive) return@current true
+        }
+        false
     }
 
     private fun noSpaceForFirstUnit(request: ParagraphLayoutRequest): FlowCompositionResult.Failure {
@@ -701,6 +759,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val intervals: List<Pair<Float, Float>>,
         val lineRange: TextRange,
     )
+
+    private data class RequiredBlockMetrics(val before: Float, val after: Float) {
+        val extent: Float = before + after
+
+        fun fill(acceptedExtent: Float): LineVerticalMetrics {
+            val trailing = acceptedExtent.toDouble() - before.toDouble()
+            require(trailing.isFinite() && trailing >= after.toDouble()) {
+                "The accepted flow line band cannot contain its required block-axis metrics."
+            }
+            return LineVerticalMetrics(LayoutUnit(before), LayoutUnit(trailing.toFloat()))
+        }
+    }
 
     private data class AllocatedGlyph(val sourceRun: PositionedGlyphRun, val glyph: PositionedGlyph)
 

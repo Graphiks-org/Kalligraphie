@@ -98,7 +98,7 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
-    fun bidiVisualOrderAndCaretOrderCrossTheFragmentBoundaryOnlyOnce() {
+    fun oneRtlVisualRunCrossesTheFragmentBoundaryWithoutRestartingBidi() {
         val fixture = fixture(
             "ab \u05D0\u05D1",
             language = "he",
@@ -107,27 +107,50 @@ class FlowParagraphCompositionTest {
         )
         val region = FixedRegion(
             fixture.request.constraints.region,
-            listOf(InlineInterval(0f, 1_500f), InlineInterval(2_200f, 4_000f)),
+            listOf(InlineInterval(0f, 2_100f), InlineInterval(2_600f, 4_000f)),
         )
 
         val line = success(
             FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
         ).lines.single()
 
-        assertEquals(listOf(0, 1), line.positionedGlyphRuns.map { it.visualOrder }.distinct())
-        assertEquals(listOf(0, 1), line.positionedGlyphRuns.map { it.sourceRun.bidiLevel }.distinct())
+        assertEquals(listOf(0, 1, 1), line.positionedGlyphRuns.map { it.visualOrder })
+        assertEquals(listOf(0, 1, 1), line.positionedGlyphRuns.map { it.sourceRun.bidiLevel })
         assertEquals(
-            listOf(range(fixture.snapshot, 0, 3), range(fixture.snapshot, 3, 5)),
+            listOf(
+                range(fixture.snapshot, 0, 3),
+                range(fixture.snapshot, 4, 5),
+                range(fixture.snapshot, 3, 4),
+            ),
             line.positionedGlyphRuns.map { it.sourceRun.range },
         )
+        assertEquals(
+            listOf(100f, 656.15234f, 1_212.3047f, 1_490.1367f, 2_700f),
+            line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.origin.x.value } },
+        )
         assertEquals(line.allCaretCandidates.indices.toList(), line.allCaretCandidates.map { it.visualOrder })
+        assertEquals(
+            listOf(
+                fixture.snapshot.textIndexAtScalarBoundary(0),
+                fixture.snapshot.textIndexAtScalarBoundary(1),
+                fixture.snapshot.textIndexAtScalarBoundary(2),
+                fixture.snapshot.textIndexAtScalarBoundary(3),
+                fixture.snapshot.textIndexAtScalarBoundary(5),
+                fixture.snapshot.textIndexAtScalarBoundary(4),
+                fixture.snapshot.textIndexAtScalarBoundary(3),
+            ),
+            line.allCaretCandidates.map { it.position.index },
+        )
+        assertTrue(line.fragments.first().positionedGlyphRuns.any { it.visualOrder == 1 })
+        assertTrue(line.fragments.last().positionedGlyphRuns.any { it.visualOrder == 1 })
         assertTrue(line.fragments.first().caretCandidates.last().visualOrder < line.fragments.last().caretCandidates.first().visualOrder)
         assertEquals(
             listOf(68, 69, 3, 1281, 1280),
             line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
         )
-        // Frozen UAX #9 L2 order plus HarfBuzz 14.3.0 Liberation Sans glyph IDs. The region
-        // boundary only translates the final visual stream and cannot create another run order.
+        // Frozen UAX #9 L2 order, source boundaries, HarfBuzz 14.3.0 Liberation Sans glyph IDs,
+        // and font-unit positions. Both fragments retain visual run 1, so resolving either
+        // fragment independently would reverse or duplicate one of these literal sequences.
     }
 
     @Test
@@ -205,7 +228,7 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
-    fun tallInlineObjectRefinesTheSameBlockOriginWithOnlyGrowingBands() {
+    fun refinedTallObjectOccupiesTheExactAcceptedBandAroundItsBaseline() {
         val objectDefinition = InlineObjectDefinition(
             id = InlineObjectId.create("tall"),
             width = LayoutUnit(900f),
@@ -226,10 +249,82 @@ class FlowParagraphCompositionTest {
             }
         }
 
-        success(FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region))
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+        val objectItem = line.positionedInlineObjects.single()
+        val selection = line.selectionGeometry(
+            line.allCaretCandidates.first().position,
+            line.allCaretCandidates.last().position,
+        )
 
         assertEquals(listOf(0f, 0f, 0f, 0f), queries.map { it.blockStart })
         assertEquals(listOf(1_000f, 1_000f, 1_400f, 1_400f), queries.map { it.blockExtent })
+        assertEquals(1_250f, line.baseline.y.value)
+        assertEquals(
+            LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(4_100f), LayoutUnit(1_450f)),
+            line.lineBox,
+        )
+        assertEquals(
+            LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(1_000f), LayoutUnit(1_450f)),
+            objectItem.rect,
+        )
+        assertTrue(line.designInkBounds.minY >= line.lineBox.top)
+        assertTrue(line.designInkBounds.maxY <= line.lineBox.bottom)
+        assertTrue(selection.contains(objectItem.rect))
+        assertTrue(selection.all { rectangle ->
+            rectangle.top >= line.lineBox.top && rectangle.bottom <= line.lineBox.bottom
+        })
+    }
+
+    @Test
+    fun refinementBudgetResetsAfterEachProgressingEmptyBand() {
+        val fixture = fixture("ab")
+        val queries = mutableListOf<LineBand>()
+        val region = object : FlowRegion {
+            override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+            override val bounds: LayoutRect = fixture.request.constraints.region
+            override val maximumRefinements: Int = 1
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult {
+                queries += lineBand
+                return when (lineBand.blockStart) {
+                    0f -> FlowRegionResult.Empty(500f)
+                    500f -> FlowRegionResult.Empty(1_000f)
+                    else -> FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 4_000f)))
+                }
+            }
+        }
+
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+
+        assertEquals(listOf(0f, 0f, 500f, 500f, 1_000f, 1_000f), queries.map { it.blockStart })
+        assertEquals(1_050f, line.lineBox.top.value)
+    }
+
+    @Test
+    fun adjacentIntervalsMayMergeWithoutRegainingLogicalSpace() {
+        val fixture = fixtureWithTallObject()
+        val region = object : FlowRegion {
+            override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+            override val bounds: LayoutRect = fixture.request.constraints.region
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
+                FlowRegionResult.AvailableIntervals(
+                    if (lineBand.blockExtent == 1_000f) {
+                        listOf(InlineInterval(0f, 1_500f), InlineInterval(1_500f, 4_000f))
+                    } else {
+                        listOf(InlineInterval(0f, 4_000f))
+                    },
+                )
+        }
+
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+
+        assertEquals(listOf(InlineInterval(0f, 4_000f)), line.fragments.map { it.availableInterval })
+        assertEquals(1_400f, line.lineBox.bottom.value - line.lineBox.top.value)
     }
 
     @Test
@@ -378,8 +473,8 @@ class FlowParagraphCompositionTest {
         ).lines.single()
 
         assertEquals(listOf(0f, 2_200f), line.fragments.map { it.availableInterval.start })
-        assertEquals(LayoutRect(LayoutUnit(2_100f), LayoutUnit(50f), LayoutUnit(3_100f), LayoutUnit(4_050f)), line.lineBox)
-        assertEquals(2_900f, line.baseline.x.value)
+        assertEquals(LayoutRect(LayoutUnit(1_857.6172f), LayoutUnit(50f), LayoutUnit(3_100f), LayoutUnit(4_050f)), line.lineBox)
+        assertEquals(2_657.6172f, line.baseline.x.value)
         val inlineOrigins = line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.origin.y.value - bounds.top.value } }
         assertTrue(inlineOrigins[0] in 0f..1_100f)
         assertTrue(inlineOrigins[1] in 2_200f..4_000f)
