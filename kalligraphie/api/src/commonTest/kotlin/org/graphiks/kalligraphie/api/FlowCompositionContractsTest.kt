@@ -155,6 +155,31 @@ class FlowCompositionContractsTest {
     }
 
     @Test
+    fun flowChainPreservesThePositionalContinuationParameterOrder() {
+        val chain = FlowChain(listOf(region(FlowRegionResult.EndOfRegion)))
+        val text = text("abc")
+        val inputIdentity = FlowCompositionInputIdentity(text.version, TypographyVersion.create())
+        val continuation = chain.createContinuation(
+            inputIdentity = inputIdentity,
+            paragraphRange = text.range,
+            remainingSourceRange = text.range,
+            regionIndex = 0,
+            writingMode = WritingMode.HORIZONTAL_TB,
+            nextBlockOffset = 0f,
+        )
+
+        val result = chain.query(
+            0,
+            WritingMode.HORIZONTAL_TB,
+            LineBand(0f, 12f),
+            continuation,
+            inputIdentity,
+        )
+
+        assertIs<FlowCompositionResult.Success<FlowRegionResult>>(result)
+    }
+
+    @Test
     fun invalidRegionRefinementLimitIsAttributedToRegionNonConvergence() {
         val region = region(FlowRegionResult.EndOfRegion, maximumRefinements = 0)
 

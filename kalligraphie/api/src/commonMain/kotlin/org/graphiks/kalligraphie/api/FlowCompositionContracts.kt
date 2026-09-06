@@ -459,8 +459,8 @@ public class FlowChain(
         regionIndex: Int,
         writingMode: WritingMode,
         lineBand: LineBand,
-        inputIdentity: FlowCompositionInputIdentity? = null,
         continuation: FlowContinuation? = null,
+        inputIdentity: FlowCompositionInputIdentity? = null,
     ): FlowCompositionResult<FlowRegionResult> {
         val region = regions.getOrNull(regionIndex)
             ?: return FlowCompositionResult.Failure(FlowCompositionError.InvalidRegionIndex(regionIndex))
