@@ -174,7 +174,12 @@ public data class LineContentMetrics(
  * Construction snapshots and translates those values by [baseline]; the published glyph
  * origins and caret segments are therefore unambiguous physical paragraph coordinates.
  * [contentMetrics], [lineBox], and [designInkBounds] remain deliberately distinct. The value
- * retains no font handle, renderer object, platform object, or mutable caller collection and
+ * publishes one or more geometric [fragments] without re-running shaping or BiDi. When no
+ * fragments are supplied, construction derives one fragment spanning the complete inline line
+ * box for rectangular-layout compatibility. Flattened glyph, caret, and inline-object accessors
+ * are derived solely from that immutable fragment sequence.
+ *
+ * It retains no font handle, renderer object, platform object, or mutable caller collection and
  * can be shared across threads with its source snapshot revision.
  *
  * Contract violations, non-finite translated coordinates, or a line box inconsistent with the
@@ -190,6 +195,13 @@ public class LineLayout(
     public val lineBox: LayoutRect,
     /** Union of final glyph design bounds in paragraph coordinates. */
     public val designInkBounds: LayoutBounds,
+    /**
+     * Optional geometric projection of the already-resolved line.
+     *
+     * Every supplied item must already use final paragraph coordinates and preserve the source
+     * line's visual ordering. `null` derives the single rectangular compatibility fragment.
+     */
+    fragments: List<LineFragment>? = null,
 ) {
     /** Complete snapshot-bound half-open source range covered by this final line. */
     public val range: TextRange = line.range
@@ -203,22 +215,44 @@ public class LineLayout(
     /** Physical writing mode used for this line's geometry and editing operations. */
     public val writingMode: WritingMode = line.writingMode
 
-    /** Final runs in physical visual order, with every glyph origin in paragraph coordinates. */
-    public val positionedGlyphRuns: List<PositionedGlyphRun> = line.positionedGlyphRuns
+    private val translatedGlyphRuns: List<PositionedGlyphRun> = line.positionedGlyphRuns
         .map { run -> run.translatedBy(baseline) }
         .immutableListSnapshot()
 
-    /** Final caret candidates in visual order, with every segment in paragraph coordinates. */
-    public val allCaretCandidates: List<CaretCandidate> = line.allCaretCandidates
+    private val translatedCaretCandidates: List<CaretCandidate> = line.allCaretCandidates
         .map { candidate -> candidate.translatedBy(baseline) }
         .immutableListSnapshot()
 
     /** Immutable recoverable diagnostics produced while finalizing the line. */
     public val diagnostics: List<EditableLineDiagnostic> = line.diagnostics.immutableListSnapshot()
 
-    /** Final positioned inline objects with every rectangle in paragraph coordinates. */
-    public val positionedInlineObjects: List<PositionedInlineObject> = line.positionedInlineObjects
+    private val translatedInlineObjects: List<PositionedInlineObject> = line.positionedInlineObjects
         .map { objectItem -> objectItem.translatedBy(baseline) }
+        .immutableListSnapshot()
+
+    /** Immutable geometric projections in logical inline progression order. */
+    public val fragments: List<LineFragment> = (fragments ?: listOf(
+        LineFragment(
+            availableInterval = InlineInterval(0f, lineBox.inlineExtent(writingMode)),
+            positionedGlyphRuns = translatedGlyphRuns,
+            caretCandidates = translatedCaretCandidates,
+            positionedInlineObjects = translatedInlineObjects,
+        ),
+    )).immutableListSnapshot()
+
+    /** Final runs flattened from [fragments] in physical visual order. */
+    public val positionedGlyphRuns: List<PositionedGlyphRun> = this.fragments
+        .flatMap(LineFragment::positionedGlyphRuns)
+        .immutableListSnapshot()
+
+    /** Final caret candidates flattened from [fragments] in visual order. */
+    public val allCaretCandidates: List<CaretCandidate> = this.fragments
+        .flatMap(LineFragment::caretCandidates)
+        .immutableListSnapshot()
+
+    /** Final positioned inline objects flattened from [fragments]. */
+    public val positionedInlineObjects: List<PositionedInlineObject> = this.fragments
+        .flatMap(LineFragment::positionedInlineObjects)
         .immutableListSnapshot()
 
     init {
@@ -254,6 +288,36 @@ public class LineLayout(
         }
         require(designInkBounds.minX <= designInkBounds.maxX && designInkBounds.minY <= designInkBounds.maxY) {
             "Final design ink bounds must be ordered in paragraph coordinates."
+        }
+        require(this.fragments.isNotEmpty()) { "A final line must publish at least one geometric fragment." }
+        require(this.fragments.all { fragment -> fragment.availableInterval.endExclusive <= lineBox.inlineExtent(writingMode) }) {
+            "Every line fragment must stay within the line-box inline extent."
+        }
+        require(this.fragments.zipWithNext().all { (left, right) ->
+            left.availableInterval.endExclusive <= right.availableInterval.start
+        }) {
+            "Line fragments must be ordered and disjoint in logical inline progression."
+        }
+        require(positionedGlyphRuns.zipWithNext().all { (left, right) -> left.visualOrder <= right.visualOrder }) {
+            "Line fragments must preserve the original line visual run order."
+        }
+        require(allCaretCandidates.zipWithNext().all { (left, right) -> left.visualOrder <= right.visualOrder }) {
+            "Line fragments must preserve the original line caret order."
+        }
+        require(positionedGlyphRuns.all { run ->
+            run.sourceRun.range.start >= range.start && run.sourceRun.range.endExclusive <= range.endExclusive
+        }) {
+            "Every fragment glyph run must originate from the logical line range."
+        }
+        require(allCaretCandidates.all { candidate ->
+            candidate.position.index >= range.start && candidate.position.index <= range.endExclusive
+        }) {
+            "Every fragment caret must originate from the logical line range."
+        }
+        require(positionedInlineObjects.all { item ->
+            item.sourceRange.start >= range.start && item.sourceRange.endExclusive <= range.endExclusive
+        }) {
+            "Every fragment inline object must originate from the logical line range."
         }
     }
 }
@@ -354,61 +418,63 @@ public abstract class ParagraphLayout protected constructor(
         val selectedStart = if (anchor.index < focus.index) anchor.index else focus.index
         val selectedEnd = if (anchor.index < focus.index) focus.index else anchor.index
         return lines.flatMap { line ->
-            line.positionedGlyphRuns.mapNotNull { run ->
-                val runStart = maxParagraphIndex(selectedStart, run.sourceRun.range.start)
-                val runEnd = minParagraphIndex(selectedEnd, run.sourceRun.range.endExclusive)
-                if (runStart >= runEnd) return@mapNotNull null
-                val caretCoordinates = line.allCaretCandidates.asSequence()
-                    .filter { candidate ->
-                        candidate.visualRunOrder == run.visualOrder &&
-                            candidate.position.index >= runStart &&
-                            candidate.position.index <= runEnd
+            line.fragments.flatMap { fragment ->
+                val fragmentClip = fragment.clipRect(line)
+                fragment.positionedGlyphRuns.mapNotNull { run ->
+                    val runStart = maxParagraphIndex(selectedStart, run.sourceRun.range.start)
+                    val runEnd = minParagraphIndex(selectedEnd, run.sourceRun.range.endExclusive)
+                    if (runStart >= runEnd) return@mapNotNull null
+                    val caretCoordinates = fragment.caretCandidates.asSequence()
+                        .filter { candidate ->
+                            candidate.visualRunOrder == run.visualOrder &&
+                                candidate.position.index >= runStart &&
+                                candidate.position.index <= runEnd
+                        }
+                    .map { candidate ->
+                        when (line.writingMode) {
+                            WritingMode.HORIZONTAL_TB -> candidate.geometry.start.x
+                            WritingMode.VERTICAL_RL,
+                            WritingMode.VERTICAL_LR,
+                            -> candidate.geometry.start.y
+                        }
                     }
-                .map { candidate ->
-                    when (line.writingMode) {
-                        WritingMode.HORIZONTAL_TB -> candidate.geometry.start.x
-                        WritingMode.VERTICAL_RL,
-                        WritingMode.VERTICAL_LR,
-                        -> candidate.geometry.start.y
-                    }
-                }
-                    .toList()
-                val coordinates = if (caretCoordinates.size >= 2) {
-                    caretCoordinates
-                } else {
-                caretCoordinates + run.glyphs.flatMap { glyph ->
-                    when (line.writingMode) {
-                        WritingMode.HORIZONTAL_TB ->
-                            listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+                        .toList()
+                    val coordinates = if (caretCoordinates.size >= 2) {
+                        caretCoordinates
+                    } else {
+                        caretCoordinates + run.glyphs.flatMap { glyph ->
+                            when (line.writingMode) {
+                                WritingMode.HORIZONTAL_TB ->
+                                    listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
 
-                        WritingMode.VERTICAL_RL,
-                        WritingMode.VERTICAL_LR,
-                        -> listOf(glyph.origin.y, LayoutUnit(glyph.origin.y.value + glyph.advance.y.value))
+                                WritingMode.VERTICAL_RL,
+                                WritingMode.VERTICAL_LR,
+                                -> listOf(glyph.origin.y, LayoutUnit(glyph.origin.y.value + glyph.advance.y.value))
+                            }
+                        }
                     }
-                }
-            }
-                val start = coordinates.minOrNull() ?: return@mapNotNull null
-                val end = coordinates.maxOrNull() ?: return@mapNotNull null
-                if (start == end) {
-                    null
-                } else {
-                    when (line.writingMode) {
-                        WritingMode.HORIZONTAL_TB -> LayoutRect(start, line.lineBox.top, end, line.lineBox.bottom)
-                        WritingMode.VERTICAL_RL,
-                        WritingMode.VERTICAL_LR,
-                        -> LayoutRect(line.lineBox.left, start, line.lineBox.right, end)
+                    val start = coordinates.minOrNull() ?: return@mapNotNull null
+                    val end = coordinates.maxOrNull() ?: return@mapNotNull null
+                    if (start == end) {
+                        null
+                    } else {
+                        when (line.writingMode) {
+                            WritingMode.HORIZONTAL_TB ->
+                                LayoutRect(start, line.lineBox.top, end, line.lineBox.bottom).intersection(fragmentClip)
+
+                            WritingMode.VERTICAL_RL,
+                            WritingMode.VERTICAL_LR,
+                            -> LayoutRect(line.lineBox.left, start, line.lineBox.right, end).intersection(fragmentClip)
+                        }
                     }
+                } + fragment.positionedInlineObjects.mapNotNull { objectItem ->
+                    val objectRange = objectItem.sourceRange
+                    if (selectedStart >= objectRange.endExclusive || selectedEnd <= objectRange.start) {
+                        return@mapNotNull null
+                    }
+                    objectItem.rect.intersection(fragmentClip)
                 }
-            } + line.positionedInlineObjects.mapNotNull { objectItem ->
-            val objectRange = objectItem.sourceRange
-            if (selectedStart >= objectRange.endExclusive || selectedEnd <= objectRange.start) return@mapNotNull null
-            LayoutRect(
-                left = if (objectItem.rect.left > line.lineBox.left) objectItem.rect.left else line.lineBox.left,
-                top = if (objectItem.rect.top > line.lineBox.top) objectItem.rect.top else line.lineBox.top,
-                right = if (objectItem.rect.right < line.lineBox.right) objectItem.rect.right else line.lineBox.right,
-                bottom = if (objectItem.rect.bottom < line.lineBox.bottom) objectItem.rect.bottom else line.lineBox.bottom,
-            )
-        }.filter { rectangle -> rectangle.left < rectangle.right && rectangle.top < rectangle.bottom }
+            }.filter { rectangle -> rectangle.left < rectangle.right && rectangle.top < rectangle.bottom }
         }.immutableListSnapshot()
     }
 
@@ -428,7 +494,7 @@ public abstract class ParagraphLayout protected constructor(
                 .compareTo(blockDistanceToRect(point, right.value.lineBox, right.value.writingMode))
             if (distance != 0) distance else left.index.compareTo(right.index)
         }.value
-        return line.allCaretCandidates.minWith { left, right ->
+        return line.fragments.flatMap(LineFragment::caretCandidates).minWith { left, right ->
             val distance = paragraphSquaredDistanceToSegment(point, left.geometry)
                 .compareTo(paragraphSquaredDistanceToSegment(point, right.geometry))
             if (distance != 0) return@minWith distance
@@ -1002,6 +1068,44 @@ private fun CaretCandidate.translatedBy(baseline: LayoutPoint): CaretCandidate =
 
 private fun LayoutPoint.translatedBy(offset: LayoutPoint): LayoutPoint =
     LayoutPoint(LayoutUnit(x.value + offset.x.value), LayoutUnit(y.value + offset.y.value))
+
+private fun LayoutRect.inlineExtent(writingMode: WritingMode): Float = when (writingMode) {
+    WritingMode.HORIZONTAL_TB -> right.value - left.value
+    WritingMode.VERTICAL_RL,
+    WritingMode.VERTICAL_LR,
+    -> bottom.value - top.value
+}
+
+private fun LineFragment.clipRect(line: LineLayout): LayoutRect = when (line.writingMode) {
+    WritingMode.HORIZONTAL_TB -> LayoutRect(
+        left = LayoutUnit(line.lineBox.left.value + availableInterval.start),
+        top = line.lineBox.top,
+        right = LayoutUnit(line.lineBox.left.value + availableInterval.endExclusive),
+        bottom = line.lineBox.bottom,
+    )
+
+    WritingMode.VERTICAL_RL,
+    WritingMode.VERTICAL_LR,
+    -> LayoutRect(
+        left = line.lineBox.left,
+        top = LayoutUnit(line.lineBox.top.value + availableInterval.start),
+        right = line.lineBox.right,
+        bottom = LayoutUnit(line.lineBox.top.value + availableInterval.endExclusive),
+    )
+}
+
+private fun LayoutRect.intersection(other: LayoutRect): LayoutRect {
+    val intersectionLeft = if (left > other.left) left else other.left
+    val intersectionTop = if (top > other.top) top else other.top
+    val intersectionRight = if (right < other.right) right else other.right
+    val intersectionBottom = if (bottom < other.bottom) bottom else other.bottom
+    return LayoutRect(
+        left = if (intersectionLeft < intersectionRight) intersectionLeft else intersectionRight,
+        top = if (intersectionTop < intersectionBottom) intersectionTop else intersectionBottom,
+        right = intersectionRight,
+        bottom = intersectionBottom,
+    )
+}
 
 private fun blockDistanceToRect(point: LayoutPoint, rect: LayoutRect, writingMode: WritingMode): Double = when (writingMode) {
     WritingMode.HORIZONTAL_TB -> when {

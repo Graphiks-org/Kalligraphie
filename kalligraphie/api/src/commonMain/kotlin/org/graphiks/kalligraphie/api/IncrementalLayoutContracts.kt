@@ -988,6 +988,19 @@ private data class CaretSignature(
     val edge: CaretBoundaryEdge,
 )
 
+private data class PositionedInlineObjectSignature(
+    val sourceRange: RelativeRange,
+    val definition: InlineObjectDefinition,
+    val rect: LayoutRect,
+)
+
+private data class LineFragmentSignature(
+    val availableInterval: InlineInterval,
+    val positionedRuns: List<PositionedRunSignature>,
+    val carets: List<CaretSignature>,
+    val positionedInlineObjects: List<PositionedInlineObjectSignature>,
+)
+
 private data class DiagnosticSignature(
     val code: String,
     val severity: EditableLineDiagnosticSeverity,
@@ -999,8 +1012,7 @@ private data class DiagnosticSignature(
 private data class ObservableLineSignature(
     val baseDirection: ShapingDirection,
     val verticalMetrics: LineVerticalMetrics,
-    val positionedRuns: List<PositionedRunSignature>,
-    val carets: List<CaretSignature>,
+    val fragments: List<LineFragmentSignature>,
     val diagnostics: List<DiagnosticSignature>,
     val baseline: LayoutPoint,
     val contentMetrics: LineContentMetrics,
@@ -1013,18 +1025,18 @@ private fun LineLayout.toObservableSignature(): ObservableLineSignature {
     return ObservableLineSignature(
         baseDirection = baseDirection,
         verticalMetrics = verticalMetrics,
-        positionedRuns = positionedGlyphRuns.map { run -> run.toSignature(base) },
-        carets = allCaretCandidates.map { candidate ->
-            CaretSignature(
-                boundary = candidate.position.index.ordinal - base,
-                affinity = candidate.position.affinity,
-                geometry = candidate.geometry,
-                visualOrder = candidate.visualOrder,
-                visualRunOrder = candidate.visualRunOrder,
-                bidiLevel = candidate.bidiLevel,
-                direction = candidate.direction,
-                strength = candidate.strength,
-                edge = candidate.edge,
+        fragments = fragments.map { fragment ->
+            LineFragmentSignature(
+                availableInterval = fragment.availableInterval,
+                positionedRuns = fragment.positionedGlyphRuns.map { run -> run.toSignature(base) },
+                carets = fragment.caretCandidates.map { candidate -> candidate.toSignature(base) },
+                positionedInlineObjects = fragment.positionedInlineObjects.map { item ->
+                    PositionedInlineObjectSignature(
+                        sourceRange = item.sourceRange.relativeTo(base),
+                        definition = item.definition,
+                        rect = item.rect,
+                    )
+                },
             )
         },
         diagnostics = diagnostics.map { diagnostic ->
@@ -1042,6 +1054,18 @@ private fun LineLayout.toObservableSignature(): ObservableLineSignature {
         designInkBounds = designInkBounds,
     )
 }
+
+private fun CaretCandidate.toSignature(base: Int): CaretSignature = CaretSignature(
+    boundary = position.index.ordinal - base,
+    affinity = position.affinity,
+    geometry = geometry,
+    visualOrder = visualOrder,
+    visualRunOrder = visualRunOrder,
+    bidiLevel = bidiLevel,
+    direction = direction,
+    strength = strength,
+    edge = edge,
+)
 
 private fun PositionedGlyphRun.toSignature(base: Int): PositionedRunSignature = PositionedRunSignature(
     sourceRun = sourceRun.toSignature(base),
