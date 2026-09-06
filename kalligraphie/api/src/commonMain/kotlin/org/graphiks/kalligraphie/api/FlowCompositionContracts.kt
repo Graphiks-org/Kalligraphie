@@ -35,6 +35,19 @@ public class FlowCompositionIdentity private constructor() {
 }
 
 /**
+ * Resource-free input identity required to validate flow continuation reuse.
+ *
+ * Both revisions are opaque equality tokens. The value retains neither source text nor typography
+ * configuration and is therefore safe to store in an immutable [FlowContinuation].
+ */
+public data class FlowCompositionInputIdentity(
+    /** Exact immutable text revision being composed. */
+    public val textVersion: TextVersion,
+    /** Exact immutable typography revision being composed. */
+    public val typographyVersion: TypographyVersion,
+)
+
+/**
  * Logical block-axis band occupied by one candidate line box.
  *
  * Coordinates are offsets from the region's logical block start. Instances deliberately permit
@@ -217,6 +230,24 @@ public sealed interface FlowCompositionError {
         override val message: String = "The flow continuation does not belong to this composition and region revision."
     }
 
+    /** A continuation was supplied without proof of the current text and typography revisions. */
+    public data object UnprovenInputIdentity : FlowCompositionError {
+        override val code: String = "layout.flow-unproven-input-identity"
+        override val message: String = "Continuation reuse requires the current text and typography identities."
+    }
+
+    /** The current text revision differs from the continuation's captured revision. */
+    public data object TextIdentityMismatch : FlowCompositionError {
+        override val code: String = "layout.flow-text-identity-mismatch"
+        override val message: String = "The flow continuation belongs to another text revision."
+    }
+
+    /** The current typography revision differs from the continuation's captured revision. */
+    public data object TypographyIdentityMismatch : FlowCompositionError {
+        override val code: String = "layout.flow-typography-identity-mismatch"
+        override val message: String = "The flow continuation belongs to another typography revision."
+    }
+
     /** A continuation disagrees with the requested writing mode, constraints, or exact block cursor. */
     public data class IncompatibleContinuation(
         override val message: String,
@@ -305,8 +336,14 @@ public fun queryFlowRegion(
     }
     val blockExtent = region.logicalBlockExtent(writingMode)
     val bandEnd = lineBand.blockStart.toDouble() + lineBand.blockExtent.toDouble()
+    if (region.maximumRefinements <= 0) {
+        return FlowCompositionResult.Failure(
+            FlowCompositionError.NonConvergentFlowRegion(
+                "A flow region must declare a positive maximum refinement count.",
+            ),
+        )
+    }
     if (
-        region.maximumRefinements <= 0 ||
         lineBand.blockStart < 0f ||
         lineBand.blockExtent <= 0f ||
         bandEnd > blockExtent.toDouble()
@@ -415,12 +452,14 @@ public class FlowChain(
     /**
      * Validates a query for one region, including optional exact continuation reuse.
      *
-     * A foreign or incompatible continuation fails before invoking consumer region code.
+     * A continuation requires [inputIdentity] as current revision proof. Missing, foreign, changed,
+     * or otherwise incompatible proof fails before invoking consumer region code.
      */
     public fun query(
         regionIndex: Int,
         writingMode: WritingMode,
         lineBand: LineBand,
+        inputIdentity: FlowCompositionInputIdentity? = null,
         continuation: FlowContinuation? = null,
     ): FlowCompositionResult<FlowRegionResult> {
         val region = regions.getOrNull(regionIndex)
@@ -432,6 +471,15 @@ public class FlowChain(
                 continuation.regionIdentity != region.identity)
         ) {
             return FlowCompositionResult.Failure(FlowCompositionError.ForeignContinuation(regionIndex))
+        }
+        if (continuation != null && inputIdentity == null) {
+            return FlowCompositionResult.Failure(FlowCompositionError.UnprovenInputIdentity)
+        }
+        if (continuation != null && inputIdentity?.textVersion != continuation.inputIdentity.textVersion) {
+            return FlowCompositionResult.Failure(FlowCompositionError.TextIdentityMismatch)
+        }
+        if (continuation != null && inputIdentity?.typographyVersion != continuation.inputIdentity.typographyVersion) {
+            return FlowCompositionResult.Failure(FlowCompositionError.TypographyIdentityMismatch)
         }
         if (
             continuation != null &&
@@ -451,11 +499,11 @@ public class FlowChain(
     /**
      * Creates an exact resource-free continuation for a remaining paragraph suffix.
      *
-     * Ranges must belong to [textVersion], [remainingSourceRange] must be a suffix of
+     * Ranges must belong to [inputIdentity]'s text revision, [remainingSourceRange] must be a suffix of
      * [paragraphRange], [regionIndex] must exist, and [nextBlockOffset] must be finite and bounded.
      */
     public fun createContinuation(
-        textVersion: TextVersion,
+        inputIdentity: FlowCompositionInputIdentity,
         paragraphRange: TextRange,
         remainingSourceRange: TextRange,
         regionIndex: Int,
@@ -463,7 +511,7 @@ public class FlowChain(
         nextBlockOffset: Float,
     ): FlowContinuation {
         val region = requireNotNull(regions.getOrNull(regionIndex)) { "A continuation region must exist in the flow chain." }
-        require(paragraphRange.start.sharesVersionWith(TextIndex(textVersion, 0))) {
+        require(paragraphRange.start.sharesVersionWith(TextIndex(inputIdentity.textVersion, 0))) {
             "Continuation ranges must use the declared text revision."
         }
         require(paragraphRange.start.sharesVersionWith(remainingSourceRange.start)) {
@@ -482,7 +530,7 @@ public class FlowChain(
             "A continuation block offset must stay within its region."
         }
         return FlowContinuation(
-            textVersion = textVersion,
+            inputIdentity = inputIdentity,
             paragraphRange = paragraphRange,
             remainingSourceRange = remainingSourceRange,
             compositionIdentity = compositionIdentity,
@@ -503,8 +551,8 @@ public class FlowChain(
  * snapshot, page, renderer, provider, or platform resource and is safe for concurrent reads.
  */
 public class FlowContinuation internal constructor(
-    /** Source revision whose boundaries are recorded by this continuation. */
-    public val textVersion: TextVersion,
+    /** Exact text and typography revisions captured by this continuation. */
+    public val inputIdentity: FlowCompositionInputIdentity,
     /** Complete paragraph range from which this continuation was produced. */
     public val paragraphRange: TextRange,
     /** Exact unconsumed paragraph suffix. */
@@ -521,7 +569,15 @@ public class FlowContinuation internal constructor(
     public val nextBlockOffset: Float,
     /** Fragmentation policy whose state must be replayed. */
     public val fragmentationConstraints: FragmentationConstraints,
-)
+) {
+    /** Source revision whose boundaries are recorded by this continuation. */
+    public val textVersion: TextVersion
+        get() = inputIdentity.textVersion
+
+    /** Typography revision required to reproduce subsequent line geometry. */
+    public val typographyVersion: TypographyVersion
+        get() = inputIdentity.typographyVersion
+}
 
 /** Whether published flow fragments cover the complete paragraph or an exact prefix. */
 public enum class FlowCoverageStatus {

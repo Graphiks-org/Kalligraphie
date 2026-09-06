@@ -319,6 +319,15 @@ public class LineLayout(
         }) {
             "Every fragment inline object must originate from the logical line range."
         }
+        require(positionedGlyphRuns.preserveGlyphSemanticsOf(line.positionedGlyphRuns)) {
+            "Line fragments must preserve every glyph and its original logical run semantics exactly."
+        }
+        require(allCaretCandidates.preserveCaretSemanticsOf(line.allCaretCandidates)) {
+            "Line fragments must preserve every original logical caret exactly."
+        }
+        require(positionedInlineObjects.preserveInlineObjectSemanticsOf(line.positionedInlineObjects)) {
+            "Line fragments must preserve every original inline object exactly."
+        }
     }
 }
 
@@ -1105,6 +1114,53 @@ private fun LayoutRect.intersection(other: LayoutRect): LayoutRect {
         right = intersectionRight,
         bottom = intersectionBottom,
     )
+}
+
+private fun List<PositionedGlyphRun>.preserveGlyphSemanticsOf(
+    originalRuns: List<PositionedGlyphRun>,
+): Boolean {
+    val projected = flatMap { run -> run.glyphs.map { glyph -> run to glyph } }
+    val original = originalRuns.flatMap { run -> run.glyphs.map { glyph -> run to glyph } }
+    return projected.size == original.size && projected.zip(original).all { (actual, expected) ->
+        val (actualRun, actualGlyph) = actual
+        val (expectedRun, expectedGlyph) = expected
+        actualRun.visualOrder == expectedRun.visualOrder &&
+            actualRun.sourceRun.range.start >= expectedRun.sourceRun.range.start &&
+            actualRun.sourceRun.range.endExclusive <= expectedRun.sourceRun.range.endExclusive &&
+            actualRun.sourceRun.fontInstanceKey == expectedRun.sourceRun.fontInstanceKey &&
+            actualRun.sourceRun.backendIdentity == expectedRun.sourceRun.backendIdentity &&
+            actualRun.sourceRun.direction == expectedRun.sourceRun.direction &&
+            actualRun.sourceRun.script == expectedRun.sourceRun.script &&
+            actualRun.sourceRun.language == expectedRun.sourceRun.language &&
+            actualRun.sourceRun.bidiLevel == expectedRun.sourceRun.bidiLevel &&
+            actualRun.sourceRun.featurePolicy == expectedRun.sourceRun.featurePolicy &&
+            actualRun.sourceRun.features == expectedRun.sourceRun.features &&
+            actualGlyph.shapedGlyph === expectedGlyph.shapedGlyph &&
+            actualGlyph.sourceClusters == expectedGlyph.sourceClusters &&
+            actualGlyph.advance == expectedGlyph.advance &&
+            actualGlyph.transform == expectedGlyph.transform &&
+            actualGlyph.renderAssetKey == expectedGlyph.renderAssetKey &&
+            actualGlyph.materializationCertificate == expectedGlyph.materializationCertificate &&
+            actualGlyph.provenance == expectedGlyph.provenance
+    }
+}
+
+private fun List<CaretCandidate>.preserveCaretSemanticsOf(
+    original: List<CaretCandidate>,
+): Boolean = size == original.size && zip(original).all { (actual, expected) ->
+    actual.position == expected.position &&
+        actual.visualOrder == expected.visualOrder &&
+        actual.visualRunOrder == expected.visualRunOrder &&
+        actual.bidiLevel == expected.bidiLevel &&
+        actual.direction == expected.direction &&
+        actual.strength == expected.strength &&
+        actual.edge == expected.edge
+}
+
+private fun List<PositionedInlineObject>.preserveInlineObjectSemanticsOf(
+    original: List<PositionedInlineObject>,
+): Boolean = size == original.size && zip(original).all { (actual, expected) ->
+    actual.sourceRange == expected.sourceRange && actual.definition == expected.definition
 }
 
 private fun blockDistanceToRect(point: LayoutPoint, rect: LayoutRect, writingMode: WritingMode): Double = when (writingMode) {
