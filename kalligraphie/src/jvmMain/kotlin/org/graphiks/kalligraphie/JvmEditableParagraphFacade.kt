@@ -13,7 +13,11 @@ import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
-import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
+import org.graphiks.kalligraphie.api.ParagraphConstraints
+import org.graphiks.kalligraphie.api.InlineObjectSnapshot
+import org.graphiks.kalligraphie.api.HyphenationMode
+import org.graphiks.kalligraphie.api.HyphenationService
+import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OverflowPolicy
@@ -24,7 +28,9 @@ import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
+import org.graphiks.kalligraphie.api.TextOrientation
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ParagraphComposer
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
@@ -34,7 +40,7 @@ import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 /**
  * Complete input to the JVM reference editable-paragraph journey.
  *
- * The request describes one horizontal rectangular composition call. [snapshot], [sourceRange],
+ * The request describes one rectangular composition call. [snapshot], [sourceRange],
  * font catalog and policy, geometry, language, direction, features, publication mode, and any
  * exact [continuation] are explicit. The feature list is defensively captured. A resolver inside
  * [materialization] is borrowed only during the synchronous call and is never copied into a
@@ -52,7 +58,7 @@ public class JvmEditableParagraphFacadeRequest(
     /** Source range to compose, or the exact remainder named by [continuation]. */
     public val sourceRange: TextRange = snapshot.range,
     /** Physical paragraph region and line rhythm in renderer-independent layout coordinates. */
-    public val constraints: HorizontalParagraphConstraints,
+    public val constraints: ParagraphConstraints,
     /** Explicit UAX #9 paragraph base direction. */
     public val baseDirection: BaseDirection,
     /** Explicit BCP 47 language used for Unicode analysis and shaping. */
@@ -66,8 +72,19 @@ public class JvmEditableParagraphFacadeRequest(
     features: List<OpenTypeFeature> = emptyList(),
     /** Layout-only or synchronously outline-certified publication mode. */
     public val materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
-    /** Complete-line overflow behavior; only [OverflowPolicy.CONTINUE] is available. */
-    public val overflowPolicy: OverflowPolicy = OverflowPolicy.CONTINUE,
+    /** Complete-line overflow behavior; ellipsis truncation when [OverflowPolicy.Ellipsis] is selected. */
+    public val overflowPolicy: OverflowPolicy = OverflowPolicy.Continue,    /** Tab stops, alignment, and justification applied to the paragraph lines. */
+    public val positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
+    /** Hyphenation mode applied by line selection and final line content. */
+    public val hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
+    /** Immutable versioned service used by [HyphenationMode.AUTO], or `null` when absent. */
+    public val hyphenationService: HyphenationService? = null,
+    /** Definitions bound to `U+FFFC` object replacement scalars inside the requested range. */
+    public val inlineObjects: InlineObjectSnapshot? = null,
+    /** Unicode orientation policy applied to extended grapheme clusters in vertical composition. */
+    public val textOrientation: TextOrientation = TextOrientation.MIXED,
+    /** Policy for missing OpenType `vhea` and `vmtx` metrics in vertical composition. */
+    public val verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
     /** Immutable replay capability returned by a preceding partial call. */
     public val continuation: LayoutContinuation? = null,
     /** Cooperative signal checked before and during bounded composition work. */
@@ -167,9 +184,15 @@ public object JvmEditableParagraphFacade {
         backend: ShapingBackend,
         remainingSourceRange: TextRange,
         resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
+        resumptionBlockCursor: org.graphiks.kalligraphie.api.LayoutUnit,
     ): LayoutContinuation? {
         val paragraphRequest = prepareParagraphRequestBorrowing(request, backend) ?: return null
-        return LayoutContinuation.create(paragraphRequest, remainingSourceRange, resumptionRegionTop)
+        return LayoutContinuation.create(
+            request = paragraphRequest,
+            remainingSourceRange = remainingSourceRange,
+            resumptionRegionTop = resumptionRegionTop,
+            resumptionBlockCursor = resumptionBlockCursor,
+        )
     }
 
     private fun prepareParagraphRequestBorrowing(
@@ -207,6 +230,12 @@ public object JvmEditableParagraphFacade {
             shapingBackend = backend,
             materializationIdentity = ParagraphMaterializationIdentity.from(request.materialization),
             overflowPolicy = request.overflowPolicy,
+            positioning = request.positioning,
+            hyphenationMode = request.hyphenationMode,
+            hyphenationService = request.hyphenationService,
+            inlineObjects = request.inlineObjects,
+            textOrientation = request.textOrientation,
+            verticalMetricsPolicy = request.verticalMetricsPolicy,
             continuation = request.continuation,
             cancellationToken = request.cancellationToken,
         )

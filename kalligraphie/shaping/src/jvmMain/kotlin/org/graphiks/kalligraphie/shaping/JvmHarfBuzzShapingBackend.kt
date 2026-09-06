@@ -738,9 +738,9 @@ internal class HarfBuzzNativeLibrary(
             ShapedGlyph(
                 glyphId = GlyphId(record.glyphId),
                 xAdvance = designToLayout.convert(record.xAdvance),
-                yAdvance = designToLayout.convert(record.yAdvance),
+                yAdvance = record.yAdvance.toPhysicalVerticalCoordinate(request.direction, designToLayout),
                 xOffset = designToLayout.convert(record.xOffset),
-                yOffset = designToLayout.convert(record.yOffset),
+                yOffset = record.yOffset.toPhysicalVerticalCoordinate(request.direction, designToLayout),
                 safetyFlags = flags,
                 clusterTokens = listOf(ShaperClusterToken(record.tokenValue)),
             )
@@ -992,6 +992,18 @@ internal class DesignToLayoutScale private constructor(
 private fun ShapingDirection.toHarfBuzzDirection(): Int = when (this) {
     ShapingDirection.LEFT_TO_RIGHT -> HB_DIRECTION_LTR
     ShapingDirection.RIGHT_TO_LEFT -> HB_DIRECTION_RTL
+    ShapingDirection.TOP_TO_BOTTOM -> HB_DIRECTION_TTB
+}
+
+/** Converts HarfBuzz's upward-positive vertical values to portable downward-positive layout values. */
+private fun Int.toPhysicalVerticalCoordinate(
+    direction: ShapingDirection,
+    scale: DesignToLayoutScale,
+): LayoutUnit = when (direction) {
+    ShapingDirection.TOP_TO_BOTTOM -> scale.convert(-this)
+    ShapingDirection.LEFT_TO_RIGHT,
+    ShapingDirection.RIGHT_TO_LEFT,
+    -> scale.convert(this)
 }
 
 private fun openTypeTag(tag: String): Int =
@@ -1036,6 +1048,7 @@ private val NON_DETERMINISTIC_FEATURES: Set<String> = setOf("rand")
 private const val HB_MEMORY_MODE_READONLY: Int = 1
 private const val HB_DIRECTION_LTR: Int = 4
 private const val HB_DIRECTION_RTL: Int = 5
+private const val HB_DIRECTION_TTB: Int = 6
 private const val HB_BUFFER_FLAG_BOT: Int = 0x00000001
 private const val HB_BUFFER_FLAG_EOT: Int = 0x00000002
 private const val HB_BUFFER_FLAG_PRODUCE_UNSAFE_TO_CONCAT: Int = 0x00000040

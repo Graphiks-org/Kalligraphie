@@ -102,6 +102,9 @@ private data class TrueTypeFontInstance(
     override fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> =
         resource.preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value)
 
+    override fun verticalMetrics(glyphId: GlyphId): FontOperationResult<org.graphiks.kalligraphie.api.VerticalGlyphMetrics> =
+        resource.preparedFont.readVerticalGlyphMetrics(glyphId, descriptor.layoutSize.value)
+
     override fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> =
         FontOperationResult.Success(OpenTypeFontData(faceId, resource.preparedFont.copySourceBytes()))
 

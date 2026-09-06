@@ -361,6 +361,16 @@ public interface FontInstance {
         unsupportedContractOperation("This font instance does not support glyph metrics.")
 
     /**
+     * Returns OpenType vertical metrics for [glyphId] at this instance size.
+     *
+     * Implementations return a typed unsupported-capability failure when the face has no usable
+     * `vhea`/`vmtx` tables. Callers select whether that failure is fatal or permits the portable
+     * vertical-metrics synthesis through [VerticalMetricsPolicy].
+     */
+    public fun verticalMetrics(glyphId: GlyphId): FontOperationResult<VerticalGlyphMetrics> =
+        unsupportedContractOperation("This font instance does not support vertical glyph metrics.")
+
+    /**
      * Returns an owned defensive copy of the OpenType bytes for this instance's face.
      *
      * The returned [OpenTypeFontData] remains independent of this instance and may be
@@ -446,6 +456,20 @@ public data class GlyphMetrics(
     public val bounds: DesignBounds = DesignBounds.empty,
     /** Ink bounds in layout units. */
     public val scaledBounds: LayoutBounds = LayoutBounds.empty,
+)
+
+/**
+ * OpenType vertical metrics for one glyph at one font-instance size.
+ *
+ * [advanceHeight] and [topSideBearing] originate in the font's `vmtx` table. A font that lacks
+ * usable `vhea`/`vmtx` data reports a typed unsupported capability instead of silently using
+ * horizontal metrics.
+ */
+public data class VerticalGlyphMetrics(
+    /** Advance in the top-to-bottom inline direction. */
+    public val advanceHeight: LayoutUnit,
+    /** Distance from the vertical origin to the glyph's top ink-side bearing. */
+    public val topSideBearing: LayoutUnit,
 )
 
 /** Representation returned for a resolved glyph. */

@@ -314,6 +314,7 @@ private fun BaseDirection.toShapingDirection(): ShapingDirection = when (this) {
 private fun ShapingDirection.matches(level: Int): Boolean = when (this) {
     ShapingDirection.LEFT_TO_RIGHT -> level % 2 == 0
     ShapingDirection.RIGHT_TO_LEFT -> level % 2 != 0
+    ShapingDirection.TOP_TO_BOTTOM -> true
 }
 
 private fun laterBoundary(first: TextIndex, second: TextIndex): TextIndex = if (first >= second) first else second

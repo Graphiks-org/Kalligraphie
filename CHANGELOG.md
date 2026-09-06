@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
+- Advanced typography and derived content through `org.graphiks:kalligraphie`: typed `GlyphProvenance` for direct, derived, and synthetic glyphs, soft and automatic hyphenation (versioned pattern service with digest-verified `hyph-en-us` data and structured diagnostics), inter-word / inter-character / kashida justification, tab stops with START/END/CENTER/DECIMAL alignment and synthetic leaders, ellipsis truncation (`INLINE_START`, `MIDDLE`, `INLINE_END`) with explicit hidden source ranges, inline objects for `U+FFFC` with caret/selection/hit-testing semantics, and final-glyph recertification after every transform.
+- Vertical paragraph writing through `org.graphiks:kalligraphie`: `VERTICAL_RL` and `VERTICAL_LR`, Unicode 16.0 UTR #50 orientation, HarfBuzz top-to-bottom shaping with `vert`/`vrt2`, OpenType `vhea`/`vmtx` metrics with explicit deterministic fallback, physical editing geometry, and incremental reflow parity.
 - KMP project template (Android, iOS, Desktop)
 - JVM reference editable Unicode lines through `org.graphiks:kalligraphie`: canonical UTF-8/UTF-16 decoding, Unicode analysis, pinned HarfBuzz shaping, exact caret and selection geometry, hit testing, and outline-route certification.
 - Clean Architecture / DDD

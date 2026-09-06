@@ -1,7 +1,7 @@
 # Paragraphes éditables
 
 Kalligraphie fournit un parcours de référence JVM pour composer un paragraphe
-multiligne horizontal, immuable et éditable. Il prolonge le parcours de ligne
+multiligne, immuable et éditable. Il prolonge le parcours de ligne
 éditable exacte présenté dans la [Gestion des fontes](font-management.md) : la
 façade publique `JvmEditableParagraphFacade` effectue, pour un appel, l’analyse
 ICU et la composition HarfBuzz, puis retourne des valeurs portables et
@@ -140,9 +140,10 @@ composition dans une région assez haute.
 
 ## Périmètre et limites
 
-Il s’agit d’une API de référence JVM pour un paragraphe horizontal dans une
-région rectangulaire. Elle ne rend pas de pixels et ne possède aucun état
-d’éditeur. La césure, la justification, l’écriture verticale, `CLIP`,
-`ELLIPSIS`, la pagination, `FlowRegion`/`FlowChain`, les caches, les benchmarks,
-les façades exécutables non JVM et les API de layout incrémental restent hors
-périmètre.
+Il s’agit d’une API de référence JVM pour un paragraphe dans une région
+rectangulaire physique, horizontale ou verticale. Elle ne rend pas de pixels et
+ne possède aucun état d’éditeur. Le clipping (découpage), la pagination,
+`FlowRegion`/`FlowChain`, les caches, les benchmarks et les façades exécutables
+non JVM restent hors périmètre. Consultez [Typographie avancée](advanced-typography.md)
+pour la césure, la justification, l’ellipsis, les objets inline, l’écriture
+verticale et l’équivalence incrémentale.
