@@ -9,6 +9,7 @@ import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.VerticalGlyphMetrics
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.slice
 import kotlin.concurrent.atomics.AtomicReference
@@ -67,6 +68,10 @@ public class PreparedTrueTypeFont internal constructor(
 
     private val metricsResult: FontOperationResult<PreparedMetricsData> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         MetricsReader.prepare(sourceBytes, parsedFont)
+    }
+
+    private val verticalMetricsResult: FontOperationResult<PreparedVerticalMetricsData> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        VerticalMetricsReader.prepare(sourceBytes, parsedFont)
     }
 
     private fun glyphData(cancellationToken: CancellationToken): FontOperationResult<PreparedGlyphData> {
@@ -153,6 +158,30 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Cancelled -> return result
         }
         return MetricsReader.readGlyphMetrics(metrics, glyphData, glyphId, layoutSize)
+    }
+
+    /**
+     * Reads one OpenType `vhea`/`vmtx` metric record scaled to [layoutSize].
+     *
+     * Missing vertical tables, malformed data, and unknown glyph identifiers are reported as
+     * typed failures. The cache is immutable and shared across concurrent callers.
+     */
+    public fun readVerticalGlyphMetrics(
+        glyphId: GlyphId,
+        layoutSize: Float,
+    ): FontOperationResult<VerticalGlyphMetrics> {
+        if (!layoutSize.isFinite()) {
+            return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
+        }
+        if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
+            return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        val metrics = when (val result = verticalMetricsResult) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return VerticalMetricsReader.readGlyphMetrics(metrics, glyphId, layoutSize)
     }
 
     /**

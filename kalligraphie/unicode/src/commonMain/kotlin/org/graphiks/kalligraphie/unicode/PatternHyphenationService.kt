@@ -19,8 +19,8 @@ public class PatternHyphenationService(
     patterns: List<String>,
     /** Identity of this immutable service and its data revision. */
     public override val identity: HyphenationServiceIdentity,
-    /** Default per-side minimums applied when the caller does not override them. */
-    public val minimums: HyphenationMinimums = HyphenationMinimums.default,
+    /** Default per-side minimums, identical to the immutable value in [identity]. */
+    public val minimums: HyphenationMinimums = identity.minimums,
 ) : HyphenationService {
     private val parsed: List<Pattern> = patterns
         .filter { line -> line.isNotBlank() && !line.startsWith("%") }
@@ -28,6 +28,9 @@ public class PatternHyphenationService(
 
     init {
         require(this.parsed.isNotEmpty()) { "A hyphenation service requires a non-empty pattern set." }
+        require(minimums == identity.minimums) {
+            "Pattern hyphenation minimums must be captured by the service identity."
+        }
     }
 
     override fun hyphenation(

@@ -4,6 +4,9 @@ import org.graphiks.kalligraphie.api.AutomaticHyphenBreaks
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.CaretCandidate
+import org.graphiks.kalligraphie.api.CaretAffinity
+import org.graphiks.kalligraphie.api.CaretBoundaryEdge
+import org.graphiks.kalligraphie.api.CaretStrength
 import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLine
@@ -18,18 +21,26 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GdefLigatureCaretFact
+import org.graphiks.kalligraphie.api.GlyphProvenance
+import org.graphiks.kalligraphie.api.GlyphProvenanceRole
+import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.HyphenationMode
 import org.graphiks.kalligraphie.api.LayoutBounds
+import org.graphiks.kalligraphie.api.LayoutAffineTransform
 import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
+import org.graphiks.kalligraphie.api.LayoutSegment
+import org.graphiks.kalligraphie.api.LayoutVector
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ParagraphLayouter
-import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.HyphenationService
 import org.graphiks.kalligraphie.api.TextSnapshot
+import org.graphiks.kalligraphie.api.TextOrientation
+import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
+import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.LineBreakKind
@@ -42,6 +53,9 @@ import org.graphiks.kalligraphie.api.ParagraphLayout
 import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ParagraphTruncation
+import org.graphiks.kalligraphie.api.PositionedGlyph
+import org.graphiks.kalligraphie.api.PositionedGlyphRun
+import org.graphiks.kalligraphie.api.PositionedInlineObject
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
 import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -53,6 +67,7 @@ import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
+import org.graphiks.kalligraphie.unicode.UnicodeVerticalOrientation
 
 /** One finalized line and its physical placement, before content/ink metric enrichment. */
 internal class ComposedParagraphLine(
@@ -63,9 +78,21 @@ internal class ComposedParagraphLine(
     val fontInstances: List<FontInstance> = emptyList(),
 ) {
     init {
-        require(lineBox.left == baseline.x)
-        require(lineBox.top == LayoutUnit(baseline.y.value - line.verticalMetrics.ascent.value))
-        require(lineBox.bottom == LayoutUnit(baseline.y.value + line.verticalMetrics.descent.value))
+        when (line.writingMode) {
+            WritingMode.HORIZONTAL_TB -> {
+                require(lineBox.left == baseline.x)
+                require(lineBox.top == LayoutUnit(baseline.y.value - line.verticalMetrics.ascent.value))
+                require(lineBox.bottom == LayoutUnit(baseline.y.value + line.verticalMetrics.descent.value))
+            }
+
+            WritingMode.VERTICAL_RL,
+            WritingMode.VERTICAL_LR,
+            -> {
+                require(lineBox.top == baseline.y)
+                require(lineBox.left == LayoutUnit(baseline.x.value - line.verticalMetrics.ascent.value))
+                require(lineBox.right == LayoutUnit(baseline.x.value + line.verticalMetrics.descent.value))
+            }
+        }
     }
 }
 
@@ -184,10 +211,9 @@ public object ParagraphComposer : ParagraphLayouter {
         val placed = mutableListOf<ComposedParagraphLine>()
         val region = request.constraints.region
         val metrics = request.constraints.lineMetrics
-        var lineTop = region.top
+        var blockCursor = initialBlockCursor(request)
 
-        fun fullLineFits(): Boolean =
-            lineTop.value.toDouble() + metrics.height.value.toDouble() <= region.bottom.value.toDouble()
+        fun fullLineFits(): Boolean = blockLineFits(request, blockCursor)
 
         if (request.sourceRange.start == request.sourceRange.endExclusive) {
             if (!fullLineFits()) {
@@ -195,7 +221,7 @@ public object ParagraphComposer : ParagraphLayouter {
             }
             return when (val empty = emptyLine(request, request.sourceRange, materialization)) {
                 is EditableLineResult.Success -> ParagraphCompositionResult.Success(
-                    listOf(place(empty.line, region, lineTop)),
+                    listOf(place(empty.line, request, blockCursor)),
                     remainingSourceRange = null,
                 )
                 is EditableLineResult.Failure -> ParagraphCompositionResult.Failure(empty.error, empty.diagnostics)
@@ -207,6 +233,28 @@ public object ParagraphComposer : ParagraphLayouter {
         while (lineStart < request.sourceRange.endExclusive) {
             if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
             if (!fullLineFits()) {
+                val ellipsis = request.overflowPolicy as? OverflowPolicy.Ellipsis
+                if (ellipsis != null) {
+                    val replaced = placed.lastOrNull()
+                    val truncationStart = replaced?.line?.range?.start ?: lineStart
+                    val truncationCursor = replaced?.blockCursor(request) ?: blockCursor
+                    val truncated = truncateCurrentLine(
+                        request = request,
+                        lineStart = truncationStart,
+                        sourceClusters = sourceClusters,
+                        provisionalRuns = provisionalRuns,
+                        materialization = materialization,
+                    )
+                    if (truncated != null) {
+                        if (replaced != null) placed.removeAt(placed.lastIndex)
+                        placed += place(truncated.line, request, truncationCursor, truncated.fontInstances)
+                        return ParagraphCompositionResult.Success(
+                            lines = placed,
+                            remainingSourceRange = null,
+                            truncation = truncated.truncation,
+                        )
+                    }
+                }
                 return ParagraphCompositionResult.Success(placed, TextRange(lineStart, request.sourceRange.endExclusive))
             }
 
@@ -227,13 +275,12 @@ public object ParagraphComposer : ParagraphLayouter {
                         val truncated = truncateCurrentLine(
                             request = request,
                             lineStart = lineStart,
-                            candidates = candidatesForLine(request, lineStart),
                             sourceClusters = sourceClusters,
                             provisionalRuns = provisionalRuns,
                             materialization = materialization,
                         )
                         if (truncated != null) {
-                            placed += place(truncated.line, region, lineTop, truncated.fontInstances)
+                            placed += place(truncated.line, request, blockCursor, truncated.fontInstances)
                             return ParagraphCompositionResult.Success(
                                 lines = placed,
                                 remainingSourceRange = null,
@@ -244,13 +291,13 @@ public object ParagraphComposer : ParagraphLayouter {
                     check(selected.line.range.endExclusive > lineStart) {
                         "Paragraph composition must strictly advance at every selected line."
                     }
-                    placed += place(selected.line, region, lineTop, selected.fontInstances)
+                    placed += place(selected.line, request, blockCursor, selected.fontInstances)
                     lineStart = selected.line.range.endExclusive
                 }
                 is FinalizationResult.Failure -> return ParagraphCompositionResult.Failure(selected.error, selected.diagnostics)
                 is FinalizationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(selected.diagnostics)
             }
-            lineTop = finiteUnit(lineTop.value.toDouble() + metrics.height.value.toDouble(), "paragraph line top")
+            blockCursor = advanceBlockCursor(request, blockCursor)
         }
 
         val trailingEmptyRequired = request.lineBreakAnalysis.opportunities.any { opportunity ->
@@ -262,7 +309,7 @@ public object ParagraphComposer : ParagraphLayouter {
             }
             val emptyRange = TextRange(request.sourceRange.endExclusive, request.sourceRange.endExclusive)
             when (val empty = emptyLine(request, emptyRange, materialization)) {
-                is EditableLineResult.Success -> placed += place(empty.line, region, lineTop)
+                is EditableLineResult.Success -> placed += place(empty.line, request, blockCursor)
                 is EditableLineResult.Failure -> return ParagraphCompositionResult.Failure(empty.error, empty.diagnostics)
                 is EditableLineResult.Cancelled -> return ParagraphCompositionResult.Cancelled(empty.diagnostics)
             }
@@ -286,10 +333,21 @@ public object ParagraphComposer : ParagraphLayouter {
         val remaining = composition.remainingSourceRange ?: composition.takeIf { it.hasUnplacedTrailingEmptyLine }
             ?.let { TextRange(request.sourceRange.endExclusive, request.sourceRange.endExclusive) }
         val continuation = remaining?.let { remainingRange ->
+            val lastLine = composition.lines.lastOrNull()
             LayoutContinuation.create(
                 request = request,
                 remainingSourceRange = remainingRange,
-                resumptionRegionTop = composition.lines.lastOrNull()?.lineBox?.bottom ?: request.constraints.region.top,
+                resumptionRegionTop = when (request.constraints.writingMode) {
+                    WritingMode.HORIZONTAL_TB -> lastLine?.lineBox?.bottom ?: request.constraints.region.top
+                    WritingMode.VERTICAL_RL,
+                    WritingMode.VERTICAL_LR,
+                    -> request.constraints.region.top
+                },
+                resumptionBlockCursor = when (request.constraints.writingMode) {
+                    WritingMode.HORIZONTAL_TB -> lastLine?.lineBox?.bottom ?: request.constraints.region.top
+                    WritingMode.VERTICAL_RL -> lastLine?.lineBox?.left ?: request.constraints.region.right
+                    WritingMode.VERTICAL_LR -> lastLine?.lineBox?.right ?: request.constraints.region.left
+                },
             )
         }
         val range = if (remaining == null) {
@@ -339,6 +397,7 @@ public object ParagraphComposer : ParagraphLayouter {
                                     finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
                                 ),
                                 bounds,
+                                glyph.transform,
                             )
                         }
                     is FontOperationResult.Failure -> return ProjectedLine.Failure(
@@ -353,17 +412,33 @@ public object ParagraphComposer : ParagraphLayouter {
         }
         if (cancellationToken.isCancellationRequested()) return ProjectedLine.Cancelled()
         val inkBounds = glyphBounds.unionOrBaseline(composed.baseline)
-        val contentMetrics = LineContentMetrics(
-            ascent = finiteUnit(
-                maxOf(0.0, composed.baseline.y.value.toDouble() - inkBounds.minY.value.toDouble()),
-                "line content ascent",
-            ),
-            descent = finiteUnit(
-                maxOf(0.0, inkBounds.maxY.value.toDouble() - composed.baseline.y.value.toDouble()),
-                "line content descent",
-            ),
-            inlineAdvance = composed.inlineAdvance,
-        )
+        val contentMetrics = when (composed.line.writingMode) {
+            WritingMode.HORIZONTAL_TB -> LineContentMetrics(
+                ascent = finiteUnit(
+                    maxOf(0.0, composed.baseline.y.value.toDouble() - inkBounds.minY.value.toDouble()),
+                    "line content ascent",
+                ),
+                descent = finiteUnit(
+                    maxOf(0.0, inkBounds.maxY.value.toDouble() - composed.baseline.y.value.toDouble()),
+                    "line content descent",
+                ),
+                inlineAdvance = composed.inlineAdvance,
+            )
+
+            WritingMode.VERTICAL_RL,
+            WritingMode.VERTICAL_LR,
+            -> LineContentMetrics(
+                ascent = finiteUnit(
+                    maxOf(0.0, composed.baseline.x.value.toDouble() - inkBounds.minX.value.toDouble()),
+                    "vertical line content ascent",
+                ),
+                descent = finiteUnit(
+                    maxOf(0.0, inkBounds.maxX.value.toDouble() - composed.baseline.x.value.toDouble()),
+                    "vertical line content descent",
+                ),
+                inlineAdvance = composed.inlineAdvance,
+            )
+        }
         return try {
             ProjectedLine.Success(
                 LineLayout(
@@ -384,12 +459,29 @@ public object ParagraphComposer : ParagraphLayouter {
         }
     }
 
-    private fun translatedGlyphBounds(origin: LayoutPoint, bounds: LayoutBounds): LayoutBounds = LayoutBounds(
-        minX = finiteUnit(origin.x.value.toDouble() + bounds.minX.value.toDouble(), "glyph ink min x"),
-        minY = finiteUnit(origin.y.value.toDouble() - bounds.maxY.value.toDouble(), "glyph ink min y"),
-        maxX = finiteUnit(origin.x.value.toDouble() + bounds.maxX.value.toDouble(), "glyph ink max x"),
-        maxY = finiteUnit(origin.y.value.toDouble() - bounds.minY.value.toDouble(), "glyph ink max y"),
-    )
+    private fun translatedGlyphBounds(
+        origin: LayoutPoint,
+        bounds: LayoutBounds,
+        transform: LayoutAffineTransform,
+    ): LayoutBounds {
+        val points = listOf(
+            bounds.minX.value to -bounds.minY.value,
+            bounds.minX.value to -bounds.maxY.value,
+            bounds.maxX.value to -bounds.minY.value,
+            bounds.maxX.value to -bounds.maxY.value,
+        ).map { (x, y) ->
+            val transformedX = transform.a * x + transform.c * y + origin.x.value
+            val transformedY = transform.b * x + transform.d * y + origin.y.value
+            finiteUnit(transformedX.toDouble(), "transformed glyph ink x") to
+                finiteUnit(transformedY.toDouble(), "transformed glyph ink y")
+        }
+        return LayoutBounds(
+            minX = points.minOf { it.first },
+            minY = points.minOf { it.second },
+            maxX = points.maxOf { it.first },
+            maxY = points.maxOf { it.second },
+        )
+    }
 
     private fun List<LayoutBounds>.unionOrBaseline(baseline: LayoutPoint): LayoutBounds {
         if (isEmpty()) {
@@ -485,7 +577,7 @@ public object ParagraphComposer : ParagraphLayouter {
             )
             when (finalized) {
                 is FinalizationResult.Success -> {
-                    val fits = ExactEditableLineLayouter.inlineAdvance(finalized.line).value <= request.constraints.width.value
+                    val fits = inlineAdvance(finalized.line).value <= inlineExtent(request).value
                     if (fits || boundary == candidates.first()) return finalized.copy(fits = fits)
                 }
                 is FinalizationResult.Failure -> return finalized
@@ -536,11 +628,24 @@ public object ParagraphComposer : ParagraphLayouter {
             }
         }
         val uniqueInstances = instances.distinctBy(FontInstance::key)
+        val coalescedRuns = coalesceRuns(finalRuns)
+        if (request.constraints.writingMode != WritingMode.HORIZONTAL_TB) {
+            return finalizeVerticalLine(
+                request = request,
+                analysis = finalAnalysis,
+                lineRange = lineRange,
+                shapedRuns = coalescedRuns,
+                fontInstances = uniqueInstances,
+                diagnostics = diagnostics,
+                materialization = materialization,
+                ellipsis = ellipsis,
+            )
+        }
         return when (
             val positioned = ExactEditableLineLayouter.layout(
                 EditableLineRequest(
                     unicodeAnalysis = finalAnalysis,
-                    shapedGlyphRuns = coalesceRuns(finalRuns),
+                    shapedGlyphRuns = coalescedRuns,
                     baseDirection = request.baseDirection.shapingDirection(),
                     font = uniqueInstances.firstOrNull(),
                     fontInstances = uniqueInstances,
@@ -549,7 +654,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     softHyphenPolicy = lineSoftHyphenPolicy(request, lineRange),
                     snapshot = request.snapshot,
                     positioning = request.positioning,
-                    targetInlineExtent = request.constraints.width,
+                    targetInlineExtent = inlineExtent(request),
                     isLastLine = lineRange.endExclusive == request.sourceRange.endExclusive,
                     automaticHyphenBreaks = lineAutomaticBreaks(request, lineRange),
                     ellipsis = ellipsis,
@@ -575,6 +680,326 @@ public object ParagraphComposer : ParagraphLayouter {
             is EditableLineResult.Cancelled -> FinalizationResult.Cancelled(diagnostics + positioned.diagnostics)
         }
     }
+
+    /**
+     * Finalizes vertical content through the same derived-content and materialization pipeline as
+     * horizontal composition, then projects its logical inline axis to physical `y`.
+     *
+     * HarfBuzz has already produced `TOP_TO_BOTTOM` glyph identities and vertical substitutions.
+     * The temporary logical-horizontal view exists only to reuse the established line-content
+     * policies; the published source runs, advances, origins, carets, and transforms are rebuilt
+     * in physical vertical coordinates before any result escapes this composer.
+     */
+    private fun finalizeVerticalLine(
+        request: ParagraphLayoutRequest,
+        analysis: UnicodeAnalysis,
+        lineRange: TextRange,
+        shapedRuns: List<ShapedGlyphRun>,
+        fontInstances: List<FontInstance>,
+        diagnostics: List<EditableLineDiagnostic>,
+        materialization: EditableLineMaterialization,
+        ellipsis: LineEllipsisPolicy?,
+    ): FinalizationResult {
+        val instancesByKey = fontInstances.associateBy(FontInstance::key)
+        val verticalAdvances = VerticalGlyphAdvanceResolver(request)
+        shapedRuns.forEach { run ->
+            val instance = instancesByKey[run.fontInstanceKey]
+                ?: return FinalizationResult.Failure(
+                    EditableLineError.FontResolutionFailure(
+                        FontError.InvalidFontData("No resolved font instance matches a vertical shaped run."),
+                    ),
+                    diagnostics,
+                )
+            run.glyphs.forEach { glyph ->
+                when (val advance = verticalAdvances.advance(instance, glyph.glyphId)) {
+                    is FontOperationResult.Success -> Unit
+                    is FontOperationResult.Failure -> return FinalizationResult.Failure(
+                        EditableLineError.FontMaterializationFailure(advance.error),
+                        diagnostics + verticalAdvances.diagnostics + advance.diagnostics.map(::fontDiagnostic),
+                    )
+                    is FontOperationResult.Cancelled -> return FinalizationResult.Cancelled(
+                        diagnostics + verticalAdvances.diagnostics + advance.diagnostics.map(::fontDiagnostic),
+                    )
+                }
+            }
+        }
+        val physicalRuns = shapedRuns.map { run ->
+            run.replacingGlyphs(run.glyphs.map { glyph ->
+                ShapedGlyph(
+                    glyphId = glyph.glyphId,
+                    xAdvance = LayoutUnit(0f),
+                    yAdvance = (verticalAdvances.advance(
+                        instancesByKey.getValue(run.fontInstanceKey),
+                        glyph.glyphId,
+                    ) as FontOperationResult.Success).value,
+                    xOffset = glyph.xOffset,
+                    yOffset = glyph.yOffset,
+                    safetyFlags = glyph.safetyFlags,
+                    clusterTokens = glyph.clusterTokens,
+                )
+            })
+        }
+        val logicalRuns = physicalRuns.map { run ->
+            run.replacingGlyphs(run.glyphs.map { glyph ->
+                ShapedGlyph(
+                    glyphId = glyph.glyphId,
+                    xAdvance = glyph.yAdvance,
+                    yAdvance = LayoutUnit(0f),
+                    xOffset = glyph.yOffset,
+                    yOffset = glyph.xOffset,
+                    safetyFlags = glyph.safetyFlags,
+                    clusterTokens = glyph.clusterTokens,
+                )
+            })
+        }
+        val logicalInstances = fontInstances.map { instance ->
+            VerticalAdvanceFontInstance(instance, verticalAdvances)
+        }
+        return when (
+            val logical = ExactEditableLineLayouter.layout(
+                EditableLineRequest(
+                    unicodeAnalysis = analysis,
+                    shapedGlyphRuns = logicalRuns,
+                    baseDirection = ShapingDirection.TOP_TO_BOTTOM,
+                    font = logicalInstances.firstOrNull(),
+                    fontInstances = logicalInstances,
+                    verticalMetrics = request.constraints.lineMetrics,
+                    materialization = materialization,
+                    softHyphenPolicy = lineSoftHyphenPolicy(request, lineRange),
+                    snapshot = request.snapshot,
+                    positioning = request.positioning,
+                    targetInlineExtent = inlineExtent(request),
+                    isLastLine = lineRange.endExclusive == request.sourceRange.endExclusive,
+                    automaticHyphenBreaks = lineAutomaticBreaks(request, lineRange),
+                    ellipsis = ellipsis,
+                    inlineObjects = request.inlineObjects,
+                    cancellationToken = request.cancellationToken,
+                ),
+            )
+        ) {
+            is EditableLineResult.Success -> FinalizationResult.Success(
+                line = projectVerticalEditableLine(request, logical.line, physicalRuns, diagnostics + verticalAdvances.diagnostics),
+                fontInstances = fontInstances,
+                fits = true,
+            )
+
+            is EditableLineResult.Failure -> FinalizationResult.Failure(logical.error, diagnostics + verticalAdvances.diagnostics + logical.diagnostics)
+            is EditableLineResult.Cancelled -> FinalizationResult.Cancelled(diagnostics + verticalAdvances.diagnostics + logical.diagnostics)
+        }
+    }
+
+    private fun projectVerticalEditableLine(
+        request: ParagraphLayoutRequest,
+        logicalLine: EditableLine,
+        physicalRuns: List<ShapedGlyphRun>,
+        diagnostics: List<EditableLineDiagnostic>,
+    ): EditableLine {
+        val physicalBySignature = physicalRuns.associateBy { run -> run.verticalSignature() }
+        val positionedRuns = logicalLine.positionedGlyphRuns.map { logicalRun ->
+            val physicalRun = physicalBySignature.getValue(logicalRun.sourceRun.verticalSignature())
+            var sourceCursor = 0
+            PositionedGlyphRun(
+                sourceRun = physicalRun,
+                visualOrder = logicalRun.visualOrder,
+                renderAssetKey = logicalRun.renderAssetKey,
+                glyphs = logicalRun.glyphs.map { logicalGlyph ->
+                    val matchingSource = physicalRun.glyphs.getOrNull(sourceCursor)
+                        ?.takeIf { source ->
+                            logicalGlyph.shapedGlyph.preservesVerticalProjectionOf(source)
+                        }
+                        ?.also { sourceCursor += 1 }
+                    val physicalGlyph = matchingSource ?: ShapedGlyph(
+                        glyphId = logicalGlyph.shapedGlyph.glyphId,
+                        xAdvance = LayoutUnit(0f),
+                        yAdvance = logicalGlyph.shapedGlyph.xAdvance,
+                        xOffset = logicalGlyph.shapedGlyph.yOffset,
+                        yOffset = logicalGlyph.shapedGlyph.xOffset,
+                        safetyFlags = logicalGlyph.shapedGlyph.safetyFlags,
+                        clusterTokens = logicalGlyph.shapedGlyph.clusterTokens,
+                    )
+                    val sourceClusters = physicalGlyph.clusterTokens.map(physicalRun::clusterFor)
+                    val transform = verticalTransform(request, sourceClusters)
+                    val provenance = when (val original = logicalGlyph.provenance) {
+                        is GlyphProvenance.Direct -> if (transform.isIdentity) {
+                            original
+                        } else {
+                            GlyphProvenance.Derived(original.sourceRange, GlyphProvenanceRole.VERTICAL_ORIENTATION)
+                        }
+
+                        is GlyphProvenance.Derived,
+                        is GlyphProvenance.Synthetic,
+                        -> original
+                    }
+                    PositionedGlyph(
+                        shapedGlyph = physicalGlyph,
+                        sourceClusters = sourceClusters,
+                        origin = LayoutPoint(logicalGlyph.origin.y, logicalGlyph.origin.x),
+                        advance = LayoutVector(physicalGlyph.xAdvance, physicalGlyph.yAdvance),
+                        transform = transform,
+                        renderAssetKey = logicalGlyph.renderAssetKey,
+                        materializationCertificate = logicalGlyph.materializationCertificate,
+                        provenance = provenance,
+                    )
+                },
+            )
+        }
+        val carets = logicalLine.allCaretCandidates.map { candidate ->
+            val inline = candidate.geometry.start.x
+            CaretCandidate(
+                position = candidate.position,
+                geometry = LayoutSegment(
+                    start = LayoutPoint(LayoutUnit(-logicalLine.verticalMetrics.ascent.value), inline),
+                    end = LayoutPoint(logicalLine.verticalMetrics.descent, inline),
+                ),
+                visualOrder = candidate.visualOrder,
+                visualRunOrder = candidate.visualRunOrder,
+                bidiLevel = candidate.bidiLevel,
+                direction = ShapingDirection.TOP_TO_BOTTOM,
+                strength = CaretStrength.STRONG,
+                edge = candidate.edge,
+            )
+        }
+        val objects = logicalLine.positionedInlineObjects.map { item ->
+            PositionedInlineObject(
+                sourceRange = item.sourceRange,
+                definition = item.definition,
+                rect = LayoutRect(item.rect.top, item.rect.left, item.rect.bottom, item.rect.right),
+            )
+        }
+        return EditableLine(
+            range = logicalLine.range,
+            baseDirection = ShapingDirection.TOP_TO_BOTTOM,
+            verticalMetrics = logicalLine.verticalMetrics,
+            writingMode = request.constraints.writingMode,
+            positionedGlyphRuns = positionedRuns,
+            caretCandidates = carets,
+            inlineObjects = objects,
+            diagnostics = diagnostics + logicalLine.diagnostics,
+        )
+    }
+
+    private fun verticalTransform(
+        request: ParagraphLayoutRequest,
+        clusters: List<ShaperCluster>,
+    ): LayoutAffineTransform = if (clusters.verticalOrientationIsSideways(request)) {
+        LayoutAffineTransform.clockwiseQuarterTurn
+    } else {
+        LayoutAffineTransform.identity
+    }
+
+    private fun List<ShaperCluster>.verticalOrientationIsSideways(request: ParagraphLayoutRequest): Boolean = when (request.textOrientation) {
+        TextOrientation.UPRIGHT -> false
+        TextOrientation.SIDEWAYS -> true
+        TextOrientation.MIXED -> {
+            val scalars = flatMap { cluster -> request.snapshot.scalarValues(cluster.sourceRange) }
+            val base = scalars.firstOrNull { scalar -> !scalar.isCombiningMark() } ?: return false
+            !UnicodeVerticalOrientation.isUpright(base)
+        }
+    }
+
+    private fun Int.isCombiningMark(): Boolean =
+        this in 0x0300..0x036F || this in 0x1AB0..0x1AFF || this in 0x1DC0..0x1DFF ||
+            this in 0x20D0..0x20FF || this in 0xFE20..0xFE2F
+
+    private fun FontError.isUnavailableVerticalMetrics(): Boolean =
+        this is FontError.MissingRequiredTable || this is FontError.UnsupportedRepresentationProfile
+
+    /** Resolves one final vertical advance and reports one deterministic synthesis diagnostic per face. */
+    private class VerticalGlyphAdvanceResolver(
+        private val request: ParagraphLayoutRequest,
+    ) {
+        private val resolved = mutableMapOf<Pair<org.graphiks.kalligraphie.api.FontInstanceKey, org.graphiks.kalligraphie.api.GlyphId>, FontOperationResult<LayoutUnit>>()
+        private val synthesizedInstances = mutableSetOf<org.graphiks.kalligraphie.api.FontInstanceKey>()
+        val diagnostics = mutableListOf<EditableLineDiagnostic>()
+
+        fun advance(
+            instance: FontInstance,
+            glyphId: org.graphiks.kalligraphie.api.GlyphId,
+        ): FontOperationResult<LayoutUnit> =
+            resolved.getOrPut(instance.key to glyphId) {
+                when (val vertical = instance.verticalMetrics(glyphId)) {
+                    is FontOperationResult.Success -> FontOperationResult.Success(vertical.value.advanceHeight)
+                    is FontOperationResult.Failure -> {
+                        if (!vertical.error.isUnavailableVerticalMetrics() ||
+                            request.verticalMetricsPolicy == VerticalMetricsPolicy.REQUIRE_FONT_METRICS
+                        ) {
+                            FontOperationResult.Failure(vertical.error, vertical.diagnostics)
+                        } else {
+                            if (synthesizedInstances.add(instance.key)) {
+                                diagnostics += EditableLineDiagnostic(
+                                    code = "layout.vertical-metrics-synthesized",
+                                    severity = EditableLineDiagnosticSeverity.WARNING,
+                                    message = "The selected font has no usable OpenType vhea/vmtx metrics; one-em vertical advances were synthesized deterministically.",
+                                    glyphId = glyphId,
+                                )
+                            }
+                            FontOperationResult.Success(request.fontInstanceDescriptor.layoutSize)
+                        }
+                    }
+
+                    is FontOperationResult.Cancelled -> FontOperationResult.Cancelled(vertical.diagnostics)
+                }
+            }
+    }
+
+    /**
+     * Internal adapter used only while the horizontal line finalizer builds vertical content.
+     *
+     * It retains the source instance's glyph identity, bounds, and asset behavior, while making
+     * every derived glyph query observe the selected final vertical inline advance.
+     */
+    private class VerticalAdvanceFontInstance(
+        private val delegate: FontInstance,
+        private val advances: VerticalGlyphAdvanceResolver,
+    ) : FontInstance by delegate {
+        override fun metrics(glyphId: org.graphiks.kalligraphie.api.GlyphId): FontOperationResult<GlyphMetrics> =
+            when (val horizontal = delegate.metrics(glyphId)) {
+                is FontOperationResult.Success -> when (val vertical = advances.advance(delegate, glyphId)) {
+                    is FontOperationResult.Success -> FontOperationResult.Success(
+                        horizontal.value.copy(advanceWidth = vertical.value),
+                    )
+                    is FontOperationResult.Failure -> FontOperationResult.Failure(vertical.error, vertical.diagnostics)
+                    is FontOperationResult.Cancelled -> FontOperationResult.Cancelled(vertical.diagnostics)
+                }
+                is FontOperationResult.Failure -> horizontal
+                is FontOperationResult.Cancelled -> horizontal
+            }
+    }
+
+    private fun ShapedGlyphRun.replacingGlyphs(glyphs: List<ShapedGlyph>): ShapedGlyphRun = ShapedGlyphRun(
+        range = range,
+        fontInstanceKey = fontInstanceKey,
+        backendIdentity = backendIdentity,
+        direction = direction,
+        script = script,
+        language = language,
+        bidiLevel = bidiLevel,
+        bot = bot,
+        eot = eot,
+        featurePolicy = featurePolicy,
+        features = features,
+        graphemeClusters = graphemeClusters,
+        glyphs = glyphs,
+        clusters = clusters,
+        ligatureCaretFacts = ligatureCaretFacts,
+    )
+
+    private fun ShapedGlyphRun.verticalSignature(): Pair<TextRange, org.graphiks.kalligraphie.api.FontInstanceKey> =
+        range to fontInstanceKey
+
+    /**
+     * A logical glyph may be a direct projection of its shaped vertical source, or it may have
+     * been transformed by the line finalizer (ellipsis suppression, justification, or derived
+     * content). Only the former may recover the physical HarfBuzz glyph and its offsets.
+     */
+    private fun ShapedGlyph.preservesVerticalProjectionOf(physical: ShapedGlyph): Boolean =
+        glyphId == physical.glyphId &&
+            xAdvance == physical.yAdvance &&
+            yAdvance == physical.xAdvance &&
+            xOffset == physical.yOffset &&
+            yOffset == physical.xOffset &&
+            safetyFlags == physical.safetyFlags &&
+            clusterTokens == physical.clusterTokens
 
     private fun coalesceRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> {
         val result = mutableListOf<ShapedGlyphRun>()
@@ -822,19 +1247,13 @@ public object ParagraphComposer : ParagraphLayouter {
     private fun truncateCurrentLine(
         request: ParagraphLayoutRequest,
         lineStart: TextIndex,
-        candidates: List<TextIndex>,
         sourceClusters: List<TextRange>,
         provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
     ): TruncatedLine? {
         val ellipsis = request.overflowPolicy as? OverflowPolicy.Ellipsis ?: return null
-        if (request.sourceRange.start != request.sourceRange.endExclusive &&
-            (request.sourceRange.start != lineStart)
-        ) {
-            return null
-        }
-        val terminal = candidates.lastOrNull() ?: return null
-        val width = request.constraints.width.value.toDouble()
+        val terminal = request.sourceRange.endExclusive
+        val width = inlineExtent(request).value.toDouble()
         val prefixWidths = mutableMapOf<TextIndex, Double>()
         val prefixInstances = mutableMapOf<TextIndex, List<FontInstance>>()
         val measureBoundaries = (sourceClusters.map { it.endExclusive } + lineStart).distinct().sortedWith(TextIndex::compareTo)
@@ -842,21 +1261,37 @@ public object ParagraphComposer : ParagraphLayouter {
         measureBoundaries.asReversed().forEach { boundary ->
             when (val finalized = finalizeLine(request, TextRange(lineStart, boundary), sourceClusters, provisionalRuns, materialization)) {
                 is FinalizationResult.Success -> {
-                    prefixWidths[boundary] = ExactEditableLineLayouter.inlineAdvance(finalized.line).value.toDouble()
+                    prefixWidths[boundary] = inlineAdvance(finalized.line).value.toDouble()
                     prefixInstances[boundary] = finalized.fontInstances
                 }
                 else -> Unit
             }
         }
-        val markerWidth = widthOfEllipsisMarker(prefixInstances.values.firstOrNull().orEmpty())
+        val markerWidth = widthOfEllipsisMarker(request, prefixInstances.values.firstOrNull().orEmpty())
         val terminalWidth = prefixWidths[terminal] ?: return null
         val side = ellipsis.side
+        val completeRange = TextRange(lineStart, terminal)
+        fun markerOnly(): TruncatedLine? = if (markerWidth <= width) {
+            truncateWithPolicy(
+                request,
+                sourceClusters,
+                provisionalRuns,
+                materialization,
+                completeRange,
+                completeRange,
+                side,
+            )
+        } else {
+            null
+        }
         return when (side) {
             EllipsisSide.INLINE_END -> {
-                val b0 = prefixWidths.entries
-                    .lastOrNull { (boundary, w) -> w + markerWidth <= width }?.key ?: return null
+                val b0 = measureBoundaries.asReversed().firstOrNull { boundary ->
+                    val prefixWidth = prefixWidths[boundary] ?: return@firstOrNull false
+                    prefixWidth + markerWidth <= width
+                } ?: lineStart.takeIf { markerWidth <= width } ?: return null
                 truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization,
-                    TextRange(b0, terminal), side, markerWidth, width, prefixInstances)
+                    completeRange, TextRange(b0, terminal), side)
             }
             EllipsisSide.INLINE_START -> {
                 val suffixCandidates = measureBoundaries
@@ -874,9 +1309,9 @@ public object ParagraphComposer : ParagraphLayouter {
                         }
                     }
                 }
-                if (!suffixFound) return null
+                if (!suffixFound) return markerOnly()
                 truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization,
-                    TextRange(lineStart, chosen.start), side, markerWidth, width, prefixInstances)
+                    completeRange, TextRange(lineStart, chosen.start), side)
             }
             EllipsisSide.MIDDLE -> {
                 var suffixStart: TextIndex? = null
@@ -891,12 +1326,14 @@ public object ParagraphComposer : ParagraphLayouter {
                         suffixWidth = w
                     }
                 }
-                val startB0 = suffixStart ?: return null
+                val startB0 = suffixStart ?: return markerOnly()
                 val b0 = prefixWidths.entries
                     .sortedWith { left, right -> left.key.compareTo(right.key) }
-                    .lastOrNull { (_, w) -> w + markerWidth + suffixWidth <= width }?.key ?: return null
+                    .lastOrNull { (_, w) -> w + markerWidth + suffixWidth <= width }?.key
+                    ?: lineStart.takeIf { markerWidth + suffixWidth <= width }
+                    ?: return markerOnly()
                 truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization,
-                    TextRange(b0, startB0), side, markerWidth, width, prefixInstances)
+                    completeRange, TextRange(b0, startB0), side)
             }
         }
     }
@@ -906,16 +1343,13 @@ public object ParagraphComposer : ParagraphLayouter {
         sourceClusters: List<TextRange>,
         provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
+        lineRange: TextRange,
         hiddenRange: TextRange,
         side: EllipsisSide,
-        markerWidth: Double,
-        width: Double,
-        prefixInstances: Map<TextIndex, List<FontInstance>>,
     ): TruncatedLine? {
-        val fullRange = request.sourceRange
         val finalized = finalizeLine(
             request = request,
-            lineRange = fullRange,
+            lineRange = lineRange,
             sourceClusters = sourceClusters,
             provisionalRuns = provisionalRuns,
             materialization = materialization,
@@ -933,23 +1367,76 @@ public object ParagraphComposer : ParagraphLayouter {
         }
     }
 
-    private fun widthOfEllipsisMarker(instances: List<FontInstance>): Double {
+    private fun widthOfEllipsisMarker(
+        request: ParagraphLayoutRequest,
+        instances: List<FontInstance>,
+    ): Double {
         val instance = instances.firstOrNull() ?: return 0.0
         val glyph = (instance.resolveGlyph(0x2026) as? FontOperationResult.Success)?.value
         if (glyph != null && glyph.glyphId.value != 0) {
-            val adv = (instance.metrics(glyph.glyphId) as? FontOperationResult.Success)?.value?.advanceWidth
+            val adv = instance.inlineAdvanceFor(request, glyph.glyphId)
             if (adv != null) return adv.value.toDouble()
         }
         val dot = (instance.resolveGlyph(0x2E) as? FontOperationResult.Success)?.value?.glyphId
-        val dotAdv = dot?.let { (instance.metrics(it) as? FontOperationResult.Success)?.value?.advanceWidth }
+        val dotAdv = dot?.let { glyphId -> instance.inlineAdvanceFor(request, glyphId) }
         return if (dotAdv != null) dotAdv.value.toDouble() * 3.0 else 0.0
+    }
+
+    private fun FontInstance.inlineAdvanceFor(
+        request: ParagraphLayoutRequest,
+        glyphId: org.graphiks.kalligraphie.api.GlyphId,
+    ): LayoutUnit? = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> (metrics(glyphId) as? FontOperationResult.Success)?.value?.advanceWidth
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> when (val vertical = verticalMetrics(glyphId)) {
+            is FontOperationResult.Success -> vertical.value.advanceHeight
+            is FontOperationResult.Failure -> {
+                if (vertical.error.isUnavailableVerticalMetrics() &&
+                    request.verticalMetricsPolicy == VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE
+                ) {
+                    request.fontInstanceDescriptor.layoutSize
+                } else {
+                    null
+                }
+            }
+            is FontOperationResult.Cancelled -> null
+        }
     }
 
     private fun emptyLine(
         request: ParagraphLayoutRequest,
         range: TextRange,
         materialization: EditableLineMaterialization,
-    ): EditableLineResult = ExactEditableLineLayouter.layout(
+    ): EditableLineResult {
+        if (request.constraints.writingMode != WritingMode.HORIZONTAL_TB) {
+            val level = if (request.baseDirection == BaseDirection.LEFT_TO_RIGHT) 0 else 1
+            return EditableLineResult.Success(
+                EditableLine(
+                    range = range,
+                    baseDirection = ShapingDirection.TOP_TO_BOTTOM,
+                    verticalMetrics = request.constraints.lineMetrics,
+                    writingMode = request.constraints.writingMode,
+                    positionedGlyphRuns = emptyList(),
+                    caretCandidates = listOf(
+                        CaretCandidate(
+                            position = CaretPosition(range.start, CaretAffinity.DOWNSTREAM),
+                            geometry = LayoutSegment(
+                                start = LayoutPoint(LayoutUnit(-request.constraints.lineMetrics.ascent.value), LayoutUnit(0f)),
+                                end = LayoutPoint(request.constraints.lineMetrics.descent, LayoutUnit(0f)),
+                            ),
+                            visualOrder = 0,
+                            visualRunOrder = CaretCandidate.NO_POSITIONED_RUN,
+                            bidiLevel = level,
+                            direction = ShapingDirection.TOP_TO_BOTTOM,
+                            strength = CaretStrength.STRONG,
+                            edge = CaretBoundaryEdge.LOGICAL_START,
+                        ),
+                    ),
+                ),
+            )
+        }
+        return ExactEditableLineLayouter.layout(
         EditableLineRequest(
             unicodeAnalysis = UnicodeAnalysis(
                 range,
@@ -967,11 +1454,12 @@ public object ParagraphComposer : ParagraphLayouter {
             softHyphenPolicy = SoftHyphenLinePolicy(emptyList()),
             snapshot = request.snapshot,
             positioning = request.positioning,
-            targetInlineExtent = request.constraints.width,
+            targetInlineExtent = inlineExtent(request),
             isLastLine = true,
             cancellationToken = request.cancellationToken,
         ),
     )
+    }
 
     /**
      * Returns the soft-hyphen handling for a finalized line.
@@ -1045,7 +1533,7 @@ public object ParagraphComposer : ParagraphLayouter {
     }
 
     private fun Int.isHyphenationLetter(): Boolean =
-        this in 0x41..0x5A || this in 0x61..0x7A || this in 0xC0..0x24F
+        this in 0x41..0x5A || this in 0x61..0x7A || this in 0xC0..0x24F || this in 0x0300..0x036F
 
     private fun hyphenationServiceAbsentDiagnostic(): EditableLineDiagnostic = EditableLineDiagnostic(
         code = "layout.hyphenation-service-absent",
@@ -1064,23 +1552,118 @@ public object ParagraphComposer : ParagraphLayouter {
         }
     }
 
+    /** Returns the block-axis start used to place this composed line. */
+    private fun ComposedParagraphLine.blockCursor(request: ParagraphLayoutRequest): LayoutUnit = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> lineBox.top
+        WritingMode.VERTICAL_RL -> lineBox.right
+        WritingMode.VERTICAL_LR -> lineBox.left
+    }
+
     private fun place(
         line: EditableLine,
-        region: LayoutRect,
-        top: LayoutUnit,
+        request: ParagraphLayoutRequest,
+        blockCursor: LayoutUnit,
         fontInstances: List<FontInstance> = emptyList(),
-    ): ComposedParagraphLine {
-        val baseline = LayoutPoint(
-            region.left,
-            finiteUnit(top.value.toDouble() + line.verticalMetrics.ascent.value.toDouble(), "paragraph baseline"),
-        )
-        val bottom = finiteUnit(top.value.toDouble() + line.verticalMetrics.height.value.toDouble(), "paragraph line bottom")
-        return ComposedParagraphLine(
-            line = line,
-            baseline = baseline,
-            lineBox = LayoutRect(region.left, top, region.right, bottom),
-            inlineAdvance = ExactEditableLineLayouter.inlineAdvance(line),
-            fontInstances = fontInstances,
+    ): ComposedParagraphLine = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> {
+            val baseline = LayoutPoint(
+                request.constraints.region.left,
+                finiteUnit(
+                    blockCursor.value.toDouble() + line.verticalMetrics.ascent.value.toDouble(),
+                    "horizontal paragraph baseline",
+                ),
+            )
+            val bottom = finiteUnit(
+                blockCursor.value.toDouble() + line.verticalMetrics.height.value.toDouble(),
+                "horizontal paragraph line bottom",
+            )
+            ComposedParagraphLine(
+                line = line,
+                baseline = baseline,
+                lineBox = LayoutRect(request.constraints.region.left, blockCursor, request.constraints.region.right, bottom),
+                inlineAdvance = inlineAdvance(line),
+                fontInstances = fontInstances,
+            )
+        }
+
+        WritingMode.VERTICAL_RL -> {
+            val left = finiteUnit(
+                blockCursor.value.toDouble() - line.verticalMetrics.height.value.toDouble(),
+                "right-to-left vertical paragraph line left",
+            )
+            val baseline = LayoutPoint(
+                finiteUnit(blockCursor.value.toDouble() - line.verticalMetrics.descent.value.toDouble(), "right-to-left vertical paragraph baseline"),
+                request.constraints.region.top,
+            )
+            ComposedParagraphLine(
+                line = line,
+                baseline = baseline,
+                lineBox = LayoutRect(left, request.constraints.region.top, blockCursor, request.constraints.region.bottom),
+                inlineAdvance = inlineAdvance(line),
+                fontInstances = fontInstances,
+            )
+        }
+
+        WritingMode.VERTICAL_LR -> {
+            val right = finiteUnit(
+                blockCursor.value.toDouble() + line.verticalMetrics.height.value.toDouble(),
+                "left-to-right vertical paragraph line right",
+            )
+            val baseline = LayoutPoint(
+                finiteUnit(blockCursor.value.toDouble() + line.verticalMetrics.ascent.value.toDouble(), "left-to-right vertical paragraph baseline"),
+                request.constraints.region.top,
+            )
+            ComposedParagraphLine(
+                line = line,
+                baseline = baseline,
+                lineBox = LayoutRect(blockCursor, request.constraints.region.top, right, request.constraints.region.bottom),
+                inlineAdvance = inlineAdvance(line),
+                fontInstances = fontInstances,
+            )
+        }
+    }
+
+    private fun initialBlockCursor(request: ParagraphLayoutRequest): LayoutUnit = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> request.constraints.region.top
+        WritingMode.VERTICAL_LR -> request.constraints.region.left
+
+        WritingMode.VERTICAL_RL -> request.constraints.region.right
+    }
+
+    private fun blockLineFits(request: ParagraphLayoutRequest, cursor: LayoutUnit): Boolean = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB ->
+            cursor.value.toDouble() + request.constraints.lineMetrics.height.value.toDouble() <= request.constraints.region.bottom.value.toDouble()
+
+        WritingMode.VERTICAL_RL ->
+            cursor.value.toDouble() - request.constraints.lineMetrics.height.value.toDouble() >= request.constraints.region.left.value.toDouble()
+
+        WritingMode.VERTICAL_LR ->
+            cursor.value.toDouble() + request.constraints.lineMetrics.height.value.toDouble() <= request.constraints.region.right.value.toDouble()
+    }
+
+    private fun advanceBlockCursor(request: ParagraphLayoutRequest, cursor: LayoutUnit): LayoutUnit = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB,
+        WritingMode.VERTICAL_LR,
+        -> finiteUnit(cursor.value.toDouble() + request.constraints.lineMetrics.height.value.toDouble(), "paragraph block cursor")
+
+        WritingMode.VERTICAL_RL ->
+            finiteUnit(cursor.value.toDouble() - request.constraints.lineMetrics.height.value.toDouble(), "paragraph block cursor")
+    }
+
+    private fun inlineExtent(request: ParagraphLayoutRequest): LayoutUnit = when (request.constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> request.constraints.width
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> request.constraints.height
+    }
+
+    private fun inlineAdvance(line: EditableLine): LayoutUnit = when (line.writingMode) {
+        WritingMode.HORIZONTAL_TB -> ExactEditableLineLayouter.inlineAdvance(line)
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> finiteUnit(
+            line.positionedGlyphRuns.sumOf { run -> run.glyphs.sumOf { glyph -> glyph.advance.y.value.toDouble() } },
+            "vertical line inline advance",
         )
     }
 

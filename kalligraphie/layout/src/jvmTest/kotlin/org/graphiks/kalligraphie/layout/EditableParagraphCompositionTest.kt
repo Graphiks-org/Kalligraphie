@@ -38,6 +38,7 @@ import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
+import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -759,7 +760,7 @@ class EditableParagraphCompositionTest {
     private fun copyRequest(
         request: ParagraphLayoutRequest,
         sourceRange: TextRange = request.sourceRange,
-        constraints: HorizontalParagraphConstraints = request.constraints,
+        constraints: ParagraphConstraints = request.constraints,
         fontInstanceDescriptor: FontInstanceDescriptor = request.fontInstanceDescriptor,
         fontCatalog: FontCatalogSnapshot = request.fontCatalog,
         cancellationToken: org.graphiks.kalligraphie.api.CancellationToken = request.cancellationToken,

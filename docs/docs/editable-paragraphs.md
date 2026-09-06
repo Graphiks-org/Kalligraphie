@@ -1,7 +1,7 @@
 # Editable paragraphs
 
 Kalligraphie provides a JVM reference route for composing one immutable,
-editable, horizontal multiline paragraph. It extends the exact editable-line
+editable multiline paragraph. It extends the exact editable-line
 route described in [Font Management](font-management.md): the public
 `JvmEditableParagraphFacade` owns the ICU and HarfBuzz work for one call, then
 returns portable, renderer-independent values. It does not retain a native
@@ -135,8 +135,9 @@ observable as one sufficiently tall composition.
 
 ## Scope and limits
 
-This is a JVM reference API for one horizontal rectangular paragraph. It does
-not render pixels or own editor state. Hyphenation, justification, vertical
-writing, `CLIP`, `ELLIPSIS`, pagination, `FlowRegion`/`FlowChain`, caching,
-benchmarks, non-JVM executable facades, and incremental-layout APIs remain out
-of scope.
+This is a JVM reference API for one physical rectangular paragraph, in
+horizontal or vertical writing. It does not render pixels or own editor state.
+Clipping, pagination, `FlowRegion`/`FlowChain`, caching, benchmarks, and
+non-JVM executable facades remain out of scope. See [Advanced Typography](advanced-typography.md)
+for hyphenation, justification, ellipsis, inline objects, vertical writing,
+and incremental equivalence.

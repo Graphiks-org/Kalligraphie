@@ -1,7 +1,5 @@
 package org.graphiks.kalligraphie.layout
 
-import kotlin.math.max
-
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
 import org.graphiks.kalligraphie.api.EditableLineDiagnosticSeverity
 import org.graphiks.kalligraphie.api.EditableLineRequest
@@ -125,27 +123,35 @@ internal object LineContentPlan {
             if (!hiddenInRun && !markerInRun) return@forEachIndexed
             val rebuilt = mutableListOf<RefinedGlyph>()
             var anchorEmitted = false
+            fun markerFor(reference: ShapedGlyph): List<RefinedGlyph> = markerGlyphs.map { (glyphId, advance, _) ->
+                RefinedGlyph(
+                    shapedGlyph = ShapedGlyph(
+                        glyphId = glyphId,
+                        xAdvance = advance,
+                        yAdvance = LayoutUnit(0f),
+                        xOffset = LayoutUnit(0f),
+                        yOffset = LayoutUnit(0f),
+                        safetyFlags = reference.safetyFlags,
+                        clusterTokens = listOf(reference.clusterTokens.first()),
+                    ),
+                    provenance = GlyphProvenance.Synthetic(anchor, GlyphProvenanceRole.ELLIPSIS),
+                )
+            }
+            val firstGlyph = run.glyphs.firstOrNull()?.shapedGlyph
+            if (!markerAttached && !markerBefore && firstGlyph != null &&
+                mappedRange(snapshot, run.sourceRun, firstGlyph).start == anchor
+            ) {
+                rebuilt += markerFor(firstGlyph)
+                anchorEmitted = true
+            }
             run.glyphs.forEach { refinedGlyph ->
                 val glyph = refinedGlyph.shapedGlyph
                 val mapped = mappedRange(snapshot, run.sourceRun, glyph)
                 val hidden = rangesOverlap(mapped, ellipsis.hiddenRange)
                 val endsAtAnchor = mapped.endExclusive == anchor
                 val startsAtAnchor = mapped.start == anchor
-                if (markerBefore && startsAtAnchor && !anchorEmitted) {
-                    markerGlyphs.forEach { (gid, adv, _) ->
-                        rebuilt += RefinedGlyph(
-                            shapedGlyph = ShapedGlyph(
-                                glyphId = gid,
-                                xAdvance = adv,
-                                yAdvance = LayoutUnit(0f),
-                                xOffset = LayoutUnit(0f),
-                                yOffset = LayoutUnit(0f),
-                                safetyFlags = glyph.safetyFlags,
-                                clusterTokens = listOf(glyph.clusterTokens.first()),
-                            ),
-                            provenance = GlyphProvenance.Synthetic(anchor, GlyphProvenanceRole.ELLIPSIS),
-                        )
-                    }
+                if (!markerAttached && markerBefore && startsAtAnchor && !anchorEmitted) {
+                    rebuilt += markerFor(glyph)
                     anchorEmitted = true
                 }
                 if (hidden) {
@@ -157,21 +163,15 @@ internal object LineContentPlan {
                 } else {
                     rebuilt += RefinedGlyph(glyph, GlyphProvenance.Direct(mapped))
                 }
-                if (!markerBefore && endsAtAnchor && !anchorEmitted) {
-                    markerGlyphs.forEach { (gid, adv, _) ->
-                        rebuilt += RefinedGlyph(
-                            shapedGlyph = ShapedGlyph(
-                                glyphId = gid,
-                                xAdvance = adv,
-                                yAdvance = LayoutUnit(0f),
-                                xOffset = LayoutUnit(0f),
-                                yOffset = LayoutUnit(0f),
-                                safetyFlags = glyph.safetyFlags,
-                                clusterTokens = listOf(glyph.clusterTokens.first()),
-                            ),
-                            provenance = GlyphProvenance.Synthetic(anchor, GlyphProvenanceRole.ELLIPSIS),
-                        )
-                    }
+                if (!markerAttached && !markerBefore && endsAtAnchor && !anchorEmitted) {
+                    rebuilt += markerFor(glyph)
+                    anchorEmitted = true
+                }
+            }
+            if (!markerAttached && markerBefore && !anchorEmitted) {
+                val lastGlyph = run.glyphs.lastOrNull()?.shapedGlyph
+                if (lastGlyph != null && mappedRange(snapshot, run.sourceRun, lastGlyph).endExclusive == anchor) {
+                    rebuilt += markerFor(lastGlyph)
                     anchorEmitted = true
                 }
             }
@@ -214,25 +214,24 @@ internal object LineContentPlan {
         if (positioning.alignment != ParagraphAlignment.JUSTIFY || request.isLastLine) return runs
         val mode = positioning.justificationMode
         if (mode != JustificationMode.KASHIDA && mode != JustificationMode.AUTO) return runs
-        val eligible = runs.mapIndexed { index, run ->
-            val arabic = run.sourceRun.script.value == ARABIC_SCRIPT
-            (mode == JustificationMode.KASHIDA || arabic) to index
-        }.filter { (isEligible, _) -> isEligible }
+        val eligible = runs.mapIndexedNotNull { index, run ->
+            index.takeIf { run.sourceRun.script.value == ARABIC_SCRIPT }
+        }
         if (eligible.isEmpty()) return runs
         val natural = runs.sumOf { run ->
             run.glyphs.sumOf { glyph -> glyph.shapedGlyph.xAdvance.value.toDouble() }
         }
         val extra = target.value.toDouble() - natural
         if (extra <= 0.0) return runs
-        val totalGaps = eligible.sumOf { (_, runIndex) ->
-            max(0, runs[runIndex].glyphs.size - 1)
-        }
+        val gapsByRun = eligible.associateWith { runIndex -> kashidaGaps(snapshot, runs[runIndex]) }
+        val totalGaps = gapsByRun.values.sumOf(List<KashidaGap>::size)
         if (totalGaps <= 0) return runs
         val perGapAdvance = extra / totalGaps
         val result = runs.toMutableList()
-        eligible.forEach { (_, index) ->
+        eligible.forEach { index ->
             val run = runs[index]
-            if (run.glyphs.size < 2) return@forEach
+            val gaps = gapsByRun.getValue(index).associateBy(KashidaGap::afterGlyphIndex)
+            if (gaps.isEmpty()) return@forEach
             val instance = request.fontInstances.firstOrNull { it.key == run.sourceRun.fontInstanceKey } ?: return@forEach
             val tatweel = (instance.resolveGlyph(KASHIDA_SCALAR) as? FontOperationResult.Success)?.value
             if (tatweel == null || tatweel.glyphId.value == 0) {
@@ -249,10 +248,9 @@ internal object LineContentPlan {
             val expanded = mutableListOf<RefinedGlyph>()
             run.glyphs.forEachIndexed { glyphIndex, glyph ->
                 expanded += glyph
-                if (glyphIndex < run.glyphs.lastIndex && glyph.provenance !is GlyphProvenance.Synthetic) {
+                gaps[glyphIndex]?.let { gap ->
                     val anchorToken = glyph.shapedGlyph.clusterTokens.firstOrNull()
                     if (anchorToken != null) {
-                        val anchor = run.sourceRun.clusterFor(anchorToken).sourceRange.start
                         repeat(countPerGap) {
                             expanded += RefinedGlyph(
                                 shapedGlyph = ShapedGlyph(
@@ -264,7 +262,7 @@ internal object LineContentPlan {
                                     safetyFlags = glyph.shapedGlyph.safetyFlags,
                                     clusterTokens = listOf(anchorToken),
                                 ),
-                                provenance = GlyphProvenance.Synthetic(anchor, GlyphProvenanceRole.KASHIDA),
+                                provenance = GlyphProvenance.Synthetic(gap.anchor, GlyphProvenanceRole.KASHIDA),
                             )
                         }
                     }
@@ -274,6 +272,39 @@ internal object LineContentPlan {
         }
         return result
     }
+
+    /** Returns visual insertion sites whose source scalars form a real Arabic joining opportunity. */
+    private fun kashidaGaps(snapshot: TextSnapshot, run: RefinedRun): List<KashidaGap> =
+        run.glyphs.zipWithNext().mapIndexedNotNull { glyphIndex, (left, right) ->
+            if (left.provenance is GlyphProvenance.Synthetic || right.provenance is GlyphProvenance.Synthetic ||
+                left.tabMarker || right.tabMarker || left.inlineObjectWidth != null || right.inlineObjectWidth != null
+            ) {
+                return@mapIndexedNotNull null
+            }
+            val leftRange = mappedRange(snapshot, run.sourceRun, left.shapedGlyph)
+            val rightRange = mappedRange(snapshot, run.sourceRun, right.shapedGlyph)
+            val (earlier, later) = if (leftRange.start <= rightRange.start) {
+                leftRange to rightRange
+            } else {
+                rightRange to leftRange
+            }
+            if (earlier.endExclusive != later.start) return@mapIndexedNotNull null
+            val preceding = snapshot.scalarValues(earlier).lastOrNull { scalar -> !scalar.isArabicJoiningMark() }
+                ?: return@mapIndexedNotNull null
+            val following = snapshot.scalarValues(later).firstOrNull { scalar -> !scalar.isArabicJoiningMark() }
+                ?: return@mapIndexedNotNull null
+            if (preceding.canJoinFollowingArabic() && following.canJoinPrecedingArabic()) {
+                KashidaGap(glyphIndex, earlier.endExclusive)
+            } else {
+                null
+            }
+        }
+
+    /** One visual stream insertion site anchored at its logical Arabic joining boundary. */
+    private data class KashidaGap(
+        val afterGlyphIndex: Int,
+        val anchor: TextIndex,
+    )
 
     private fun refineRun(
         request: EditableLineRequest,
@@ -285,6 +316,12 @@ internal object LineContentPlan {
         diagnostics: MutableList<EditableLineDiagnostic>,
     ): RefinedRun {
         val stream = mutableListOf<RefinedGlyph>()
+        val automaticGlyphsRemaining = run.glyphs
+            .map { glyph -> mappedRange(snapshot, run, glyph).endExclusive }
+            .filter { boundary -> boundary in automaticBreaks }
+            .groupingBy { boundary -> boundary }
+            .eachCount()
+            .toMutableMap()
         run.glyphs.forEach { glyph ->
             val mapped = mappedRange(snapshot, run, glyph)
             val scalars = snapshot.scalarValues(mapped)
@@ -312,82 +349,94 @@ internal object LineContentPlan {
                 return@forEach
             }
             if (mapped.endExclusive in automaticBreaks && instance != null) {
-                val hyphen = substituteHyphen(instance, glyph, diagnostics) ?: glyph
-                stream += RefinedGlyph(
-                    hyphen,
-                    GlyphProvenance.Derived(mapped, GlyphProvenanceRole.AUTOMATIC_HYPHEN),
-                )
+                stream += RefinedGlyph(glyph, GlyphProvenance.Direct(mapped))
+                val remaining = automaticGlyphsRemaining.getValue(mapped.endExclusive) - 1
+                automaticGlyphsRemaining[mapped.endExclusive] = remaining
+                if (remaining == 0) {
+                    substituteHyphen(instance, glyph, diagnostics)?.let { hyphen ->
+                        stream += RefinedGlyph(
+                            hyphen,
+                            GlyphProvenance.Synthetic(mapped.endExclusive, GlyphProvenanceRole.AUTOMATIC_HYPHEN),
+                        )
+                    }
+                }
                 return@forEach
             }
             stream += RefinedGlyph(glyph, GlyphProvenance.Direct(mapped))
         }
-        if (instance != null && run.direction == ShapingDirection.LEFT_TO_RIGHT &&
-            run.clusters.any { cluster ->
+        if (instance != null && run.clusters.any { cluster ->
                 snapshot.scalarValues(cluster.sourceRange).any { it == TAB }
             }
         ) {
             val space = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
-            val glyphTokens = run.glyphs.flatMap { glyph -> glyph.clusterTokens }.toSet()
+            val glyphTokens = stream.flatMap { glyph -> glyph.shapedGlyph.clusterTokens }.toSet()
             val markersNeeded = run.clusters.filter { cluster ->
                 snapshot.scalarValues(cluster.sourceRange).any { it == TAB } &&
                     cluster.token !in glyphTokens
             }
             if (markersNeeded.isNotEmpty()) {
-                val rebuilt = mutableListOf<RefinedGlyph>()
-                val emitted = run.glyphs.toMutableList()
-                run.clusters.forEach { cluster ->
-                    if (cluster in markersNeeded) {
-                        rebuilt += RefinedGlyph(
-                            shapedGlyph = zeroAdvanceTab(space, cluster.token),
-                            provenance = GlyphProvenance.Direct(cluster.sourceRange),
-                            tabMarker = true,
-                        )
-                    } else {
-                        val attached = emitted.filter { glyph -> cluster.token in glyph.clusterTokens }
-                        emitted.removeAll(attached.toSet())
-                        rebuilt += attached.map { glyph ->
-                            RefinedGlyph(glyph, stream.firstOrNull { entry -> entry.shapedGlyph === glyph }?.provenance
-                                ?: GlyphProvenance.Direct(mappedRange(snapshot, run, glyph)))
-                        }
-                    }
+                val markersByToken = markersNeeded.associate { cluster ->
+                    cluster.token to RefinedGlyph(
+                        shapedGlyph = zeroAdvanceTab(space, cluster.token),
+                        provenance = GlyphProvenance.Direct(cluster.sourceRange),
+                        tabMarker = true,
+                    )
                 }
-                stream.clear()
-                stream += rebuilt
+                stream.replaceClustersInGlyphOrder(run, markersByToken)
             }
         }
-        if (instance != null && request.inlineObjects != null && run.direction == ShapingDirection.LEFT_TO_RIGHT &&
+        val inlineObjects = request.inlineObjects
+        if (instance != null && inlineObjects != null &&
             run.clusters.any { cluster -> snapshot.scalarValues(cluster.sourceRange).any { it == OBJECT_REPLACEMENT } }
         ) {
-            val glyphTokens = run.glyphs.flatMap { glyph -> glyph.clusterTokens }.toSet()
-            val objectClusters = run.clusters.filter { cluster ->
-                snapshot.scalarValues(cluster.sourceRange).any { it == OBJECT_REPLACEMENT } &&
-                    cluster.token !in glyphTokens
-            }
-            if (objectClusters.isNotEmpty()) {
-                val space = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
-                val rebuilt = mutableListOf<RefinedGlyph>()
-                val emitted = run.glyphs.toMutableList()
-                run.clusters.forEach { cluster ->
-                    if (cluster in objectClusters) {
-                        val definition = request.inlineObjects?.definition(cluster.sourceRange.start)
-                        rebuilt += RefinedGlyph(
-                            shapedGlyph = zeroAdvanceShapeForObject(space, cluster.token, definition?.width ?: LayoutUnit(0f)),
-                            provenance = GlyphProvenance.Direct(cluster.sourceRange),
-                            inlineObjectWidth = definition?.width,
-                        )
-                    } else {
-                        val attached = emitted.filter { glyph -> cluster.token in glyph.clusterTokens }
-                        emitted.removeAll(attached.toSet())
-                        rebuilt += attached.map { glyph ->
-                            RefinedGlyph(glyph, GlyphProvenance.Direct(mappedRange(snapshot, run, glyph)))
-                        }
-                    }
+            val objectsByToken = run.clusters.mapNotNull { cluster ->
+                val definition = inlineObjects.definition(cluster.sourceRange.start)
+                if (snapshot.scalarValues(cluster.sourceRange).any { it == OBJECT_REPLACEMENT } && definition != null) {
+                    cluster.token to (cluster.sourceRange to definition)
+                } else {
+                    null
                 }
-                stream.clear()
-                stream += rebuilt
+            }
+            if (objectsByToken.isNotEmpty()) {
+                val space = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
+                val replacements = objectsByToken.associate { (token, objectEntry) ->
+                    token to RefinedGlyph(
+                        shapedGlyph = zeroAdvanceShapeForObject(space, token, objectEntry.second.width),
+                        provenance = GlyphProvenance.Direct(objectEntry.first),
+                        inlineObjectWidth = objectEntry.second.width,
+                    )
+                }
+                stream.replaceClustersInGlyphOrder(run, replacements)
             }
         }
         return RefinedRun(run, stream)
+    }
+
+    /** Reorders reconstructed cluster entries in shaping output order for both inline directions. */
+    private fun MutableList<RefinedGlyph>.replaceClustersInGlyphOrder(
+        run: ShapedGlyphRun,
+        replacements: Map<ShaperClusterToken, RefinedGlyph>,
+    ) {
+        val remaining = toMutableList()
+        val rebuilt = mutableListOf<RefinedGlyph>()
+        val clusters = when (run.direction) {
+            ShapingDirection.LEFT_TO_RIGHT -> run.clusters
+            ShapingDirection.RIGHT_TO_LEFT -> run.clusters.asReversed()
+            ShapingDirection.TOP_TO_BOTTOM -> run.clusters
+        }
+        clusters.forEach { cluster ->
+            val attached = remaining.filter { entry -> cluster.token in entry.shapedGlyph.clusterTokens }
+            remaining.removeAll(attached.toSet())
+            val replacement = replacements[cluster.token]
+            if (replacement != null) {
+                rebuilt += replacement
+            } else {
+                rebuilt += attached
+            }
+        }
+        rebuilt += remaining
+        clear()
+        addAll(rebuilt)
     }
 
     private fun zeroAdvanceShapeForObject(glyphId: GlyphId, token: ShaperClusterToken, width: LayoutUnit): ShapedGlyph = ShapedGlyph(
@@ -451,28 +500,30 @@ internal object LineContentPlan {
                 JustificationUnit(runIndex, index, scalars.any { it.isWhitespaceScalar() }, scalars.any { it.isCjkScalar() })
             }
         }
-        val useCjk = mode == JustificationMode.INTER_CHARACTER ||
-            mode == JustificationMode.AUTO && eligible.flatten().any { it.cjk }
-        val units = eligible.flatten().filter { unit ->
-            if (useCjk) unit.cjk else unit.whitespace
+        val visible = eligible.flatten().filter { unit ->
+            val glyph = runs[unit.runIndex].glyphs[unit.glyphIndex]
+            !glyph.tabMarker && glyph.inlineObjectWidth == null && glyph.provenance !is GlyphProvenance.Synthetic
         }
-        if (units.isEmpty()) return runs
-        // A line-trailing whitespace unit does not receive spacing: the last visual glyph is
-        // excluded when it is a whitespace unit.
-        val lastRunIndex = runs.lastIndex
-        val lastVisual = runs.lastOrNull()
-            ?.let { run -> run.glyphs.lastOrNull()?.let { glyph -> RefinedGlyphIdentity(lastRunIndex, run.glyphs.size - 1, glyph) } }
-        val hasTrailing = lastVisual != null && units.any { unit ->
-            unit.runIndex == lastVisual.runIndex && unit.glyphIndex == lastVisual.glyphIndex
+        val lastVisible = visible.lastOrNull()
+        val applicable = when (mode) {
+            JustificationMode.INTER_CHARACTER -> visible.dropLast(1)
+            JustificationMode.AUTO -> {
+                if (visible.any { unit -> unit.cjk }) {
+                    visible.filter { unit -> unit.cjk && unit != lastVisible }
+                } else {
+                    visible.filter { unit -> unit.whitespace && unit != lastVisible }
+                }
+            }
+            JustificationMode.INTER_WORD,
+            JustificationMode.KASHIDA,
+            -> visible.filter { unit -> unit.whitespace && unit != lastVisible }
         }
-        val applicable = if (hasTrailing) units.dropLast(1) else units
         if (applicable.isEmpty()) return runs
         val share = extra / applicable.size
         val result = runs.toMutableList()
         applicable.forEach { unit ->
             val run = result[unit.runIndex]
             val current = run.glyphs[unit.glyphIndex]
-            val authorRange = mappedRange(snapshot, run.sourceRun, current.shapedGlyph)
             val shaped = current.shapedGlyph
             val updated = run.glyphs.toMutableList()
             updated[unit.glyphIndex] = RefinedGlyph(
@@ -485,7 +536,17 @@ internal object LineContentPlan {
                     safetyFlags = shaped.safetyFlags,
                     clusterTokens = shaped.clusterTokens,
                 ),
-                provenance = GlyphProvenance.Derived(authorRange, GlyphProvenanceRole.JUSTIFICATION_SPACING),
+                provenance = when (val provenance = current.provenance) {
+                    is GlyphProvenance.Direct -> GlyphProvenance.Derived(
+                        provenance.sourceRange,
+                        GlyphProvenanceRole.JUSTIFICATION_SPACING,
+                    )
+                    is GlyphProvenance.Derived,
+                    is GlyphProvenance.Synthetic,
+                    -> provenance
+                },
+                tabMarker = current.tabMarker,
+                inlineObjectWidth = current.inlineObjectWidth,
             )
             result[unit.runIndex] = RefinedRun(run.sourceRun, updated)
         }
@@ -497,12 +558,6 @@ internal object LineContentPlan {
         val glyphIndex: Int,
         val whitespace: Boolean,
         val cjk: Boolean,
-    )
-
-    private data class RefinedGlyphIdentity(
-        val runIndex: Int,
-        val glyphIndex: Int,
-        val glyph: RefinedGlyph,
     )
 
     private fun refScalars(snapshot: TextSnapshot, run: RefinedRun, glyph: RefinedGlyph): List<Int> =
@@ -585,7 +640,10 @@ internal object LineContentPlan {
 
 internal fun mappedRange(snapshot: TextSnapshot, run: ShapedGlyphRun, glyph: ShapedGlyph): TextRange {
     val mapped = glyph.clusterTokens.map(run::clusterFor)
-    return TextRange(mapped.first().sourceRange.start, mapped.last().sourceRange.endExclusive)
+    val start = mapped.minWith { left, right -> left.sourceRange.start.compareTo(right.sourceRange.start) }.sourceRange.start
+    val endExclusive = mapped.maxWith { left, right -> left.sourceRange.endExclusive.compareTo(right.sourceRange.endExclusive) }
+        .sourceRange.endExclusive
+    return TextRange(start, endExclusive)
 }
 
 internal fun ShapedGlyphRun.clusterFor(token: ShaperClusterToken): org.graphiks.kalligraphie.api.ShaperCluster =
@@ -606,6 +664,73 @@ private fun Int.isCjkScalar(): Boolean =
         this in 0xF900..0xFAFF ||
         this in 0x3040..0x30FF ||
         this in 0xAC00..0xD7AF
+
+/** Unicode 16 Arabic-script letters whose joining type accepts a following letter. */
+private fun Int.canJoinFollowingArabic(): Boolean =
+    this == 0x0620 ||
+        this == 0x0626 ||
+        this == 0x0628 ||
+        this in 0x062A..0x062E ||
+        this in 0x0633..0x063F ||
+        this in 0x0641..0x0647 ||
+        this in 0x0649..0x064A ||
+        this in 0x066E..0x066F ||
+        this in 0x0678..0x0687 ||
+        this in 0x069A..0x06BF ||
+        this in 0x06C1..0x06C2 ||
+        this == 0x06CC ||
+        this == 0x06CE ||
+        this in 0x06D0..0x06D1 ||
+        this in 0x06FA..0x06FC ||
+        this == 0x06FF ||
+        this in 0x0750..0x0758 ||
+        this in 0x075C..0x076A ||
+        this in 0x076D..0x0770 ||
+        this == 0x0772 ||
+        this in 0x0775..0x0777 ||
+        this in 0x077A..0x077F ||
+        this == 0x0886 ||
+        this in 0x0889..0x088D ||
+        this in 0x08A0..0x08A9 ||
+        this in 0x08AF..0x08B0 ||
+        this in 0x08B3..0x08B8 ||
+        this in 0x08BA..0x08C8 ||
+        this in 0x10EC3..0x10EC4
+
+/** Unicode 16 Arabic-script letters whose joining type accepts a preceding letter. */
+private fun Int.canJoinPrecedingArabic(): Boolean =
+    canJoinFollowingArabic() ||
+        this in 0x0622..0x0625 ||
+        this in 0x0629..0x062E ||
+        this in 0x062F..0x0632 ||
+        this == 0x0648 ||
+        this in 0x0671..0x0673 ||
+        this in 0x0675..0x0677 ||
+        this in 0x0688..0x0699 ||
+        this == 0x06C0 ||
+        this in 0x06C3..0x06C8 ||
+        this in 0x06C9..0x06CB ||
+        this == 0x06CD ||
+        this == 0x06CF ||
+        this in 0x06D2..0x06D3 ||
+        this == 0x06D5 ||
+        this in 0x06EE..0x06EF ||
+        this in 0x0759..0x075B ||
+        this in 0x076B..0x076C ||
+        this == 0x0771 ||
+        this in 0x0773..0x0774 ||
+        this in 0x0778..0x0779 ||
+        this in 0x0870..0x0882 ||
+        this == 0x088E ||
+        this in 0x08AA..0x08AC ||
+        this == 0x08AE ||
+        this in 0x08B1..0x08B2 ||
+        this == 0x08B9 ||
+        this == 0x10EC2
+
+/** Combining marks are transparent when the surrounding Arabic letters are tested for joining. */
+private fun Int.isArabicJoiningMark(): Boolean =
+    this in 0x0610..0x061A || this in 0x064B..0x065F || this == 0x0670 || this in 0x06D6..0x06ED
 
 private const val SOFT_HYPHEN: Int = 0x00AD
 private const val HYPHEN_MINUS: Int = 0x002D

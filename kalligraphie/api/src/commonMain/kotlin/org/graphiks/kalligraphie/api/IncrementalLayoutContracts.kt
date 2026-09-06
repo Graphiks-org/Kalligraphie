@@ -548,7 +548,7 @@ public class LayoutConfigurationSignature private constructor(
         /** Captures constraints, font catalogue, resolution policy, geometry, features, and shaping configuration. */
         public fun from(
             input: LayoutInput,
-            constraints: HorizontalParagraphConstraints,
+            constraints: ParagraphConstraints,
         ): LayoutConfigurationSignature = LayoutConfigurationSignature(
             LayoutConfigurationValue(
                 constraints = constraints,
@@ -614,14 +614,14 @@ public class LayoutStateHandle(
     }
 }
 
-/** Fully validated immutable request for incremental horizontal layout. */
+/** Fully validated immutable request for incremental paragraph layout. */
 public class IncrementalLayoutRequest internal constructor(
     /** Target text and typography inputs. */
     public val input: LayoutInput,
     /** Target text range requested by the caller. */
     public val requestedRange: TextRange,
-    /** Physical horizontal paragraph constraints. */
-    public val constraints: HorizontalParagraphConstraints,
+    /** Physical paragraph constraints, including the logical writing mode. */
+    public val constraints: ParagraphConstraints,
     /** Complete-line overscan retained outside the requested range. */
     public val overscan: LineOverscan,
     /** Optional resource-free prior state metadata. */
@@ -638,7 +638,7 @@ public class IncrementalLayoutRequest internal constructor(
 public fun createIncrementalLayoutRequest(
     input: LayoutInput,
     requestedRange: TextRange,
-    constraints: HorizontalParagraphConstraints,
+    constraints: ParagraphConstraints,
     overscan: LineOverscan,
     previousState: LayoutStateHandle?,
     delta: LayoutDelta?,
@@ -892,7 +892,7 @@ public sealed interface IncrementalLayoutResult {
 }
 
 private data class LayoutConfigurationValue(
-    val constraints: HorizontalParagraphConstraints,
+    val constraints: ParagraphConstraints,
     val resolutionPolicy: ResolutionPolicyConfigurationValue,
     val fontInstanceDescriptor: FontInstanceDescriptor,
     val features: List<OpenTypeFeature>,

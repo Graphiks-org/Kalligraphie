@@ -69,6 +69,23 @@ public class InlineObjectDefinition(
         require(height.value > 0f) { "Inline object height must be strictly positive." }
         require(baselineOffset.value >= 0f) { "Inline object baseline offsets must be non-negative." }
     }
+
+    /** Compares every resource-free geometry and attachment input. */
+    override fun equals(other: Any?): Boolean =
+        other is InlineObjectDefinition &&
+            id == other.id &&
+            width == other.width &&
+            height == other.height &&
+            baselineOffset == other.baselineOffset &&
+            alignment == other.alignment
+
+    /** Returns a stable hash of every resource-free geometry and attachment input. */
+    override fun hashCode(): Int =
+        31 * (31 * (31 * (31 * id.hashCode() + width.hashCode()) + height.hashCode()) + baselineOffset.hashCode()) + alignment.hashCode()
+
+    /** Returns a diagnostic form containing the resource-free definition. */
+    override fun toString(): String =
+        "InlineObjectDefinition(id=$id, width=$width, height=$height, baselineOffset=$baselineOffset, alignment=$alignment)"
 }
 
 /**
@@ -79,7 +96,17 @@ public class InlineObjectEntry(
     public val index: TextIndex,
     /** Definition of the object placed at [index]. */
     public val definition: InlineObjectDefinition,
-)
+) {
+    /** Compares the snapshot boundary and its complete resource-free definition. */
+    override fun equals(other: Any?): Boolean =
+        other is InlineObjectEntry && index == other.index && definition == other.definition
+
+    /** Returns a stable hash of the snapshot boundary and its complete definition. */
+    override fun hashCode(): Int = 31 * index.hashCode() + definition.hashCode()
+
+    /** Returns a diagnostic form containing the snapshot boundary and definition. */
+    override fun toString(): String = "InlineObjectEntry(index=$index, definition=$definition)"
+}
 
 /**
  * Immutable snapshot mapping `U+FFFC` object replacement scalars to definitions.
@@ -104,6 +131,15 @@ public class InlineObjectSnapshot(
     /** Returns the definition bound to [index], or `null` when none is bound. */
     public fun definition(index: TextIndex): InlineObjectDefinition? =
         this.entries.firstOrNull { entry -> entry.index == index }?.definition
+
+    /** Compares every ordered inline-object association. */
+    override fun equals(other: Any?): Boolean = other is InlineObjectSnapshot && entries == other.entries
+
+    /** Returns a stable hash of every ordered inline-object association. */
+    override fun hashCode(): Int = entries.hashCode()
+
+    /** Returns a diagnostic form containing every ordered inline-object association. */
+    override fun toString(): String = "InlineObjectSnapshot(entries=$entries)"
 }
 
 /**

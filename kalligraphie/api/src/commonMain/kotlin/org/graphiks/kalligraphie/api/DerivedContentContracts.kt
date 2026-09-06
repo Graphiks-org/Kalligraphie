@@ -4,10 +4,9 @@ package org.graphiks.kalligraphie.api
  * Typed role explaining why a final glyph exists when it is not the direct
  * cursor-shaped output of the source scalars.
  *
- * Roles are durable domain vocabulary: they never name a milestone, plan, or
- * internal scheduling artifact. A role classifies the typographic transform
- * that produced the glyph so a consumer can understand and audit why the
- * glyph exists without ever turning derived or synthetic content into
+ * Roles are durable typographic domain vocabulary. A role classifies the
+ * transform that produced the glyph so a consumer can understand and audit
+ * why the glyph exists without ever turning derived or synthetic content into
  * document characters.
  */
 public enum class GlyphProvenanceRole {
@@ -23,9 +22,12 @@ public enum class GlyphProvenanceRole {
      */
     AUTOMATIC_HYPHEN,
 
+    /** The source glyph was substituted or rotated for vertical presentation. */
+    VERTICAL_ORIENTATION,
+
     /**
      * The glyph is a justification-extended kashida (tatweel) inserted to
-     * stretch an Arabic-script line between words or letters.
+     * stretch an Arabic-script line at a valid letter-joining boundary.
      */
     KASHIDA,
 
@@ -73,7 +75,7 @@ public enum class HyphenationMode {
  * The identity participates in replay identity: two services with different
  * [dataRevision] identifiers may produce different break sets, while equal
  * identities must produce equal break sets for equal input words and equal
- * [HyphenationService.hyphenmins].
+ * [minimums].
  */
 public class HyphenationServiceIdentity(
     /** Stable provider identifier. */
@@ -82,6 +84,8 @@ public class HyphenationServiceIdentity(
     public val dataRevision: String,
     /** Immutable BCP 47 language tags this service serves, in declared order. */
     public val languages: List<String>,
+    /** Per-side minimums applied to every automatic hyphenation query. */
+    public val minimums: HyphenationMinimums = HyphenationMinimums.default,
 ) {
     /** Immutable defensive language snapshot. */
     public val languagesSnapshot: List<String> = languages.immutableListSnapshot()
@@ -92,6 +96,22 @@ public class HyphenationServiceIdentity(
         require(this.languagesSnapshot.isNotEmpty()) { "A hyphenation service must declare at least one language." }
         require(this.languagesSnapshot.all { tag -> tag.isNotBlank() }) { "Hyphenation language tags must not be blank." }
     }
+
+    /** Compares the complete deterministic hyphenation configuration. */
+    override fun equals(other: Any?): Boolean =
+        other is HyphenationServiceIdentity &&
+            providerId == other.providerId &&
+            dataRevision == other.dataRevision &&
+            languagesSnapshot == other.languagesSnapshot &&
+            minimums == other.minimums
+
+    /** Returns a stable hash of the complete deterministic hyphenation configuration. */
+    override fun hashCode(): Int =
+        31 * (31 * (31 * providerId.hashCode() + dataRevision.hashCode()) + languagesSnapshot.hashCode()) + minimums.hashCode()
+
+    /** Returns a diagnostic form containing the complete deterministic configuration. */
+    override fun toString(): String =
+        "HyphenationServiceIdentity(providerId=$providerId, dataRevision=$dataRevision, languages=$languagesSnapshot, minimums=$minimums)"
 }
 
 /**
@@ -114,13 +134,13 @@ public interface HyphenationService {
      * [word] contains Unicode scalar values, never surrogate pairs or malformed
      * subsequences. [language] is the BCP 47 tag used for this word; services
      * without support for [language] return a deterministic empty result
-     * rather than an exception or approximate data. [hyphenmins] overrides the
-     * service defaults for this call.
+     * rather than an exception or approximate data. [hyphenmins] defaults to the
+     * immutable [HyphenationServiceIdentity.minimums] captured by [identity].
      */
     public fun hyphenation(
         word: List<Int>,
         language: String,
-        hyphenmins: HyphenationMinimums = HyphenationMinimums.default,
+        hyphenmins: HyphenationMinimums = identity.minimums,
     ): List<Int>
 }
 
@@ -135,6 +155,16 @@ public class HyphenationMinimums(
         require(left >= 1) { "Hyphenation minimum on the left must be at least one scalar." }
         require(right >= 1) { "Hyphenation minimum on the right must be at least one scalar." }
     }
+
+    /** Compares both deterministic minimum values. */
+    override fun equals(other: Any?): Boolean =
+        other is HyphenationMinimums && left == other.left && right == other.right
+
+    /** Returns a stable hash of both deterministic minimum values. */
+    override fun hashCode(): Int = 31 * left + right
+
+    /** Returns a diagnostic form containing both minimum values. */
+    override fun toString(): String = "HyphenationMinimums(left=$left, right=$right)"
 
     /** Default per-side minimum of two scalars on the left and three on the right. */
     public companion object {
@@ -171,6 +201,25 @@ public class ParagraphPositioningPolicy(
             "Tab stops must be strictly ordered by position."
         }
     }
+
+    /** Compares every alignment, justification, and tab-stop input. */
+    override fun equals(other: Any?): Boolean =
+        other is ParagraphPositioningPolicy &&
+            alignment == other.alignment &&
+            justificationMode == other.justificationMode &&
+            lastLineAlignment == other.lastLineAlignment &&
+            tabStops == other.tabStops &&
+            defaultTabInterval == other.defaultTabInterval
+
+    /** Returns a stable hash of every alignment, justification, and tab-stop input. */
+    override fun hashCode(): Int =
+        31 * (31 * (31 * (31 * alignment.hashCode() + justificationMode.hashCode()) +
+            (lastLineAlignment?.hashCode() ?: 0)) + tabStops.hashCode()) + defaultTabInterval.hashCode()
+
+    /** Returns a diagnostic form containing every alignment, justification, and tab-stop input. */
+    override fun toString(): String =
+        "ParagraphPositioningPolicy(alignment=$alignment, justificationMode=$justificationMode, " +
+            "lastLineAlignment=$lastLineAlignment, tabStops=$tabStops, defaultTabInterval=$defaultTabInterval)"
 }
 
 /** Physical alignment of line content within one line box. */

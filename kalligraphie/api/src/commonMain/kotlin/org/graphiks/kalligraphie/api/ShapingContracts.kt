@@ -9,6 +9,9 @@ public enum class ShapingDirection {
 
     /** Right-to-left shaping; the associated resolved BiDi level must be odd. */
     RIGHT_TO_LEFT,
+
+    /** Top-to-bottom shaping; the UAX #9 embedding level remains metadata, not a progression axis. */
+    TOP_TO_BOTTOM,
 }
 
 /**
@@ -560,6 +563,7 @@ private fun ShapingDirection.matches(level: Int): Boolean =
     when (this) {
         ShapingDirection.LEFT_TO_RIGHT -> level % 2 == 0
         ShapingDirection.RIGHT_TO_LEFT -> level % 2 != 0
+        ShapingDirection.TOP_TO_BOTTOM -> true
     }
 
 private fun requireTextPartition(owner: TextRange, ranges: List<TextRange>, label: String) {

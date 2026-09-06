@@ -10,6 +10,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))
+            implementation(project(":kalligraphie:unicode"))
         }
         jvmTest.dependencies {
             implementation(project(":kalligraphie:unicode"))

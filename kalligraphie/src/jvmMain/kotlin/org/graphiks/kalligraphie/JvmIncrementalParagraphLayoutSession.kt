@@ -3,7 +3,6 @@ package org.graphiks.kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FontOperationResult
-import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.IncrementalLayoutError
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
@@ -21,11 +20,15 @@ import org.graphiks.kalligraphie.api.HyphenationService
 import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
+import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.TextIndex
+import org.graphiks.kalligraphie.api.TextOrientation
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
+import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 import org.graphiks.kalligraphie.layout.IncrementalComputationTail
 import org.graphiks.kalligraphie.layout.IncrementalComputedLine
@@ -68,6 +71,10 @@ public class JvmIncrementalParagraphLayoutRequest(
     public val hyphenationService: HyphenationService? = null,
     /** Definitions bound to `U+FFFC` object replacement scalars inside the window. */
     public val inlineObjects: InlineObjectSnapshot? = null,
+    /** Unicode orientation policy applied to extended grapheme clusters in vertical composition. */
+    public val textOrientation: TextOrientation = TextOrientation.MIXED,
+    /** Policy used when a resolved vertical glyph has no usable `vhea` or `vmtx` metric. */
+    public val verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
 ) {
     init {
         require(language.isNotBlank()) { "Incremental paragraph language must not be blank." }
@@ -83,10 +90,10 @@ public class JvmIncrementalParagraphLayoutRequest(
  * [IncrementalLayoutResult.Obsolete], cancellation publishes nothing, and both outcomes preserve
  * the latest complete publication. Published state contains only resource-free checkpoints;
  * borrowed materialization resolvers and temporary paragraph work remain confined to a call.
- * Each line considers the exact J4 candidate segment through the next mandatory UAX #14 boundary;
+ * Each line considers the exact candidate segment through the next mandatory UAX #14 boundary;
  * when no mandatory boundary remains, signed glyph advances require conservative consideration
  * through document end. This may shape a long soft-wrapped suffix, but never invents a terminal
- * boundary that could change which complete line J4 selects.
+ * boundary that could change which complete line is selected.
  *
  * The session owns its HarfBuzz backend. [close] is idempotent and is linearized with layout and
  * publication, so a racing close happens wholly before or after a layout attempt. Calls to
@@ -241,7 +248,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         val mandatoryBoundaries = lineBreakAnalysis.opportunities
             .filter { opportunity -> opportunity.kind == LineBreakKind.MANDATORY }
             .map { opportunity -> opportunity.boundary }
-        val initialTop = reflowTop(target, request)
+        val initialBlockCursor = reflowBlockCursor(target, request)
             ?: return ComputerWork(
                 IncrementalParagraphComputation.Failure(
                     IncrementalLayoutError.InvalidRange(
@@ -250,7 +257,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                 ),
             )
         var lineStart = target.reflowStart
-        var lineTop = initialTop
+        var blockCursor = initialBlockCursor
         var targetCovered = false
         var remainingAfterOverscan = overscan.lineCount
         val computed = mutableListOf<IncrementalComputedLine>()
@@ -263,7 +270,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             val segmentEnd = mandatoryBoundaries.firstOrNull { boundary -> boundary > lineStart }
                 ?: documentEnd
             val sourceRange = TextRange(lineStart, segmentEnd)
-            val continuation = continuationForWindow(sessionRequest, request, sourceRange, lineTop)
+            val continuation = continuationForWindow(sessionRequest, request, sourceRange, blockCursor)
             if (lineStart != snapshot.range.start && continuation == null) {
                 return if (request.cancellationToken.isCancellationRequested()) {
                     ComputerWork(IncrementalParagraphComputation.Cancelled)
@@ -281,7 +288,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                 request = JvmEditableParagraphFacadeRequest(
                     snapshot = snapshot,
                     sourceRange = sourceRange,
-                    constraints = oneLineConstraints(request.constraints, lineTop),
+                    constraints = oneLineConstraints(request.constraints, blockCursor),
                     baseDirection = sessionRequest.baseDirection,
                     language = sessionRequest.language,
                     fontCatalog = request.input.typography.fontCatalog,
@@ -294,6 +301,8 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                     hyphenationMode = sessionRequest.hyphenationMode,
                     hyphenationService = sessionRequest.hyphenationService,
                     inlineObjects = sessionRequest.inlineObjects,
+                    textOrientation = sessionRequest.textOrientation,
+                    verticalMetricsPolicy = sessionRequest.verticalMetricsPolicy,
                     continuation = continuation,
                     cancellationToken = request.cancellationToken,
                 ),
@@ -321,13 +330,13 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                         ),
                     ),
                 )
-            val nextTop = line.lineBox.bottom
-            lineTops += LineTop(line.range.start, line.lineBox.top)
+            val nextBlockCursor = nextBlockCursor(line, request.constraints.writingMode)
+            lineTops += LineTop(line.range.start, lineBlockCursor(line, request.constraints.writingMode))
             computed += IncrementalComputedLine(
                 line = line,
                 continuation = LayoutContinuationSignature(
                     boundary = line.range.endExclusive,
-                    semanticValue = continuationSemantics(sessionRequest, request, nextTop),
+                    semanticValue = continuationSemantics(sessionRequest, request, nextBlockCursor),
                 ),
             )
 
@@ -364,7 +373,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                     )
                 }
             lineStart = next.remainingSourceRange.start
-            lineTop = next.resumptionRegionTop
+            blockCursor = next.resumptionBlockCursor
         }
     }
 
@@ -386,11 +395,13 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         )
     }
 
-    private fun reflowTop(
+    private fun reflowBlockCursor(
         target: IncrementalMaterializationTarget,
         request: IncrementalLayoutRequest,
     ): LayoutUnit? {
-        if (target.reflowStart == request.input.text.range.start) return request.constraints.region.top
+        if (target.reflowStart == request.input.text.range.start) {
+            return initialBlockCursor(request.constraints)
+        }
         val metadata = publicationMetadata ?: return null
         if (request.previousState !== metadata.state) return null
         return metadata.lineTops.firstNotNullOfOrNull { checkpoint ->
@@ -401,7 +412,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             ) ?: checkpoint.start.takeIf { start ->
                 start.sharesVersionWith(request.input.text.range.start)
             }
-            checkpoint.top.takeIf { mapped == target.reflowStart }
+            checkpoint.blockCursor.takeIf { mapped == target.reflowStart }
         }
     }
 
@@ -409,7 +420,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         sessionRequest: JvmIncrementalParagraphLayoutRequest,
         request: IncrementalLayoutRequest,
         sourceRange: TextRange,
-        top: LayoutUnit,
+        blockCursor: LayoutUnit,
     ): LayoutContinuation? {
         if (sourceRange.start == request.input.text.range.start) return null
         return try {
@@ -417,7 +428,10 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                 request = JvmEditableParagraphFacadeRequest(
                     snapshot = request.input.text,
                     sourceRange = sourceRange,
-                    constraints = oneLineConstraints(request.constraints, request.constraints.region.top),
+                    constraints = oneLineConstraints(
+                        request.constraints,
+                        initialBlockCursor(request.constraints),
+                    ),
                     baseDirection = sessionRequest.baseDirection,
                     language = sessionRequest.language,
                     fontCatalog = request.input.typography.fontCatalog,
@@ -426,11 +440,23 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                     features = request.input.typography.features,
                     materialization = sessionRequest.materialization,
                     overflowPolicy = sessionRequest.overflowPolicy,
+                    positioning = sessionRequest.positioning,
+                    hyphenationMode = sessionRequest.hyphenationMode,
+                    hyphenationService = sessionRequest.hyphenationService,
+                    inlineObjects = sessionRequest.inlineObjects,
+                    textOrientation = sessionRequest.textOrientation,
+                    verticalMetricsPolicy = sessionRequest.verticalMetricsPolicy,
                     cancellationToken = request.cancellationToken,
                 ),
                 backend = backend,
                 remainingSourceRange = sourceRange,
-                resumptionRegionTop = top,
+                resumptionRegionTop = when (request.constraints.writingMode) {
+                    WritingMode.HORIZONTAL_TB -> blockCursor
+                    WritingMode.VERTICAL_RL,
+                    WritingMode.VERTICAL_LR,
+                    -> request.constraints.region.top
+                },
+                resumptionBlockCursor = blockCursor,
             )
         } catch (_: IllegalArgumentException) {
             null
@@ -454,24 +480,74 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     }
 
     private fun oneLineConstraints(
-        constraints: HorizontalParagraphConstraints,
-        top: LayoutUnit,
-    ): HorizontalParagraphConstraints = HorizontalParagraphConstraints(
-        region = LayoutRect(
-            left = constraints.region.left,
-            top = top,
-            right = constraints.region.right,
-            bottom = LayoutUnit(top.value + constraints.lineMetrics.height.value),
-        ),
-        lineMetrics = constraints.lineMetrics,
-    )
+        constraints: ParagraphConstraints,
+        blockCursor: LayoutUnit,
+    ): ParagraphConstraints = when (constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> ParagraphConstraints(
+            region = LayoutRect(
+                left = constraints.region.left,
+                top = blockCursor,
+                right = constraints.region.right,
+                bottom = LayoutUnit(blockCursor.value + constraints.lineMetrics.height.value),
+            ),
+            lineMetrics = constraints.lineMetrics,
+            writingMode = constraints.writingMode,
+        )
+
+        WritingMode.VERTICAL_RL -> ParagraphConstraints(
+            region = LayoutRect(
+                left = LayoutUnit(blockCursor.value - constraints.lineMetrics.height.value),
+                top = constraints.region.top,
+                right = blockCursor,
+                bottom = constraints.region.bottom,
+            ),
+            lineMetrics = constraints.lineMetrics,
+            writingMode = constraints.writingMode,
+        )
+
+        WritingMode.VERTICAL_LR -> ParagraphConstraints(
+            region = LayoutRect(
+                left = blockCursor,
+                top = constraints.region.top,
+                right = LayoutUnit(blockCursor.value + constraints.lineMetrics.height.value),
+                bottom = constraints.region.bottom,
+            ),
+            lineMetrics = constraints.lineMetrics,
+            writingMode = constraints.writingMode,
+        )
+    }
+
+    private fun initialBlockCursor(constraints: ParagraphConstraints): LayoutUnit = when (constraints.writingMode) {
+        WritingMode.HORIZONTAL_TB -> constraints.region.top
+        WritingMode.VERTICAL_RL -> constraints.region.right
+        WritingMode.VERTICAL_LR -> constraints.region.left
+    }
+
+    private fun lineBlockCursor(
+        line: org.graphiks.kalligraphie.api.LineLayout,
+        writingMode: WritingMode,
+    ): LayoutUnit = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> line.lineBox.top
+        WritingMode.VERTICAL_RL -> line.lineBox.right
+        WritingMode.VERTICAL_LR -> line.lineBox.left
+    }
+
+    private fun nextBlockCursor(
+        line: org.graphiks.kalligraphie.api.LineLayout,
+        writingMode: WritingMode,
+    ): LayoutUnit = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> line.lineBox.bottom
+        WritingMode.VERTICAL_RL -> line.lineBox.left
+        WritingMode.VERTICAL_LR -> line.lineBox.right
+    }
 
     private fun continuationSemantics(
         sessionRequest: JvmIncrementalParagraphLayoutRequest,
         request: IncrementalLayoutRequest,
-        nextTop: LayoutUnit,
+        nextBlockCursor: LayoutUnit,
     ): String = buildString {
-        append("top=").append(nextTop.value)
+        append("block-cursor=").append(nextBlockCursor.value)
+        append(";writing-mode=").append(request.constraints.writingMode)
         append(";left=").append(request.constraints.region.left.value)
         append(";width=").append(request.constraints.width.value)
         append(";metrics=").append(request.constraints.lineMetrics)
@@ -485,6 +561,12 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         append(";features=").append(request.input.typography.features)
         append(";materialization=").append(sessionRequest.materialization.identityForSession())
         append(";overflow=").append(sessionRequest.overflowPolicy)
+        append(";positioning=").append(sessionRequest.positioning)
+        append(";hyphenation-mode=").append(sessionRequest.hyphenationMode)
+        append(";hyphenation-service=").append(sessionRequest.hyphenationService?.identity)
+        append(";inline-objects=").append(sessionRequest.inlineObjects)
+        append(";orientation=").append(sessionRequest.textOrientation)
+        append(";vertical-metrics=").append(sessionRequest.verticalMetricsPolicy)
     }
 
     /** Opens the pinned JVM HarfBuzz backend and transfers its ownership to a new session. */
@@ -530,7 +612,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
 
     private data class LineTop(
         val start: TextIndex,
-        val top: LayoutUnit,
+        val blockCursor: LayoutUnit,
     )
 
     private data class ComputerWork(
@@ -549,6 +631,12 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         val language: String,
         val materializationIdentity: ParagraphMaterializationIdentity,
         val overflowPolicy: OverflowPolicy,
+        val positioning: ParagraphPositioningPolicy,
+        val hyphenationMode: HyphenationMode,
+        val hyphenationServiceIdentity: org.graphiks.kalligraphie.api.HyphenationServiceIdentity?,
+        val inlineObjects: InlineObjectSnapshot?,
+        val textOrientation: TextOrientation,
+        val verticalMetricsPolicy: VerticalMetricsPolicy,
     ) {
         companion object {
             fun from(request: JvmIncrementalParagraphLayoutRequest): JvmCompositionConfiguration =
@@ -557,6 +645,12 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                     language = request.language,
                     materializationIdentity = ParagraphMaterializationIdentity.from(request.materialization),
                     overflowPolicy = request.overflowPolicy,
+                    positioning = request.positioning,
+                    hyphenationMode = request.hyphenationMode,
+                    hyphenationServiceIdentity = request.hyphenationService?.identity,
+                    inlineObjects = request.inlineObjects,
+                    textOrientation = request.textOrientation,
+                    verticalMetricsPolicy = request.verticalMetricsPolicy,
                 )
         }
     }

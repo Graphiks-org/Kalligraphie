@@ -33,6 +33,7 @@ import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.toDiagnostic
 
 /** Resolves one captured line input into shaped runs without leaking temporary assets. */
@@ -49,6 +50,7 @@ internal object FontFallbackResolver {
             shapingBackend = request.shapingBackend,
             materialization = request.materialization,
             features = request.features,
+            writingMode = WritingMode.HORIZONTAL_TB,
             cancellationToken = request.cancellationToken,
         ),
     )
@@ -72,6 +74,7 @@ internal object FontFallbackResolver {
             shapingBackend = request.shapingBackend,
             materialization = materialization,
             features = request.features,
+            writingMode = request.constraints.writingMode,
             cancellationToken = request.cancellationToken,
         ),
     )
@@ -304,14 +307,14 @@ internal object FontFallbackResolver {
                     snapshot = request.snapshot,
                     range = fragment.range,
                     font = first.instance,
-                    direction = if (fragment.bidiLevel % 2 == 0) ShapingDirection.LEFT_TO_RIGHT else ShapingDirection.RIGHT_TO_LEFT,
+                    direction = request.shapingDirection(fragment.bidiLevel),
                     script = org.graphiks.kalligraphie.api.OpenTypeScript(fragment.script),
                     language = fragment.language,
                     bidiLevel = fragment.bidiLevel,
                     bot = fragment.range.start == request.shapingContextRange.start,
                     eot = fragment.range.endExclusive == request.shapingContextRange.endExclusive,
                     featurePolicy = request.shapingBackend.identity.featurePolicy,
-                    features = request.features,
+                    features = request.effectiveFeatures(),
                     graphemeClusters = graphemeFragments(fragment.range, request.unicodeAnalysis.graphemeClusters),
                 ),
             )
@@ -348,14 +351,14 @@ internal object FontFallbackResolver {
             range = fragment.range,
             fontInstanceKey = instance.key,
             backendIdentity = request.shapingBackend.identity,
-            direction = if (fragment.bidiLevel % 2 == 0) ShapingDirection.LEFT_TO_RIGHT else ShapingDirection.RIGHT_TO_LEFT,
+            direction = request.shapingDirection(fragment.bidiLevel),
             script = OpenTypeScript(fragment.script),
             language = fragment.language,
             bidiLevel = fragment.bidiLevel,
             bot = fragment.range.start == request.shapingContextRange.start,
             eot = fragment.range.endExclusive == request.shapingContextRange.endExclusive,
             featurePolicy = request.shapingBackend.identity.featurePolicy,
-            features = request.features,
+            features = request.effectiveFeatures(),
             graphemeClusters = graphemes,
             glyphs = emptyList(),
             clusters = scalarRanges.mapIndexed { index, scalarRange ->
@@ -631,6 +634,7 @@ internal object FontFallbackResolver {
         val shapingBackend: ShapingBackend,
         val materialization: EditableLineMaterialization,
         val features: List<OpenTypeFeature>,
+        val writingMode: WritingMode,
         val cancellationToken: CancellationToken,
     ) {
         init {
@@ -639,6 +643,22 @@ internal object FontFallbackResolver {
             require(sourceRange.start >= shapingContextRange.start && sourceRange.endExclusive <= shapingContextRange.endExclusive)
             require(unicodeAnalysis.range.start <= sourceRange.start && unicodeAnalysis.range.endExclusive >= sourceRange.endExclusive)
         }
+    }
+
+    private fun ResolutionRequest.shapingDirection(bidiLevel: Int): ShapingDirection = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> if (bidiLevel % 2 == 0) ShapingDirection.LEFT_TO_RIGHT else ShapingDirection.RIGHT_TO_LEFT
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> ShapingDirection.TOP_TO_BOTTOM
+    }
+
+    private fun ResolutionRequest.effectiveFeatures(): List<OpenTypeFeature> = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> features
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> features.filterNot { feature -> feature.tag == VERTICAL_ALTERNATES || feature.tag == VERTICAL_ROTATION }
+            .plus(OpenTypeFeature(VERTICAL_ALTERNATES, 1))
+            .plus(OpenTypeFeature(VERTICAL_ROTATION, 1))
     }
 
     private val IGNORED_MAPPING_SCALARS: Set<Int> = buildSet {
@@ -659,4 +679,6 @@ internal object FontFallbackResolver {
 
     private const val TAB_SCALAR: Int = 0x0009
     private const val OBJECT_REPLACEMENT: Int = 0xFFFC
+    private const val VERTICAL_ALTERNATES: String = "vert"
+    private const val VERTICAL_ROTATION: String = "vrt2"
 }

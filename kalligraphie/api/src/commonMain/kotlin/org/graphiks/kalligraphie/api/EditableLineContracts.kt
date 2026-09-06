@@ -1,6 +1,6 @@
 package org.graphiks.kalligraphie.api
 
-/** A finite point in the portable horizontal layout coordinate system. */
+/** A finite point in the portable physical layout coordinate system. */
 public data class LayoutPoint(
     /** Horizontal coordinate; values grow toward the physical right. */
     public val x: LayoutUnit,
@@ -8,7 +8,7 @@ public data class LayoutPoint(
     public val y: LayoutUnit,
 )
 
-/** A finite displacement in the portable horizontal layout coordinate system. */
+/** A finite displacement in the portable physical layout coordinate system. */
 public data class LayoutVector(
     /** Horizontal displacement. */
     public val x: LayoutUnit,
@@ -23,6 +23,56 @@ public data class LayoutSegment(
     /** Second endpoint of the segment. */
     public val end: LayoutPoint,
 )
+
+/**
+ * Finite linear transform applied to a glyph around its final [PositionedGlyph.origin].
+ *
+ * The matrix uses the physical `x`-right, `y`-down coordinate system and column vectors:
+ * `(x', y') = (a * x + c * y, b * x + d * y)`. It deliberately carries no translation because
+ * glyph placement remains explicit in [PositionedGlyph.origin]. The renderer receives this
+ * transform but remains responsible for producing paths, textures, or pixels.
+ */
+public class LayoutAffineTransform(
+    a: Float,
+    b: Float,
+    c: Float,
+    d: Float,
+) {
+    /** First-row, first-column linear matrix component. */
+    public val a: Float = canonicalTransformComponent(a)
+
+    /** Second-row, first-column linear matrix component. */
+    public val b: Float = canonicalTransformComponent(b)
+
+    /** First-row, second-column linear matrix component. */
+    public val c: Float = canonicalTransformComponent(c)
+
+    /** Second-row, second-column linear matrix component. */
+    public val d: Float = canonicalTransformComponent(d)
+
+    /** Whether this transform preserves the glyph's code-chart orientation. */
+    public val isIdentity: Boolean get() = this == identity
+
+    override fun equals(other: Any?): Boolean =
+        other is LayoutAffineTransform && a == other.a && b == other.b && c == other.c && d == other.d
+
+    override fun hashCode(): Int = (((a.hashCode() * 31) + b.hashCode()) * 31 + c.hashCode()) * 31 + d.hashCode()
+
+    override fun toString(): String = "LayoutAffineTransform(a=$a, b=$b, c=$c, d=$d)"
+
+    public companion object {
+        /** No glyph rotation or shear. */
+        public val identity: LayoutAffineTransform = LayoutAffineTransform(1f, 0f, 0f, 1f)
+
+        /** A clockwise quarter turn in physical `x`-right, `y`-down coordinates. */
+        public val clockwiseQuarterTurn: LayoutAffineTransform = LayoutAffineTransform(0f, 1f, -1f, 0f)
+    }
+}
+
+private fun canonicalTransformComponent(value: Float): Float {
+    require(value.isFinite()) { "Glyph transform components must be finite." }
+    return if (value == 0f) 0f else value
+}
 
 /**
  * Axis-aligned portable layout geometry.
@@ -47,11 +97,12 @@ public data class LayoutRect(
 }
 
 /**
- * Explicit vertical metrics for one horizontal, non-wrapped editable line.
+ * Explicit cross-inline metrics for one non-wrapped editable line.
  *
- * Both metrics are distances from the baseline `(0, 0)`: ascent extends upward and descent
- * extends downward in the physical `y`-down coordinate system. Values are supplied by the
- * consumer because the current portable font contract does not publish vertical line metrics.
+ * Both metrics are distances from the baseline `(0, 0)`. In horizontal writing, ascent extends
+ * upward and descent downward on physical `y`; vertical writing projects the same line rhythm on
+ * physical `x`. Values are supplied by the consumer because this contract deliberately separates
+ * line rhythm from per-glyph OpenType metrics.
  */
 public class LineVerticalMetrics(
     /** Non-negative distance from the baseline to the line top. */
@@ -133,7 +184,7 @@ public enum class CaretStrength {
 public class CaretCandidate(
     /** Logical text position represented by this concrete geometry. */
     public val position: CaretPosition,
-    /** Vertical caret segment from the line top to its bottom. */
+    /** Axis-aligned caret segment across the local line box. */
     public val geometry: LayoutSegment,
     /** Zero-based visual traversal order within the line. */
     public val visualOrder: Int,
@@ -155,8 +206,12 @@ public class CaretCandidate(
         }
         require(bidiLevel in 0..126) { "Caret BiDi level must be between 0 and 126." }
         require(direction.matchesBidiLevel(bidiLevel)) { "Caret direction must agree with its BiDi level." }
-        require(geometry.start.x == geometry.end.x) { "Editable-line carets must be vertical segments." }
-        require(geometry.start.y <= geometry.end.y) { "Caret geometry must progress from line top to bottom." }
+        require(geometry.start.x == geometry.end.x || geometry.start.y == geometry.end.y) {
+            "Editable-line carets must be axis-aligned segments."
+        }
+        require(geometry.start.x <= geometry.end.x && geometry.start.y <= geometry.end.y) {
+            "Caret geometry must use canonical physical endpoint order."
+        }
     }
 
     /** Sentinel values used when no positioned run can own a candidate. */
@@ -214,7 +269,7 @@ public data class GlyphMaterializationCertificate(
  * Final placement of one shaped glyph with direct source-cluster relationships.
  *
  * [origin] includes the shaped glyph's placement offsets and is relative to the editable
- * line baseline `(0, 0)`. [sourceClusters] duplicates no relation by index: it directly owns
+ * line baseline `(0, 0)` in physical coordinates. [sourceClusters] duplicates no relation by index: it directly owns
  * the immutable cluster values associated with [shapedGlyph].
  */
 public class PositionedGlyph(
@@ -223,8 +278,10 @@ public class PositionedGlyph(
     sourceClusters: List<ShaperCluster>,
     /** Final glyph origin relative to the line baseline. */
     public val origin: LayoutPoint,
-    /** Final glyph advance in the physical horizontal coordinate system. */
+    /** Final glyph advance in physical `x`-right, `y`-down coordinates. */
     public val advance: LayoutVector,
+    /** Visual orientation applied around [origin] without changing text-to-glyph relations. */
+    public val transform: LayoutAffineTransform = LayoutAffineTransform.identity,
     /** Exact render asset key in renderable mode, or `null` in layout-only mode. */
     public val renderAssetKey: FontRenderAssetKey?,
     /** Trusted outline-route validation record in renderable mode, or `null` in layout-only mode. */
@@ -613,15 +670,18 @@ public class MultiFontEditableLineRequest(
 }
 
 /**
- * Complete portable input to one horizontal, non-wrapped editable-line operation.
+ * Complete portable input to one non-wrapped editable-line operation.
  *
  * The analysis must cover its entire snapshot range. Runs must be contiguous in logical source
- * order, preserve exactly the analyzed extended-grapheme partition, have zero vertical advance,
- * and use a key declared in [fontInstances]. Their direction, level, script, language, and the line's
- * [baseDirection] stay explicit rather than inferred from text or a left-to-right default. An
- * empty line needs no font instance because it has no glyph or render-asset route. The
- * request retains no resource except the borrowed resolver named by [materialization]. Contract
- * incompatibilities are programming errors reported by construction preconditions.
+ * order, preserve exactly the analyzed extended-grapheme partition, and use horizontal advances.
+ * Vertical paragraph composition is owned by [ParagraphLayouter], which projects this
+ * horizontal line-finalization primitive to physical vertical geometry. Each run uses a key
+ * declared in [fontInstances]. Their
+ * direction, level, script, language, and the line's [baseDirection] stay explicit rather than
+ * inferred from text or a left-to-right default. An empty line needs no font instance because it
+ * has no glyph or render-asset route. The request retains no resource except the borrowed resolver
+ * named by [materialization]. Contract incompatibilities are programming errors reported by
+ * construction preconditions.
  */
 public class EditableLineRequest(
     /** Complete immutable Unicode analysis for the line's snapshot revision. */
@@ -667,8 +727,10 @@ public class EditableLineRequest(
     /** Whether this line is the final paragraph line, relaxing justification spacing. */
     public val isLastLine: Boolean = false,
     /** Automatic hyphenation boundaries materialized with a visible hyphen on this line. */
-    public val automaticHyphenBreaks: AutomaticHyphenBreaks? = null,    /** Ellipsis truncation applied to this finalized line, or `null` when none applies. */
-    public val ellipsis: LineEllipsisPolicy? = null,    /** Definitions bound to `U+FFFC` object replacement scalars inside this line. */
+    public val automaticHyphenBreaks: AutomaticHyphenBreaks? = null,
+    /** Ellipsis truncation applied to this finalized line, or `null` when none applies. */
+    public val ellipsis: LineEllipsisPolicy? = null,
+    /** Definitions bound to `U+FFFC` object replacement scalars inside this line. */
     public val inlineObjects: InlineObjectSnapshot? = null,
     /** Cooperative cancellation signal observed only during renderable font materialization. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
@@ -711,7 +773,7 @@ public class EditableLineRequest(
             "Every shaped run must use one request font instance key."
         }
         require(this.shapedGlyphRuns.all { run -> run.glyphs.all { glyph -> glyph.yAdvance.value == 0f } }) {
-            "Horizontal editable lines reject non-zero vertical glyph advances."
+            "Editable-line requests accept only horizontal glyph advances; vertical composition belongs to ParagraphLayouter."
         }
         require(softHyphenPolicy == null || snapshot != null) {
             "Soft-hyphen handling requires the line source snapshot."
@@ -766,7 +828,7 @@ public interface EditableLineLayouter {
 }
 
 /**
- * Immutable editable horizontal line and its exact editing operations.
+ * Immutable editable line and its exact editing operations.
  *
  * Glyph positions are relative to baseline `(0, 0)` in physical `x`-right/`y`-down coordinates.
  * The line is thread-safe because it owns immutable snapshots only and retains no font asset,
@@ -779,6 +841,8 @@ public class EditableLine(
     public val baseDirection: ShapingDirection,
     /** Explicit line-box metrics used by carets and selections. */
     public val verticalMetrics: LineVerticalMetrics,
+    /** Physical writing mode used by this line's glyph, caret, and selection geometry. */
+    public val writingMode: WritingMode = WritingMode.HORIZONTAL_TB,
     positionedGlyphRuns: List<PositionedGlyphRun>,
     caretCandidates: List<CaretCandidate>,
     inlineObjects: List<PositionedInlineObject> = emptyList(),
@@ -815,14 +879,25 @@ public class EditableLine(
         require(this.allCaretCandidates.map(CaretCandidate::visualOrder) == this.allCaretCandidates.indices.toList()) {
             "Caret candidates must use contiguous visual order."
         }
-        require(this.allCaretCandidates.zipWithNext().all { (left, right) -> compareCaretVisualPosition(left, right) <= 0 }) {
+        require(this.allCaretCandidates.zipWithNext().all { (left, right) ->
+            compareCaretVisualPosition(left, right, writingMode) <= 0
+        }) {
             "Caret candidates must be published in deterministic physical visual order."
         }
-        val expectedCaretTop = LayoutUnit(-verticalMetrics.ascent.value)
-        val expectedCaretBottom = verticalMetrics.descent
         require(this.allCaretCandidates.all { candidate ->
-            candidate.geometry.start.y == expectedCaretTop && candidate.geometry.end.y == expectedCaretBottom
-        }) { "Every caret geometry must span exactly the editable line vertical metrics." }
+            when (writingMode) {
+                WritingMode.HORIZONTAL_TB ->
+                    candidate.geometry.start.x == candidate.geometry.end.x &&
+                        candidate.geometry.start.y == LayoutUnit(-verticalMetrics.ascent.value) &&
+                        candidate.geometry.end.y == verticalMetrics.descent
+
+                WritingMode.VERTICAL_RL,
+                WritingMode.VERTICAL_LR,
+                -> candidate.geometry.start.y == candidate.geometry.end.y &&
+                    candidate.geometry.start.x == LayoutUnit(-verticalMetrics.ascent.value) &&
+                    candidate.geometry.end.x == verticalMetrics.descent
+            }
+        }) { "Every caret geometry must span exactly the editable line block-axis metrics." }
         require(this.allCaretCandidates.all { candidate ->
             candidate.position.index.sharesVersionWith(range.start) &&
                 candidate.position.index.compareTo(range.start) >= 0 &&
@@ -923,7 +998,7 @@ public class EditableLine(
     /**
      * Finds the closest concrete caret to [point] using the normative deterministic tie-break.
      *
-     * Candidates are compared by distance to their vertical segment, then visual order, then
+     * Candidates are compared by distance to their axis-aligned segment, then visual order, then
      * logical [TextIndex], then [CaretAffinity.DOWNSTREAM] before [CaretAffinity.UPSTREAM].
      */
     public fun hitTest(point: LayoutPoint): CaretCandidate =
@@ -960,24 +1035,51 @@ public class EditableLine(
                         candidate.position.index >= selectedStart &&
                         candidate.position.index <= selectedEnd
                 }
-                .map { candidate -> candidate.geometry.start.x }
+                .map { candidate ->
+                    when (writingMode) {
+                        WritingMode.HORIZONTAL_TB -> candidate.geometry.start.x
+                        WritingMode.VERTICAL_RL,
+                        WritingMode.VERTICAL_LR,
+                        -> candidate.geometry.start.y
+                    }
+                }
                 .toList()
             val coordinates = if (caretCoordinates.size >= 2) {
                 caretCoordinates
             } else {
                 caretCoordinates + run.glyphs.flatMap { glyph ->
-                    listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+                    when (writingMode) {
+                        WritingMode.HORIZONTAL_TB ->
+                            listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+
+                        WritingMode.VERTICAL_RL,
+                        WritingMode.VERTICAL_LR,
+                        -> listOf(glyph.origin.y, LayoutUnit(glyph.origin.y.value + glyph.advance.y.value))
+                    }
                 }
             }
-            val left = coordinates.minOrNull() ?: return@mapNotNull null
-            val right = coordinates.maxOrNull() ?: return@mapNotNull null
-            if (left == right) null else LayoutRect(left, lineTop(), right, lineBottom())
+            val start = coordinates.minOrNull() ?: return@mapNotNull null
+            val end = coordinates.maxOrNull() ?: return@mapNotNull null
+            if (start == end) {
+                null
+            } else {
+                when (writingMode) {
+                    WritingMode.HORIZONTAL_TB -> LayoutRect(start, lineTop(), end, lineBottom())
+                    WritingMode.VERTICAL_RL,
+                    WritingMode.VERTICAL_LR,
+                    -> LayoutRect(lineBlockStart(), start, lineBlockEnd(), end)
+                }
+            }
         }.immutableListSnapshot()
     }
 
     private fun lineTop(): LayoutUnit = LayoutUnit(-verticalMetrics.ascent.value)
 
     private fun lineBottom(): LayoutUnit = verticalMetrics.descent
+
+    private fun lineBlockStart(): LayoutUnit = LayoutUnit(-verticalMetrics.ascent.value)
+
+    private fun lineBlockEnd(): LayoutUnit = verticalMetrics.descent
 }
 
 private fun snapshotContainsRange(snapshot: TextSnapshot, range: TextRange): Boolean =
@@ -1055,6 +1157,7 @@ private fun ShapingDirection.matchesBidiLevel(level: Int): Boolean =
     when (this) {
         ShapingDirection.LEFT_TO_RIGHT -> level % 2 == 0
         ShapingDirection.RIGHT_TO_LEFT -> level % 2 != 0
+        ShapingDirection.TOP_TO_BOTTOM -> true
     }
 
 private fun affinityRank(affinity: CaretAffinity): Int = when (affinity) {
@@ -1062,9 +1165,18 @@ private fun affinityRank(affinity: CaretAffinity): Int = when (affinity) {
     CaretAffinity.UPSTREAM -> 1
 }
 
-private fun compareCaretVisualPosition(left: CaretCandidate, right: CaretCandidate): Int {
-    val x = left.geometry.start.x.compareTo(right.geometry.start.x)
-    if (x != 0) return x
+private fun compareCaretVisualPosition(
+    left: CaretCandidate,
+    right: CaretCandidate,
+    writingMode: WritingMode,
+): Int {
+    val inline = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> left.geometry.start.x.compareTo(right.geometry.start.x)
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> left.geometry.start.y.compareTo(right.geometry.start.y)
+    }
+    if (inline != 0) return inline
     val run = left.visualRunOrder.compareTo(right.visualRunOrder)
     if (run != 0) return run
     val index = left.position.index.compareTo(right.position.index)
@@ -1073,13 +1185,22 @@ private fun compareCaretVisualPosition(left: CaretCandidate, right: CaretCandida
 }
 
 private fun squaredDistanceToSegment(point: LayoutPoint, segment: LayoutSegment): Double {
-    val xDistance = point.x.value.toDouble() - segment.start.x.value.toDouble()
-    val vertical = when {
-        point.y < segment.start.y -> segment.start.y.value.toDouble() - point.y.value.toDouble()
-        point.y > segment.end.y -> point.y.value.toDouble() - segment.end.y.value.toDouble()
-        else -> 0.0
-    }
-    return xDistance * xDistance + vertical * vertical
+    val px = point.x.value.toDouble()
+    val py = point.y.value.toDouble()
+    val ax = segment.start.x.value.toDouble()
+    val ay = segment.start.y.value.toDouble()
+    val bx = segment.end.x.value.toDouble()
+    val by = segment.end.y.value.toDouble()
+    val dx = bx - ax
+    val dy = by - ay
+    val denominator = dx * dx + dy * dy
+    val parameter = if (denominator == 0.0) 0.0 else ((px - ax) * dx + (py - ay) * dy) / denominator
+    val clamped = parameter.coerceIn(0.0, 1.0)
+    val nearestX = ax + clamped * dx
+    val nearestY = ay + clamped * dy
+    val xDistance = px - nearestX
+    val yDistance = py - nearestY
+    return xDistance * xDistance + yDistance * yDistance
 }
 
 private fun maxIndex(first: TextIndex, second: TextIndex): TextIndex = if (first >= second) first else second

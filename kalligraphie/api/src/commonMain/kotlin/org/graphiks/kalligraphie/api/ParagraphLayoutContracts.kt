@@ -1,17 +1,60 @@
 package org.graphiks.kalligraphie.api
 
+/** Physical progression of lines and glyphs in a paragraph. */
+public enum class WritingMode {
+    /** Lines progress downward and their inline content progresses from left to right or right to left. */
+    HORIZONTAL_TB,
+
+    /** Glyphs progress from top to bottom and successive lines progress towards physical left. */
+    VERTICAL_RL,
+
+    /** Glyphs progress from top to bottom and successive lines progress towards physical right. */
+    VERTICAL_LR,
+}
+
 /**
- * Physical constraints for composing one horizontal paragraph in a rectangular region.
+ * Orientation policy for glyphs in a vertical writing mode.
+ *
+ * [MIXED] applies the versioned Unicode `Vertical_Orientation` default to each extended
+ * grapheme cluster. The explicit alternatives override that default for every cluster in the
+ * paragraph. This policy has no geometric effect in [WritingMode.HORIZONTAL_TB].
+ */
+public enum class TextOrientation {
+    /** Use the Unicode default: CJK is normally upright while ordinary Latin text is sideways. */
+    MIXED,
+
+    /** Keep every cluster upright. */
+    UPRIGHT,
+
+    /** Rotate every cluster clockwise. */
+    SIDEWAYS,
+}
+
+/** Policy used when a selected font has no usable OpenType vertical metrics. */
+public enum class VerticalMetricsPolicy {
+    /** Reject vertical composition unless every final glyph has metrics from `vhea` and `vmtx`. */
+    REQUIRE_FONT_METRICS,
+
+    /** Use the versioned portable one-em synthesis and publish a diagnostic for the affected font. */
+    SYNTHESIZE_IF_UNAVAILABLE,
+}
+
+/**
+ * Physical constraints for composing one paragraph in a rectangular region.
  *
  * Coordinates use the portable `x`-right, `y`-down paragraph space. [region] must have
- * strictly positive width and height, and [lineMetrics] fixes the compatible line-box rhythm.
- * This immutable value owns no renderer or platform resource and is safe to share concurrently.
+ * strictly positive width and height, and [lineMetrics] fixes the compatible line-box rhythm
+ * across the inline baseline. [writingMode] determines how that logical rhythm is projected into
+ * the physical region. This immutable value owns no renderer or platform resource and is safe to
+ * share concurrently.
  */
-public class HorizontalParagraphConstraints(
+public open class ParagraphConstraints(
     /** Finite, non-empty physical region available to the paragraph. */
     public val region: LayoutRect,
     /** Explicit vertical metrics used for every line box in this region. */
     public val lineMetrics: LineVerticalMetrics,
+    /** Logical writing mode used to project inline and block axes into [region]. */
+    public val writingMode: WritingMode = WritingMode.HORIZONTAL_TB,
 ) {
     /** Exact physical width used when validating a continuation. */
     public val width: LayoutUnit = LayoutUnit(region.right.value - region.left.value)
@@ -26,14 +69,29 @@ public class HorizontalParagraphConstraints(
 
     /** Compares the physical region and line rhythm. */
     override fun equals(other: Any?): Boolean =
-        other is HorizontalParagraphConstraints && region == other.region && lineMetrics == other.lineMetrics
+        other is ParagraphConstraints &&
+            region == other.region &&
+            lineMetrics == other.lineMetrics &&
+            writingMode == other.writingMode
 
     /** Returns a stable hash of the physical region and line rhythm. */
-    override fun hashCode(): Int = 31 * region.hashCode() + lineMetrics.hashCode()
+    override fun hashCode(): Int = 31 * (31 * region.hashCode() + lineMetrics.hashCode()) + writingMode.hashCode()
 
     /** Returns a diagnostic form containing the physical region and line rhythm. */
-    override fun toString(): String = "HorizontalParagraphConstraints(region=$region, lineMetrics=$lineMetrics)"
+    override fun toString(): String =
+        "ParagraphConstraints(region=$region, lineMetrics=$lineMetrics, writingMode=$writingMode)"
 }
+
+/**
+ * Compatibility constraints for a horizontal top-to-bottom paragraph.
+ *
+ * New consumers should use [ParagraphConstraints] so their request states its writing mode
+ * explicitly. This subtype preserves source compatibility for existing horizontal integrations.
+ */
+public class HorizontalParagraphConstraints(
+    region: LayoutRect,
+    lineMetrics: LineVerticalMetrics,
+) : ParagraphConstraints(region, lineMetrics, WritingMode.HORIZONTAL_TB)
 
 /** Side of the inline axis at which an ellipsis truncation is anchored. */
 public enum class EllipsisSide {
@@ -75,6 +133,16 @@ public sealed interface OverflowPolicy {
         init {
             require(marker == 0x2026) { "Ellipsis markers must use the Unicode horizontal ellipsis scalar." }
         }
+
+        /** Compares the complete truncation behavior. */
+        override fun equals(other: Any?): Boolean =
+            other is Ellipsis && side == other.side && marker == other.marker
+
+        /** Returns a stable hash of the complete truncation behavior. */
+        override fun hashCode(): Int = 31 * side.hashCode() + marker
+
+        /** Returns a diagnostic form containing the complete truncation behavior. */
+        override fun toString(): String = "OverflowPolicy.Ellipsis(side=$side, marker=$marker)"
     }
 }
 
@@ -132,6 +200,9 @@ public class LineLayout(
     /** Line-box metrics used to produce the final physical line geometry. */
     public val verticalMetrics: LineVerticalMetrics = line.verticalMetrics
 
+    /** Physical writing mode used for this line's geometry and editing operations. */
+    public val writingMode: WritingMode = line.writingMode
+
     /** Final runs in physical visual order, with every glyph origin in paragraph coordinates. */
     public val positionedGlyphRuns: List<PositionedGlyphRun> = line.positionedGlyphRuns
         .map { run -> run.translatedBy(baseline) }
@@ -154,14 +225,32 @@ public class LineLayout(
         require(lineBox.left < lineBox.right && lineBox.top < lineBox.bottom) {
             "A final line box must have positive width and height."
         }
-        require(lineBox.left == baseline.x) {
-            "A final line baseline origin must begin at the physical left edge of its line box."
-        }
-        require(lineBox.top == LayoutUnit(baseline.y.value - verticalMetrics.ascent.value)) {
-            "A final line box top must equal its baseline minus line ascent."
-        }
-        require(lineBox.bottom == LayoutUnit(baseline.y.value + verticalMetrics.descent.value)) {
-            "A final line box bottom must equal its baseline plus line descent."
+        when (writingMode) {
+            WritingMode.HORIZONTAL_TB -> {
+                require(lineBox.left == baseline.x) {
+                    "A horizontal final line baseline origin must begin at its line-box left edge."
+                }
+                require(lineBox.top == LayoutUnit(baseline.y.value - verticalMetrics.ascent.value)) {
+                    "A horizontal final line box top must equal its baseline minus line ascent."
+                }
+                require(lineBox.bottom == LayoutUnit(baseline.y.value + verticalMetrics.descent.value)) {
+                    "A horizontal final line box bottom must equal its baseline plus line descent."
+                }
+            }
+
+            WritingMode.VERTICAL_RL,
+            WritingMode.VERTICAL_LR,
+            -> {
+                require(lineBox.top == baseline.y) {
+                    "A vertical final line baseline origin must begin at its line-box top edge."
+                }
+                require(lineBox.left == LayoutUnit(baseline.x.value - verticalMetrics.ascent.value)) {
+                    "A vertical final line box left must equal its baseline minus line ascent."
+                }
+                require(lineBox.right == LayoutUnit(baseline.x.value + verticalMetrics.descent.value)) {
+                    "A vertical final line box right must equal its baseline plus line descent."
+                }
+            }
         }
         require(designInkBounds.minX <= designInkBounds.maxX && designInkBounds.minY <= designInkBounds.maxY) {
             "Final design ink bounds must be ordered in paragraph coordinates."
@@ -189,7 +278,7 @@ public abstract class ParagraphLayout protected constructor(
     /** Exact immutable text revision to which every line and caret belongs. */
     public val version: TextVersion = snapshot.version
 
-    /** Complete final lines in physical top-to-bottom order. */
+    /** Complete final lines in physical block-progression order. */
     public val lines: List<LineLayout> = lines.immutableListSnapshot()
 
     init {
@@ -202,8 +291,17 @@ public abstract class ParagraphLayout protected constructor(
             this.lines,
             hasMandatoryTerminalBreak(lineBreakAnalysis, range.endExclusive),
         )
-        require(this.lines.zipWithNext().all { (first, second) -> first.lineBox.bottom <= second.lineBox.top }) {
-            "Paragraph lines must be published in non-overlapping physical top-to-bottom order."
+        require(this.lines.map(LineLayout::writingMode).distinct().size <= 1) {
+            "A paragraph layout must use one writing mode for every final line."
+        }
+        require(this.lines.zipWithNext().all { (first, second) ->
+            when (first.writingMode) {
+                WritingMode.HORIZONTAL_TB -> first.lineBox.bottom <= second.lineBox.top
+                WritingMode.VERTICAL_RL -> first.lineBox.left >= second.lineBox.right
+                WritingMode.VERTICAL_LR -> first.lineBox.right <= second.lineBox.left
+            }
+        }) {
+            "Paragraph lines must be published in non-overlapping physical block-progression order."
         }
     }
 
@@ -242,7 +340,7 @@ public abstract class ParagraphLayout protected constructor(
      *
      * Geometry is in paragraph coordinates and never fills gaps between disjoint BiDi segments
      * or consults glyph ink, a renderer, device pixels, or platform state. Results are ordered by
-     * physical line from top to bottom, then by [PositionedGlyphRun.visualOrder] within that line;
+     * physical line in its block-progression order, then by [PositionedGlyphRun.visualOrder] within that line;
      * reversing anchor and focus does not reverse this geometry order.
      */
     public fun selectionGeometry(anchor: CaretPosition, focus: CaretPosition): List<LayoutRect> {
@@ -266,18 +364,41 @@ public abstract class ParagraphLayout protected constructor(
                             candidate.position.index >= runStart &&
                             candidate.position.index <= runEnd
                     }
-                    .map { candidate -> candidate.geometry.start.x }
+                .map { candidate ->
+                    when (line.writingMode) {
+                        WritingMode.HORIZONTAL_TB -> candidate.geometry.start.x
+                        WritingMode.VERTICAL_RL,
+                        WritingMode.VERTICAL_LR,
+                        -> candidate.geometry.start.y
+                    }
+                }
                     .toList()
                 val coordinates = if (caretCoordinates.size >= 2) {
                     caretCoordinates
                 } else {
-                    caretCoordinates + run.glyphs.flatMap { glyph ->
-                        listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+                caretCoordinates + run.glyphs.flatMap { glyph ->
+                    when (line.writingMode) {
+                        WritingMode.HORIZONTAL_TB ->
+                            listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+
+                        WritingMode.VERTICAL_RL,
+                        WritingMode.VERTICAL_LR,
+                        -> listOf(glyph.origin.y, LayoutUnit(glyph.origin.y.value + glyph.advance.y.value))
                     }
                 }
-                val left = coordinates.minOrNull() ?: return@mapNotNull null
-                val right = coordinates.maxOrNull() ?: return@mapNotNull null
-                if (left == right) null else LayoutRect(left, line.lineBox.top, right, line.lineBox.bottom)
+            }
+                val start = coordinates.minOrNull() ?: return@mapNotNull null
+                val end = coordinates.maxOrNull() ?: return@mapNotNull null
+                if (start == end) {
+                    null
+                } else {
+                    when (line.writingMode) {
+                        WritingMode.HORIZONTAL_TB -> LayoutRect(start, line.lineBox.top, end, line.lineBox.bottom)
+                        WritingMode.VERTICAL_RL,
+                        WritingMode.VERTICAL_LR,
+                        -> LayoutRect(line.lineBox.left, start, line.lineBox.right, end)
+                    }
+                }
             } + line.positionedInlineObjects.mapNotNull { objectItem ->
             val objectRange = objectItem.sourceRange
             if (selectedStart >= objectRange.endExclusive || selectedEnd <= objectRange.start) return@mapNotNull null
@@ -294,18 +415,17 @@ public abstract class ParagraphLayout protected constructor(
     /**
      * Maps a physical paragraph [point] to one deterministic final caret candidate.
      *
-     * Line selection minimizes vertical distance to each closed line-box span; equal distance
-     * selects the earlier physical line. Consequently a point above or below selects the first
-     * or last line, and a point exactly midway between lines selects the preceding line. Within
-     * that line candidates are ordered by squared distance to their vertical segment, then
+     * Line selection minimizes block-axis distance to each closed line-box span; equal distance
+     * selects the earlier physical line. Within that line candidates are ordered by squared
+     * distance to their axis-aligned segment, then
      * [CaretCandidate.visualOrder], logical [TextIndex], and [CaretAffinity.DOWNSTREAM] before
      * [CaretAffinity.UPSTREAM].
      */
     public fun hitTest(point: LayoutPoint): CaretCandidate {
         require(lines.isNotEmpty()) { "Hit testing requires a paragraph with a final line." }
         val line = lines.withIndex().minWith { left, right ->
-            val distance = verticalDistanceToRect(point, left.value.lineBox)
-                .compareTo(verticalDistanceToRect(point, right.value.lineBox))
+            val distance = blockDistanceToRect(point, left.value.lineBox, left.value.writingMode)
+                .compareTo(blockDistanceToRect(point, right.value.lineBox, right.value.writingMode))
             if (distance != 0) distance else left.index.compareTo(right.index)
         }.value
         return line.allCaretCandidates.minWith { left, right ->
@@ -386,12 +506,18 @@ public class LayoutContinuation private constructor(
     public val originalSourceRange: TextRange,
     /** Exact unconsumed suffix, including its original end boundary. */
     public val remainingSourceRange: TextRange,
-    /** Exact rectangle width required by a compatible resumed request. */
+    /** Exact horizontal inline extent required by a compatible horizontal resumed request. */
     public val regionWidth: LayoutUnit,
-    /** Exact physical left origin required by a compatible resumed request. */
+    /** Exact physical left origin required by a compatible horizontal resumed request. */
     public val regionLeft: LayoutUnit,
     /** Exact physical top at which the first resumed line must be placed. */
     public val resumptionRegionTop: LayoutUnit,
+    /** Writing mode whose block axis determines the next resumable column or line. */
+    public val writingMode: WritingMode,
+    /** Exact physical block-axis cursor at which the resumed request must begin. */
+    public val resumptionBlockCursor: LayoutUnit,
+    /** Exact physical inline extent required by a compatible resumed request. */
+    public val inlineExtent: LayoutUnit,
     /** Exact line rhythm required by a compatible resumed request. */
     public val lineMetrics: LineVerticalMetrics,
     /** Explicit paragraph direction that produced the covered prefix. */
@@ -417,6 +543,18 @@ public class LayoutContinuation private constructor(
     public val materializationIdentity: ParagraphMaterializationIdentity,
     /** Overflow behavior whose remainder this value represents. */
     public val overflowPolicy: OverflowPolicy,
+    /** Alignment, justification, and tab configuration used for the covered prefix. */
+    public val positioning: ParagraphPositioningPolicy,
+    /** Hyphenation behavior used for the covered prefix. */
+    public val hyphenationMode: HyphenationMode,
+    /** Resource-free identity of the automatic hyphenation service, if one was supplied. */
+    public val hyphenationServiceIdentity: HyphenationServiceIdentity?,
+    /** Resource-free inline-object associations used for the covered prefix. */
+    public val inlineObjects: InlineObjectSnapshot?,
+    /** Unicode cluster orientation policy used for the covered prefix. */
+    public val textOrientation: TextOrientation,
+    /** Policy used when selected faces lack OpenType vertical metrics. */
+    public val verticalMetricsPolicy: VerticalMetricsPolicy,
 ) {
     /** Immutable deterministic OpenType feature overrides required for replay. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
@@ -425,9 +563,18 @@ public class LayoutContinuation private constructor(
     public fun isCompatibleWith(request: ParagraphLayoutRequest): Boolean =
             request.snapshot.version == originalVersion &&
             request.sourceRange == remainingSourceRange &&
-            request.constraints.width == regionWidth &&
-            request.constraints.region.left == regionLeft &&
+            request.constraints.writingMode == writingMode &&
             request.constraints.region.top == resumptionRegionTop &&
+            request.constraints.let { constraints ->
+                when (writingMode) {
+                    WritingMode.HORIZONTAL_TB ->
+                        constraints.width == regionWidth && constraints.region.left == regionLeft
+                    WritingMode.VERTICAL_RL ->
+                        constraints.height == inlineExtent && constraints.region.right == resumptionBlockCursor
+                    WritingMode.VERTICAL_LR ->
+                        constraints.height == inlineExtent && constraints.region.left == resumptionBlockCursor
+                }
+            } &&
             request.constraints.lineMetrics == lineMetrics &&
             request.baseDirection == baseDirection &&
             request.language == language &&
@@ -440,7 +587,55 @@ public class LayoutContinuation private constructor(
             request.featurePolicy == featurePolicy &&
             request.features == features &&
             request.materializationIdentity == materializationIdentity &&
-            request.overflowPolicy == overflowPolicy
+            request.overflowPolicy == overflowPolicy &&
+            request.positioning == positioning &&
+            request.hyphenationMode == hyphenationMode &&
+            request.hyphenationService?.identity == hyphenationServiceIdentity &&
+            request.inlineObjects == inlineObjects &&
+            request.textOrientation == textOrientation &&
+            request.verticalMetricsPolicy == verticalMetricsPolicy
+
+    internal fun incompatibilitySummary(request: ParagraphLayoutRequest): String = buildList {
+        if (request.snapshot.version != originalVersion) add("snapshot version")
+        if (request.sourceRange != remainingSourceRange) add("source range")
+        if (request.constraints.writingMode != writingMode) add("writing mode")
+        if (request.constraints.region.top != resumptionRegionTop) add("region top")
+        when (writingMode) {
+            WritingMode.HORIZONTAL_TB -> {
+                if (request.constraints.width != regionWidth) add("region width")
+                if (request.constraints.region.left != regionLeft) add("region left")
+            }
+
+            WritingMode.VERTICAL_RL -> {
+                if (request.constraints.height != inlineExtent) add("inline extent")
+                if (request.constraints.region.right != resumptionBlockCursor) add("block cursor")
+            }
+
+            WritingMode.VERTICAL_LR -> {
+                if (request.constraints.height != inlineExtent) add("inline extent")
+                if (request.constraints.region.left != resumptionBlockCursor) add("block cursor")
+            }
+        }
+        if (request.constraints.lineMetrics != lineMetrics) add("line metrics")
+        if (request.baseDirection != baseDirection) add("base direction")
+        if (request.language != language) add("language")
+        if (request.lineBreakAnalysis.unicodeData != unicodeData) add("Unicode data")
+        if (request.fontCatalog.generation != fontCatalogGeneration) add("font catalog")
+        if (request.resolutionPolicy.policyId != resolutionPolicyId) add("resolution policy")
+        if (request.resolutionPolicy.version != resolutionPolicyVersion) add("resolution-policy version")
+        if (request.fontInstanceDescriptor != fontInstanceDescriptor) add("font instance")
+        if (request.shapingBackend.identity != shapingBackendIdentity) add("shaping backend")
+        if (request.featurePolicy != featurePolicy) add("feature policy")
+        if (request.features != features) add("features")
+        if (request.materializationIdentity != materializationIdentity) add("materialization")
+        if (request.overflowPolicy != overflowPolicy) add("overflow policy")
+        if (request.positioning != positioning) add("positioning")
+        if (request.hyphenationMode != hyphenationMode) add("hyphenation mode")
+        if (request.hyphenationService?.identity != hyphenationServiceIdentity) add("hyphenation service")
+        if (request.inlineObjects != inlineObjects) add("inline objects")
+        if (request.textOrientation != textOrientation) add("text orientation")
+        if (request.verticalMetricsPolicy != verticalMetricsPolicy) add("vertical metrics policy")
+    }.joinToString()
 
     /** Factories that capture compatibility inputs from validated paragraph requests. */
     public companion object {
@@ -458,6 +653,11 @@ public class LayoutContinuation private constructor(
             request: ParagraphLayoutRequest,
             remainingSourceRange: TextRange,
             resumptionRegionTop: LayoutUnit = request.constraints.region.top,
+            resumptionBlockCursor: LayoutUnit = when (request.constraints.writingMode) {
+                WritingMode.HORIZONTAL_TB -> resumptionRegionTop
+                WritingMode.VERTICAL_RL -> request.constraints.region.right
+                WritingMode.VERTICAL_LR -> request.constraints.region.left
+            },
         ): LayoutContinuation {
             require(remainingSourceRange.start.sharesVersionWith(request.sourceRange.start)) {
                 "A continuation remainder must use the request text version."
@@ -482,6 +682,14 @@ public class LayoutContinuation private constructor(
                 regionWidth = request.constraints.width,
                 regionLeft = request.constraints.region.left,
                 resumptionRegionTop = resumptionRegionTop,
+                writingMode = request.constraints.writingMode,
+                resumptionBlockCursor = resumptionBlockCursor,
+                inlineExtent = when (request.constraints.writingMode) {
+                    WritingMode.HORIZONTAL_TB -> request.constraints.width
+                    WritingMode.VERTICAL_RL,
+                    WritingMode.VERTICAL_LR,
+                    -> request.constraints.height
+                },
                 lineMetrics = request.constraints.lineMetrics,
                 baseDirection = request.baseDirection,
                 language = request.language,
@@ -495,21 +703,26 @@ public class LayoutContinuation private constructor(
                 features = request.features,
                 materializationIdentity = request.materializationIdentity,
                 overflowPolicy = request.overflowPolicy,
+                positioning = request.positioning,
+                hyphenationMode = request.hyphenationMode,
+                hyphenationServiceIdentity = request.hyphenationService?.identity,
+                inlineObjects = request.inlineObjects,
+                textOrientation = request.textOrientation,
+                verticalMetricsPolicy = request.verticalMetricsPolicy,
             )
         }
     }
 }
 
 /**
- * Complete immutable input to pure horizontal paragraph composition.
+ * Complete immutable input to pure paragraph composition.
  *
  * The request binds [sourceRange] to [snapshot], requires complete Unicode and line-break
  * analyses for that same revision, and captures all font, shaping, feature, materialization,
- * cancellation, and geometry inputs required for deterministic replay. The shaping backend and
- * backend is borrowed for composition. A renderable resolver is deliberately absent and is
- * supplied only to the synchronous [ParagraphLayouter.layout] call. All caller collections are
- * defensively copied. Invalid ranges or mismatched identities are programming errors reported
- * during construction.
+ * cancellation, and geometry inputs required for deterministic replay. The shaping backend is
+ * borrowed for composition. A renderable resolver is deliberately absent and is supplied only to
+ * the synchronous [ParagraphLayouter.layout] call. All caller collections are defensively copied.
+ * Invalid ranges or mismatched identities are programming errors reported during construction.
  */
 public class ParagraphLayoutRequest(
     /** Immutable canonical source revision. */
@@ -520,8 +733,8 @@ public class ParagraphLayoutRequest(
     public val unicodeAnalysis: UnicodeAnalysis,
     /** Complete legal line-break analysis tied to [unicodeAnalysis]. */
     public val lineBreakAnalysis: LineBreakAnalysis,
-    /** Physical rectangular region and compatible line rhythm. */
-    public val constraints: HorizontalParagraphConstraints,
+    /** Physical rectangular region, line rhythm, and writing-mode projection. */
+    public val constraints: ParagraphConstraints,
     /** Explicit base direction; it is never inferred from source text. */
     public val baseDirection: BaseDirection,
     /** Explicit language used by Unicode analysis and shaping. */
@@ -548,8 +761,13 @@ public class ParagraphLayoutRequest(
     /** Hyphenation mode applied to line selection and final line content. */
     public val hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
     /** Immutable versioned service used by [HyphenationMode.AUTO], or `null` when absent. */
-    public val hyphenationService: HyphenationService? = null,    /** Definitions bound to `U+FFFC` object replacement scalars inside the requested range. */
+    public val hyphenationService: HyphenationService? = null,
+    /** Definitions bound to `U+FFFC` object replacement scalars inside the requested range. */
     public val inlineObjects: InlineObjectSnapshot? = null,
+    /** Orientation policy applied to grapheme clusters in vertical writing modes. */
+    public val textOrientation: TextOrientation = TextOrientation.MIXED,
+    /** Explicit policy for a resolved face that lacks usable OpenType vertical metrics. */
+    public val verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
     /** Cooperative signal observed between bounded composition operations. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
 ) {
@@ -580,11 +798,25 @@ public class ParagraphLayoutRequest(
         require(resolutionPolicy.candidates.all { candidate -> candidate.faceId in fontCatalog.faces.map(FontFaceRecord::id) }) {
             "Every paragraph font candidate must belong to the captured font catalog."
         }
+        inlineObjects?.entries?.forEach { entry ->
+            require(entry.index.sharesVersionWith(snapshot.range.start)) {
+                "Inline object entries must belong to the supplied snapshot version."
+            }
+            val objectRange = snapshot.scalarRanges(snapshot.range).firstOrNull { range -> range.start == entry.index }
+            require(objectRange != null && snapshot.scalarValues(objectRange).single() == OBJECT_REPLACEMENT_SCALAR) {
+                "Every inline object entry must identify a U+FFFC object replacement scalar in the supplied snapshot."
+            }
+            require(objectRange.start >= sourceRange.start && objectRange.endExclusive <= sourceRange.endExclusive) {
+                "Every inline object entry must lie inside the requested source range."
+            }
+        }
         require(continuation == null || continuation.isCompatibleWith(this)) {
-            "Paragraph continuation is incompatible with the request revision, remainder, geometry, or configuration."
+            "Paragraph continuation is incompatible with: ${continuation?.incompatibilitySummary(this)}."
         }
     }
 }
+
+private const val OBJECT_REPLACEMENT_SCALAR: Int = 0xFFFC
 
 /** Typed reason paragraph composition could not publish any partial line. */
 public sealed interface ParagraphLayoutError {
@@ -734,6 +966,7 @@ private fun PositionedGlyphRun.translatedBy(baseline: LayoutPoint): PositionedGl
                 sourceClusters = glyph.sourceClusters,
                 origin = glyph.origin.translatedBy(baseline),
                 advance = glyph.advance,
+                transform = glyph.transform,
                 renderAssetKey = glyph.renderAssetKey,
                 materializationCertificate = glyph.materializationCertificate,
                 provenance = glyph.provenance,
@@ -770,20 +1003,37 @@ private fun CaretCandidate.translatedBy(baseline: LayoutPoint): CaretCandidate =
 private fun LayoutPoint.translatedBy(offset: LayoutPoint): LayoutPoint =
     LayoutPoint(LayoutUnit(x.value + offset.x.value), LayoutUnit(y.value + offset.y.value))
 
-private fun verticalDistanceToRect(point: LayoutPoint, rect: LayoutRect): Double = when {
-    point.y < rect.top -> rect.top.value.toDouble() - point.y.value.toDouble()
-    point.y > rect.bottom -> point.y.value.toDouble() - rect.bottom.value.toDouble()
-    else -> 0.0
+private fun blockDistanceToRect(point: LayoutPoint, rect: LayoutRect, writingMode: WritingMode): Double = when (writingMode) {
+    WritingMode.HORIZONTAL_TB -> when {
+        point.y < rect.top -> rect.top.value.toDouble() - point.y.value.toDouble()
+        point.y > rect.bottom -> point.y.value.toDouble() - rect.bottom.value.toDouble()
+        else -> 0.0
+    }
+
+    WritingMode.VERTICAL_RL,
+    WritingMode.VERTICAL_LR,
+    -> when {
+        point.x < rect.left -> rect.left.value.toDouble() - point.x.value.toDouble()
+        point.x > rect.right -> point.x.value.toDouble() - rect.right.value.toDouble()
+        else -> 0.0
+    }
 }
 
 private fun paragraphSquaredDistanceToSegment(point: LayoutPoint, segment: LayoutSegment): Double {
-    val xDistance = point.x.value.toDouble() - segment.start.x.value.toDouble()
-    val verticalDistance = when {
-        point.y < segment.start.y -> segment.start.y.value.toDouble() - point.y.value.toDouble()
-        point.y > segment.end.y -> point.y.value.toDouble() - segment.end.y.value.toDouble()
-        else -> 0.0
-    }
-    return xDistance * xDistance + verticalDistance * verticalDistance
+    val px = point.x.value.toDouble()
+    val py = point.y.value.toDouble()
+    val ax = segment.start.x.value.toDouble()
+    val ay = segment.start.y.value.toDouble()
+    val bx = segment.end.x.value.toDouble()
+    val by = segment.end.y.value.toDouble()
+    val dx = bx - ax
+    val dy = by - ay
+    val denominator = dx * dx + dy * dy
+    val parameter = if (denominator == 0.0) 0.0 else ((px - ax) * dx + (py - ay) * dy) / denominator
+    val clamped = parameter.coerceIn(0.0, 1.0)
+    val xDistance = px - (ax + clamped * dx)
+    val yDistance = py - (ay + clamped * dy)
+    return xDistance * xDistance + yDistance * yDistance
 }
 
 private fun paragraphAffinityRank(affinity: CaretAffinity): Int = when (affinity) {
