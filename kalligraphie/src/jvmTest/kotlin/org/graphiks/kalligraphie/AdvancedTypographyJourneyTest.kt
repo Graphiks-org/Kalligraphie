@@ -727,6 +727,35 @@ class AdvancedTypographyJourneyTest {
     }
 
     @Test
+    fun successiveRtlTabsPublishPhysicalRunOrderAndTheTrueInlineExtent() {
+        val fixture = dejavuFixture("\u05D1\u0009A\u0009C")
+        val firstStop = LayoutUnit(3_000f)
+        val secondStop = LayoutUnit(5_000f)
+
+        val line = layoutParagraph(
+            fixture = fixture,
+            constraints = constraints(width = 8_000f, top = 50f, height = 1_200f),
+            language = "en",
+            baseDirection = BaseDirection.RIGHT_TO_LEFT,
+            positioning = ParagraphPositioningPolicy(
+                tabStops = listOf(
+                    TabStop(firstStop, alignment = TabAlignment.END),
+                    TabStop(secondStop, alignment = TabAlignment.END),
+                ),
+            ),
+        ).lines.single()
+
+        val a = firstGlyphOfRange(fixture, line, fixture.range(2, 3))
+        val c = firstGlyphOfRange(fixture, line, fixture.range(4, 5))
+        assertEquals(100f + firstStop.value, a.origin.x.value + a.advance.x.value)
+        assertEquals(100f + secondStop.value, c.origin.x.value + c.advance.x.value)
+        val physicalEnd = line.glyphs().maxOf { glyph -> glyph.origin.x.value + glyph.advance.x.value }
+        assertEquals(physicalEnd - 100f, line.contentMetrics.inlineAdvance.value)
+        val runStarts = line.positionedGlyphRuns.map { run -> run.glyphs.minOf { glyph -> glyph.origin.x.value } }
+        assertEquals(runStarts.sorted(), runStarts)
+    }
+
+    @Test
     fun tabLeaderIsSyntheticContentWithoutFakeDocumentCharacters() {
         val fixture = dejavuFixture("a\u0009b")
 
@@ -1029,6 +1058,45 @@ class AdvancedTypographyJourneyTest {
         assertEquals(fixture.range(1, 2), placed.sourceRange)
         assertEquals(definition.id, placed.definition.id)
         assertEquals(definition.width.value, placed.rect.right.value - placed.rect.left.value)
+    }
+
+    @Test
+    fun rtlInlineObjectsArePublishedInLogicalSourceOrder() {
+        val fixture = dejavuFixture("\u05D1\uFFFC\uFFFC\u05D0")
+        val firstDefinition = InlineObjectDefinition(
+            id = InlineObjectId.create("first-rtl-object"),
+            width = LayoutUnit(300f),
+            height = LayoutUnit(200f),
+            baselineOffset = LayoutUnit(160f),
+        )
+        val secondDefinition = InlineObjectDefinition(
+            id = InlineObjectId.create("second-rtl-object"),
+            width = LayoutUnit(500f),
+            height = LayoutUnit(250f),
+            baselineOffset = LayoutUnit(180f),
+        )
+
+        val line = layoutParagraph(
+            fixture,
+            constraints(width = 3_000f, top = 50f, height = 1_200f),
+            language = "en",
+            baseDirection = BaseDirection.RIGHT_TO_LEFT,
+            inlineObjects = InlineObjectSnapshot(
+                listOf(
+                    InlineObjectEntry(fixture.textIndex(1), firstDefinition),
+                    InlineObjectEntry(fixture.textIndex(2), secondDefinition),
+                ),
+            ),
+        ).lines.single()
+
+        assertEquals(
+            listOf(fixture.range(1, 2), fixture.range(2, 3)),
+            line.positionedInlineObjects.map { item -> item.sourceRange },
+        )
+        assertEquals(
+            listOf(firstDefinition.id, secondDefinition.id),
+            line.positionedInlineObjects.map { item -> item.definition.id },
+        )
     }
 
     @Test
