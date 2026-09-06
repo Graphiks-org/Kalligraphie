@@ -329,6 +329,106 @@ public class LineLayout(
             "Line fragments must preserve every original inline object exactly."
         }
     }
+
+    /**
+     * Returns non-empty selection rectangles clipped independently to this line's flow fragments.
+     *
+     * Both positions must be represented by this line. Geometry remains in final paragraph
+     * coordinates and never bridges an unavailable inline gap.
+     */
+    public fun selectionGeometry(anchor: CaretPosition, focus: CaretPosition): List<LayoutRect> {
+        require(allCaretCandidates.any { candidate -> candidate.position == anchor }) {
+            "Selection anchor must be a line-local caret position."
+        }
+        require(allCaretCandidates.any { candidate -> candidate.position == focus }) {
+            "Selection focus must be a line-local caret position."
+        }
+        if (anchor.index == focus.index) return emptyList()
+        val selectedStart = if (anchor.index < focus.index) anchor.index else focus.index
+        val selectedEnd = if (anchor.index < focus.index) focus.index else anchor.index
+        return selectionGeometryBetween(selectedStart, selectedEnd)
+    }
+
+    /**
+     * Maps a physical point to the nearest concrete caret on this already-resolved logical line.
+     *
+     * Equal distances are resolved by original visual order, logical index, then downstream
+     * affinity. A point inside an unavailable flow gap therefore selects a deterministic edge
+     * candidate without manufacturing a caret in that gap.
+     */
+    public fun hitTest(point: LayoutPoint): CaretCandidate = fragments
+        .flatMap(LineFragment::caretCandidates)
+        .minWith { left, right ->
+            val distance = paragraphSquaredDistanceToSegment(point, left.geometry)
+                .compareTo(paragraphSquaredDistanceToSegment(point, right.geometry))
+            if (distance != 0) return@minWith distance
+            val visual = left.visualOrder.compareTo(right.visualOrder)
+            if (visual != 0) return@minWith visual
+            val index = left.position.index.compareTo(right.position.index)
+            if (index != 0) return@minWith index
+            paragraphAffinityRank(left.position.affinity).compareTo(paragraphAffinityRank(right.position.affinity))
+        }
+
+    internal fun selectionGeometryBetween(selectedStart: TextIndex, selectedEnd: TextIndex): List<LayoutRect> = fragments
+        .flatMap { fragment ->
+            val fragmentClip = fragment.clipRect(this)
+            fragment.positionedGlyphRuns.mapNotNull { run ->
+                val runStart = maxParagraphIndex(selectedStart, run.sourceRun.range.start)
+                val runEnd = minParagraphIndex(selectedEnd, run.sourceRun.range.endExclusive)
+                if (runStart >= runEnd) return@mapNotNull null
+                val caretCoordinates = fragment.caretCandidates.asSequence()
+                    .filter { candidate ->
+                        candidate.visualRunOrder == run.visualOrder &&
+                            candidate.position.index >= runStart &&
+                            candidate.position.index <= runEnd
+                    }
+                    .map { candidate ->
+                        when (writingMode) {
+                            WritingMode.HORIZONTAL_TB -> candidate.geometry.start.x
+                            WritingMode.VERTICAL_RL,
+                            WritingMode.VERTICAL_LR,
+                            -> candidate.geometry.start.y
+                        }
+                    }
+                    .toList()
+                val coordinates = if (caretCoordinates.size >= 2) {
+                    caretCoordinates
+                } else {
+                    caretCoordinates + run.glyphs.flatMap { glyph ->
+                        when (writingMode) {
+                            WritingMode.HORIZONTAL_TB ->
+                                listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
+
+                            WritingMode.VERTICAL_RL,
+                            WritingMode.VERTICAL_LR,
+                            -> listOf(glyph.origin.y, LayoutUnit(glyph.origin.y.value + glyph.advance.y.value))
+                        }
+                    }
+                }
+                val start = coordinates.minOrNull() ?: return@mapNotNull null
+                val end = coordinates.maxOrNull() ?: return@mapNotNull null
+                if (start == end) {
+                    null
+                } else {
+                    when (writingMode) {
+                        WritingMode.HORIZONTAL_TB ->
+                            LayoutRect(start, lineBox.top, end, lineBox.bottom).intersection(fragmentClip)
+
+                        WritingMode.VERTICAL_RL,
+                        WritingMode.VERTICAL_LR,
+                        -> LayoutRect(lineBox.left, start, lineBox.right, end).intersection(fragmentClip)
+                    }
+                }
+            } + fragment.positionedInlineObjects.mapNotNull { objectItem ->
+                val objectRange = objectItem.sourceRange
+                if (selectedStart >= objectRange.endExclusive || selectedEnd <= objectRange.start) {
+                    return@mapNotNull null
+                }
+                objectItem.rect.intersection(fragmentClip)
+            }
+        }
+        .filter { rectangle -> rectangle.left < rectangle.right && rectangle.top < rectangle.bottom }
+        .immutableListSnapshot()
 }
 
 /**
@@ -426,65 +526,7 @@ public abstract class ParagraphLayout protected constructor(
         if (anchor.index == focus.index) return emptyList()
         val selectedStart = if (anchor.index < focus.index) anchor.index else focus.index
         val selectedEnd = if (anchor.index < focus.index) focus.index else anchor.index
-        return lines.flatMap { line ->
-            line.fragments.flatMap { fragment ->
-                val fragmentClip = fragment.clipRect(line)
-                fragment.positionedGlyphRuns.mapNotNull { run ->
-                    val runStart = maxParagraphIndex(selectedStart, run.sourceRun.range.start)
-                    val runEnd = minParagraphIndex(selectedEnd, run.sourceRun.range.endExclusive)
-                    if (runStart >= runEnd) return@mapNotNull null
-                    val caretCoordinates = fragment.caretCandidates.asSequence()
-                        .filter { candidate ->
-                            candidate.visualRunOrder == run.visualOrder &&
-                                candidate.position.index >= runStart &&
-                                candidate.position.index <= runEnd
-                        }
-                    .map { candidate ->
-                        when (line.writingMode) {
-                            WritingMode.HORIZONTAL_TB -> candidate.geometry.start.x
-                            WritingMode.VERTICAL_RL,
-                            WritingMode.VERTICAL_LR,
-                            -> candidate.geometry.start.y
-                        }
-                    }
-                        .toList()
-                    val coordinates = if (caretCoordinates.size >= 2) {
-                        caretCoordinates
-                    } else {
-                        caretCoordinates + run.glyphs.flatMap { glyph ->
-                            when (line.writingMode) {
-                                WritingMode.HORIZONTAL_TB ->
-                                    listOf(glyph.origin.x, LayoutUnit(glyph.origin.x.value + glyph.advance.x.value))
-
-                                WritingMode.VERTICAL_RL,
-                                WritingMode.VERTICAL_LR,
-                                -> listOf(glyph.origin.y, LayoutUnit(glyph.origin.y.value + glyph.advance.y.value))
-                            }
-                        }
-                    }
-                    val start = coordinates.minOrNull() ?: return@mapNotNull null
-                    val end = coordinates.maxOrNull() ?: return@mapNotNull null
-                    if (start == end) {
-                        null
-                    } else {
-                        when (line.writingMode) {
-                            WritingMode.HORIZONTAL_TB ->
-                                LayoutRect(start, line.lineBox.top, end, line.lineBox.bottom).intersection(fragmentClip)
-
-                            WritingMode.VERTICAL_RL,
-                            WritingMode.VERTICAL_LR,
-                            -> LayoutRect(line.lineBox.left, start, line.lineBox.right, end).intersection(fragmentClip)
-                        }
-                    }
-                } + fragment.positionedInlineObjects.mapNotNull { objectItem ->
-                    val objectRange = objectItem.sourceRange
-                    if (selectedStart >= objectRange.endExclusive || selectedEnd <= objectRange.start) {
-                        return@mapNotNull null
-                    }
-                    objectItem.rect.intersection(fragmentClip)
-                }
-            }.filter { rectangle -> rectangle.left < rectangle.right && rectangle.top < rectangle.bottom }
-        }.immutableListSnapshot()
+        return lines.flatMap { line -> line.selectionGeometryBetween(selectedStart, selectedEnd) }.immutableListSnapshot()
     }
 
     /**
@@ -503,16 +545,7 @@ public abstract class ParagraphLayout protected constructor(
                 .compareTo(blockDistanceToRect(point, right.value.lineBox, right.value.writingMode))
             if (distance != 0) distance else left.index.compareTo(right.index)
         }.value
-        return line.fragments.flatMap(LineFragment::caretCandidates).minWith { left, right ->
-            val distance = paragraphSquaredDistanceToSegment(point, left.geometry)
-                .compareTo(paragraphSquaredDistanceToSegment(point, right.geometry))
-            if (distance != 0) return@minWith distance
-            val visual = left.visualOrder.compareTo(right.visualOrder)
-            if (visual != 0) return@minWith visual
-            val index = left.position.index.compareTo(right.position.index)
-            if (index != 0) return@minWith index
-            paragraphAffinityRank(left.position.affinity).compareTo(paragraphAffinityRank(right.position.affinity))
-        }
+        return line.hitTest(point)
     }
 }
 
@@ -1028,6 +1061,29 @@ public interface ParagraphLayouter {
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
     ): ParagraphLayoutResult
+}
+
+/**
+ * Portable boundary for placing one already-resolved logical line through a consumer flow region.
+ *
+ * The implementation queries [region] in logical axes, selects and finalizes the source line once
+ * against the sum of its stable intervals, and only then creates geometric fragments. It borrows
+ * [materialization] synchronously, retains no region or font resource, and returns a typed flow
+ * failure without partial geometry when refinement or placement cannot be exact.
+ */
+public interface FlowParagraphLayouter {
+    /**
+     * Composes the first complete logical line of [request] at [blockStart] in [region].
+     *
+     * This line-level operation requires the selected line to cover the request range; region-chain
+     * continuation and multi-line pagination are separate higher-level operations.
+     */
+    public fun layoutLine(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        region: FlowRegion,
+        blockStart: Float = 0f,
+    ): FlowCompositionResult<ParagraphFragment>
 }
 
 private fun PositionedGlyphRun.translatedBy(baseline: LayoutPoint): PositionedGlyphRun =

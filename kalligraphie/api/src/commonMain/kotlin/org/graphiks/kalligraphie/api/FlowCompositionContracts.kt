@@ -279,6 +279,21 @@ public sealed interface FlowCompositionError {
     ) : FlowCompositionError {
         override val code: String = "layout.flow-geometry-overflow"
     }
+
+    /** Existing paragraph shaping or materialization failed before a flow line could be published. */
+    public data class ParagraphFailure(
+        /** Exact portable paragraph failure produced by the underlying line composition route. */
+        public val paragraphError: ParagraphLayoutError,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-paragraph-failure"
+        override val message: String = paragraphError.message
+    }
+
+    /** Cooperative cancellation discarded the complete candidate before publication. */
+    public data object Cancelled : FlowCompositionError {
+        override val code: String = "layout.flow-cancelled"
+        override val message: String = "Flow composition was cancelled before a complete line could be published."
+    }
 }
 
 /** Structured cause attached to [FlowCompositionError.NoProgress]. */

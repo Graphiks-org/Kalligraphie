@@ -46,6 +46,7 @@ import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.LineBreakKind
 import org.graphiks.kalligraphie.api.LineContentMetrics
 import org.graphiks.kalligraphie.api.LineEllipsisPolicy
+import org.graphiks.kalligraphie.api.LineFragment
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
 import org.graphiks.kalligraphie.api.OverflowPolicy
@@ -371,14 +372,16 @@ public object ParagraphComposer : ParagraphLayouter {
         }
     }
 
-    private fun projectLine(
+    internal fun projectLine(
         composed: ComposedParagraphLine,
         cancellationToken: org.graphiks.kalligraphie.api.CancellationToken,
+        fragments: List<LineFragment>? = null,
     ): ProjectedLine {
         if (cancellationToken.isCancellationRequested()) return ProjectedLine.Cancelled()
         val instances = composed.fontInstances.associateBy(FontInstance::key)
         val glyphBounds = mutableListOf<LayoutBounds>()
-        composed.line.positionedGlyphRuns.forEach { run ->
+        val projectedGlyphRuns = fragments?.flatMap(LineFragment::positionedGlyphRuns)
+        (projectedGlyphRuns ?: composed.line.positionedGlyphRuns).forEach { run ->
             val instance = instances[run.fontInstanceKey]
                 ?: return ProjectedLine.Failure(
                     ParagraphLayoutError.FontFailure(
@@ -392,10 +395,14 @@ public object ParagraphComposer : ParagraphLayouter {
                         .takeUnless { it == LayoutBounds.empty }
                         ?.let { bounds ->
                             glyphBounds += translatedGlyphBounds(
-                                LayoutPoint(
-                                    finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
-                                    finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
-                                ),
+                                if (projectedGlyphRuns == null) {
+                                    LayoutPoint(
+                                        finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
+                                        finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
+                                    )
+                                } else {
+                                    glyph.origin
+                                },
                                 bounds,
                                 glyph.transform,
                             )
@@ -447,6 +454,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     contentMetrics = contentMetrics,
                     lineBox = composed.lineBox,
                     designInkBounds = inkBounds,
+                    fragments = fragments,
                 ),
             )
         } catch (invalidGeometry: IllegalArgumentException) {
@@ -495,7 +503,7 @@ public object ParagraphComposer : ParagraphLayouter {
         )
     }
 
-    private sealed interface ProjectedLine {
+    internal sealed interface ProjectedLine {
         data class Success(val line: LineLayout) : ProjectedLine
         class Failure(
             val error: ParagraphLayoutError,
@@ -1819,7 +1827,7 @@ private class FinalParagraphLayout(
     private fun allCandidates(): List<CaretCandidate> = lines.flatMap(LineLayout::allCaretCandidates)
 }
 
-private fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
+internal fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
     is EditableLineError.InvalidInput -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.GeometryOverflow -> ParagraphLayoutError.GeometryOverflow(message)
     is EditableLineError.FontMaterializationFailure -> ParagraphLayoutError.FontFailure(fontError)
@@ -1827,7 +1835,7 @@ private fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (t
     is EditableLineError.FontResolutionFailure -> ParagraphLayoutError.FontFailure(fontError)
 }
 
-private class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)
+internal class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)
 
     private fun <Element> Iterable<Element>.immutableSnapshot(): List<Element> = ParagraphImmutableList(toList())
 
