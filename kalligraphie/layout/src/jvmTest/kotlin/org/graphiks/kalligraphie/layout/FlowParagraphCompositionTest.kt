@@ -328,6 +328,34 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun canonicalFractionalFloatMetricsPublishTheirExactAcceptedBand() {
+        val metrics = LineVerticalMetrics(LayoutUnit(1_000.11f), LayoutUnit(304.07f))
+        val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(0f), LayoutUnit(4_100f), LayoutUnit(3_000f))
+        val fixture = fixture("a", bounds = bounds, lineMetrics = metrics)
+        val queries = mutableListOf<LineBand>()
+        val region = object : FlowRegion {
+            override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+            override val bounds: LayoutRect = bounds
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult {
+                queries += lineBand
+                return FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 4_000f)))
+            }
+        }
+
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+
+        assertEquals(listOf(1_304.1799f, 1_304.1799f), queries.map { it.blockExtent })
+        assertEquals(metrics, line.verticalMetrics)
+        assertEquals(1_000.11f, line.baseline.y.value)
+        assertEquals(
+            LayoutRect(LayoutUnit(100f), LayoutUnit(0f), LayoutUnit(4_100f), LayoutUnit(1_304.1799f)),
+            line.lineBox,
+        )
+    }
+
+    @Test
     fun refinedBandCannotRegainPreviouslyExcludedInlineSpace() {
         val fixture = fixtureWithTallObject()
         val region = object : FlowRegion {
@@ -492,6 +520,7 @@ class FlowParagraphCompositionTest {
         writingMode: WritingMode = WritingMode.HORIZONTAL_TB,
         bounds: LayoutRect = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(4_100f), LayoutUnit(3_050f)),
         fontSize: Float = 1_000f,
+        lineMetrics: LineVerticalMetrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
         inlineObjects: (TextSnapshot) -> InlineObjectSnapshot? = { null },
     ): Fixture {
         val snapshot = TextSnapshots.decodeUtf16(
@@ -518,11 +547,10 @@ class FlowParagraphCompositionTest {
             lastResortFace = face,
         )
         val backend = JvmHarfBuzzShapingBackend.open().successValue().also(openedBackends::add)
-        val metrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f))
         val constraints = if (writingMode == WritingMode.HORIZONTAL_TB) {
-            HorizontalParagraphConstraints(bounds, metrics)
+            HorizontalParagraphConstraints(bounds, lineMetrics)
         } else {
-            ParagraphConstraints(bounds, metrics, writingMode)
+            ParagraphConstraints(bounds, lineMetrics, writingMode)
         }
         val request = ParagraphLayoutRequest(
             snapshot = snapshot,

@@ -764,11 +764,21 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val extent: Float = before + after
 
         fun fill(acceptedExtent: Float): LineVerticalMetrics {
-            val trailing = acceptedExtent.toDouble() - before.toDouble()
-            require(trailing.isFinite() && trailing >= after.toDouble()) {
+            require(acceptedExtent.isFinite() && acceptedExtent >= extent) {
                 "The accepted flow line band cannot contain its required block-axis metrics."
             }
-            return LineVerticalMetrics(LayoutUnit(before), LayoutUnit(trailing.toFloat()))
+            if (acceptedExtent == extent) {
+                return LineVerticalMetrics(LayoutUnit(before), LayoutUnit(after))
+            }
+            val trailing = (acceptedExtent.toDouble() - before.toDouble()).toFloat()
+            require(trailing.isFinite() && trailing >= after) {
+                "The accepted flow line band cannot contain its required block-axis metrics."
+            }
+            val filled = LineVerticalMetrics(LayoutUnit(before), LayoutUnit(trailing))
+            require(filled.height.value == acceptedExtent) {
+                "The accepted flow line band cannot be represented by exact block-axis metrics."
+            }
+            return filled
         }
     }
 
