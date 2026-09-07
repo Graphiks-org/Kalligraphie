@@ -40,9 +40,10 @@ public object IncrementalFlowLayoutEngine {
      * Materializes requested flow coverage, reusing semantically valid structured checkpoints.
      *
      * A versioned edit maps unchanged checkpoints into the target revision and restarts at the
-     * last valid checkpoint before the first affected dependency. Composition stops after exact
-     * coverage plus overscan, at physical paragraph end, or at a matching stable checkpoint after
-     * the requested range. Cancellation and failure publish no [FlowLayout].
+     * last valid checkpoint no later than either the first affected dependency or the requested
+     * source start. Composition stops after exact coverage plus overscan, at physical paragraph
+     * end, or at a matching stable checkpoint after the requested range. Cancellation and failure
+     * publish no [FlowLayout].
      */
     public fun layout(
         request: IncrementalFlowLayoutRequest,
@@ -108,6 +109,11 @@ public object IncrementalFlowLayoutEngine {
         val resumeFromPublishedTail = sameReplayInputs && checkNotNull(previous).let { state ->
             state.continuation != null && request.requestedRange.start >= state.coverage.range.start
         }
+        val restartBoundary = if (affectedStart <= request.requestedRange.start) {
+            affectedStart
+        } else {
+            request.requestedRange.start
+        }
         val restart = if (sameReplayInputs && resumeFromPublishedTail) {
             FlowLayoutCheckpoint.capture(checkNotNull(previous).materializedFragments.last())
         } else if (sameReplayInputs) {
@@ -115,7 +121,7 @@ public object IncrementalFlowLayoutEngine {
                 checkpoint.laidOutRange.endExclusive <= request.requestedRange.start
             }
         } else {
-            mappedPrevious.lastOrNull { checkpoint -> checkpoint.laidOutRange.endExclusive <= affectedStart }
+            mappedPrevious.lastOrNull { checkpoint -> checkpoint.laidOutRange.endExclusive <= restartBoundary }
         }
         val continuationAtStart = restart?.continuation
         val reflowStart = continuationAtStart?.remainingSourceRange?.start ?: request.input.text.range.start

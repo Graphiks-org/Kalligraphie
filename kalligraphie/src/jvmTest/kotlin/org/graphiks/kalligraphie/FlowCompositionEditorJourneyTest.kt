@@ -1225,6 +1225,52 @@ class FlowCompositionEditorJourneyTest {
     }
 
     @Test
+    fun lateEditFromCompleteSourceStateCanDirectlyMaterializeEarlierCoverage() {
+        val source = incrementalRealFontFixture("fi fi fi fi fi")
+        val target = source.withText("fi fi fi fi fx")
+        val chain = horizontalChain(5)
+        val completeSource = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(13, 14),
+                        target.snapshot.incrementalRange(13, 14),
+                    ),
+                ),
+            ),
+        ).value
+
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    requestedRange = target.snapshot.incrementalRange(0, 1),
+                    previousState = completeSource.state,
+                    delta = LayoutDelta(text = change),
+                ),
+            ),
+        )
+        val full = success(
+            JvmFlowCompositionFacade.layout(
+                request(target, horizontalChain(5), requestedRange = target.snapshot.incrementalRange(0, 1)),
+            ),
+        )
+
+        assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+        assertEquals(full.fragments.map(ParagraphFragment::laidOutRange), edited.fragments.map(ParagraphFragment::laidOutRange))
+        assertEquals(full.lines.map(LineLayout::glyphIds), edited.lines.map(LineLayout::glyphIds))
+        assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.lines.map { line -> line.allCaretCandidates.map { caret -> caret.position to caret.geometry } },
+            edited.lines.map { line -> line.allCaretCandidates.map { caret -> caret.position to caret.geometry } },
+        )
+    }
+
+    @Test
     fun overscanPastPhysicalEndStillPublishesCompleteSingleLineDocument() {
         val fixture = incrementalRealFontFixture("fi")
         val chain = horizontalChain(1)
