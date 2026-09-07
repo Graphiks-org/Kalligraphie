@@ -56,6 +56,41 @@ import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class FlowCompositionEditorJourneyTest {
     @Test
+    fun pureRtlPackingPublishesALogicalPrefixWhenEveryClusterFitsIndividually() {
+        val fixture = incrementalRealFontFixture(
+            "\u05D0\u05D1\u05D2",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(2_200f), LayoutUnit(2_500f))
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(
+                    bounds,
+                    listOf(InlineInterval(0f, 900f), InlineInterval(1_200f, 2_100f)),
+                ),
+            ),
+        )
+
+        val first = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = incrementalTestConstraints(width = 2_100f, top = 100f, height = 2_400f),
+                    baseDirection = BaseDirection.RIGHT_TO_LEFT,
+                ),
+            ),
+        )
+
+        assertEquals(fixture.snapshot.incrementalRange(0, 2), first.lines.single().range)
+        assertEquals(
+            fixture.snapshot.incrementalRange(2, 3),
+            assertNotNull(first.unmaterializedTail).remainingSourceRange,
+        )
+    }
+
+    @Test
     fun oneLineCoverageNeverShapesTheUntouchedDocumentTail() {
         val fixture = incrementalRealFontFixture(
             List(128) { "office" }.joinToString(" "),
@@ -88,6 +123,130 @@ class FlowCompositionEditorJourneyTest {
         } finally {
             backend.close()
         }
+    }
+
+    @Test
+    fun oneLineAutomaticHyphenationDoesNotInspectEveryUntouchedWord() {
+        val wordCount = 128
+        val fixture = incrementalRealFontFixture(
+            List(wordCount) { "abcdefgh" }.joinToString(" "),
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val inspectedWords = mutableListOf<List<Int>>()
+        val service = object : HyphenationService {
+            override val identity = HyphenationServiceIdentity(
+                providerId = "flow-bounded-hyphenation",
+                dataRevision = "1",
+                languages = listOf("en"),
+            )
+
+            override fun hyphenation(
+                word: List<Int>,
+                language: String,
+                hyphenmins: HyphenationMinimums,
+            ): List<Int> {
+                inspectedWords += word
+                return listOf(4)
+            }
+        }
+
+        val result = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    horizontalChain(count = 1, inlineExtent = 4_000f),
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = incrementalTestConstraints(width = 4_000f, top = 100f, height = 1_200f),
+                    hyphenationMode = HyphenationMode.AUTO,
+                    hyphenationService = service,
+                ),
+            ),
+        )
+
+        assertNotNull(result.unmaterializedTail)
+        assertTrue(inspectedWords.isNotEmpty())
+        assertTrue(
+            inspectedWords.size < wordCount,
+            "A one-line request must not ask the hyphenator to inspect the untouched suffix.",
+        )
+    }
+
+    @Test
+    fun repeatedExtensionRetainsBoundedCheckpointsAndAnEarlierEditMatchesFullLayout() {
+        val lineCount = 24
+        val sourceText = List(lineCount) { "a" }.joinToString("\n")
+        val source = incrementalRealFontFixture(
+            sourceText,
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val chain = horizontalChain(count = lineCount, inlineExtent = 4_000f)
+        val constraints = incrementalTestConstraints(width = 4_000f, top = 100f, height = 1_200f)
+        var extended = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    source,
+                    chain,
+                    requestedRange = source.snapshot.incrementalRange(0, 1),
+                    constraints = constraints,
+                ),
+            ),
+        )
+        for (line in 1 until lineCount) {
+            val lineStart = line * 2
+            extended = success(
+                JvmFlowCompositionFacade.layout(
+                    request(
+                        source,
+                        chain,
+                        requestedRange = source.snapshot.incrementalRange(lineStart, lineStart + 1),
+                        constraints = constraints,
+                        previousState = extended.state,
+                    ),
+                ),
+            )
+        }
+
+        assertTrue(extended.state.checkpoints.size <= 12)
+        val oldestRetained = extended.state.checkpoints.first().laidOutRange.start
+        assertTrue(oldestRetained > source.snapshot.range.start)
+
+        val target = source.withText("b${sourceText.drop(1)}")
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(0, 1),
+                        target.snapshot.incrementalRange(0, 1),
+                    ),
+                ),
+            ),
+        ).value
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    constraints = constraints,
+                    previousState = extended.state,
+                    delta = LayoutDelta(text = change),
+                ),
+            ),
+        )
+        val full = success(JvmFlowCompositionFacade.layout(request(target, chain, constraints = constraints)))
+
+        assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+        assertEquals(full.fragments.map(ParagraphFragment::laidOutRange), edited.fragments.map(ParagraphFragment::laidOutRange))
+        assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.lines.map { line ->
+                line.allCaretCandidates.map { caret -> caret.position to caret.geometry }
+            },
+            edited.lines.map { line ->
+                line.allCaretCandidates.map { caret -> caret.position to caret.geometry }
+            },
+        )
     }
 
     @Test
@@ -1185,6 +1344,7 @@ class FlowCompositionEditorJourneyTest {
         hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
         hyphenationService: HyphenationService? = null,
         inlineObjects: InlineObjectSnapshot? = null,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
     ): JvmFlowCompositionRequest {
         val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
             createIncrementalFlowLayoutRequest(
@@ -1199,7 +1359,7 @@ class FlowCompositionEditorJourneyTest {
         ).value
         return JvmFlowCompositionRequest(
             request = portable,
-            baseDirection = BaseDirection.LEFT_TO_RIGHT,
+            baseDirection = baseDirection,
             language = "en",
             hyphenationMode = hyphenationMode,
             hyphenationService = hyphenationService,

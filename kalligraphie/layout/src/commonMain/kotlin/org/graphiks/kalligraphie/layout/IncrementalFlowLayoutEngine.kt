@@ -33,6 +33,9 @@ import org.graphiks.kalligraphie.api.TextRange
  * platform resource and retains none in the returned [FlowLayoutState].
  */
 public object IncrementalFlowLayoutEngine {
+    private const val MAX_RETAINED_CHECKPOINTS: Int = 12
+    private const val REQUEST_CHECKPOINT_WINDOW: Int = 6
+
     /**
      * Materializes requested flow coverage, reusing semantically valid structured checkpoints.
      *
@@ -363,7 +366,7 @@ public object IncrementalFlowLayoutEngine {
                 coverage,
                 configuration,
                 fragments,
-                checkpoints,
+                retainCheckpoints(request, fragments, checkpoints, tail),
                 tail,
             )
         ) {
@@ -382,6 +385,47 @@ public object IncrementalFlowLayoutEngine {
             ),
             flowDiagnostics,
         )
+    }
+
+    private fun retainCheckpoints(
+        request: IncrementalFlowLayoutRequest,
+        fragments: List<ParagraphFragment>,
+        checkpoints: List<FlowLayoutCheckpoint>,
+        tail: FlowContinuation?,
+    ): List<FlowLayoutCheckpoint> {
+        val tailCheckpoint = tail?.let { continuation ->
+            fragments.lastOrNull { fragment -> fragment.continuation === continuation }
+                ?.let(FlowLayoutCheckpoint::capture)
+        }
+        val ordered = (checkpoints + listOfNotNull(tailCheckpoint))
+            .asReversed()
+            .distinctBy { checkpoint -> checkpoint.laidOutRange.endExclusive }
+            .asReversed()
+            .sortedWith { left, right ->
+                left.laidOutRange.endExclusive.compareTo(right.laidOutRange.endExclusive)
+            }
+        if (ordered.size <= MAX_RETAINED_CHECKPOINTS) return ordered
+
+        val pivot = ordered.indexOfFirst { checkpoint ->
+            checkpoint.laidOutRange.endExclusive >= request.requestedRange.endExclusive
+        }.takeIf { it >= 0 } ?: ordered.lastIndex
+        val selected = linkedSetOf<Int>()
+        val windowStart = (pivot - REQUEST_CHECKPOINT_WINDOW / 2).coerceAtLeast(0)
+            .coerceAtMost(ordered.size - REQUEST_CHECKPOINT_WINDOW)
+        repeat(REQUEST_CHECKPOINT_WINDOW) { offset -> selected += windowStart + offset }
+        if (tail != null) selected += ordered.lastIndex
+
+        val anchorSlots = MAX_RETAINED_CHECKPOINTS - selected.size
+        repeat(anchorSlots) { ordinal ->
+            selected += ((ordinal + 1) * ordered.size) / (anchorSlots + 1)
+        }
+        if (selected.size < MAX_RETAINED_CHECKPOINTS) {
+            for (index in ordered.indices.reversed()) {
+                selected += index
+                if (selected.size == MAX_RETAINED_CHECKPOINTS) break
+            }
+        }
+        return selected.sorted().map(ordered::get)
     }
 
     private fun validatePreparedParagraph(

@@ -1124,7 +1124,7 @@ public class FlowLayoutState private constructor(
     /** Immutable fragments available for a no-work compatible publication. */
     public val materializedFragments: List<ParagraphFragment> = materializedFragments.immutableListSnapshot()
 
-    /** Immutable structured checkpoints ordered by their source boundary. */
+    /** Immutable sparse structured checkpoints ordered by their source boundary. */
     public val checkpoints: List<FlowLayoutCheckpoint> = checkpoints.immutableListSnapshot()
 
     /** Validated construction for portable flow-state capabilities. */
@@ -1253,15 +1253,6 @@ public class FlowLayoutState private constructor(
                 }
             ) {
                 return invalid("Every flow checkpoint must use the state input and chain identities.")
-            }
-            if (fragments.filter { fragment -> fragment.continuation != null }.any { fragment ->
-                    capturedCheckpoints.none { checkpoint ->
-                        checkpoint.laidOutRange == fragment.laidOutRange &&
-                            checkpoint.continuation === fragment.continuation
-                    }
-                }
-            ) {
-                return invalid("Every non-final materialized fragment must have its exact flow checkpoint.")
             }
             if (continuation != null && capturedCheckpoints.lastOrNull()?.continuation !== continuation) {
                 return invalid("The final flow checkpoint must carry the published continuation.")

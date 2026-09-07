@@ -357,12 +357,14 @@ public object ParagraphComposer : ParagraphLayouter {
             return compose(request, materialization)
         }
 
-        val sourceClusters = request.unicodeAnalysis.graphemeClusters.filter { cluster ->
-            cluster.start >= request.sourceRange.start && cluster.endExclusive <= request.sourceRange.endExclusive
-        }
+        val allClusters = request.unicodeAnalysis.graphemeClusters
+        val firstClusterIndex = allClusters.firstStartingAtOrAfter(request.sourceRange.start)
+        val sourceEndIndex = allClusters.firstStartingAtOrAfter(request.sourceRange.endExclusive)
         if (
-            sourceClusters.isEmpty() || sourceClusters.first().start != request.sourceRange.start ||
-            sourceClusters.last().endExclusive != request.sourceRange.endExclusive
+            firstClusterIndex >= allClusters.size ||
+            allClusters[firstClusterIndex].start != request.sourceRange.start ||
+            sourceEndIndex <= firstClusterIndex ||
+            allClusters[sourceEndIndex - 1].endExclusive != request.sourceRange.endExclusive
         ) {
             return ParagraphCompositionResult.Failure(
                 EditableLineError.InvalidInput("Paragraph source ranges must begin and end at extended grapheme boundaries."),
@@ -375,17 +377,26 @@ public object ParagraphComposer : ParagraphLayouter {
             )
         }
 
-        val legalCandidates = candidatesForLine(request, request.sourceRange.start)
-        val terminal = maximumEndExclusive ?: legalCandidates.last()
-        val probeBoundaries = (sourceClusters.map(TextRange::endExclusive).filter { it <= terminal } + terminal)
-            .distinct()
-            .sortedWith(TextIndex::compareTo)
-        var probeIndex = 0
+        val finalClusterIndexExclusive = maximumEndExclusive?.let { boundary ->
+            allClusters.firstStartingAtOrAfter(boundary).also { index ->
+                if (index <= firstClusterIndex || allClusters[index - 1].endExclusive != boundary) {
+                    return ParagraphCompositionResult.Failure(
+                        EditableLineError.InvalidInput("A bounded first-line end must be a grapheme boundary."),
+                    )
+                }
+            }
+        } ?: sourceEndIndex
+        var probeOrdinal = 0
         var lastFittingForced: FinalizationResult.Success? = null
         while (true) {
             if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
-            val boundary = probeBoundaries[probeIndex]
+            val absoluteProbeIndex = minOf(
+                firstClusterIndex + probeOrdinal,
+                finalClusterIndexExclusive - 1,
+            )
+            val boundary = allClusters[absoluteProbeIndex].endExclusive
             val probeRange = TextRange(request.sourceRange.start, boundary)
+            val sourceClusters = allClusters.subList(firstClusterIndex, absoluteProbeIndex + 1)
             val provisionalAnalysis = analysisForLine(request, probeRange, resetLineTrailingWhitespace = false)
             val provisionalRuns = when (
                 val resolved = FontFallbackResolver.resolveRange(
@@ -405,9 +416,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     resolved.diagnostics.map(::fontDiagnostic),
                 )
             }
-            val candidates = (legalCandidates.filter { it <= boundary } + boundary)
-                .distinct()
-                .sortedWith(TextIndex::compareTo)
+            val candidates = boundedCandidatesForLine(request, request.sourceRange.start, boundary)
             val selected = when (
                 val finalized = selectFinalLine(
                     request = request,
@@ -427,8 +436,11 @@ public object ParagraphComposer : ParagraphLayouter {
             }
             if (selected.fits && selected.line.range.endExclusive == boundary) {
                 lastFittingForced = selected
-                if (boundary < terminal) {
-                    probeIndex = minOf((probeIndex + 1) * 2 - 1, probeBoundaries.lastIndex)
+                if (absoluteProbeIndex + 1 < finalClusterIndexExclusive) {
+                    probeOrdinal = minOf(
+                        (probeOrdinal + 1) * 2 - 1,
+                        finalClusterIndexExclusive - firstClusterIndex - 1,
+                    )
                     continue
                 }
             }
@@ -671,6 +683,55 @@ public object ParagraphComposer : ParagraphLayouter {
             addAll(automatic)
             if (lastOrNull() != terminal) add(terminal)
         }.distinct().sortedWith(TextIndex::compareTo)
+    }
+
+    /** Returns only legal candidates observed through one bounded grapheme probe. */
+    private fun boundedCandidatesForLine(
+        request: ParagraphLayoutRequest,
+        start: TextIndex,
+        probeEnd: TextIndex,
+    ): List<TextIndex> {
+        val opportunities = request.lineBreakAnalysis.opportunities
+        var index = opportunities.firstBoundaryAfter(start)
+        val legal = mutableListOf<TextIndex>()
+        var terminal = probeEnd
+        while (index < opportunities.size) {
+            val opportunity = opportunities[index]
+            if (opportunity.boundary > probeEnd) break
+            legal += opportunity.boundary
+            if (opportunity.kind == LineBreakKind.MANDATORY) {
+                terminal = opportunity.boundary
+                break
+            }
+            index += 1
+        }
+        if (request.hyphenationMode == HyphenationMode.AUTO) {
+            legal += automaticCandidatesInSegment(request, start, terminal)
+        }
+        if (legal.lastOrNull() != terminal) legal += terminal
+        return legal.distinct().sortedWith(TextIndex::compareTo)
+    }
+
+    private fun List<TextRange>.firstStartingAtOrAfter(boundary: TextIndex): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].start < boundary) low = middle + 1 else high = middle
+        }
+        return low
+    }
+
+    private fun List<org.graphiks.kalligraphie.api.LineBreakOpportunity>.firstBoundaryAfter(
+        boundary: TextIndex,
+    ): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].boundary <= boundary) low = middle + 1 else high = middle
+        }
+        return low
     }
 
     /** Service candidates strictly inside the segment, when the service serves the language. */
@@ -1301,13 +1362,20 @@ public object ParagraphComposer : ParagraphLayouter {
         if (range.start == range.endExclusive) {
             return UnicodeAnalysis(range, request.unicodeAnalysis.unicodeData, emptyList(), emptyList(), emptyList(), emptyList())
         }
-        val graphemes = request.unicodeAnalysis.graphemeClusters.mapNotNull { intersection(it, range) }
-        val scripts = request.unicodeAnalysis.scriptLanguageRuns.mapNotNull { source ->
+        val graphemes = request.unicodeAnalysis.graphemeClusters.overlapping(range).mapNotNull { source ->
+            intersection(source, range)
+        }
+        val scripts = request.unicodeAnalysis.scriptLanguageRuns.overlappingScriptRuns(range).mapNotNull { source ->
             intersection(source.range, range)?.let { clipped -> ScriptLanguageRun(clipped, source.script, source.language) }
         }
+        val bidiRuns = request.unicodeAnalysis.logicalBidiRuns.overlappingBidiRuns(range)
+        var bidiIndex = 0
         val baseLevel = if (request.baseDirection == BaseDirection.LEFT_TO_RIGHT) 0 else 1
         val levels = request.snapshot.scalarRanges(range).map { scalarRange ->
-            val paragraphLevel = request.unicodeAnalysis.logicalBidiRuns.first { bidi -> overlaps(bidi.range, scalarRange) }.level
+            while (bidiIndex + 1 < bidiRuns.size && bidiRuns[bidiIndex].range.endExclusive <= scalarRange.start) {
+                bidiIndex += 1
+            }
+            val paragraphLevel = bidiRuns[bidiIndex].level
             MutableSourceLevel(scalarRange, paragraphLevel, bidiClass(request.snapshot.scalarValues(scalarRange).single()))
         }.toMutableList()
 
@@ -1827,6 +1895,42 @@ public object ParagraphComposer : ParagraphLayouter {
 
     private fun overlaps(left: TextRange, right: TextRange): Boolean =
         left.start < right.endExclusive && right.start < left.endExclusive
+
+    private fun List<TextRange>.overlapping(range: TextRange): List<TextRange> {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].endExclusive <= range.start) low = middle + 1 else high = middle
+        }
+        val start = low
+        while (low < size && this[low].start < range.endExclusive) low += 1
+        return subList(start, low)
+    }
+
+    private fun List<ScriptLanguageRun>.overlappingScriptRuns(range: TextRange): List<ScriptLanguageRun> {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].range.endExclusive <= range.start) low = middle + 1 else high = middle
+        }
+        val start = low
+        while (low < size && this[low].range.start < range.endExclusive) low += 1
+        return subList(start, low)
+    }
+
+    private fun List<BidiRun>.overlappingBidiRuns(range: TextRange): List<BidiRun> {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].range.endExclusive <= range.start) low = middle + 1 else high = middle
+        }
+        val start = low
+        while (low < size && this[low].range.start < range.endExclusive) low += 1
+        return subList(start, low)
+    }
 
     private fun BaseDirection.shapingDirection(): ShapingDirection = when (this) {
         BaseDirection.LEFT_TO_RIGHT -> ShapingDirection.LEFT_TO_RIGHT

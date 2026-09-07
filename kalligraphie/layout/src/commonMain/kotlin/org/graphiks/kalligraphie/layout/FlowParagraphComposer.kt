@@ -542,46 +542,73 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         materialization: EditableLineMaterialization,
         intervals: List<InlineInterval>,
     ): FlowCompositionResult<ParagraphCompositionResult.Success> {
-        var maximumEndExclusive: TextIndex? = null
-        while (true) {
-            val composition = when (
-                val composed = ParagraphComposer.composeFirstLineBounded(
-                    request,
-                    materialization,
-                    maximumEndExclusive = maximumEndExclusive,
-                )
-            ) {
-                is ParagraphCompositionResult.Success -> composed
-                is ParagraphCompositionResult.Failure -> return FlowCompositionResult.Failure(
-                    FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
-                )
-                is ParagraphCompositionResult.Cancelled -> return FlowCompositionResult.Failure(
-                    FlowCompositionError.Cancelled,
-                )
-            }
-            val candidate = composition.lines.singleOrNull()
-                ?: return FlowCompositionResult.Failure(
-                    FlowCompositionError.ParagraphFailure(
-                        ParagraphLayoutError.InvalidInput(
-                            "Flow line composition did not produce exactly one complete candidate line.",
-                        ),
-                    ),
-                )
-            when (val packing = probePacking(candidate.line, intervals, request.constraints.writingMode)) {
-                PackingProbe.Complete -> return FlowCompositionResult.Success(composition)
-                is PackingProbe.Failure -> return FlowCompositionResult.Failure(packing.error)
-                is PackingProbe.ShorterPrefix -> {
-                    if (maximumEndExclusive == packing.endExclusive) {
-                        return FlowCompositionResult.Failure(
-                            FlowCompositionError.NonConvergentFlowRegion(
-                                "Flow packing repeated the same bounded source prefix.",
-                            ),
-                        )
+        val initial = composeBoundedCandidate(request, materialization, maximumEndExclusive = null)
+        val initialSuccess = when (initial) {
+            is FlowCompositionResult.Success -> initial.value
+            is FlowCompositionResult.Failure -> return initial
+        }
+        val initialLine = initialSuccess.lines.single()
+        when (val packing = probePacking(initialLine.line, intervals, request.constraints.writingMode)) {
+            PackingProbe.Complete -> return initial
+            is PackingProbe.Failure -> {
+                var firstLogicalFailure: PackingProbe.Failure = packing
+                val logicalPrefixEnds = request.unicodeAnalysis.graphemeClusters
+                    .asSequence()
+                    .dropWhile { cluster -> cluster.endExclusive <= initialLine.line.range.start }
+                    .takeWhile { cluster -> cluster.endExclusive < initialLine.line.range.endExclusive }
+                    .map(TextRange::endExclusive)
+                    .distinct()
+                    .toList()
+                    .asReversed()
+                logicalPrefixEnds.forEach { prefixEnd ->
+                    val prefix = when (
+                        val composed = composeBoundedCandidate(request, materialization, prefixEnd)
+                    ) {
+                        is FlowCompositionResult.Success -> composed
+                        is FlowCompositionResult.Failure -> return composed
                     }
-                    maximumEndExclusive = packing.endExclusive
+                    when (
+                        val prefixPacking = probePacking(
+                            prefix.value.lines.single().line,
+                            intervals,
+                            request.constraints.writingMode,
+                        )
+                    ) {
+                        PackingProbe.Complete -> return prefix
+                        is PackingProbe.Failure -> firstLogicalFailure = prefixPacking
+                    }
                 }
+                return FlowCompositionResult.Failure(firstLogicalFailure.error)
             }
         }
+    }
+
+    private fun composeBoundedCandidate(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        maximumEndExclusive: TextIndex?,
+    ): FlowCompositionResult<ParagraphCompositionResult.Success> = when (
+        val composed = ParagraphComposer.composeFirstLineBounded(
+            request,
+            materialization,
+            maximumEndExclusive = maximumEndExclusive,
+        )
+    ) {
+        is ParagraphCompositionResult.Success -> if (composed.lines.size == 1) {
+            FlowCompositionResult.Success(composed)
+        } else {
+            FlowCompositionResult.Failure(
+                FlowCompositionError.ParagraphFailure(
+                    ParagraphLayoutError.InvalidInput(
+                        "Flow line composition did not produce exactly one complete candidate line.",
+                    ),
+                ),
+            )
+        }
+        is ParagraphCompositionResult.Failure -> FlowCompositionResult.Failure(
+            FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
+        )
+        is ParagraphCompositionResult.Cancelled -> FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
     }
 
     private fun probePacking(
@@ -589,7 +616,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         intervals: List<InlineInterval>,
         writingMode: WritingMode,
     ): PackingProbe {
-        val allocatedRanges = mutableListOf<TextRange>()
         var fragmentIndex = 0
         var cursor = intervals.first().start.toDouble()
         var precedingEnd = 0.0
@@ -622,36 +648,19 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     fragmentIndex = intervals.size
                 }
                 if (fragmentIndex >= intervals.size) {
-                    val prefixEnd = allocatedRanges.largestContiguousPrefixEnd(line.range.start)
-                    return if (prefixEnd > line.range.start) {
-                        PackingProbe.ShorterPrefix(prefixEnd)
-                    } else {
-                        PackingProbe.Failure(
-                            FlowCompositionError.NoProgress(
-                                objectItem?.sourceRange ?: groupRange,
-                                if (objectItem == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
-                                else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
-                            ),
-                        )
-                    }
+                    return PackingProbe.Failure(
+                        FlowCompositionError.NoProgress(
+                            objectItem?.sourceRange ?: groupRange,
+                            if (objectItem == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
+                            else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
+                        ),
+                    )
                 }
-                allocatedRanges += groupRange
                 cursor += width
                 precedingEnd = originalStart + width
             }
         }
         return PackingProbe.Complete
-    }
-
-    private fun List<TextRange>.largestContiguousPrefixEnd(start: TextIndex): TextIndex {
-        var end = start
-        sortedWith { left, right ->
-            val startOrder = left.start.compareTo(right.start)
-            if (startOrder != 0) startOrder else left.endExclusive.compareTo(right.endExclusive)
-        }.forEach { range ->
-            if (range.start == end && range.endExclusive > end) end = range.endExclusive
-        }
-        return end
     }
 
     private fun stableQuery(
@@ -1447,7 +1456,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
     private sealed interface PackingProbe {
         data object Complete : PackingProbe
-        data class ShorterPrefix(val endExclusive: TextIndex) : PackingProbe
         data class Failure(val error: FlowCompositionError) : PackingProbe
     }
 }
