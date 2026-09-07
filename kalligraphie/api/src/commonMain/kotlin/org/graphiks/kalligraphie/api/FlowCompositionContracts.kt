@@ -1499,6 +1499,15 @@ public class FlowLayout private constructor(
             if (!coverage.isComplete) {
                 return invalid("Flow layout coverage must completely cover its requested range.")
             }
+            val coversRequest = if (requestedRange.start == requestedRange.endExclusive) {
+                requestedRange.start >= coverage.range.start && requestedRange.start <= coverage.range.endExclusive
+            } else {
+                requestedRange.start >= coverage.range.start &&
+                    requestedRange.endExclusive <= coverage.range.endExclusive
+            }
+            if (!coversRequest) {
+                return invalid("Flow layout coverage must contain its complete requested range.")
+            }
             if (
                 !diagnostics.reflowStart.sharesVersionWith(inputOrigin) ||
                 diagnostics.stabilizedAt?.sharesVersionWith(inputOrigin) == false

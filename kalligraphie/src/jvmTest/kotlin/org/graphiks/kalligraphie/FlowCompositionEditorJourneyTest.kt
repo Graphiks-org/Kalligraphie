@@ -1299,8 +1299,16 @@ class FlowCompositionEditorJourneyTest {
 
     @Test
     fun invalidFlowLayoutAggregateIsRejectedAsAPublicBusinessError() {
-        val fixture = incrementalRealFontFixture("fi")
-        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
+        val fixture = incrementalRealFontFixture("fi fi")
+        val legitimate = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    horizontalChain(1),
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                ),
+            ),
+        )
 
         val rejected = assertIs<FlowCompositionResult.Failure>(
             FlowLayout.create(
@@ -1315,6 +1323,20 @@ class FlowCompositionEditorJourneyTest {
         )
 
         assertIs<FlowCompositionError.InvalidState>(rejected.error)
+
+        val uncovered = assertIs<FlowCompositionResult.Failure>(
+            FlowLayout.create(
+                inputIdentity = legitimate.inputIdentity,
+                requestedRange = assertNotNull(legitimate.unmaterializedTail).remainingSourceRange,
+                fragments = legitimate.fragments,
+                coverage = legitimate.coverage,
+                unmaterializedTail = legitimate.unmaterializedTail,
+                state = legitimate.state,
+                diagnostics = legitimate.diagnostics,
+            ),
+        )
+
+        assertIs<FlowCompositionError.InvalidState>(uncovered.error)
     }
 
     @Test
