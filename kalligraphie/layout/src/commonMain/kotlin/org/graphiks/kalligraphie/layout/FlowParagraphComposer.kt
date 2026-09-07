@@ -3,12 +3,18 @@ package org.graphiks.kalligraphie.layout
 import org.graphiks.kalligraphie.api.CaretCandidate
 import org.graphiks.kalligraphie.api.EditableLine
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.FlowChain
+import org.graphiks.kalligraphie.api.FlowCompositionDiagnostic
 import org.graphiks.kalligraphie.api.FlowCompositionError
+import org.graphiks.kalligraphie.api.FlowCompositionInputIdentity
 import org.graphiks.kalligraphie.api.FlowCompositionResult
+import org.graphiks.kalligraphie.api.FlowContinuation
 import org.graphiks.kalligraphie.api.FlowParagraphLayouter
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionResult
+import org.graphiks.kalligraphie.api.FragmentationConstraintKind
 import org.graphiks.kalligraphie.api.InlineInterval
+import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.LayoutBounds
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
@@ -16,6 +22,7 @@ import org.graphiks.kalligraphie.api.LayoutSegment
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBand
 import org.graphiks.kalligraphie.api.LineFragment
+import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.NoProgressReason
 import org.graphiks.kalligraphie.api.ParagraphConstraints
@@ -32,14 +39,17 @@ import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.queryFlowRegion
 
 /**
- * Pure flow-region adapter over the exact paragraph line finalizer.
+ * Pure flow-region and flow-chain adapter over the exact paragraph line finalizer.
  *
- * A call selects and finalizes one logical line against the sum of the region's stable logical
- * intervals. Fragment boundaries only translate and split already-positioned visual content at
- * existing shaping-cluster boundaries; they never restart shaping or UAX #9 resolution.
+ * Line composition finalizes one logical line against the sum of stable logical intervals. Chain
+ * composition repeats that primitive for complete lines in one region and returns an exact
+ * continuation at its source and region boundary. Fragment boundaries only translate and split
+ * already-positioned visual content at existing shaping-cluster boundaries; they never restart
+ * shaping or UAX #9 resolution.
  */
 public object FlowParagraphComposer : FlowParagraphLayouter {
     private const val IMPLEMENTATION_REFINEMENT_LIMIT: Int = 32
+    private const val IMPLEMENTATION_EMPTY_TRANSITION_LIMIT: Int = 32
 
     override fun layoutLine(
         request: ParagraphLayoutRequest,
@@ -50,29 +60,280 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         if (request.continuation != null) {
             return paragraphFailure("Line-level flow composition does not consume paragraph continuations.")
         }
+        return when (val attempt = composeLine(request, materialization, region, blockStart)) {
+            is LineAttempt.Failure -> attempt.failure
+            LineAttempt.EndOfRegion -> noSpaceForFirstUnit(request)
+            is LineAttempt.Placed -> {
+                if (attempt.line.range != request.sourceRange) {
+                    paragraphFailure(
+                        "Line-level flow composition requires the request range to fit one complete logical line.",
+                    )
+                } else {
+                    FlowCompositionResult.Success(
+                        ParagraphFragment(
+                            paragraphRange = request.sourceRange,
+                            laidOutRange = request.sourceRange,
+                            isFirstFragment = true,
+                            isLastFragment = true,
+                            lines = listOf(attempt.line),
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    override fun layoutFragment(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        chain: FlowChain,
+        inputIdentity: FlowCompositionInputIdentity,
+        continuation: FlowContinuation?,
+    ): FlowCompositionResult<ParagraphFragment> {
+        if (request.continuation != null) {
+            return paragraphFailure("Flow-chain composition does not consume rectangular paragraph continuations.")
+        }
+        if (inputIdentity.textVersion != request.snapshot.version) {
+            return FlowCompositionResult.Failure(FlowCompositionError.TextIdentityMismatch)
+        }
         if (request.cancellationToken.isCancellationRequested()) {
             return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+        }
+        if (continuation != null) {
+            when (val validation = chain.validateContinuation(continuation, request, inputIdentity)) {
+                is FlowCompositionResult.Failure -> return validation
+                is FlowCompositionResult.Success -> Unit
+            }
+        }
+
+        val paragraphRange = continuation?.paragraphRange ?: request.sourceRange
+        val initiallyRelaxed = continuation?.relaxedConstraints.orEmpty()
+        val startRegionIndex = continuation?.regionIndex ?: 0
+        val startBlockOffset = continuation?.nextBlockOffset ?: 0f
+        var regionIndex = startRegionIndex
+        var blockOffset = startBlockOffset
+        var selected: RegionCandidate? = null
+
+        while (regionIndex < chain.regions.size && selected == null) {
+            when (
+                val candidate = composeRegion(
+                    request,
+                    materialization,
+                    chain.regions[regionIndex],
+                    blockOffset,
+                )
+            ) {
+                is RegionComposition.Failure -> return candidate.failure
+                is RegionComposition.Success -> {
+                    if (candidate.lines.isEmpty()) {
+                        regionIndex += 1
+                        blockOffset = 0f
+                    } else {
+                        selected = RegionCandidate(candidate, regionIndex)
+                    }
+                }
+            }
+        }
+        val current = selected ?: return noSpaceForFirstUnit(request)
+        if (current.composition.isComplete) {
+            return publishFragment(
+                request = request,
+                chain = chain,
+                inputIdentity = inputIdentity,
+                paragraphRange = paragraphRange,
+                candidate = current,
+                relaxedBefore = initiallyRelaxed,
+                newlyRelaxed = emptyList(),
+            )
+        }
+
+        val constraints = chain.fragmentationConstraints
+        val isFirstFragment = request.sourceRange.start == paragraphRange.start
+        val activeKeepTogether = constraints.keepTogether &&
+            FragmentationConstraintKind.KEEP_TOGETHER !in initiallyRelaxed
+        val activeMinEnd = constraints.minLinesAtEnd > current.composition.lines.size &&
+            FragmentationConstraintKind.MIN_LINES_AT_END !in initiallyRelaxed
+        val activeMinStart = constraints.minLinesAtStart > current.composition.lines.size &&
+            FragmentationConstraintKind.MIN_LINES_AT_START !in initiallyRelaxed
+
+        if ((activeKeepTogether && isFirstFragment) || activeMinEnd || activeMinStart) {
+            var laterIndex = current.regionIndex + 1
+            while (laterIndex < chain.regions.size) {
+                when (
+                    val later = composeRegion(
+                        request,
+                        materialization,
+                        chain.regions[laterIndex],
+                        0f,
+                    )
+                ) {
+                    is RegionComposition.Failure -> return later.failure
+                    is RegionComposition.Success -> {
+                        val satisfiesKeepTogether = !activeKeepTogether || later.isComplete
+                        val satisfiesEnd = !activeMinEnd || later.lines.size >= constraints.minLinesAtEnd
+                        val satisfiesStart = !activeMinStart || later.lines.size >= constraints.minLinesAtStart
+                        if (later.lines.isNotEmpty() && satisfiesKeepTogether && satisfiesEnd && satisfiesStart) {
+                            return publishFragment(
+                                request = request,
+                                chain = chain,
+                                inputIdentity = inputIdentity,
+                                paragraphRange = paragraphRange,
+                                candidate = RegionCandidate(later, laterIndex),
+                                relaxedBefore = initiallyRelaxed,
+                                newlyRelaxed = emptyList(),
+                            )
+                        }
+                    }
+                }
+                laterIndex += 1
+            }
+        }
+
+        val newlyRelaxed = buildList {
+            if (
+                constraints.keepWithNext &&
+                FragmentationConstraintKind.KEEP_WITH_NEXT !in initiallyRelaxed
+            ) add(FragmentationConstraintKind.KEEP_WITH_NEXT)
+            if (activeKeepTogether) add(FragmentationConstraintKind.KEEP_TOGETHER)
+            if (activeMinEnd) add(FragmentationConstraintKind.MIN_LINES_AT_END)
+            if (activeMinStart) add(FragmentationConstraintKind.MIN_LINES_AT_START)
+        }
+        return publishFragment(
+            request = request,
+            chain = chain,
+            inputIdentity = inputIdentity,
+            paragraphRange = paragraphRange,
+            candidate = current,
+            relaxedBefore = initiallyRelaxed,
+            newlyRelaxed = newlyRelaxed,
+        )
+    }
+
+    private fun composeRegion(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        region: FlowRegion,
+        initialBlockOffset: Float,
+    ): RegionComposition {
+        val lines = mutableListOf<LineLayout>()
+        var remainingStart = request.sourceRange.start
+        var blockOffset = initialBlockOffset
+        var emptyLineRequired = request.sourceRange.start == request.sourceRange.endExclusive
+        while (emptyLineRequired || remainingStart < request.sourceRange.endExclusive) {
+            val remaining = TextRange(remainingStart, request.sourceRange.endExclusive)
+            when (val attempt = composeLine(request.withSourceRange(remaining), materialization, region, blockOffset)) {
+                is LineAttempt.Failure -> return RegionComposition.Failure(attempt.failure)
+                LineAttempt.EndOfRegion -> return RegionComposition.Success(lines, blockOffset, false)
+                is LineAttempt.Placed -> {
+                    if (
+                        attempt.line.range.start != remainingStart ||
+                        !emptyLineRequired && attempt.line.range.endExclusive <= remainingStart
+                    ) {
+                        return RegionComposition.Failure(
+                            paragraphFailure("Every flow line must make exact consecutive source progress."),
+                        )
+                    }
+                    lines += attempt.line
+                    remainingStart = attempt.line.range.endExclusive
+                    blockOffset = attempt.blockStart + attempt.blockExtent
+                    emptyLineRequired = false
+                }
+            }
+        }
+        return RegionComposition.Success(lines, blockOffset, true)
+    }
+
+    private fun publishFragment(
+        request: ParagraphLayoutRequest,
+        chain: FlowChain,
+        inputIdentity: FlowCompositionInputIdentity,
+        paragraphRange: TextRange,
+        candidate: RegionCandidate,
+        relaxedBefore: List<FragmentationConstraintKind>,
+        newlyRelaxed: List<FragmentationConstraintKind>,
+    ): FlowCompositionResult<ParagraphFragment> {
+        val lines = candidate.composition.lines
+        val laidOutRange = TextRange(lines.first().range.start, lines.last().range.endExclusive)
+        val continuation = if (candidate.composition.isComplete) {
+            null
+        } else {
+            val nextIndex = if (candidate.regionIndex + 1 < chain.regions.size) candidate.regionIndex + 1
+            else candidate.regionIndex
+            val nextOffset = if (nextIndex == candidate.regionIndex) candidate.composition.nextBlockOffset else 0f
+            chain.createContinuation(
+                inputIdentity = inputIdentity,
+                request = request,
+                paragraphRange = paragraphRange,
+                remainingSourceRange = TextRange(laidOutRange.endExclusive, request.sourceRange.endExclusive),
+                regionIndex = nextIndex,
+                writingMode = request.constraints.writingMode,
+                nextBlockOffset = nextOffset.coerceAtMost(chain.regions[nextIndex].logicalBlockExtent(request.constraints.writingMode)),
+                relaxedConstraints = relaxedBefore + newlyRelaxed,
+            )
+        }
+        val diagnostics = newlyRelaxed.map { constraint ->
+            FlowCompositionDiagnostic.FragmentationRelaxed(constraint, paragraphRange, candidate.regionIndex)
+        }
+        return FlowCompositionResult.Success(
+            ParagraphFragment(
+                paragraphRange = paragraphRange,
+                laidOutRange = laidOutRange,
+                isFirstFragment = laidOutRange.start == paragraphRange.start,
+                isLastFragment = continuation == null,
+                lines = lines,
+                continuation = continuation,
+                diagnostics = diagnostics,
+            ),
+            diagnostics,
+        )
+    }
+
+    private fun composeLine(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        region: FlowRegion,
+        blockStart: Float,
+    ): LineAttempt {
+        if (request.cancellationToken.isCancellationRequested()) {
+            return LineAttempt.Failure(FlowCompositionResult.Failure(FlowCompositionError.Cancelled))
         }
         var currentBlockStart = blockStart
         var bandExtent = request.constraints.lineMetrics.height.value
         var previousBandExtent: Float? = null
         var previousIntervals: List<InlineInterval>? = null
         var refinements = 0
+        var emptyTransitions = 0
         val seen = mutableSetOf<RefinementFingerprint>()
 
         while (true) {
+            if (region.maximumRefinements <= 0) {
+                return LineAttempt.Failure(
+                    nonConvergent("A flow region must declare a positive maximum refinement count."),
+                )
+            }
+            if (currentBlockStart.toDouble() + bandExtent.toDouble() > region.logicalBlockExtent(request.constraints.writingMode)) {
+                return LineAttempt.EndOfRegion
+            }
             if (refinements >= minOf(region.maximumRefinements, IMPLEMENTATION_REFINEMENT_LIMIT)) {
-                return nonConvergent("The flow region exceeded its bounded line-band refinement count.")
+                return LineAttempt.Failure(
+                    nonConvergent("The flow region exceeded its bounded line-band refinement count."),
+                )
             }
             refinements += 1
             val band = LineBand(currentBlockStart, bandExtent)
             val queried = stableQuery(region, request.constraints.writingMode, band)
             val regionResult = when (queried) {
                 is FlowCompositionResult.Success -> queried.value
-                is FlowCompositionResult.Failure -> return queried
+                is FlowCompositionResult.Failure -> return LineAttempt.Failure(queried)
             }
             when (regionResult) {
                 is FlowRegionResult.Empty -> {
+                    emptyTransitions += 1
+                    if (emptyTransitions > IMPLEMENTATION_EMPTY_TRANSITION_LIMIT) {
+                        return LineAttempt.Failure(
+                            nonConvergent("The flow region exceeded its bounded empty-band transition count."),
+                        )
+                    }
                     currentBlockStart = regionResult.nextBlockOffset
                     previousBandExtent = null
                     previousIntervals = null
@@ -82,19 +343,23 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     continue
                 }
 
-                FlowRegionResult.EndOfRegion -> return noSpaceForFirstUnit(request)
+                FlowRegionResult.EndOfRegion -> return LineAttempt.EndOfRegion
                 is FlowRegionResult.AvailableIntervals -> {
                     val intervals = regionResult.intervals
                     if (previousIntervals != null && !intervals.areCoveredByUnionOf(previousIntervals)) {
-                        return nonConvergent(
-                            "A growing line band regained logical inline space after it had been excluded.",
+                        return LineAttempt.Failure(
+                            nonConvergent(
+                                "A growing line band regained logical inline space after it had been excluded.",
+                            ),
                         )
                     }
                     val totalInlineExtent = intervals.sumOf { interval ->
                         interval.endExclusive.toDouble() - interval.start.toDouble()
                     }
                     if (!totalInlineExtent.isFinite() || totalInlineExtent <= 0.0 || !totalInlineExtent.toFloat().isFinite()) {
-                        return geometryOverflow("The total flow inline extent overflowed finite layout coordinates.")
+                        return LineAttempt.Failure(
+                            geometryOverflow("The total flow inline extent overflowed finite layout coordinates."),
+                        )
                     }
                     val candidate = when (
                         val composed = ParagraphComposer.compose(
@@ -103,38 +368,47 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         )
                     ) {
                         is ParagraphCompositionResult.Success -> composed.lines.singleOrNull()
-                            ?: return paragraphFailure("Flow line composition did not produce exactly one complete candidate line.")
+                            ?: return LineAttempt.Failure(
+                                paragraphFailure("Flow line composition did not produce exactly one complete candidate line."),
+                            )
 
-                        is ParagraphCompositionResult.Failure -> return FlowCompositionResult.Failure(
-                            FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
+                        is ParagraphCompositionResult.Failure -> return LineAttempt.Failure(
+                            FlowCompositionResult.Failure(
+                                FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
+                            ),
                         )
 
                         is ParagraphCompositionResult.Cancelled ->
-                            return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
-                    }
-                    if (candidate.line.range != request.sourceRange) {
-                        return paragraphFailure(
-                            "Line-level flow composition requires the request range to fit one complete logical line.",
-                        )
+                            return LineAttempt.Failure(
+                                FlowCompositionResult.Failure(FlowCompositionError.Cancelled),
+                            )
                     }
                     val measured = when (
                         val projection = ParagraphComposer.projectLine(candidate, request.cancellationToken)
                     ) {
                         is ParagraphComposer.ProjectedLine.Success -> projection.line
-                        is ParagraphComposer.ProjectedLine.Failure -> return FlowCompositionResult.Failure(
-                            FlowCompositionError.ParagraphFailure(projection.error),
+                        is ParagraphComposer.ProjectedLine.Failure -> return LineAttempt.Failure(
+                            FlowCompositionResult.Failure(
+                                FlowCompositionError.ParagraphFailure(projection.error),
+                            ),
                         )
 
                         is ParagraphComposer.ProjectedLine.Cancelled ->
-                            return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+                            return LineAttempt.Failure(
+                                FlowCompositionResult.Failure(FlowCompositionError.Cancelled),
+                            )
                     }
                     val requiredMetrics = requiredBlockMetrics(candidate.line, measured.designInkBounds, measured.baseline)
                     val requiredBandExtent = requiredMetrics.extent
                     if (!requiredBandExtent.isFinite()) {
-                        return geometryOverflow("The refined flow line band overflowed finite layout coordinates.")
+                        return LineAttempt.Failure(
+                            geometryOverflow("The refined flow line band overflowed finite layout coordinates."),
+                        )
                     }
                     if (previousBandExtent != null && requiredBandExtent < previousBandExtent) {
-                        return nonConvergent("A refined candidate attempted to shrink its established line band.")
+                        return LineAttempt.Failure(
+                            nonConvergent("A refined candidate attempted to shrink its established line band."),
+                        )
                     }
                     val fingerprint = RefinementFingerprint(
                         bandExtent = bandExtent,
@@ -143,14 +417,23 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     )
                     if (requiredBandExtent > bandExtent) {
                         if (!seen.add(fingerprint)) {
-                            return nonConvergent("The flow region entered a repeated line-band refinement cycle.")
+                            return LineAttempt.Failure(
+                                nonConvergent("The flow region entered a repeated line-band refinement cycle."),
+                            )
                         }
                         previousBandExtent = requiredBandExtent
                         previousIntervals = intervals
                         bandExtent = requiredBandExtent
                         continue
                     }
-                    return publish(request, region, band, intervals, candidate, requiredMetrics)
+                    return when (val published = publishLine(request, region, band, intervals, candidate, requiredMetrics)) {
+                        is FlowCompositionResult.Failure -> LineAttempt.Failure(published)
+                        is FlowCompositionResult.Success -> LineAttempt.Placed(
+                            published.value,
+                            band.blockStart,
+                            band.blockExtent,
+                        )
+                    }
                 }
             }
         }
@@ -184,20 +467,27 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         nonConvergent("The flow region threw while evaluating a line band: ${failure::class.simpleName}.")
     }
 
-    private fun publish(
+    private fun publishLine(
         request: ParagraphLayoutRequest,
         region: FlowRegion,
         acceptedBand: LineBand,
         intervals: List<InlineInterval>,
         candidate: ComposedParagraphLine,
         requiredMetrics: RequiredBlockMetrics,
-    ): FlowCompositionResult<ParagraphFragment> {
+    ): FlowCompositionResult<LineLayout> {
         val placed = try {
             candidate.atFlowPosition(region.bounds, acceptedBand, requiredMetrics.fill(acceptedBand.blockExtent))
         } catch (overflow: IllegalArgumentException) {
             return geometryOverflow("The final flow line position overflowed finite layout coordinates.")
         }
-        val projectedFragments = when (val result = fragmentLine(placed.line, placed.baseline, intervals, request.constraints.writingMode)) {
+        val projectedFragments = when (
+            val result = fragmentLine(
+                placed.line,
+                placed.baseline,
+                intervals,
+                request.constraints.writingMode,
+            )
+        ) {
             is FragmentProjection.Success -> result.fragments
             is FragmentProjection.Failure -> return FlowCompositionResult.Failure(result.error)
         }
@@ -207,15 +497,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             return geometryOverflow(overflow.message ?: "Final flow geometry overflowed.")
         }
         return when (projected) {
-            is ParagraphComposer.ProjectedLine.Success -> FlowCompositionResult.Success(
-                ParagraphFragment(
-                    paragraphRange = request.sourceRange,
-                    laidOutRange = request.sourceRange,
-                    isFirstFragment = true,
-                    isLastFragment = true,
-                    lines = listOf(projected.line),
-                ),
-            )
+            is ParagraphComposer.ProjectedLine.Success -> FlowCompositionResult.Success(projected.line)
 
             is ParagraphComposer.ProjectedLine.Failure -> when (val error = projected.error) {
                 is ParagraphLayoutError.GeometryOverflow -> geometryOverflow(error.message)
@@ -460,6 +742,36 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             cancellationToken = cancellationToken,
         )
     }
+
+    private fun ParagraphLayoutRequest.withSourceRange(sourceRange: TextRange): ParagraphLayoutRequest =
+        ParagraphLayoutRequest(
+            snapshot = snapshot,
+            sourceRange = sourceRange,
+            unicodeAnalysis = unicodeAnalysis,
+            lineBreakAnalysis = lineBreakAnalysis,
+            constraints = constraints,
+            baseDirection = baseDirection,
+            language = language,
+            featurePolicy = featurePolicy,
+            features = features,
+            fontCatalog = fontCatalog,
+            resolutionPolicy = resolutionPolicy,
+            fontInstanceDescriptor = fontInstanceDescriptor,
+            shapingBackend = shapingBackend,
+            materializationIdentity = materializationIdentity,
+            overflowPolicy = overflowPolicy,
+            positioning = positioning,
+            hyphenationMode = hyphenationMode,
+            hyphenationService = hyphenationService,
+            inlineObjects = inlineObjects?.let { snapshot ->
+                InlineObjectSnapshot(snapshot.entries.filter { entry ->
+                    entry.index >= sourceRange.start && entry.index < sourceRange.endExclusive
+                })
+            },
+            textOrientation = textOrientation,
+            verticalMetricsPolicy = verticalMetricsPolicy,
+            cancellationToken = cancellationToken,
+        )
 
     private fun ComposedParagraphLine.atFlowPosition(
         bounds: LayoutRect,
@@ -753,6 +1065,40 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
     private fun rangesOverlap(left: TextRange, right: TextRange): Boolean =
         left.start < right.endExclusive && right.start < left.endExclusive
+
+    private fun FlowRegion.logicalBlockExtent(writingMode: WritingMode): Float = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> bounds.bottom.value - bounds.top.value
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> bounds.right.value - bounds.left.value
+    }
+
+    private sealed interface LineAttempt {
+        data class Placed(
+            val line: LineLayout,
+            val blockStart: Float,
+            val blockExtent: Float,
+        ) : LineAttempt
+
+        data object EndOfRegion : LineAttempt
+
+        data class Failure(val failure: FlowCompositionResult.Failure) : LineAttempt
+    }
+
+    private sealed interface RegionComposition {
+        data class Success(
+            val lines: List<LineLayout>,
+            val nextBlockOffset: Float,
+            val isComplete: Boolean,
+        ) : RegionComposition
+
+        data class Failure(val failure: FlowCompositionResult.Failure) : RegionComposition
+    }
+
+    private data class RegionCandidate(
+        val composition: RegionComposition.Success,
+        val regionIndex: Int,
+    )
 
     private data class RefinementFingerprint(
         val bandExtent: Float,

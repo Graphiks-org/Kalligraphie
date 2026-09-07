@@ -516,6 +516,8 @@ public class FlowChain(
      *
      * Ranges must belong to [inputIdentity]'s text revision, [remainingSourceRange] must be a suffix of
      * [paragraphRange], [regionIndex] must exist, and [nextBlockOffset] must be finite and bounded.
+     * This low-level factory proves region-query reuse only; paragraph composition rejects the
+     * result conservatively because no complete advanced paragraph input was captured.
      */
     public fun createContinuation(
         inputIdentity: FlowCompositionInputIdentity,
@@ -554,7 +556,125 @@ public class FlowChain(
             writingMode = writingMode,
             nextBlockOffset = nextBlockOffset,
             fragmentationConstraints = fragmentationConstraints,
+            paragraphReplayIdentity = null,
+            relaxedConstraints = emptyList(),
         )
+    }
+
+    /**
+     * Creates a continuation whose complete paragraph inputs can be checked on resume.
+     *
+     * [request] is inspected only to capture resource-free replay data; neither the snapshot,
+     * shaping backend, region, nor materialization capability is retained. [relaxedConstraints]
+     * carries deterministic fragmentation decisions already made for this paragraph so they are
+     * not repeated after a region boundary.
+     */
+    public fun createContinuation(
+        inputIdentity: FlowCompositionInputIdentity,
+        request: ParagraphLayoutRequest,
+        paragraphRange: TextRange,
+        remainingSourceRange: TextRange,
+        regionIndex: Int,
+        writingMode: WritingMode,
+        nextBlockOffset: Float,
+        relaxedConstraints: List<FragmentationConstraintKind> = emptyList(),
+    ): FlowContinuation {
+        require(inputIdentity.textVersion == request.snapshot.version) {
+            "A flow input identity must name the request text revision."
+        }
+        require(request.sourceRange.start.sharesVersionWith(paragraphRange.start)) {
+            "A flow request and paragraph range must use one text revision."
+        }
+        require(request.sourceRange.endExclusive == paragraphRange.endExclusive) {
+            "A flow request suffix must preserve the complete paragraph end boundary."
+        }
+        require(remainingSourceRange.start >= request.sourceRange.start) {
+            "A flow continuation remainder must stay inside the current request suffix."
+        }
+        require(relaxedConstraints.distinct().size == relaxedConstraints.size) {
+            "A flow continuation must not repeat relaxed fragmentation constraints."
+        }
+        val relaxationOrder = listOf(
+            FragmentationConstraintKind.KEEP_WITH_NEXT,
+            FragmentationConstraintKind.KEEP_TOGETHER,
+            FragmentationConstraintKind.MIN_LINES_AT_END,
+            FragmentationConstraintKind.MIN_LINES_AT_START,
+        )
+        require(relaxedConstraints == relaxationOrder.filter(relaxedConstraints::contains)) {
+            "A flow continuation must preserve deterministic fragmentation relaxation order."
+        }
+        val basic = createContinuation(
+            inputIdentity,
+            paragraphRange,
+            remainingSourceRange,
+            regionIndex,
+            writingMode,
+            nextBlockOffset,
+        )
+        return FlowContinuation(
+            inputIdentity = basic.inputIdentity,
+            paragraphRange = basic.paragraphRange,
+            remainingSourceRange = basic.remainingSourceRange,
+            compositionIdentity = basic.compositionIdentity,
+            regionIndex = basic.regionIndex,
+            regionIdentity = basic.regionIdentity,
+            writingMode = basic.writingMode,
+            nextBlockOffset = basic.nextBlockOffset,
+            fragmentationConstraints = basic.fragmentationConstraints,
+            paragraphReplayIdentity = LayoutContinuation.create(request, remainingSourceRange),
+            relaxedConstraints = relaxedConstraints,
+        )
+    }
+
+    /**
+     * Validates every provable dependency before a paragraph continuation is consumed.
+     *
+     * Legacy continuations made without a [ParagraphLayoutRequest] are rejected conservatively
+     * because their advanced typography inputs cannot be proven complete. Validation invokes no
+     * region or backend code and publishes no layout on failure.
+     */
+    public fun validateContinuation(
+        continuation: FlowContinuation,
+        request: ParagraphLayoutRequest,
+        inputIdentity: FlowCompositionInputIdentity?,
+    ): FlowCompositionResult<Unit> {
+        val region = regions.getOrNull(continuation.regionIndex)
+            ?: return FlowCompositionResult.Failure(
+                FlowCompositionError.InvalidRegionIndex(continuation.regionIndex),
+            )
+        if (
+            continuation.compositionIdentity != compositionIdentity ||
+            continuation.regionIdentity != region.identity
+        ) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.ForeignContinuation(continuation.regionIndex),
+            )
+        }
+        if (inputIdentity == null || continuation.paragraphReplayIdentity == null) {
+            return FlowCompositionResult.Failure(FlowCompositionError.UnprovenInputIdentity)
+        }
+        if (
+            inputIdentity.textVersion != continuation.inputIdentity.textVersion ||
+            request.snapshot.version != continuation.inputIdentity.textVersion
+        ) {
+            return FlowCompositionResult.Failure(FlowCompositionError.TextIdentityMismatch)
+        }
+        if (inputIdentity.typographyVersion != continuation.inputIdentity.typographyVersion) {
+            return FlowCompositionResult.Failure(FlowCompositionError.TypographyIdentityMismatch)
+        }
+        if (
+            continuation.writingMode != request.constraints.writingMode ||
+            continuation.fragmentationConstraints != fragmentationConstraints ||
+            request.sourceRange != continuation.remainingSourceRange ||
+            !continuation.paragraphReplayIdentity.hasSameFlowInputs(request)
+        ) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.IncompatibleContinuation(
+                    "The continuation must resume at its exact source boundary with unchanged paragraph inputs.",
+                ),
+            )
+        }
+        return FlowCompositionResult.Success(Unit)
     }
 }
 
@@ -584,7 +704,13 @@ public class FlowContinuation internal constructor(
     public val nextBlockOffset: Float,
     /** Fragmentation policy whose state must be replayed. */
     public val fragmentationConstraints: FragmentationConstraints,
+    /** Complete paragraph replay proof, absent on legacy manually-created continuations. */
+    internal val paragraphReplayIdentity: LayoutContinuation?,
+    relaxedConstraints: List<FragmentationConstraintKind>,
 ) {
+    /** Fragmentation rules already relaxed for this paragraph in deterministic order. */
+    public val relaxedConstraints: List<FragmentationConstraintKind> = relaxedConstraints.immutableListSnapshot()
+
     /** Source revision whose boundaries are recorded by this continuation. */
     public val textVersion: TextVersion
         get() = inputIdentity.textVersion
@@ -593,6 +719,31 @@ public class FlowContinuation internal constructor(
     public val typographyVersion: TypographyVersion
         get() = inputIdentity.typographyVersion
 }
+
+private fun LayoutContinuation.hasSameFlowInputs(request: ParagraphLayoutRequest): Boolean =
+    request.snapshot.version == originalVersion &&
+        request.constraints.writingMode == writingMode &&
+        request.constraints.lineMetrics == lineMetrics &&
+        request.baseDirection == baseDirection &&
+        request.language == language &&
+        request.lineBreakAnalysis.unicodeData == unicodeData &&
+        request.fontCatalog.generation == fontCatalogGeneration &&
+        request.resolutionPolicy.policyId == resolutionPolicyId &&
+        request.resolutionPolicy.version == resolutionPolicyVersion &&
+        request.fontInstanceDescriptor == fontInstanceDescriptor &&
+        request.shapingBackend.identity == shapingBackendIdentity &&
+        request.featurePolicy == featurePolicy &&
+        request.features == features &&
+        request.materializationIdentity == materializationIdentity &&
+        request.overflowPolicy == overflowPolicy &&
+        request.positioning == positioning &&
+        request.hyphenationMode == hyphenationMode &&
+        request.hyphenationService?.identity == hyphenationServiceIdentity &&
+        request.inlineObjects?.entries.orEmpty() == inlineObjects?.entries.orEmpty().filter { entry ->
+            entry.index >= request.sourceRange.start && entry.index < request.sourceRange.endExclusive
+        } &&
+        request.textOrientation == textOrientation &&
+        request.verticalMetricsPolicy == verticalMetricsPolicy
 
 /** Whether published flow fragments cover the complete paragraph or an exact prefix. */
 public enum class FlowCoverageStatus {

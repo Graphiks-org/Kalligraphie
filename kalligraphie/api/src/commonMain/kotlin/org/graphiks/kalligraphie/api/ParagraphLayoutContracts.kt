@@ -1084,6 +1084,24 @@ public interface FlowParagraphLayouter {
         region: FlowRegion,
         blockStart: Float = 0f,
     ): FlowCompositionResult<ParagraphFragment>
+
+    /**
+     * Composes one source-consecutive paragraph fragment in the next usable region of [chain].
+     *
+     * The operation may skip regions that answer [FlowRegionResult.EndOfRegion], and it follows
+     * strictly progressing [FlowRegionResult.Empty] answers before placing complete lines. A
+     * partial success carries an exact [FlowContinuation]; callers resume by passing its remaining
+     * range as [ParagraphLayoutRequest.sourceRange]. [inputIdentity] proves the immutable text and
+     * typography revisions and is required even for the first fragment so a reusable continuation
+     * can be issued. The borrowed [materialization] is never retained.
+     */
+    public fun layoutFragment(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        chain: FlowChain,
+        inputIdentity: FlowCompositionInputIdentity,
+        continuation: FlowContinuation? = null,
+    ): FlowCompositionResult<ParagraphFragment>
 }
 
 private fun PositionedGlyphRun.translatedBy(baseline: LayoutPoint): PositionedGlyphRun =
