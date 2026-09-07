@@ -264,6 +264,13 @@ public sealed interface FlowCompositionError {
         override val code: String = "layout.flow-incompatible-continuation"
     }
 
+    /** A retained incremental flow state cannot be replayed by the requested composition context. */
+    public data class IncompatibleState(
+        override val message: String,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-incompatible-state"
+    }
+
     /** A region violated deterministic monotone bounded refinement. */
     public data class NonConvergentFlowRegion(
         override val message: String,

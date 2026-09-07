@@ -195,7 +195,7 @@ public object JvmEditableParagraphFacade {
         )
     }
 
-    private fun prepareParagraphRequestBorrowing(
+    internal fun prepareParagraphRequestBorrowing(
         request: JvmEditableParagraphFacadeRequest,
         backend: ShapingBackend,
     ): ParagraphLayoutRequest? {
