@@ -193,8 +193,15 @@ public object IncrementalFlowLayoutEngine {
     ): List<FlowLayoutCheckpoint> {
         if (previous.inputIdentity == inputIdentity) return previous.checkpoints
         val textDelta = request.delta?.text
+        val contentChanged = textDelta != null || request.delta?.typography != null
         return previous.checkpoints.mapNotNull { checkpoint ->
-            if (textDelta != null && checkpoint.continuation.fragmentationCommitment != null) {
+            if (
+                contentChanged &&
+                (
+                    checkpoint.continuation.fragmentationCommitment != null ||
+                        checkpoint.continuation.relaxedConstraints.isNotEmpty()
+                )
+            ) {
                 return@mapNotNull null
             }
             val mappedRange = if (textDelta == null) {

@@ -473,23 +473,14 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         )
                     }
                     val composition = when (
-                        val composed = ParagraphComposer.compose(
+                        val composed = composePackableLine(
                             request.withSingleLineExtent(totalInlineExtent.toFloat()),
                             materialization,
+                            intervals,
                         )
                     ) {
-                        is ParagraphCompositionResult.Success -> composed
-
-                        is ParagraphCompositionResult.Failure -> return LineAttempt.Failure(
-                            FlowCompositionResult.Failure(
-                                FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
-                            ),
-                        )
-
-                        is ParagraphCompositionResult.Cancelled ->
-                            return LineAttempt.Failure(
-                                FlowCompositionResult.Failure(FlowCompositionError.Cancelled),
-                            )
+                        is FlowCompositionResult.Success -> composed.value
+                        is FlowCompositionResult.Failure -> return LineAttempt.Failure(composed)
                     }
                     val candidate = composition.lines.singleOrNull()
                         ?: return LineAttempt.Failure(
@@ -544,6 +535,123 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 }
             }
         }
+    }
+
+    private fun composePackableLine(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        intervals: List<InlineInterval>,
+    ): FlowCompositionResult<ParagraphCompositionResult.Success> {
+        var maximumEndExclusive: TextIndex? = null
+        while (true) {
+            val composition = when (
+                val composed = ParagraphComposer.composeFirstLineBounded(
+                    request,
+                    materialization,
+                    maximumEndExclusive = maximumEndExclusive,
+                )
+            ) {
+                is ParagraphCompositionResult.Success -> composed
+                is ParagraphCompositionResult.Failure -> return FlowCompositionResult.Failure(
+                    FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
+                )
+                is ParagraphCompositionResult.Cancelled -> return FlowCompositionResult.Failure(
+                    FlowCompositionError.Cancelled,
+                )
+            }
+            val candidate = composition.lines.singleOrNull()
+                ?: return FlowCompositionResult.Failure(
+                    FlowCompositionError.ParagraphFailure(
+                        ParagraphLayoutError.InvalidInput(
+                            "Flow line composition did not produce exactly one complete candidate line.",
+                        ),
+                    ),
+                )
+            when (val packing = probePacking(candidate.line, intervals, request.constraints.writingMode)) {
+                PackingProbe.Complete -> return FlowCompositionResult.Success(composition)
+                is PackingProbe.Failure -> return FlowCompositionResult.Failure(packing.error)
+                is PackingProbe.ShorterPrefix -> {
+                    if (maximumEndExclusive == packing.endExclusive) {
+                        return FlowCompositionResult.Failure(
+                            FlowCompositionError.NonConvergentFlowRegion(
+                                "Flow packing repeated the same bounded source prefix.",
+                            ),
+                        )
+                    }
+                    maximumEndExclusive = packing.endExclusive
+                }
+            }
+        }
+    }
+
+    private fun probePacking(
+        line: EditableLine,
+        intervals: List<InlineInterval>,
+        writingMode: WritingMode,
+    ): PackingProbe {
+        val allocatedRanges = mutableListOf<TextRange>()
+        var fragmentIndex = 0
+        var cursor = intervals.first().start.toDouble()
+        var precedingEnd = 0.0
+        line.positionedGlyphRuns.forEach { run ->
+            run.atomicGlyphGroups().forEach { group ->
+                val originalStart = group.first().penStart(writingMode)
+                val width = group.sumOf { glyph -> glyph.inlineAdvance(writingMode) }
+                val leading = (originalStart - precedingEnd).coerceAtLeast(0.0)
+                if (leading > 0.0) {
+                    val advanced = advanceWhitespace(intervals, fragmentIndex, cursor, leading)
+                    fragmentIndex = advanced.first
+                    cursor = advanced.second
+                }
+                val groupRange = group.sourceRange()
+                val objectItem = line.positionedInlineObjects.firstOrNull { item ->
+                    group.any { glyph -> rangesOverlap(glyph.mappedSourceRange, item.sourceRange) }
+                }
+                val maximum = intervals.maxOf { interval ->
+                    interval.endExclusive.toDouble() - interval.start.toDouble()
+                }
+                if (width <= maximum) {
+                    while (
+                        fragmentIndex < intervals.size &&
+                        cursor + width > intervals[fragmentIndex].endExclusive.toDouble()
+                    ) {
+                        fragmentIndex += 1
+                        if (fragmentIndex < intervals.size) cursor = intervals[fragmentIndex].start.toDouble()
+                    }
+                } else {
+                    fragmentIndex = intervals.size
+                }
+                if (fragmentIndex >= intervals.size) {
+                    val prefixEnd = allocatedRanges.largestContiguousPrefixEnd(line.range.start)
+                    return if (prefixEnd > line.range.start) {
+                        PackingProbe.ShorterPrefix(prefixEnd)
+                    } else {
+                        PackingProbe.Failure(
+                            FlowCompositionError.NoProgress(
+                                objectItem?.sourceRange ?: groupRange,
+                                if (objectItem == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
+                                else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
+                            ),
+                        )
+                    }
+                }
+                allocatedRanges += groupRange
+                cursor += width
+                precedingEnd = originalStart + width
+            }
+        }
+        return PackingProbe.Complete
+    }
+
+    private fun List<TextRange>.largestContiguousPrefixEnd(start: TextIndex): TextIndex {
+        var end = start
+        sortedWith { left, right ->
+            val startOrder = left.start.compareTo(right.start)
+            if (startOrder != 0) startOrder else left.endExclusive.compareTo(right.endExclusive)
+        }.forEach { range ->
+            if (range.start == end && range.endExclusive > end) end = range.endExclusive
+        }
+        return end
     }
 
     private fun stableQuery(
@@ -1335,5 +1443,11 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     private sealed interface FragmentProjection {
         data class Success(val fragments: List<LineFragment>) : FragmentProjection
         data class Failure(val error: FlowCompositionError) : FragmentProjection
+    }
+
+    private sealed interface PackingProbe {
+        data object Complete : PackingProbe
+        data class ShorterPrefix(val endExclusive: TextIndex) : PackingProbe
+        data class Failure(val error: FlowCompositionError) : PackingProbe
     }
 }

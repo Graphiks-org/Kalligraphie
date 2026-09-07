@@ -16,11 +16,14 @@ import org.graphiks.kalligraphie.api.FlowLayoutState
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionIdentity
 import org.graphiks.kalligraphie.api.FlowRegionResult
+import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FragmentationConstraintKind
 import org.graphiks.kalligraphie.api.FragmentationConstraints
 import org.graphiks.kalligraphie.api.HyphenationMode
 import org.graphiks.kalligraphie.api.HyphenationMinimums
 import org.graphiks.kalligraphie.api.HyphenationService
 import org.graphiks.kalligraphie.api.HyphenationServiceIdentity
+import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.InlineInterval
 import org.graphiks.kalligraphie.api.InlineObjectAlignment
 import org.graphiks.kalligraphie.api.InlineObjectDefinition
@@ -40,14 +43,105 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphFragment
 import org.graphiks.kalligraphie.api.RangeChange
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.TextChange
 import org.graphiks.kalligraphie.api.TextChangeSet
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TypographyDelta
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.createIncrementalFlowLayoutRequest
+import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class FlowCompositionEditorJourneyTest {
+    @Test
+    fun oneLineCoverageNeverShapesTheUntouchedDocumentTail() {
+        val fixture = incrementalRealFontFixture(
+            List(128) { "office" }.joinToString(" "),
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val chain = horizontalChain(count = 1, inlineExtent = 4_000f)
+        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        val recording = RecordingShapingBackend(backend)
+        try {
+            val result = success(
+                JvmFlowCompositionFacade.layoutBorrowing(
+                    request(
+                        fixture,
+                        chain,
+                        requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                        constraints = incrementalTestConstraints(width = 4_000f, top = 100f, height = 1_200f),
+                    ),
+                    recording,
+                ),
+            )
+
+            assertNotNull(result.unmaterializedTail)
+            assertTrue(recording.requests.isNotEmpty())
+            assertTrue(
+                recording.requests.all { shaped -> shaped.range.endExclusive < fixture.snapshot.range.endExclusive },
+                "A one-line request must not submit the untouched document tail to shaping.",
+            )
+        } finally {
+            backend.close()
+        }
+    }
+
+    @Test
+    fun fragmentedPackingPublishesTheLargestSafeClusterPrefixWithoutDroppingTheTail() {
+        val fixture = incrementalRealFontFixture(
+            "abc",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(2_200f), LayoutUnit(2_500f))
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(
+                    bounds,
+                    listOf(InlineInterval(0f, 900f), InlineInterval(1_200f, 2_100f)),
+                ),
+            ),
+        )
+        val constraints = incrementalTestConstraints(width = 2_100f, top = 100f, height = 2_400f)
+
+        val first = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = constraints,
+                ),
+            ),
+        )
+
+        assertEquals(fixture.snapshot.incrementalRange(0, 2), first.lines.single().range)
+        assertEquals(
+            fixture.snapshot.incrementalRange(2, 3),
+            assertNotNull(first.unmaterializedTail).remainingSourceRange,
+        )
+
+        val completed = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    constraints = constraints,
+                    previousState = first.state,
+                ),
+            ),
+        )
+
+        assertEquals(
+            listOf(fixture.snapshot.incrementalRange(0, 2), fixture.snapshot.incrementalRange(2, 3)),
+            completed.lines.map(LineLayout::range),
+        )
+        assertNull(completed.unmaterializedTail)
+    }
+
     @Test
     fun foreignTypographyProofRangesAreRejectedBeforeFlowLayout() {
         val source = incrementalRealFontFixture("fi fi")
@@ -564,6 +658,132 @@ class FlowCompositionEditorJourneyTest {
     }
 
     @Test
+    fun localizedTypographyChangeReevaluatesCommittedMinimumLinesFromParagraphStart() {
+        val source = incrementalRealFontFixture("fi fi")
+        val target = source.withTypography()
+        val firstBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(1_700f), LayoutUnit(1_300f))
+        val secondBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(2_100f), LayoutUnit(1_700f), LayoutUnit(4_500f))
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(firstBounds, listOf(InlineInterval(0f, 1_600f))),
+                FixedFlowRegion(secondBounds, listOf(InlineInterval(0f, 1_600f))),
+            ),
+            FragmentationConstraints(minLinesAtStart = 2, minLinesAtEnd = 2),
+        )
+        val initial = success(
+            JvmFlowCompositionFacade.layout(
+                request(source, chain, requestedRange = source.snapshot.incrementalRange(0, 1)),
+            ),
+        )
+        assertNotNull(assertNotNull(initial.unmaterializedTail).fragmentationCommitment)
+        val typographyRangeProof = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                source.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(3, 5),
+                        source.snapshot.incrementalRange(3, 5),
+                    ),
+                ),
+            ),
+        ).value
+
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    previousState = initial.state,
+                    delta = LayoutDelta(
+                        typography = TypographyDelta(
+                            sourceVersion = source.typography.version,
+                            targetVersion = target.typography.version,
+                            rangeChange = RangeChange.from(typographyRangeProof),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val full = success(JvmFlowCompositionFacade.layout(request(target, chain)))
+
+        assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+        assertEquals(full.fragments.map { it.laidOutRange }, edited.fragments.map { it.laidOutRange })
+        assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.fragments.flatMap { it.diagnostics },
+            edited.fragments.flatMap { it.diagnostics },
+        )
+    }
+
+    @Test
+    fun editedContentReevaluatesARelaxedKeepTogetherDecisionAgainstFullLayout() {
+        val source = incrementalRealFontFixture(
+            "a\nx.",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val target = source.withText("a x.")
+        val lineMetrics = LineVerticalMetrics(LayoutUnit(200f), LayoutUnit(100f))
+        val firstBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(4_100f), LayoutUnit(1_300f))
+        val secondBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(2_100f), LayoutUnit(4_100f), LayoutUnit(3_300f))
+        val constraints = HorizontalParagraphConstraints(firstBounds, lineMetrics)
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(firstBounds, listOf(InlineInterval(0f, 4_000f))),
+                FixedFlowRegion(secondBounds, listOf(InlineInterval(0f, 4_000f))),
+            ),
+            FragmentationConstraints(keepTogether = true),
+        )
+        val initial = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    source,
+                    chain,
+                    requestedRange = source.snapshot.incrementalRange(0, 1),
+                    constraints = constraints,
+                ),
+            ),
+        )
+        assertEquals(
+            listOf(FragmentationConstraintKind.KEEP_TOGETHER),
+            assertNotNull(initial.unmaterializedTail).relaxedConstraints,
+        )
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(1, 2),
+                        target.snapshot.incrementalRange(1, 2),
+                    ),
+                ),
+            ),
+        ).value
+
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    constraints = constraints,
+                    previousState = initial.state,
+                    delta = LayoutDelta(text = change),
+                ),
+            ),
+        )
+        val full = success(JvmFlowCompositionFacade.layout(request(target, chain, constraints = constraints)))
+
+        assertEquals(full.fragments.map { it.laidOutRange }, edited.fragments.map { it.laidOutRange })
+        assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.fragments.flatMap { it.diagnostics },
+            edited.fragments.flatMap { it.diagnostics },
+        )
+        assertEquals(emptyList(), edited.fragments.flatMap { it.diagnostics })
+    }
+
+    @Test
     fun automaticHyphenationEditReflowsFromTheAffectedWordStart() {
         val source = incrementalRealFontFixture("abcdefghij")
         val target = source.withText("abcdefghiX")
@@ -1024,5 +1244,19 @@ class FlowCompositionEditorJourneyTest {
             onQuery()
             return FlowRegionResult.AvailableIntervals(intervals)
         }
+    }
+
+    private class RecordingShapingBackend(
+        private val delegate: ShapingBackend,
+    ) : ShapingBackend {
+        override val identity = delegate.identity
+        val requests = mutableListOf<ShapingRequest>()
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
+            requests += request
+            return delegate.shape(request)
+        }
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
     }
 }

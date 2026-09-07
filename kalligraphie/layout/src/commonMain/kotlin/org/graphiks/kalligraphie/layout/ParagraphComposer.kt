@@ -176,7 +176,6 @@ public object ParagraphComposer : ParagraphLayouter {
             )
         }
         if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
-
         val sourceClusters = request.unicodeAnalysis.graphemeClusters.filter { cluster ->
             cluster.start >= request.sourceRange.start && cluster.endExclusive <= request.sourceRange.endExclusive
         }
@@ -316,6 +315,143 @@ public object ParagraphComposer : ParagraphLayouter {
             }
         }
         return ParagraphCompositionResult.Success(placed, remainingSourceRange = null)
+    }
+
+    /**
+     * Composes one complete line while bounding provisional shaping to an exponentially growing
+     * grapheme prefix. The first prefix that cannot be published supplies the same legal line
+     * choice as full-suffix composition; an unbreakable segment falls back to the last complete
+     * grapheme that fitted. No source after the decisive probe is resolved or shaped.
+     */
+    internal fun composeFirstLineBounded(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        maximumEndExclusive: TextIndex? = null,
+    ): ParagraphCompositionResult {
+        if (materialization.identity() != request.materializationIdentity) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput("Paragraph materialization does not match the captured request identity."),
+            )
+        }
+        if (materialization is EditableLineMaterialization.Renderable &&
+            materialization.resolver.generation != request.fontCatalog.generation
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput(
+                    "Renderable paragraph materialization resolver must belong to the captured font catalog generation.",
+                ),
+            )
+        }
+        if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
+        if (maximumEndExclusive != null && (
+                maximumEndExclusive <= request.sourceRange.start ||
+                    maximumEndExclusive > request.sourceRange.endExclusive ||
+                    !maximumEndExclusive.sharesVersionWith(request.sourceRange.start)
+                )
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput("A bounded first-line end must lie inside the paragraph source range."),
+            )
+        }
+        if (request.sourceRange.start == request.sourceRange.endExclusive) {
+            return compose(request, materialization)
+        }
+
+        val sourceClusters = request.unicodeAnalysis.graphemeClusters.filter { cluster ->
+            cluster.start >= request.sourceRange.start && cluster.endExclusive <= request.sourceRange.endExclusive
+        }
+        if (
+            sourceClusters.isEmpty() || sourceClusters.first().start != request.sourceRange.start ||
+            sourceClusters.last().endExclusive != request.sourceRange.endExclusive
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput("Paragraph source ranges must begin and end at extended grapheme boundaries."),
+            )
+        }
+        if (!blockLineFits(request, initialBlockCursor(request))) {
+            return ParagraphCompositionResult.Success(
+                emptyList(),
+                TextRange(request.sourceRange.start, request.sourceRange.endExclusive),
+            )
+        }
+
+        val legalCandidates = candidatesForLine(request, request.sourceRange.start)
+        val terminal = maximumEndExclusive ?: legalCandidates.last()
+        val probeBoundaries = (sourceClusters.map(TextRange::endExclusive).filter { it <= terminal } + terminal)
+            .distinct()
+            .sortedWith(TextIndex::compareTo)
+        var probeIndex = 0
+        var lastFittingForced: FinalizationResult.Success? = null
+        while (true) {
+            if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
+            val boundary = probeBoundaries[probeIndex]
+            val probeRange = TextRange(request.sourceRange.start, boundary)
+            val provisionalAnalysis = analysisForLine(request, probeRange, resetLineTrailingWhitespace = false)
+            val provisionalRuns = when (
+                val resolved = FontFallbackResolver.resolveRange(
+                    request = request,
+                    sourceRange = probeRange,
+                    shapingContextRange = request.sourceRange,
+                    unicodeAnalysis = provisionalAnalysis,
+                    materialization = materialization,
+                )
+            ) {
+                is FontOperationResult.Success -> resolved.value.shapedRuns
+                is FontOperationResult.Failure -> return ParagraphCompositionResult.Failure(
+                    EditableLineError.FontResolutionFailure(resolved.error),
+                    resolved.diagnostics.map(::fontDiagnostic),
+                )
+                is FontOperationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(
+                    resolved.diagnostics.map(::fontDiagnostic),
+                )
+            }
+            val candidates = (legalCandidates.filter { it <= boundary } + boundary)
+                .distinct()
+                .sortedWith(TextIndex::compareTo)
+            val selected = when (
+                val finalized = selectFinalLine(
+                    request = request,
+                    start = request.sourceRange.start,
+                    candidates = candidates,
+                    sourceClusters = sourceClusters,
+                    provisionalRuns = provisionalRuns,
+                    materialization = materialization,
+                )
+            ) {
+                is FinalizationResult.Success -> finalized
+                is FinalizationResult.Failure -> return ParagraphCompositionResult.Failure(
+                    finalized.error,
+                    finalized.diagnostics,
+                )
+                is FinalizationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(finalized.diagnostics)
+            }
+            if (selected.fits && selected.line.range.endExclusive == boundary) {
+                lastFittingForced = selected
+                if (boundary < terminal) {
+                    probeIndex = minOf((probeIndex + 1) * 2 - 1, probeBoundaries.lastIndex)
+                    continue
+                }
+            }
+            val publishable = if (selected.fits) selected else lastFittingForced ?: selected
+            val line = place(
+                publishable.line,
+                request,
+                initialBlockCursor(request),
+                publishable.fontInstances,
+            )
+            val lineEnd = publishable.line.range.endExclusive
+            val remaining = lineEnd.takeIf { it < request.sourceRange.endExclusive }?.let { end ->
+                TextRange(end, request.sourceRange.endExclusive)
+            }
+            val trailingEmptyRequired = remaining == null && request.lineBreakAnalysis.opportunities.any { opportunity ->
+                opportunity.boundary == request.sourceRange.endExclusive && opportunity.kind == LineBreakKind.MANDATORY
+            }
+            return ParagraphCompositionResult.Success(
+                lines = listOf(line),
+                remainingSourceRange = remaining,
+                hasUnplacedTrailingEmptyLine = trailingEmptyRequired,
+            )
+        }
     }
 
     private fun projectComposition(
