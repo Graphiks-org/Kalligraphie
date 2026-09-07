@@ -138,12 +138,177 @@ configuration de composition est refusée comme entrée invalide. Concaténer le
 préfixe publié et un résultat repris compatible est observable comme une seule
 composition dans une région assez haute.
 
+## Composer dans des régions avec exclusions
+
+Utilisez `JvmFlowCompositionFacade` lorsque l’application fournit plusieurs
+régions de composition ou exclut une partie de l’espace en ligne dans une
+bande. Une `FlowRegion` est un fournisseur de géométrie immuable, pur,
+déterministe et sûr pour les accès concurrents. Son
+`FlowRegionIdentity` opaque doit changer dès que ses bornes ou son comportement
+de requête changent.
+
+Les requêtes emploient des axes logiques. `LineBand.blockStart` et
+`blockExtent` décrivent la boîte de ligne candidate dans la progression de
+bloc ; chaque `InlineInterval` semi-ouvert décrit l’espace disponible dans la
+progression en ligne. Le même contrat prend donc en charge `HORIZONTAL_TB`,
+`VERTICAL_RL` et `VERTICAL_LR` sans convention de coordonnées dépendante du
+moteur de rendu.
+
+```kotlin
+class ArticleRegion(
+    override val bounds: LayoutRect,
+    private val exclusionStart: Float,
+    private val exclusionEnd: Float,
+) : FlowRegion {
+    override val identity = FlowRegionIdentity.create()
+    private val horizontalInlineExtent = bounds.right.value - bounds.left.value
+
+    override fun query(
+        writingMode: WritingMode,
+        lineBand: LineBand,
+    ): FlowRegionResult =
+        if (lineBand.blockStart < 1_200f &&
+            lineBand.blockStart + lineBand.blockExtent > 400f
+        ) {
+            FlowRegionResult.AvailableIntervals(
+                listOf(
+                    InlineInterval(0f, exclusionStart),
+                    InlineInterval(exclusionEnd, horizontalInlineExtent),
+                ),
+            )
+        } else {
+            FlowRegionResult.AvailableIntervals(
+                listOf(InlineInterval(0f, horizontalInlineExtent)),
+            )
+        }
+}
+
+val chain = FlowChain(
+    regions = listOf(firstRegion, secondRegion),
+    fragmentationConstraints = FragmentationConstraints(
+        minLinesAtStart = 2,
+        minLinesAtEnd = 2,
+        keepTogether = false,
+    ),
+)
+val portable = requireFlowSuccess(createIncrementalFlowLayoutRequest(
+    input = LayoutInput(decoded.snapshot, typography),
+    requestedRange = visibleSourceRange,
+    constraints = paragraphConstraints,
+    flowChain = chain,
+    overscan = LineOverscan(2),
+))
+val flow = JvmFlowCompositionFacade.layout(
+    JvmFlowCompositionRequest(
+        request = portable,
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "fr",
+    ),
+)
+```
+
+Dans cet exemple, `typography` est un `TypographySnapshot` construit avec le
+même catalogue, la même politique de repli, la même instance de fonte et les
+mêmes fonctionnalités OpenType que le parcours rectangulaire.
+`requireFlowSuccess(...)` représente du code applicatif qui extrait un succès ;
+un appelant de production doit traiter chaque échec typé. L’exemple de
+région est horizontal ; un fournisseur indépendant du mode d’écriture doit
+déduire son étendue logique en ligne de `writingMode`, au lieu de toujours
+employer la largeur physique.
+
+La réponse de région validée est exactement l’une des suivantes :
+
+- `AvailableIntervals`, avec des intervalles finis, non vides, ordonnés,
+  disjoints et compris dans la région ;
+- `Empty(nextBlockOffset)`, qui progresse strictement et avec une coordonnée
+  finie sur l’axe de bloc ;
+- `EndOfRegion`.
+
+Kalligraphie ne trie, ne fusionne, ne rogne et ne répare jamais une réponse
+incorrecte. Le moteur interroge d’abord l’étendue minimale de la boîte de
+ligne, compose une ligne logique candidate, puis interroge à nouveau le même
+départ de bloc avec une étendue réelle non décroissante. Il accepte uniquement
+une plage source, une bande et des intervalles stables. Une réponse instable ou
+non monotone, un cycle ou un dépassement de raffinement, un rétrécissement de
+bande, une géométrie non finie ou en débordement et une absence de progression
+produisent une `FlowCompositionError` typée ; aucun résultat approximatif
+n’est publié.
+
+## Lire la géométrie fragmentée
+
+Un `FlowLayout` réussi contient des `ParagraphFragment` ordonnés selon la
+source. Chaque fragment enregistre la plage exacte du paragraphe et la plage
+composée, ses indicateurs premier/dernier, ses diagnostics structurés et son
+éventuelle continuation. Ses `LineLayout` restent des lignes logiques. Quand
+une exclusion fournit plusieurs intervalles, une ligne contient plusieurs
+`LineFragment` géométriques.
+
+La résolution BiDi (bidirectionnelle) du paragraphe, le choix de la ligne et
+les étapes L1–L4 de l’UAX #9 sont appliqués une seule fois à cette ligne
+logique. Les séquences visuelles sont ensuite réparties entre les intervalles
+et ne peuvent être coupées qu’aux frontières sûres de grappes. Une grappe de
+graphèmes, une ligature ou un objet dans la ligne n’est jamais partagé entre
+deux fragments, et une frontière géométrique ne crée jamais de `TextIndex`.
+
+Employez les opérations d’édition de chaque `LineLayout` publié ; les valeurs
+rectangulaires `ParagraphLayout` délèguent à la même géométrie finale de ligne.
+`selectionGeometry(...)` retourne uniquement des rectangles de fragments
+occupés et ne remplit donc pas une exclusion. Un `hitTest(...)` dans cet espace
+exclu choisit le repère d’insertion valide le plus proche selon une règle de
+départage déterministe.
+
+## Fragmentation et continuations exactes
+
+`FragmentationConstraints` demande `minLinesAtStart`, `minLinesAtEnd`,
+`keepTogether` et `keepWithNext`. Quand les régions disponibles ne permettent
+pas de tout satisfaire, Kalligraphie conserve toute la source et relâche les
+règles dans cet ordre déterministe : `KEEP_WITH_NEXT`, `KEEP_TOGETHER`,
+`MIN_LINES_AT_END`, puis `MIN_LINES_AT_START`. Chaque relâchement apparaît sous
+la forme d’un `FlowCompositionDiagnostic.FragmentationRelaxed`. La façade JVM
+pour un seul paragraphe ne peut pas prouver de relation avec le paragraphe
+suivant ; une demande `keepWithNext` est donc signalée par le même mécanisme de
+relâchement.
+
+Une `FlowContinuation` est une capacité immuable et non une clé textuelle
+définie par l’appelant. Elle lie les révisions exactes du texte et de la
+typographie, le suffixe du paragraphe, toutes les entrées nécessaires à une
+reprise identique, les identités de la chaîne et de la région, l’état de
+fragmentation, le mode d’écriture, l’indice de région et le curseur de bloc.
+Une réutilisation étrangère, obsolète, contradictoire ou insuffisamment prouvée
+est rejetée par une erreur typée avant toute requête de région ou composition.
+Conserver la continuation ne conserve ni le texte, ni le fournisseur de
+région, ni une page, ni le moteur de rendu, ni une ressource native.
+
+## Couverture bornée et recomposition en aval
+
+`requestedRange` demande les lignes complètes qui contiennent la plage source
+visée ; `LineOverscan` ajoute un nombre borné de lignes complètes après cette
+plage, comme marge de préchargement. Pour un `FlowLayout` réussi,
+`coverage` décrit exactement le préfixe publié. Quand le paragraphe physique se
+poursuit, `unmaterializedTail` contient la `FlowContinuation` exacte du suffixe
+non matérialisé au lieu de masquer une troncature.
+
+Conservez `FlowLayout.state` pour la requête suivante. Avec les mêmes entrées,
+une nouvelle requête peut étendre la couverture sans reconstruire une
+couverture déjà suffisante. Après une édition, fournissez cet état avec un
+`LayoutDelta` faisant autorité et menant au nouveau `LayoutInput`. Le moteur
+reprend au dernier point de contrôle valide avant la première dépendance
+affectée, recompose en aval, puis s’arrête à la convergence sémantique ou quand
+la couverture demandée et sa marge sont complètes. La couverture publiée est
+observable comme celle d’une composition complète avec les mêmes entrées ; une
+édition pathologique peut néanmoins imposer une reprise depuis le début.
+L’annulation retourne une erreur typée et ne modifie jamais le façonnage, les
+coupures, les positions, les repères d’insertion ou les règles de fragmentation
+pour respecter une contrainte de temps.
+
 ## Périmètre et limites
 
-Il s’agit d’une API de référence JVM pour un paragraphe dans une région
-rectangulaire physique, horizontale ou verticale. Elle ne rend pas de pixels et
-ne possède aucun état d’éditeur. Le clipping (découpage), la pagination,
-`FlowRegion`/`FlowChain`, les caches, les benchmarks et les façades exécutables
-non JVM restent hors périmètre. Consultez [Typographie avancée](advanced-typography.md)
-pour la césure, la justification, l’ellipsis, les objets inline, l’écriture
+Les façades exécutables sont des API de référence JVM ; les contrats et la
+géométrie retournée restent portables et sans ressource. Kalligraphie compose
+exactement dans les régions fournies par l’application, mais ne crée pas les
+pages et ne possède pas leur placement global. Elle ne possède pas non plus le
+document mutable, la fenêtre d’affichage, le défilement, l’ordonnanceur, le
+moteur de rendu ou une API GPU. Consultez la
+[Typographie avancée](advanced-typography.fr.md) pour la césure, la justification,
+l’ellipsis (points de suspension), les objets dans la ligne, l’écriture
 verticale et l’équivalence incrémentale.

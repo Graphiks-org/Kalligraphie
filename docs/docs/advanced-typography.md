@@ -161,6 +161,11 @@ only when the full observable composition configuration is identical:
 positioning and tabs, hyphenation-service identity, inline objects,
 orientation, and vertical-metrics policy are part of that identity.
 
-## Known limitations
+## Flow composition
 
-- Flow regions, exclusions, and pagination belong to a later ticket.
+The advanced typography inputs above also participate in the exact identity of
+`FlowContinuation` and incremental `FlowLayoutState` values. Flow-region
+composition rejects reuse when it cannot prove the complete text, typography,
+region, fragmentation, and paragraph configuration. See
+[Editable paragraphs](editable-paragraphs.md#compose-through-regions-and-exclusions)
+for the consumer route and application ownership boundary.

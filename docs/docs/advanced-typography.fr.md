@@ -179,7 +179,12 @@ composition observable est identique : positionnement et taquets, identité du
 service de césure, objets inline, orientation et politique de métriques
 verticales en font partie.
 
-## Limites connues
+## Composition dans des régions
 
-- Les flow regions, exclusions et la pagination appartiennent à un ticket
-  ultérieur.
+Les entrées typographiques avancées ci-dessus participent aussi à l’identité
+exacte des valeurs `FlowContinuation` et `FlowLayoutState` incrémentales. La
+composition dans des régions refuse une réutilisation quand elle ne peut pas
+prouver toute la configuration du texte, de la typographie, de la région, de
+la fragmentation et du paragraphe. Consultez les
+[Paragraphes éditables](editable-paragraphs.fr.md#composer-dans-des-regions-avec-exclusions)
+pour le parcours consommateur et la frontière de propriété de l’application.
