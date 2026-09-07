@@ -546,12 +546,14 @@ class FlowCompositionEditorJourneyTest {
             listOf(InlineObjectEntry(fixture.snapshot.textIndexAtScalarBoundary(2), objectDefinition)),
         )
         val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(2_300f), LayoutUnit(3_100f))
+        val queriedBands = mutableListOf<LineBand>()
         val region = object : FlowRegion {
             override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
             override val bounds: LayoutRect = bounds
 
-            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
-                FlowRegionResult.AvailableIntervals(
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult {
+                queriedBands += lineBand
+                return FlowRegionResult.AvailableIntervals(
                     listOf(
                         InlineInterval(
                             0f,
@@ -559,6 +561,7 @@ class FlowCompositionEditorJourneyTest {
                         ),
                     ),
                 )
+            }
         }
 
         val composed = success(
@@ -577,6 +580,12 @@ class FlowCompositionEditorJourneyTest {
         assertEquals(fixture.snapshot.incrementalRange(0, 2), line.range)
         assertEquals(1_500f, line.lineBox.bottom.value - line.lineBox.top.value)
         assertTrue(line.positionedInlineObjects.isEmpty())
+        assertTrue(
+            queriedBands.zipWithNext().all { (previous, current) ->
+                previous.blockStart != current.blockStart || current.blockExtent >= previous.blockExtent
+            },
+            "Refinement must never issue a smaller line band at the same block origin.",
+        )
         assertEquals(
             fixture.snapshot.incrementalRange(2, 3),
             assertNotNull(composed.unmaterializedTail).remainingSourceRange,

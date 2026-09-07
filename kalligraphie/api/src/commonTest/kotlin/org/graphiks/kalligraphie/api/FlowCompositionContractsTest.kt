@@ -246,7 +246,8 @@ class FlowCompositionContractsTest {
         val result = queryFlowRegion(region, WritingMode.HORIZONTAL_TB, LineBand(0f, 12f))
 
         val failure = assertIs<FlowCompositionResult.Failure>(result)
-        assertIs<FlowCompositionError.NonConvergentFlowRegion>(failure.error)
+        val error = assertIs<FlowCompositionError.FlowRegionRefinementLimitExceeded>(failure.error)
+        assertEquals("layout.flow-refinement-limit", error.code)
     }
 
     @Test

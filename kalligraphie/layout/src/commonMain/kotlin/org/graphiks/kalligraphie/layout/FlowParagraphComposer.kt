@@ -412,6 +412,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
         var currentBlockStart = blockStart
         var bandExtent = request.constraints.lineMetrics.height.value
+        var previousBand: LineBand? = null
         var previousIntervals: List<InlineInterval>? = null
         var refinements = 0
         var emptyTransitions = 0
@@ -420,19 +421,36 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         while (true) {
             if (region.maximumRefinements <= 0) {
                 return LineAttempt.Failure(
-                    nonConvergent("A flow region must declare a positive maximum refinement count."),
+                    FlowCompositionResult.Failure(
+                        FlowCompositionError.FlowRegionRefinementLimitExceeded(region.maximumRefinements),
+                    ),
                 )
             }
             if (currentBlockStart.toDouble() + bandExtent.toDouble() > region.logicalBlockExtent(request.constraints.writingMode)) {
                 return LineAttempt.EndOfRegion
             }
-            if (refinements >= minOf(region.maximumRefinements, IMPLEMENTATION_REFINEMENT_LIMIT)) {
+            val effectiveRefinementLimit = minOf(region.maximumRefinements, IMPLEMENTATION_REFINEMENT_LIMIT)
+            if (refinements >= effectiveRefinementLimit) {
                 return LineAttempt.Failure(
-                    nonConvergent("The flow region exceeded its bounded line-band refinement count."),
+                    FlowCompositionResult.Failure(
+                        FlowCompositionError.FlowRegionRefinementLimitExceeded(effectiveRefinementLimit),
+                    ),
                 )
             }
             refinements += 1
             val band = LineBand(currentBlockStart, bandExtent)
+            val precedingBand = previousBand
+            if (
+                precedingBand != null &&
+                precedingBand.blockStart == band.blockStart &&
+                band.blockExtent < precedingBand.blockExtent
+            ) {
+                return LineAttempt.Failure(
+                    FlowCompositionResult.Failure(
+                        FlowCompositionError.ShrinkingFlowLineBand(precedingBand, band),
+                    ),
+                )
+            }
             val queried = stableQuery(region, request.constraints.writingMode, band)
             val regionResult = when (queried) {
                 is FlowCompositionResult.Success -> queried.value
@@ -443,10 +461,15 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     emptyTransitions += 1
                     if (emptyTransitions > IMPLEMENTATION_EMPTY_TRANSITION_LIMIT) {
                         return LineAttempt.Failure(
-                            nonConvergent("The flow region exceeded its bounded empty-band transition count."),
+                            FlowCompositionResult.Failure(
+                                FlowCompositionError.FlowRegionRefinementLimitExceeded(
+                                    IMPLEMENTATION_EMPTY_TRANSITION_LIMIT,
+                                ),
+                            ),
                         )
                     }
                     currentBlockStart = regionResult.nextBlockOffset
+                    previousBand = null
                     previousIntervals = null
                     bandExtent = request.constraints.lineMetrics.height.value
                     refinements = 0
@@ -459,11 +482,15 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     val intervals = regionResult.intervals
                     if (previousIntervals != null && !intervals.areCoveredByUnionOf(previousIntervals)) {
                         return LineAttempt.Failure(
-                            nonConvergent(
-                                "A growing line band regained logical inline space after it had been excluded.",
+                            FlowCompositionResult.Failure(
+                                FlowCompositionError.NonMonotoneFlowRegion(
+                                    checkNotNull(precedingBand),
+                                    band,
+                                ),
                             ),
                         )
                     }
+                    previousBand = band
                     val totalInlineExtent = intervals.sumOf { interval ->
                         interval.endExclusive.toDouble() - interval.start.toDouble()
                     }
@@ -516,7 +543,9 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     if (requiredBandExtent > bandExtent) {
                         if (!seen.add(fingerprint)) {
                             return LineAttempt.Failure(
-                                nonConvergent("The flow region entered a repeated line-band refinement cycle."),
+                                FlowCompositionResult.Failure(
+                                    FlowCompositionError.FlowRegionRefinementCycle(band),
+                                ),
                             )
                         }
                         previousIntervals = intervals
@@ -670,10 +699,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         if (second is FlowCompositionResult.Failure) return second
         val firstValue = (first as FlowCompositionResult.Success).value
         val secondValue = (second as FlowCompositionResult.Success).value
-        return if (firstValue.sameFlowAnswerAs(secondValue)) {
-            FlowCompositionResult.Success(firstValue)
+        val firstFingerprint = firstValue.fingerprint()
+        val secondFingerprint = secondValue.fingerprint()
+        if (firstFingerprint == secondFingerprint) {
+            return FlowCompositionResult.Success(firstValue)
+        }
+        val third = safeQuery(region, writingMode, band)
+        if (third is FlowCompositionResult.Failure) return third
+        val thirdValue = (third as FlowCompositionResult.Success).value
+        return if (thirdValue.fingerprint() in setOf(firstFingerprint, secondFingerprint)) {
+            FlowCompositionResult.Failure(FlowCompositionError.FlowRegionRefinementCycle(band))
         } else {
-            nonConvergent("A flow region returned different answers for identical line-band input.")
+            FlowCompositionResult.Failure(FlowCompositionError.UnstableFlowRegion(band))
         }
     }
 
@@ -684,7 +721,9 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     ): FlowCompositionResult<FlowRegionResult> = try {
         queryFlowRegion(region, writingMode, band)
     } catch (failure: RuntimeException) {
-        nonConvergent("The flow region threw while evaluating a line band: ${failure::class.simpleName}.")
+        FlowCompositionResult.Failure(
+            FlowCompositionError.FlowRegionQueryFailure(band, failure::class.simpleName),
+        )
     }
 
     private fun publishLine(
@@ -1292,11 +1331,10 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         return index to cursor
     }
 
-    private fun FlowRegionResult.sameFlowAnswerAs(other: FlowRegionResult): Boolean = when {
-        this is FlowRegionResult.AvailableIntervals && other is FlowRegionResult.AvailableIntervals -> intervals == other.intervals
-        this is FlowRegionResult.Empty && other is FlowRegionResult.Empty -> nextBlockOffset == other.nextBlockOffset
-        this === FlowRegionResult.EndOfRegion && other === FlowRegionResult.EndOfRegion -> true
-        else -> false
+    private fun FlowRegionResult.fingerprint(): RegionAnswerFingerprint = when (this) {
+        is FlowRegionResult.AvailableIntervals -> RegionAnswerFingerprint.Available(intervals)
+        is FlowRegionResult.Empty -> RegionAnswerFingerprint.Empty(nextBlockOffset)
+        FlowRegionResult.EndOfRegion -> RegionAnswerFingerprint.EndOfRegion
     }
 
     private fun List<InlineInterval>.areCoveredByUnionOf(previous: List<InlineInterval>): Boolean = all current@ { current ->
@@ -1330,10 +1368,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
     private fun paragraphFailure(message: String): FlowCompositionResult.Failure = FlowCompositionResult.Failure(
         FlowCompositionError.ParagraphFailure(ParagraphLayoutError.InvalidInput(message)),
-    )
-
-    private fun nonConvergent(message: String): FlowCompositionResult.Failure = FlowCompositionResult.Failure(
-        FlowCompositionError.NonConvergentFlowRegion(message),
     )
 
     private fun geometryOverflow(message: String): FlowCompositionResult.Failure = FlowCompositionResult.Failure(
@@ -1405,6 +1439,12 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val intervals: List<Pair<Float, Float>>,
         val lineRange: TextRange,
     )
+
+    private sealed interface RegionAnswerFingerprint {
+        data class Available(val intervals: List<InlineInterval>) : RegionAnswerFingerprint
+        data class Empty(val nextBlockOffset: Float) : RegionAnswerFingerprint
+        data object EndOfRegion : RegionAnswerFingerprint
+    }
 
     private data class RequiredBlockMetrics(val before: Float, val after: Float) {
         val extent: Float = before + after

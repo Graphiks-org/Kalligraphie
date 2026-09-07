@@ -427,7 +427,8 @@ class FlowParagraphCompositionTest {
             FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
         )
 
-        assertIs<FlowCompositionError.NonConvergentFlowRegion>(failure.error)
+        val error = assertIs<FlowCompositionError.NonMonotoneFlowRegion>(failure.error)
+        assertEquals("layout.flow-non-monotone-region", error.code)
     }
 
     @Test
@@ -445,7 +446,8 @@ class FlowParagraphCompositionTest {
             FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
         )
 
-        assertIs<FlowCompositionError.NonConvergentFlowRegion>(failure.error)
+        val error = assertIs<FlowCompositionError.FlowRegionRefinementLimitExceeded>(failure.error)
+        assertEquals("layout.flow-refinement-limit", error.code)
     }
 
     @Test
@@ -532,18 +534,38 @@ class FlowParagraphCompositionTest {
             override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
             override val bounds: LayoutRect = fixture.request.constraints.region
             override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
-                if (call++ % 2 == 0) {
-                    FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 2_000f)))
-                } else {
-                    FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 2_100f)))
-                }
+                FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 2_000f + call++ * 100f)))
         }
 
         val result = FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region)
 
-        assertIs<FlowCompositionError.NonConvergentFlowRegion>(
+        val error = assertIs<FlowCompositionError.UnstableFlowRegion>(
             assertIs<FlowCompositionResult.Failure>(result).error,
         )
+        assertEquals("layout.flow-unstable-region", error.code)
+    }
+
+    @Test
+    fun repeatedRegionAnswerFingerprintIsACycleRatherThanARefinementCap() {
+        val fixture = fixture("ab")
+        var call = 0
+        val region = object : FlowRegion {
+            override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+            override val bounds: LayoutRect = fixture.request.constraints.region
+            override val maximumRefinements: Int = 8
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
+                FlowRegionResult.AvailableIntervals(
+                    listOf(InlineInterval(0f, if (call++ % 2 == 0) 2_000f else 2_100f)),
+                )
+        }
+
+        val result = FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region)
+
+        val error = assertIs<FlowCompositionError.FlowRegionRefinementCycle>(
+            assertIs<FlowCompositionResult.Failure>(result).error,
+        )
+        assertEquals("layout.flow-refinement-cycle", error.code)
+        assertEquals(3, call)
     }
 
     @Test
@@ -1088,7 +1110,7 @@ class FlowParagraphCompositionTest {
                         listOf(InlineInterval(0f, if (unstableCall++ % 2 == 0) 2_000f else 2_100f)),
                     )
             },
-        ) { it is FlowCompositionError.NonConvergentFlowRegion }
+        ) { it is FlowCompositionError.FlowRegionRefinementCycle }
 
         assertChainFailure(
             ordinary,
@@ -1110,7 +1132,7 @@ class FlowParagraphCompositionTest {
                         listOf(InlineInterval(0f, if (lineBand.blockExtent == 1_000f) 3_000f else 3_200f)),
                     )
             },
-        ) { it is FlowCompositionError.NonConvergentFlowRegion }
+        ) { it is FlowCompositionError.NonMonotoneFlowRegion }
 
         assertChainFailure(
             tall,
@@ -1121,7 +1143,7 @@ class FlowParagraphCompositionTest {
                 override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
                     FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 4_000f)))
             },
-        ) { it is FlowCompositionError.NonConvergentFlowRegion }
+        ) { it is FlowCompositionError.FlowRegionRefinementLimitExceeded }
 
         assertChainFailure(
             ordinary,
@@ -1131,7 +1153,7 @@ class FlowParagraphCompositionTest {
                 override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
                     FlowRegionResult.Empty(lineBand.blockStart + 1f)
             },
-        ) { it is FlowCompositionError.NonConvergentFlowRegion }
+        ) { it is FlowCompositionError.FlowRegionRefinementLimitExceeded }
     }
 
     @Test

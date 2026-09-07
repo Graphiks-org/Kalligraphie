@@ -278,11 +278,64 @@ public sealed interface FlowCompositionError {
         override val code: String = "layout.flow-invalid-state"
     }
 
-    /** A region violated deterministic monotone bounded refinement. */
-    public data class NonConvergentFlowRegion(
-        override val message: String,
+    /** Identical line-band queries produced distinct non-repeating provider answers. */
+    public data class UnstableFlowRegion(
+        /** Exact logical band whose supposedly pure query varied. */
+        public val lineBand: LineBand,
     ) : FlowCompositionError {
-        override val code: String = "layout.flow-non-convergent-region"
+        override val code: String = "layout.flow-unstable-region"
+        override val message: String = "A flow region returned unstable answers for identical line-band input."
+    }
+
+    /** A larger same-origin band regained logical inline space excluded by an earlier band. */
+    public data class NonMonotoneFlowRegion(
+        /** Earlier accepted band whose available-space union must not grow. */
+        public val previousBand: LineBand,
+        /** Later band whose provider answer violated monotone exclusion. */
+        public val currentBand: LineBand,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-non-monotone-region"
+        override val message: String = "A growing flow line band regained previously excluded inline space."
+    }
+
+    /** Internal refinement attempted to query a smaller band at the same logical block origin. */
+    public data class ShrinkingFlowLineBand(
+        /** Last queried same-origin band. */
+        public val previousBand: LineBand,
+        /** Rejected smaller band. */
+        public val attemptedBand: LineBand,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-shrinking-line-band"
+        override val message: String = "Flow line-band refinement must never shrink at one block origin."
+    }
+
+    /** A provider answer fingerprint repeated while identical-band stability was being established. */
+    public data class FlowRegionRefinementCycle(
+        /** Exact logical band whose answer sequence repeated. */
+        public val lineBand: LineBand,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-refinement-cycle"
+        override val message: String = "The flow region entered a repeated refinement-state cycle."
+    }
+
+    /** Region or implementation refinement bounds were exhausted before exact convergence. */
+    public data class FlowRegionRefinementLimitExceeded(
+        /** Effective bound that was invalid or exhausted. */
+        public val limit: Int,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-refinement-limit"
+        override val message: String = "The flow region exceeded its bounded refinement count."
+    }
+
+    /** A region implementation threw instead of returning one portable query result. */
+    public data class FlowRegionQueryFailure(
+        /** Exact logical band whose query threw. */
+        public val lineBand: LineBand,
+        /** Portable exception type name when the platform exposes one. */
+        public val exceptionType: String?,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-region-query-failure"
+        override val message: String = "The flow region threw while evaluating a line band."
     }
 
     /** Available space could not consume a complete cluster or inline object. */
@@ -387,9 +440,7 @@ public fun queryFlowRegion(
     val bandEnd = lineBand.blockStart.toDouble() + lineBand.blockExtent.toDouble()
     if (region.maximumRefinements <= 0) {
         return FlowCompositionResult.Failure(
-            FlowCompositionError.NonConvergentFlowRegion(
-                "A flow region must declare a positive maximum refinement count.",
-            ),
+            FlowCompositionError.FlowRegionRefinementLimitExceeded(region.maximumRefinements),
         )
     }
     if (
