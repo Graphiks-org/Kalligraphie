@@ -1103,7 +1103,38 @@ public class IncrementalFlowLayoutRequest internal constructor(
     public val cancellationToken: CancellationToken,
 )
 
-/** Validates and creates a portable incremental flow-layout request. */
+/**
+ * Validates and creates one bounded incremental flow-composition operation.
+ *
+ * [input] is the immutable target revision. When [previousState] belongs to an older text or
+ * typography revision, [delta] must prove the exact transition from that state's source versions
+ * to [input]; proven typography ranges must themselves be expressed in the corresponding source
+ * and target text snapshots. [flowChain] remains application-owned and is borrowed only while the
+ * resulting request is synchronously consumed. A retained state can be reused only with that
+ * chain's structured composition identity and compatible region identities/configuration.
+ *
+ * [requestedRange] must lie within the target text revision. [overscan] extends materialization by
+ * complete lines, without changing shaping, fallback, geometry, or caret semantics. Cancellation
+ * may prevent publication but never authorizes approximate output. Invalid ranges, mismatched
+ * source/target versions, foreign proof ranges, incompatible font-policy transitions, states, or
+ * chains return a typed [FlowCompositionError.IncompatibleState]; this factory does not throw for
+ * those consumer errors.
+ *
+ * The returned request is immutable and resource-free apart from its borrowed [flowChain]
+ * reference. It may be retained as ordinary configuration data, but concurrent consumption is
+ * safe only when the application-supplied regions and cancellation token are themselves safe for
+ * those calls; no renderer, page, native backend, or snapshot ownership is transferred.
+ *
+ * @param input target text and typography snapshots to compose.
+ * @param requestedRange target source range whose containing complete lines are required.
+ * @param constraints writing mode, line metrics, and paragraph geometry for this operation.
+ * @param flowChain ordered application-owned region providers borrowed during composition.
+ * @param overscan number of additional complete lines requested after coverage is satisfied.
+ * @param previousState optional validated publication state used for incremental replay.
+ * @param delta optional authoritative transition from [previousState] to [input].
+ * @param cancellationToken cooperative cancellation observed between bounded operations.
+ * @return a validated immutable request, or a typed flow-composition failure with no publication.
+ */
 public fun createIncrementalFlowLayoutRequest(
     input: LayoutInput,
     requestedRange: TextRange,
