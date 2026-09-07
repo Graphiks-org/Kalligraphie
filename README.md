@@ -2,8 +2,38 @@
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple?logo=kotlin)](https://kotlinlang.org)
 [![Gradle](https://img.shields.io/badge/Gradle-9.6.1-blue?logo=gradle)](https://gradle.org)
+[![AGP](https://img.shields.io/badge/AGP-9.0.0-green?logo=android)](https://developer.android.com/studio/releases/gradle-plugin)
+[![Java](https://img.shields.io/badge/Java-25-red?logo=openjdk)](https://openjdk.org)
+[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue?logo=github-actions)](https://github.com/features/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Contributing](https://img.shields.io/badge/Contributing-guide-purple)](CONTRIBUTING.md)
+[![Projet: Planning](https://img.shields.io/badge/Statut-Planning-blue)](https://github.com)
+[![Projet: Incubating](https://img.shields.io/badge/Statut-Incubating-orange)](https://github.com)
+[![Projet: Stable](https://img.shields.io/badge/Statut-Stable-green)](https://github.com)
+[![Projet: Deprecated](https://img.shields.io/badge/Statut-Deprecated-red)](https://github.com)
+[![Projet: Archived](https://img.shields.io/badge/Statut-Archived-lightgrey)](https://github.com)
+
+---
+
+<!-- ==========================================
+     BADGES DE STATUT DE PROJET PERSONNALISABLES
+     Décommentez/copiez simplement le badge correspondant au statut actuel de votre projet.
+     ========================================== -->
+
+<!-- STATUT : EN PLANIFICATION (PLANNING) -->
+<!-- [![Projet: Planning](https://img.shields.io/badge/Statut-Planning-blue)](https://github.com) -->
+
+<!-- STATUT : INCUBATION / EN DÉVELOPPEMENT (INCUBATING) -->
+<!-- [![Projet: Incubating](https://img.shields.io/badge/Statut-Incubating-orange)](https://github.com) -->
+
+<!-- STATUT : STABLE / PRÊT PRODUCTION (STABLE) -->
+<!-- [![Projet: Stable](https://img.shields.io/badge/Statut-Stable-green)](https://github.com) -->
+
+<!-- STATUT : DEPRÉCIÉ (DEPRECATED) -->
+<!-- [![Projet: Deprecated](https://img.shields.io/badge/Statut-Deprecated-red)](https://github.com) -->
+
+<!-- STATUT : ARCHIVÉ (ARCHIVED) -->
+<!-- [![Projet: Archived](https://img.shields.io/badge/Statut-Archived-lightgrey)](https://github.com) -->
 
 Kalligraphie is a renderer-independent Kotlin Multiplatform typography
 library. Applications provide immutable text, fonts, typographic options, and
