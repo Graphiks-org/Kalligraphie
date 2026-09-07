@@ -1389,7 +1389,7 @@ public class FlowLayoutState private constructor(
  * The value contains complete existing [ParagraphFragment] and [LineLayout] models only. Its tail
  * is explicit and it owns no page, renderer, resolver, backend, or platform resource.
  */
-public class FlowLayout(
+public class FlowLayout private constructor(
     /** Target text and typography revisions used by every fragment. */
     public val inputIdentity: FlowCompositionInputIdentity,
     /** Caller range that drove bounded materialization. */
@@ -1409,6 +1409,84 @@ public class FlowLayout(
 
     /** Immutable complete lines flattened in logical source order. */
     public val lines: List<LineLayout> = this.fragments.flatMap(ParagraphFragment::lines).immutableListSnapshot()
+
+    /** Validated construction for immutable consumer-visible flow publications. */
+    public companion object {
+        /**
+         * Creates a bounded flow publication only when its fragments are the exact aggregate held
+         * by [state], coverage and continuation agree with that state, and [requestedRange] belongs
+         * to the same paragraph and input revision. The returned value owns no region provider or
+         * platform resource; malformed aggregates return [FlowCompositionError.InvalidState].
+         */
+        public fun create(
+            inputIdentity: FlowCompositionInputIdentity,
+            requestedRange: TextRange,
+            fragments: List<ParagraphFragment>,
+            coverage: LayoutCoverage,
+            unmaterializedTail: FlowContinuation?,
+            state: FlowLayoutState,
+            diagnostics: FlowLayoutDiagnostics,
+        ): FlowCompositionResult<FlowLayout> {
+            fun invalid(message: String): FlowCompositionResult.Failure =
+                FlowCompositionResult.Failure(FlowCompositionError.InvalidState(message))
+
+            if (fragments.isEmpty()) return invalid("Flow layout must publish at least one complete fragment.")
+            if (state.inputIdentity != inputIdentity) {
+                return invalid("Flow layout input identity must equal its retained state identity.")
+            }
+            val inputOrigin = TextIndex(inputIdentity.textVersion, 0)
+            if (
+                !requestedRange.start.sharesVersionWith(inputOrigin) ||
+                !requestedRange.endExclusive.sharesVersionWith(inputOrigin)
+            ) {
+                return invalid("Flow layout requested range must use its input text revision.")
+            }
+            val paragraphRange = fragments.first().paragraphRange
+            if (
+                requestedRange.start < paragraphRange.start ||
+                requestedRange.endExclusive > paragraphRange.endExclusive
+            ) {
+                return invalid("Flow layout requested range must stay inside its published paragraph.")
+            }
+            if (
+                fragments.size != state.materializedFragments.size ||
+                fragments.indices.any { index -> fragments[index] !== state.materializedFragments[index] }
+            ) {
+                return invalid("Flow layout fragments must be the exact aggregate validated by its retained state.")
+            }
+            if (
+                coverage.textVersion != state.coverage.textVersion ||
+                coverage.range != state.coverage.range ||
+                coverage.isComplete != state.coverage.isComplete ||
+                coverage.tailState != state.coverage.tailState
+            ) {
+                return invalid("Flow layout coverage must equal its retained state coverage.")
+            }
+            if (unmaterializedTail !== state.continuation) {
+                return invalid("Flow layout tail must be the exact continuation validated by its retained state.")
+            }
+            if (!coverage.isComplete) {
+                return invalid("Flow layout coverage must completely cover its requested range.")
+            }
+            if (
+                !diagnostics.reflowStart.sharesVersionWith(inputOrigin) ||
+                diagnostics.stabilizedAt?.sharesVersionWith(inputOrigin) == false
+            ) {
+                return invalid("Flow layout diagnostics must use its input text revision.")
+            }
+            return FlowCompositionResult.Success(
+                FlowLayout(
+                    inputIdentity,
+                    requestedRange,
+                    fragments,
+                    coverage,
+                    unmaterializedTail,
+                    state,
+                    diagnostics,
+                ),
+            )
+        }
+    }
 }
 
 /** Whether published flow fragments cover the complete paragraph or an exact prefix. */

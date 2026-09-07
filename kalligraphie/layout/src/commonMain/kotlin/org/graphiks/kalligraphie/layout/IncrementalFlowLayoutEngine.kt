@@ -386,8 +386,8 @@ public object IncrementalFlowLayoutEngine {
             is FlowCompositionResult.Success -> created.value
             is FlowCompositionResult.Failure -> return created
         }
-        return FlowCompositionResult.Success(
-            FlowLayout(
+        return when (
+            val created = FlowLayout.create(
                 inputIdentity,
                 request.requestedRange,
                 fragments,
@@ -395,9 +395,11 @@ public object IncrementalFlowLayoutEngine {
                 tail,
                 state,
                 diagnostics,
-            ),
-            flowDiagnostics,
-        )
+            )
+        ) {
+            is FlowCompositionResult.Success -> FlowCompositionResult.Success(created.value, flowDiagnostics)
+            is FlowCompositionResult.Failure -> created
+        }
     }
 
     private fun retainCheckpoints(
