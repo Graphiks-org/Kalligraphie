@@ -12,6 +12,7 @@ import org.graphiks.kalligraphie.api.FlowLayoutConfigurationSignature
 import org.graphiks.kalligraphie.api.FlowLayoutDiagnostics
 import org.graphiks.kalligraphie.api.FlowLayoutState
 import org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest
+import org.graphiks.kalligraphie.api.HyphenationMode
 import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutCoverage
@@ -189,8 +190,12 @@ public object IncrementalFlowLayoutEngine {
         previous: FlowLayoutState,
         inputIdentity: FlowCompositionInputIdentity,
     ): List<FlowLayoutCheckpoint> {
+        if (previous.inputIdentity == inputIdentity) return previous.checkpoints
         val textDelta = request.delta?.text
         return previous.checkpoints.mapNotNull { checkpoint ->
+            if (textDelta != null && checkpoint.continuation.fragmentationCommitment != null) {
+                return@mapNotNull null
+            }
             val mappedRange = if (textDelta == null) {
                 checkpoint.laidOutRange.takeIf { range ->
                     range.start.sharesVersionWith(request.input.text.range.start)
@@ -213,6 +218,7 @@ public object IncrementalFlowLayoutEngine {
                     writingMode = old.writingMode,
                     nextBlockOffset = old.nextBlockOffset,
                     relaxedConstraints = old.relaxedConstraints,
+                    fragmentationCommitment = old.fragmentationCommitment,
                 )
             } catch (_: IllegalArgumentException) {
                 return@mapNotNull null
@@ -246,10 +252,14 @@ public object IncrementalFlowLayoutEngine {
             val editStart = textChanges
                 .map { change -> change.insertedTargetRange.start }
                 .minWith(TextIndex::compareTo)
-            val precedingCluster = paragraph.unicodeAnalysis.graphemeClusters.lastOrNull { cluster ->
-                cluster.start < editStart && cluster.endExclusive <= editStart
+            if (paragraph.hyphenationMode == HyphenationMode.AUTO) {
+                candidates += automaticHyphenationDependencyStart(request, editStart)
+            } else {
+                val precedingCluster = paragraph.unicodeAnalysis.graphemeClusters.lastOrNull { cluster ->
+                    cluster.start < editStart && cluster.endExclusive <= editStart
+                }
+                candidates += precedingCluster?.start ?: request.input.text.range.start
             }
-            candidates += precedingCluster?.start ?: request.input.text.range.start
         }
         when (val typographyChange = request.delta?.typography?.rangeChange) {
             is RangeChange.Proven -> typographyChange.targetRanges.mapTo(candidates, TextRange::start)
@@ -257,6 +267,26 @@ public object IncrementalFlowLayoutEngine {
             null -> Unit
         }
         return candidates.minWithOrNull(TextIndex::compareTo) ?: request.input.text.range.start
+    }
+
+    private fun automaticHyphenationDependencyStart(
+        request: IncrementalFlowLayoutRequest,
+        editStart: TextIndex,
+    ): TextIndex {
+        val snapshot = request.input.text
+        var ordinal = (0..snapshot.scalars.size).first { scalarBoundary ->
+            snapshot.textIndexAtScalarBoundary(scalarBoundary) == editStart
+        }
+        while (ordinal > 0) {
+            val scalar = snapshot.scalars[ordinal - 1]
+            when {
+                scalar in 'A'.code..'Z'.code || scalar in 'a'.code..'z'.code -> ordinal -= 1
+                scalar == ' '.code || scalar == '\t'.code || scalar == '\n'.code || scalar == '\r'.code ->
+                    return snapshot.textIndexAtScalarBoundary(ordinal)
+                else -> return snapshot.range.start
+            }
+        }
+        return snapshot.range.start
     }
 
     private fun selectSatisfiedPrefix(

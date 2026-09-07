@@ -556,6 +556,7 @@ public class FlowLayoutCheckpoint private constructor(
             continuation.nextBlockOffset == other.continuation.nextBlockOffset &&
             continuation.fragmentationConstraints == other.continuation.fragmentationConstraints &&
             continuation.relaxedConstraints == other.continuation.relaxedConstraints &&
+            continuation.fragmentationCommitment == other.continuation.fragmentationCommitment &&
             continuation.paragraphReplayIdentity?.let { replay ->
                 other.continuation.paragraphReplayIdentity?.let(replay::hasSameReplayIdentity)
             } == true

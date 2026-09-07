@@ -16,6 +16,10 @@ import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionIdentity
 import org.graphiks.kalligraphie.api.FlowRegionResult
 import org.graphiks.kalligraphie.api.FragmentationConstraints
+import org.graphiks.kalligraphie.api.HyphenationMode
+import org.graphiks.kalligraphie.api.HyphenationMinimums
+import org.graphiks.kalligraphie.api.HyphenationService
+import org.graphiks.kalligraphie.api.HyphenationServiceIdentity
 import org.graphiks.kalligraphie.api.InlineInterval
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutInput
@@ -328,6 +332,127 @@ class FlowCompositionEditorJourneyTest {
     }
 
     @Test
+    fun boundedFragmentationCommitmentResumesWithoutSpuriousRelaxation() {
+        val fixture = incrementalRealFontFixture("fi fi")
+        val firstBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(1_700f), LayoutUnit(1_300f))
+        val secondBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(2_100f), LayoutUnit(1_700f), LayoutUnit(4_500f))
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(firstBounds, listOf(InlineInterval(0f, 1_600f))),
+                FixedFlowRegion(secondBounds, listOf(InlineInterval(0f, 1_600f))),
+            ),
+            FragmentationConstraints(minLinesAtStart = 2, minLinesAtEnd = 2),
+        )
+        val partial = success(
+            JvmFlowCompositionFacade.layout(
+                request(fixture, chain, requestedRange = fixture.snapshot.incrementalRange(0, 1)),
+            ),
+        )
+        val tail = assertNotNull(partial.unmaterializedTail)
+        assertEquals(1, assertNotNull(tail.fragmentationCommitment).remainingLineCount)
+
+        val resumed = success(
+            JvmFlowCompositionFacade.layout(
+                request(fixture, chain, requestedRange = tail.remainingSourceRange, previousState = partial.state),
+            ),
+        )
+        val full = success(JvmFlowCompositionFacade.layout(request(fixture, chain)))
+
+        assertNull(resumed.unmaterializedTail)
+        assertEquals(full.fragments.map { it.laidOutRange }, resumed.fragments.map { it.laidOutRange })
+        assertEquals(
+            full.fragments.map { fragment -> fragment.continuation?.regionIdentity },
+            resumed.fragments.map { fragment -> fragment.continuation?.regionIdentity },
+        )
+        assertEquals(full.lines.map(LineLayout::lineBox), resumed.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.fragments.flatMap { fragment -> fragment.diagnostics },
+            resumed.fragments.flatMap { fragment -> fragment.diagnostics },
+        )
+        assertEquals(emptyList(), resumed.fragments.flatMap { fragment -> fragment.diagnostics })
+    }
+
+    @Test
+    fun automaticHyphenationEditReflowsFromTheAffectedWordStart() {
+        val source = incrementalRealFontFixture("abcdefghij")
+        val target = source.withText("abcdefghiX")
+        val service = object : HyphenationService {
+            override val identity = HyphenationServiceIdentity(
+                providerId = "flow-journey-deterministic",
+                dataRevision = "1",
+                languages = listOf("en"),
+            )
+
+            override fun hyphenation(
+                word: List<Int>,
+                language: String,
+                hyphenmins: HyphenationMinimums,
+            ): List<Int> = if (word.lastOrNull() == 'j'.code) listOf(3, 6) else listOf(2, 5, 7)
+        }
+        val chain = horizontalChain(6, inlineExtent = 2_600f)
+        val initial = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    source,
+                    chain,
+                    constraints = incrementalTestConstraints(width = 2_600f, top = 100f, height = 1_200f),
+                    hyphenationMode = HyphenationMode.AUTO,
+                    hyphenationService = service,
+                ),
+            ),
+        )
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(9, 10),
+                        target.snapshot.incrementalRange(9, 10),
+                    ),
+                ),
+            ),
+        ).value
+
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    previousState = initial.state,
+                    delta = LayoutDelta(text = change),
+                    constraints = incrementalTestConstraints(width = 2_600f, top = 100f, height = 1_200f),
+                    hyphenationMode = HyphenationMode.AUTO,
+                    hyphenationService = service,
+                ),
+            ),
+        )
+        val full = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    horizontalChain(6, inlineExtent = 2_600f),
+                    constraints = incrementalTestConstraints(width = 2_600f, top = 100f, height = 1_200f),
+                    hyphenationMode = HyphenationMode.AUTO,
+                    hyphenationService = service,
+                ),
+            ),
+        )
+
+        assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+        assertTrue(edited.diagnostics.usedConservativeInvalidation)
+        assertTrue(initial.fragments.map { it.laidOutRange } != full.fragments.map { it.laidOutRange })
+        assertEquals(full.fragments.map { it.laidOutRange }, edited.fragments.map { it.laidOutRange })
+        assertEquals(full.lines.map(LineLayout::glyphIds), edited.lines.map(LineLayout::glyphIds))
+        assertEquals(full.lines.map(LineLayout::glyphAdvances), edited.lines.map(LineLayout::glyphAdvances))
+        assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.lines.map { line -> line.allCaretCandidates.map { it.position.index } },
+            edited.lines.map { line -> line.allCaretCandidates.map { it.position.index } },
+        )
+    }
+
+    @Test
     fun bidiEditAtCheckpointBoundaryInvalidatesToAPrerequisiteIndependentBoundary() {
         val source = incrementalRealFontFixture("fi fi fi")
         val target = source.withText("fi \u200Fi fi")
@@ -522,6 +647,28 @@ class FlowCompositionEditorJourneyTest {
     }
 
     @Test
+    fun flowStateRejectsForeignFragmentGeometryEvenWithALegitimateEnd() {
+        val fixture = incrementalRealFontFixture("fi fi")
+        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(2))))
+        val foreign = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(2))))
+        val mixed = listOf(foreign.fragments.first(), legitimate.fragments.last())
+
+        val rejected = assertIs<FlowCompositionResult.Failure>(
+            FlowLayoutState.create(
+                inputIdentity = legitimate.state.inputIdentity,
+                flowCompositionIdentity = legitimate.state.flowCompositionIdentity,
+                coverage = legitimate.coverage,
+                configuration = legitimate.state.configuration,
+                materializedFragments = mixed,
+                checkpoints = legitimate.state.checkpoints,
+                continuation = null,
+            ),
+        )
+
+        assertIs<FlowCompositionError.InvalidState>(rejected.error)
+    }
+
+    @Test
     fun verticalRegionUsesTheSameFacadeWithoutOwningAPageOrRenderer() {
         val fixture = incrementalRealFontFixture("f")
         val bounds = LayoutRect(LayoutUnit(400f), LayoutUnit(200f), LayoutUnit(3_400f), LayoutUnit(4_200f))
@@ -551,6 +698,8 @@ class FlowCompositionEditorJourneyTest {
         overscan: Int = 0,
         previousState: FlowLayoutState? = null,
         delta: LayoutDelta? = null,
+        hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
+        hyphenationService: HyphenationService? = null,
     ): JvmFlowCompositionRequest {
         val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
             createIncrementalFlowLayoutRequest(
@@ -567,19 +716,25 @@ class FlowCompositionEditorJourneyTest {
             request = portable,
             baseDirection = BaseDirection.LEFT_TO_RIGHT,
             language = "en",
+            hyphenationMode = hyphenationMode,
+            hyphenationService = hyphenationService,
         )
     }
 
-    private fun horizontalChain(count: Int, queries: MutableList<Int>? = null): FlowChain = FlowChain(
+    private fun horizontalChain(
+        count: Int,
+        queries: MutableList<Int>? = null,
+        inlineExtent: Float = 1_600f,
+    ): FlowChain = FlowChain(
         List(count) { index ->
             FixedFlowRegion(
                 bounds = LayoutRect(
                     LayoutUnit(100f),
                     LayoutUnit(100f + index * 2_000f),
-                    LayoutUnit(1_700f),
+                    LayoutUnit(100f + inlineExtent),
                     LayoutUnit(1_300f + index * 2_000f),
                 ),
-                intervals = listOf(InlineInterval(0f, 1_600f)),
+                intervals = listOf(InlineInterval(0f, inlineExtent)),
                 onQuery = { queries?.let { it[index] += 1 } },
             )
         },

@@ -9,6 +9,7 @@ import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionInputIdentity
 import org.graphiks.kalligraphie.api.FlowCompositionResult
 import org.graphiks.kalligraphie.api.FlowContinuation
+import org.graphiks.kalligraphie.api.FlowFragmentationCommitment
 import org.graphiks.kalligraphie.api.FlowParagraphLayouter
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionResult
@@ -117,6 +118,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
 
         val paragraphRange = continuation?.paragraphRange ?: request.sourceRange
+        val fragmentationCommitment = continuation?.fragmentationCommitment
         val initiallyRelaxed = continuation?.relaxedConstraints.orEmpty()
         val relaxed = initiallyRelaxed.toMutableList()
         val newlyRelaxed = mutableListOf<FragmentationConstraintKind>()
@@ -134,7 +136,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         var blockOffset = startBlockOffset
         val isFirstFragment = request.sourceRange.start == paragraphRange.start
         val candidates = mutableListOf<RegionCandidate>()
-        val needsUnboundedFeasibilityProbe = maximumLines != null && (
+        val needsUnboundedFeasibilityProbe = fragmentationCommitment == null && maximumLines != null && (
             constraints.keepTogether && isFirstFragment && FragmentationConstraintKind.KEEP_TOGETHER !in relaxed ||
                 constraints.minLinesAtEnd > maximumLines && FragmentationConstraintKind.MIN_LINES_AT_END !in relaxed ||
                 constraints.minLinesAtStart > maximumLines && FragmentationConstraintKind.MIN_LINES_AT_START !in relaxed
@@ -143,7 +145,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
         while (true) {
             candidates.firstOrNull { candidate ->
-                candidate.satisfies(constraints, relaxed, isFirstFragment)
+                candidate.satisfies(constraints, relaxed, isFirstFragment, fragmentationCommitment)
             }?.let { selected ->
                 return publishFragment(
                     request = request,
@@ -154,6 +156,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     maximumLines = maximumLines,
                     relaxedBefore = initiallyRelaxed,
                     newlyRelaxed = newlyRelaxed,
+                    activeCommitment = fragmentationCommitment,
                 )
             }
 
@@ -171,7 +174,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     is RegionComposition.Success -> if (composition.lines.isNotEmpty()) {
                         val candidate = RegionCandidate(composition, regionIndex)
                         candidates += candidate
-                        if (candidate.satisfies(constraints, relaxed, isFirstFragment)) {
+                        if (candidate.satisfies(constraints, relaxed, isFirstFragment, fragmentationCommitment)) {
                             return publishFragment(
                                 request = request,
                                 chain = chain,
@@ -181,6 +184,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                                 maximumLines = maximumLines,
                                 relaxedBefore = initiallyRelaxed,
                                 newlyRelaxed = newlyRelaxed,
+                                activeCommitment = fragmentationCommitment,
                             )
                         }
                     }
@@ -264,6 +268,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         maximumLines: Int?,
         relaxedBefore: List<FragmentationConstraintKind>,
         newlyRelaxed: List<FragmentationConstraintKind>,
+        activeCommitment: FlowFragmentationCommitment?,
     ): FlowCompositionResult<ParagraphFragment> {
         val lines = maximumLines?.let(candidate.composition.lines::take) ?: candidate.composition.lines
         val laidOutRange = TextRange(lines.first().range.start, lines.last().range.endExclusive)
@@ -294,6 +299,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 writingMode = request.constraints.writingMode,
                 nextBlockOffset = nextOffset.coerceAtMost(chain.regions[nextIndex].logicalBlockExtent(request.constraints.writingMode)),
                 relaxedConstraints = relaxedBefore + newlyRelaxed,
+                fragmentationCommitment = when {
+                    activeCommitment != null -> {
+                        val remaining = activeCommitment.remainingLineCount - lines.size
+                        if (remaining > 0) activeCommitment.copy(remainingLineCount = remaining) else null
+                    }
+                    lines.size < candidate.composition.lines.size -> FlowFragmentationCommitment(
+                        regionIndex = candidate.regionIndex,
+                        regionIdentity = chain.regions[candidate.regionIndex].identity,
+                        remainingLineCount = candidate.composition.lines.size - lines.size,
+                    )
+                    else -> null
+                },
             )
         }
         val diagnostics = newlyRelaxed.map { constraint ->
@@ -1133,12 +1150,15 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             constraints: org.graphiks.kalligraphie.api.FragmentationConstraints,
             relaxed: List<FragmentationConstraintKind>,
             isFirstFragment: Boolean,
-        ): Boolean = (composition.isComplete && isFirstFragment) ||
+            commitment: FlowFragmentationCommitment?,
+        ): Boolean = commitment?.let { accepted ->
+            regionIndex == accepted.regionIndex && composition.lines.isNotEmpty()
+        } ?: ((composition.isComplete && isFirstFragment) ||
             ((!constraints.keepTogether || !isFirstFragment || FragmentationConstraintKind.KEEP_TOGETHER in relaxed) &&
                 (constraints.minLinesAtEnd <= composition.lines.size ||
                     FragmentationConstraintKind.MIN_LINES_AT_END in relaxed) &&
                 (constraints.minLinesAtStart <= composition.lines.size ||
-                    FragmentationConstraintKind.MIN_LINES_AT_START in relaxed))
+                    FragmentationConstraintKind.MIN_LINES_AT_START in relaxed)))
     }
 
     private data class RefinementFingerprint(

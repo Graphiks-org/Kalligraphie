@@ -581,6 +581,7 @@ public class FlowChain(
             fragmentationConstraints = fragmentationConstraints,
             paragraphReplayIdentity = null,
             relaxedConstraints = emptyList(),
+            fragmentationCommitment = null,
         )
     }
 
@@ -590,7 +591,8 @@ public class FlowChain(
      * [request] is inspected only to capture resource-free replay data; neither the snapshot,
      * shaping backend, region, nor materialization capability is retained. [relaxedConstraints]
      * carries deterministic fragmentation decisions already made for this paragraph so they are
-     * not repeated after a region boundary.
+     * not repeated after a region boundary. [fragmentationCommitment] carries an already-proved
+     * minimum-line decision while bounded publication advances within the accepted region.
      */
     public fun createContinuation(
         inputIdentity: FlowCompositionInputIdentity,
@@ -601,6 +603,7 @@ public class FlowChain(
         writingMode: WritingMode,
         nextBlockOffset: Float,
         relaxedConstraints: List<FragmentationConstraintKind> = emptyList(),
+        fragmentationCommitment: FlowFragmentationCommitment? = null,
     ): FlowContinuation {
         require(inputIdentity.textVersion == request.snapshot.version) {
             "A flow input identity must name the request text revision."
@@ -626,6 +629,13 @@ public class FlowChain(
         require(relaxedConstraints == relaxationOrder.filter(relaxedConstraints::contains)) {
             "A flow continuation must preserve deterministic fragmentation relaxation order."
         }
+        require(
+            fragmentationCommitment == null ||
+                fragmentationCommitment.regionIndex == regionIndex &&
+                fragmentationCommitment.regionIdentity == regions[regionIndex].identity
+        ) {
+            "A fragmentation commitment must belong to the continuation region."
+        }
         val basic = createContinuation(
             inputIdentity,
             paragraphRange,
@@ -646,6 +656,7 @@ public class FlowChain(
             fragmentationConstraints = basic.fragmentationConstraints,
             paragraphReplayIdentity = FlowParagraphReplayIdentity.capture(request, remainingSourceRange),
             relaxedConstraints = relaxedConstraints,
+            fragmentationCommitment = fragmentationCommitment,
         )
     }
 
@@ -733,6 +744,8 @@ public class FlowContinuation internal constructor(
     /** Complete paragraph replay proof, absent on legacy manually-created continuations. */
     internal val paragraphReplayIdentity: FlowParagraphReplayIdentity?,
     relaxedConstraints: List<FragmentationConstraintKind>,
+    /** Accepted remaining line count whose fragmentation feasibility was already proved in this region. */
+    public val fragmentationCommitment: FlowFragmentationCommitment?,
 ) {
     /** Fragmentation rules already relaxed for this paragraph in deterministic order. */
     public val relaxedConstraints: List<FragmentationConstraintKind> = relaxedConstraints.immutableListSnapshot()
@@ -744,6 +757,26 @@ public class FlowContinuation internal constructor(
     /** Typography revision required to reproduce subsequent line geometry. */
     public val typographyVersion: TypographyVersion
         get() = inputIdentity.typographyVersion
+}
+
+/**
+ * Structured proof that bounded publication may continue in one already-accepted flow region.
+ *
+ * The proof carries no geometry provider. It is valid only with the enclosing [FlowContinuation]
+ * whose region ordinal and immutable revision match [regionIndex] and [regionIdentity].
+ */
+public data class FlowFragmentationCommitment(
+    /** Region ordinal in which the fragmentation decision was accepted. */
+    public val regionIndex: Int,
+    /** Immutable revision identity of the accepted region. */
+    public val regionIdentity: FlowRegionIdentity,
+    /** Number of complete accepted lines still awaiting publication in that region. */
+    public val remainingLineCount: Int,
+) {
+    init {
+        require(regionIndex >= 0) { "A fragmentation commitment region index must be non-negative." }
+        require(remainingLineCount > 0) { "A fragmentation commitment must retain at least one line." }
+    }
 }
 
 internal class FlowParagraphReplayIdentity private constructor(
@@ -872,6 +905,13 @@ public class FlowLayoutConfigurationSignature private constructor(
 
     /** Returns a stable hash of the captured resource-free configuration. */
     override fun hashCode(): Int = value.hashCode()
+
+    internal fun matchesFlowCompositionIdentity(identity: FlowCompositionIdentity): Boolean =
+        value.flowCompositionIdentity == identity
+
+    internal fun acceptsContinuation(continuation: FlowContinuation): Boolean =
+        value.flowCompositionIdentity == continuation.compositionIdentity &&
+            value.regionIdentities.getOrNull(continuation.regionIndex) == continuation.regionIdentity
 
     /** Factories for portable flow configuration signatures. */
     public companion object {
@@ -1074,6 +1114,9 @@ public class FlowLayoutState private constructor(
                 FlowCompositionResult.Failure(FlowCompositionError.InvalidState(message))
 
             if (fragments.isEmpty()) return invalid("Flow state must retain at least one complete fragment.")
+            if (!configuration.matchesFlowCompositionIdentity(flowCompositionIdentity)) {
+                return invalid("Flow state configuration must belong to its flow composition identity.")
+            }
             if (coverage.textVersion != inputIdentity.textVersion) {
                 return invalid("Flow state coverage must use its input text revision.")
             }
@@ -1084,6 +1127,22 @@ public class FlowLayoutState private constructor(
                 }
             ) {
                 return invalid("Every flow state fragment must use its input text revision.")
+            }
+            val paragraphRange = fragments.first().paragraphRange
+            if (fragments.any { fragment -> fragment.paragraphRange != paragraphRange }) {
+                return invalid("Every flow state fragment must describe the same paragraph range.")
+            }
+            if (fragments.any { fragment ->
+                    fragment.continuation?.let { fragmentContinuation ->
+                        fragmentContinuation.inputIdentity != inputIdentity ||
+                            fragmentContinuation.compositionIdentity != flowCompositionIdentity ||
+                            !configuration.acceptsContinuation(fragmentContinuation) ||
+                            fragmentContinuation.paragraphRange != paragraphRange ||
+                            fragmentContinuation.remainingSourceRange.start != fragment.laidOutRange.endExclusive
+                    } == true
+                }
+            ) {
+                return invalid("Every non-final flow fragment must link to this state's exact continuation context.")
             }
             if (fragments.zipWithNext().any { (left, right) ->
                     left.laidOutRange.endExclusive != right.laidOutRange.start
@@ -1127,10 +1186,21 @@ public class FlowLayoutState private constructor(
             }
             if (capturedCheckpoints.any { checkpoint ->
                     checkpoint.continuation.inputIdentity != inputIdentity ||
-                        checkpoint.continuation.compositionIdentity != flowCompositionIdentity
+                        checkpoint.continuation.compositionIdentity != flowCompositionIdentity ||
+                        checkpoint.continuation.paragraphRange != paragraphRange ||
+                        !configuration.acceptsContinuation(checkpoint.continuation)
                 }
             ) {
                 return invalid("Every flow checkpoint must use the state input and chain identities.")
+            }
+            if (fragments.filter { fragment -> fragment.continuation != null }.any { fragment ->
+                    capturedCheckpoints.none { checkpoint ->
+                        checkpoint.laidOutRange == fragment.laidOutRange &&
+                            checkpoint.continuation === fragment.continuation
+                    }
+                }
+            ) {
+                return invalid("Every non-final materialized fragment must have its exact flow checkpoint.")
             }
             if (continuation != null && capturedCheckpoints.lastOrNull()?.continuation !== continuation) {
                 return invalid("The final flow checkpoint must carry the published continuation.")
