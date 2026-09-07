@@ -1160,6 +1160,22 @@ public class FlowLayoutState private constructor(
             ) {
                 return invalid("Every non-final flow fragment must link to this state's exact continuation context.")
             }
+            if (fragments.zipWithNext().any transition@{ (left, right) ->
+                    val producer = left.flowProvenance ?: return@transition true
+                    val outgoing = left.continuation ?: return@transition true
+                    val consumer = right.flowProvenance ?: return@transition true
+                    val targetsProducerOrNext =
+                        outgoing.regionIndex == producer.regionIndex ||
+                            outgoing.regionIndex == producer.regionIndex + 1
+                    val consumerDoesNotPrecedeTarget = consumer.regionIndex >= outgoing.regionIndex
+                    val sameTargetKeepsIdentity =
+                        consumer.regionIndex != outgoing.regionIndex ||
+                            consumer.regionIdentity == outgoing.regionIdentity
+                    !targetsProducerOrNext || !consumerDoesNotPrecedeTarget || !sameTargetKeepsIdentity
+                }
+            ) {
+                return invalid("Flow fragment provenance must progress through each outgoing continuation region.")
+            }
             if (fragments.zipWithNext().any { (left, right) ->
                     left.laidOutRange.endExclusive != right.laidOutRange.start
                 }

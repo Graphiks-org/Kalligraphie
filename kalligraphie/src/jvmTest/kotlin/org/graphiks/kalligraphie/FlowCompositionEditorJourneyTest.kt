@@ -31,6 +31,7 @@ import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphConstraints
+import org.graphiks.kalligraphie.api.ParagraphFragment
 import org.graphiks.kalligraphie.api.TextChange
 import org.graphiks.kalligraphie.api.TextChangeSet
 import org.graphiks.kalligraphie.api.TextRange
@@ -683,6 +684,57 @@ class FlowCompositionEditorJourneyTest {
                 configuration = legitimate.state.configuration,
                 materializedFragments = foreign.fragments,
                 checkpoints = emptyList(),
+                continuation = null,
+            ),
+        )
+
+        assertIs<FlowCompositionError.InvalidState>(rejected.error)
+    }
+
+    @Test
+    fun flowStateRejectsARegionRetrogradeFragmentTransition() {
+        val fixture = incrementalRealFontFixture("fi fi")
+        val chain = horizontalChain(2)
+        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, chain)))
+        val first = legitimate.fragments.first()
+        val last = legitimate.fragments.last()
+        val retrograde = listOf(
+            ParagraphFragment(
+                paragraphRange = first.paragraphRange,
+                laidOutRange = first.laidOutRange,
+                isFirstFragment = first.isFirstFragment,
+                isLastFragment = first.isLastFragment,
+                lines = first.lines,
+                continuation = first.continuation,
+                diagnostics = first.diagnostics,
+                flowProvenance = assertNotNull(first.flowProvenance).copy(
+                    regionIndex = 1,
+                    regionIdentity = chain.regions[1].identity,
+                ),
+            ),
+            ParagraphFragment(
+                paragraphRange = last.paragraphRange,
+                laidOutRange = last.laidOutRange,
+                isFirstFragment = last.isFirstFragment,
+                isLastFragment = last.isLastFragment,
+                lines = last.lines,
+                continuation = last.continuation,
+                diagnostics = last.diagnostics,
+                flowProvenance = assertNotNull(last.flowProvenance).copy(
+                    regionIndex = 0,
+                    regionIdentity = chain.regions[0].identity,
+                ),
+            ),
+        )
+
+        val rejected = assertIs<FlowCompositionResult.Failure>(
+            FlowLayoutState.create(
+                inputIdentity = legitimate.state.inputIdentity,
+                flowCompositionIdentity = legitimate.state.flowCompositionIdentity,
+                coverage = legitimate.coverage,
+                configuration = legitimate.state.configuration,
+                materializedFragments = retrograde,
+                checkpoints = legitimate.state.checkpoints,
                 continuation = null,
             ),
         )
