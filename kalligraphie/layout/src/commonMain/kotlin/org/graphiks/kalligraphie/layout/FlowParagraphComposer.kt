@@ -1091,7 +1091,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             constraints: org.graphiks.kalligraphie.api.FragmentationConstraints,
             relaxed: List<FragmentationConstraintKind>,
             isFirstFragment: Boolean,
-        ): Boolean = composition.isComplete ||
+        ): Boolean = (composition.isComplete && isFirstFragment) ||
             ((!constraints.keepTogether || !isFirstFragment || FragmentationConstraintKind.KEEP_TOGETHER in relaxed) &&
                 (constraints.minLinesAtEnd <= composition.lines.size ||
                     FragmentationConstraintKind.MIN_LINES_AT_END in relaxed) &&

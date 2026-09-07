@@ -934,6 +934,9 @@ public class ParagraphFragment(
         ) {
             "The last-fragment flag must agree with complete physical paragraph coverage."
         }
+        require((continuation == null) == isLastFragment) {
+            "Every non-final paragraph fragment must publish its exact continuation."
+        }
         require(this.lines.all { line ->
             line.range.start >= laidOutRange.start && line.range.endExclusive <= laidOutRange.endExclusive
         }) {

@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.layout
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -15,6 +16,7 @@ import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionInputIdentity
 import org.graphiks.kalligraphie.api.FlowCompositionResult
 import org.graphiks.kalligraphie.api.FlowContinuation
+import org.graphiks.kalligraphie.api.FlowCoverageStatus
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionIdentity
 import org.graphiks.kalligraphie.api.FlowRegionResult
@@ -765,6 +767,62 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun resumedFinalFragmentStillEnforcesMinimumLinesAtItsEnd() {
+        val fixture = fixture("ab ab ab")
+        val chain = FlowChain(
+            listOf(
+                FixedRegion(
+                    LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(1_600f), LayoutUnit(2_000f)),
+                    listOf(InlineInterval(0f, 1_600f)),
+                ),
+                FixedRegion(
+                    LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(1_600f), LayoutUnit(1_000f)),
+                    listOf(InlineInterval(0f, 1_600f)),
+                ),
+            ),
+            FragmentationConstraints(
+                minLinesAtEnd = 2,
+                keepTogether = true,
+                keepWithNext = true,
+            ),
+        )
+        val identity = flowIdentity(fixture)
+        val first = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                identity,
+            ),
+        )
+        val continuation = checkNotNull(first.value.continuation)
+        val last = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request.withFlowSourceRange(continuation.remainingSourceRange),
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                identity,
+                continuation,
+            ),
+        )
+
+        assertEquals(2, first.value.lines.size)
+        assertEquals(1, last.value.lines.size)
+        assertEquals(
+            listOf(
+                FragmentationConstraintKind.KEEP_WITH_NEXT,
+                FragmentationConstraintKind.KEEP_TOGETHER,
+                FragmentationConstraintKind.MIN_LINES_AT_END,
+            ),
+            (first.diagnostics + last.diagnostics).map { diagnostic ->
+                assertIs<FlowCompositionDiagnostic.FragmentationRelaxed>(diagnostic).constraint
+            },
+        )
+        assertTrue(last.value.isLastFragment)
+        assertEquals(null, last.value.continuation)
+    }
+
+    @Test
     fun keepWithNextRelaxesBeforeEvenACompleteParagraphIsFitted() {
         val fixture = fixture("ab")
         val result = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
@@ -878,9 +936,45 @@ class FlowParagraphCompositionTest {
         assertEquals(listOf(fixture.snapshot.range), first.lines.map { it.range })
         assertEquals(terminal, continuation.remainingSourceRange)
         assertTrue(!first.isLastFragment)
+        assertEquals(FlowCoverageStatus.PARTIAL, first.coverageStatus)
         assertEquals(listOf(terminal), second.lines.map { it.range })
         assertTrue(second.isLastFragment)
         assertEquals(null, second.continuation)
+        assertEquals(FlowCoverageStatus.COMPLETE, second.coverageStatus)
+    }
+
+    @Test
+    fun aRealPartialFragmentCannotPublishCompleteCoverageAfterItsContinuationIsRemoved() {
+        val fixture = fixture("ab ab")
+        val chain = FlowChain(
+            List(2) {
+                FixedRegion(
+                    LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(1_600f), LayoutUnit(1_000f)),
+                    listOf(InlineInterval(0f, 1_600f)),
+                )
+            },
+        )
+        val partial = success(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                flowIdentity(fixture),
+            ),
+        )
+        checkNotNull(partial.continuation)
+
+        assertFailsWith<IllegalArgumentException> {
+            org.graphiks.kalligraphie.api.ParagraphFragment(
+                paragraphRange = partial.paragraphRange,
+                laidOutRange = partial.laidOutRange,
+                isFirstFragment = partial.isFirstFragment,
+                isLastFragment = false,
+                lines = partial.lines,
+                continuation = null,
+                diagnostics = partial.diagnostics,
+            )
+        }
     }
 
     @Test
