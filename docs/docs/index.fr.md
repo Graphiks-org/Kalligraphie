@@ -35,7 +35,8 @@ l’accès aux glyphes.
 
 Kalligraphie ne crée pas les pages et ne rend aucun pixel. L’application
 possède son document, les objets page et leur placement global, la fenêtre
-d’affichage, l’ordonnancement, le moteur de rendu et les ressources GPU.
+d’affichage, l’ordonnancement, le moteur de rendu et les ressources du
+processeur graphique (GPU).
 
 ## Commandes utiles
 

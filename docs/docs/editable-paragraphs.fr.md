@@ -283,10 +283,13 @@ région, ni une page, ni le moteur de rendu, ni une ressource native.
 
 `requestedRange` demande les lignes complètes qui contiennent la plage source
 visée ; `LineOverscan` ajoute un nombre borné de lignes complètes après cette
-plage, comme marge de préchargement. Pour un `FlowLayout` réussi,
-`coverage` décrit exactement le préfixe publié. Quand le paragraphe physique se
-poursuit, `unmaterializedTail` contient la `FlowContinuation` exacte du suffixe
-non matérialisé au lieu de masquer une troncature.
+plage, comme marge de préchargement. Pour un `FlowLayout` réussi, `coverage`
+décrit la plage source contiguë exacte représentée par les fragments publiés.
+Après une reprise incrémentale, cette plage peut commencer au point de contrôle
+de reprise transposé plutôt qu’au début du paragraphe. Quand le paragraphe
+physique se poursuit, `unmaterializedTail` contient la `FlowContinuation`
+exacte du suffixe situé après la plage couverte, au lieu de masquer une
+troncature.
 
 Conservez `FlowLayout.state` pour la requête suivante. Avec les mêmes entrées,
 une nouvelle requête peut étendre la couverture sans reconstruire une
@@ -308,7 +311,7 @@ géométrie retournée restent portables et sans ressource. Kalligraphie compose
 exactement dans les régions fournies par l’application, mais ne crée pas les
 pages et ne possède pas leur placement global. Elle ne possède pas non plus le
 document mutable, la fenêtre d’affichage, le défilement, l’ordonnanceur, le
-moteur de rendu ou une API GPU. Consultez la
+moteur de rendu ou une API de processeur graphique (GPU). Consultez la
 [Typographie avancée](advanced-typography.fr.md) pour la césure, la justification,
 l’ellipsis (points de suspension), les objets dans la ligne, l’écriture
 verticale et l’équivalence incrémentale.

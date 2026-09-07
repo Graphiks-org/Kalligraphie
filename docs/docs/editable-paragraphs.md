@@ -267,9 +267,12 @@ native handle.
 
 `requestedRange` asks for complete flow lines containing the target source
 range; `LineOverscan` adds a bounded number of complete following lines. A
-successful `FlowLayout.coverage` describes the exact published prefix. When
-the physical paragraph continues, `unmaterializedTail` is the exact
-`FlowContinuation` for the missing suffix rather than an implicit truncation.
+successful `FlowLayout.coverage` describes the exact contiguous source range
+represented by its published fragments. After an incremental restart, that
+range may begin at the mapped restart checkpoint rather than at the paragraph
+start. When the physical paragraph continues, `unmaterializedTail` is the exact
+`FlowContinuation` for the suffix after the covered range rather than an
+implicit truncation.
 
 Retain `FlowLayout.state` for the next request. With unchanged inputs, a later
 request can extend coverage without rebuilding already sufficient coverage.
