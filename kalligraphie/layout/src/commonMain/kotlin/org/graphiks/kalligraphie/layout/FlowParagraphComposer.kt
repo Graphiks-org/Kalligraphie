@@ -12,6 +12,7 @@ import org.graphiks.kalligraphie.api.FlowContinuation
 import org.graphiks.kalligraphie.api.FlowFragmentationCommitment
 import org.graphiks.kalligraphie.api.FlowFragmentProvenance
 import org.graphiks.kalligraphie.api.FlowLayoutConfigurationSignature
+import org.graphiks.kalligraphie.api.FlowLayoutState
 import org.graphiks.kalligraphie.api.FlowParagraphLayouter
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionResult
@@ -55,6 +56,26 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     private const val IMPLEMENTATION_REFINEMENT_LIMIT: Int = 32
     private const val IMPLEMENTATION_EMPTY_TRANSITION_LIMIT: Int = 32
 
+    /**
+     * Places an already-prepared source range as exactly one complete logical line in [region].
+     *
+     * The region is queried in the writing mode from [request], beginning at [blockStart]. Stable
+     * intervals are refined before shaping output is finalized, and the returned fragment covers
+     * the complete request range or no fragment is published. Rectangular paragraph continuations
+     * and ranges requiring more than one line are rejected as typed paragraph failures. Region
+     * protocol violations, cancellation, shaping failures, and lack of usable space are likewise
+     * returned through [FlowCompositionResult.Failure].
+     *
+     * [materialization] and [region] are borrowed synchronously and are never retained. This
+     * stateless operation is safe for concurrent calls when the supplied capabilities satisfy
+     * their own concurrency contracts.
+     *
+     * @param request complete Unicode, line-break, font, shaping, and positioning inputs.
+     * @param materialization requested layout-only or outline-certified publication capability.
+     * @param region application-owned geometry provider queried for the line band.
+     * @param blockStart finite non-negative logical block-axis offset at which placement begins.
+     * @return one final [ParagraphFragment] on success, otherwise a typed composition failure.
+     */
     override fun layoutLine(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
@@ -87,6 +108,37 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
     }
 
+    /**
+     * Composes the next source-consecutive paragraph fragment through [chain].
+     *
+     * Composition begins at [continuation]'s exact region and block cursor when supplied, otherwise
+     * at the first usable region. Only complete logical lines are published. [maximumLines] bounds
+     * publication after line finalization while preserving exact continuation, fragmentation, and
+     * region state; `null` permits the selected region fragment to run to its natural boundary.
+     * A positive bound is required. [flowConfiguration] attaches the complete portable provenance
+     * required when the fragment will be retained in [FlowLayoutState].
+     *
+     * The method verifies text and typography identity, complete replay inputs, chain and region
+     * revision identity, writing mode, cursor, fragmentation policy, and source suffix before a
+     * continuation is consumed. Unsupported overflow, incompatible or foreign continuations,
+     * cancellation, invalid region responses, shaping failures, and lack of progress are returned
+     * as typed [FlowCompositionResult.Failure] values. No partial fragment is published on failure.
+     *
+     * The composer is stateless. [request], [materialization], and [chain] are borrowed only for
+     * this call; returned fragments and continuations retain no region provider, font resource,
+     * renderer, page, shaping backend, or native handle. Concurrent calls are safe when borrowed
+     * capabilities satisfy their own concurrency contracts.
+     *
+     * @param request prepared paragraph request whose source range is the exact suffix to compose.
+     * @param materialization requested layout-only or outline-certified publication capability.
+     * @param chain ordered application-owned flow regions and fragmentation constraints.
+     * @param inputIdentity exact text and typography revisions used to prepare [request].
+     * @param continuation structured replay state for [request], or `null` for initial composition.
+     * @param maximumLines optional positive limit on complete lines published by this call.
+     * @param flowConfiguration optional complete configuration provenance for incremental state.
+     * @return the next immutable [ParagraphFragment], or a typed failure without publication.
+     * @throws IllegalArgumentException when [maximumLines] is non-null and not positive.
+     */
     override fun layoutFragment(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
