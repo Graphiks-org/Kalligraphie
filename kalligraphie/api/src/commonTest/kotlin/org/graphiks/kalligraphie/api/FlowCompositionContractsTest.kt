@@ -251,6 +251,18 @@ class FlowCompositionContractsTest {
     }
 
     @Test
+    fun illegalSameOriginBandShrinkHasItsOwnPublicStructuredError() {
+        val previous = LineBand(blockStart = 20f, blockExtent = 40f)
+        val attempted = LineBand(blockStart = 20f, blockExtent = 30f)
+
+        val error = FlowCompositionError.ShrinkingFlowLineBand(previous, attempted)
+
+        assertEquals("layout.flow-shrinking-line-band", error.code)
+        assertEquals(previous, error.previousBand)
+        assertEquals(attempted, error.attemptedBand)
+    }
+
+    @Test
     fun lineFragmentSnapshotsItsPositionedItemCollections() {
         val boundary = text("").range.start
         val candidate = CaretCandidate(
