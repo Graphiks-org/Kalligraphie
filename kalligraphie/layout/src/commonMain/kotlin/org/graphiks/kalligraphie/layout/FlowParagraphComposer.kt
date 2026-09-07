@@ -90,7 +90,11 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         chain: FlowChain,
         inputIdentity: FlowCompositionInputIdentity,
         continuation: FlowContinuation?,
+        maximumLines: Int?,
     ): FlowCompositionResult<ParagraphFragment> {
+        require(maximumLines == null || maximumLines > 0) {
+            "A bounded flow fragment must allow at least one complete line."
+        }
         if (request.continuation != null) {
             return paragraphFailure("Flow-chain composition does not consume rectangular paragraph continuations.")
         }
@@ -153,6 +157,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         materialization,
                         chain.regions[regionIndex],
                         blockOffset,
+                        maximumLines,
                     )
                 ) {
                     is RegionComposition.Failure -> return composition.failure
@@ -199,6 +204,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         materialization: EditableLineMaterialization,
         region: FlowRegion,
         initialBlockOffset: Float,
+        maximumLines: Int?,
     ): RegionComposition {
         val lines = mutableListOf<LineLayout>()
         var remainingStart = request.sourceRange.start
@@ -222,10 +228,15 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     remainingStart = attempt.line.range.endExclusive
                     blockOffset = attempt.blockStart + attempt.blockExtent
                     emptyLineRequired = attempt.hasUnplacedTrailingEmptyLine
+                    val physicalParagraphComplete =
+                        remainingStart == request.sourceRange.endExclusive && !emptyLineRequired
+                    if (maximumLines != null && lines.size >= maximumLines && !physicalParagraphComplete) {
+                        return RegionComposition.Success(lines, blockOffset, false, stoppedByLineLimit = true)
+                    }
                 }
             }
         }
-        return RegionComposition.Success(lines, blockOffset, true)
+        return RegionComposition.Success(lines, blockOffset, true, stoppedByLineLimit = false)
     }
 
     private fun publishFragment(
@@ -242,9 +253,17 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val continuation = if (candidate.composition.isComplete) {
             null
         } else {
-            val nextIndex = if (candidate.regionIndex + 1 < chain.regions.size) candidate.regionIndex + 1
-            else candidate.regionIndex
-            val nextOffset = if (nextIndex == candidate.regionIndex) candidate.composition.nextBlockOffset else 0f
+            val resumesInSameRegion = candidate.composition.stoppedByLineLimit
+            val nextIndex = if (resumesInSameRegion || candidate.regionIndex + 1 >= chain.regions.size) {
+                candidate.regionIndex
+            } else {
+                candidate.regionIndex + 1
+            }
+            val nextOffset = if (resumesInSameRegion || nextIndex == candidate.regionIndex) {
+                candidate.composition.nextBlockOffset
+            } else {
+                0f
+            }
             chain.createContinuation(
                 inputIdentity = inputIdentity,
                 request = request,
@@ -1078,6 +1097,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             val lines: List<LineLayout>,
             val nextBlockOffset: Float,
             val isComplete: Boolean,
+            val stoppedByLineLimit: Boolean = false,
         ) : RegionComposition
 
         data class Failure(val failure: FlowCompositionResult.Failure) : RegionComposition

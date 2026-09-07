@@ -751,6 +751,45 @@ internal class FlowParagraphReplayIdentity private constructor(
     private val lineBreakGraphemeClusters: List<TextRange>,
     private val lineBreakOpportunities: List<LineBreakOpportunity>,
 ) {
+    fun hasSameReplayIdentity(other: FlowParagraphReplayIdentity): Boolean =
+        paragraph.originalVersion == other.paragraph.originalVersion &&
+            paragraph.originalSourceRange == other.paragraph.originalSourceRange &&
+            paragraph.remainingSourceRange == other.paragraph.remainingSourceRange &&
+            paragraph.regionWidth == other.paragraph.regionWidth &&
+            paragraph.regionLeft == other.paragraph.regionLeft &&
+            paragraph.resumptionRegionTop == other.paragraph.resumptionRegionTop &&
+            paragraph.writingMode == other.paragraph.writingMode &&
+            paragraph.resumptionBlockCursor == other.paragraph.resumptionBlockCursor &&
+            paragraph.inlineExtent == other.paragraph.inlineExtent &&
+            paragraph.lineMetrics == other.paragraph.lineMetrics &&
+            paragraph.baseDirection == other.paragraph.baseDirection &&
+            paragraph.language == other.paragraph.language &&
+            paragraph.unicodeData == other.paragraph.unicodeData &&
+            paragraph.fontCatalogGeneration == other.paragraph.fontCatalogGeneration &&
+            paragraph.resolutionPolicyId == other.paragraph.resolutionPolicyId &&
+            paragraph.resolutionPolicyVersion == other.paragraph.resolutionPolicyVersion &&
+            paragraph.fontInstanceDescriptor == other.paragraph.fontInstanceDescriptor &&
+            paragraph.shapingBackendIdentity == other.paragraph.shapingBackendIdentity &&
+            paragraph.featurePolicy == other.paragraph.featurePolicy &&
+            paragraph.features == other.paragraph.features &&
+            paragraph.materializationIdentity == other.paragraph.materializationIdentity &&
+            paragraph.overflowPolicy == other.paragraph.overflowPolicy &&
+            paragraph.positioning == other.paragraph.positioning &&
+            paragraph.hyphenationMode == other.paragraph.hyphenationMode &&
+            paragraph.hyphenationServiceIdentity == other.paragraph.hyphenationServiceIdentity &&
+            paragraph.inlineObjects == other.paragraph.inlineObjects &&
+            paragraph.textOrientation == other.paragraph.textOrientation &&
+            paragraph.verticalMetricsPolicy == other.paragraph.verticalMetricsPolicy &&
+            unicodeRange == other.unicodeRange &&
+            unicodeData == other.unicodeData &&
+            graphemeClusters == other.graphemeClusters &&
+            scriptLanguageRuns == other.scriptLanguageRuns &&
+            logicalBidiRuns == other.logicalBidiRuns &&
+            visualBidiRuns == other.visualBidiRuns &&
+            lineBreakRange == other.lineBreakRange &&
+            lineBreakGraphemeClusters == other.lineBreakGraphemeClusters &&
+            lineBreakOpportunities == other.lineBreakOpportunities
+
     fun hasSameFlowInputs(request: ParagraphLayoutRequest): Boolean =
         request.snapshot.version == paragraph.originalVersion &&
             request.constraints.writingMode == paragraph.writingMode &&
@@ -804,6 +843,249 @@ internal class FlowParagraphReplayIdentity private constructor(
                 lineBreakOpportunities = request.lineBreakAnalysis.opportunities,
             )
     }
+}
+
+/**
+ * Complete resource-free signature of inputs that may affect flow breaking or geometry.
+ *
+ * The signature snapshots region revision identities and paragraph configuration while retaining
+ * no [FlowRegion], text snapshot, shaping backend, resolver, renderer, or platform resource.
+ */
+public class FlowLayoutConfigurationSignature private constructor(
+    private val value: FlowLayoutConfigurationValue,
+) {
+    /** Compares every captured flow and paragraph input. */
+    override fun equals(other: Any?): Boolean =
+        other is FlowLayoutConfigurationSignature && value == other.value
+
+    /** Returns a stable hash of the captured resource-free configuration. */
+    override fun hashCode(): Int = value.hashCode()
+
+    /** Factories for portable flow configuration signatures. */
+    public companion object {
+        /** Captures all replay-relevant values from [request], [paragraph], and its region chain. */
+        public fun capture(
+            request: IncrementalFlowLayoutRequest,
+            paragraph: ParagraphLayoutRequest,
+        ): FlowLayoutConfigurationSignature = FlowLayoutConfigurationSignature(
+            FlowLayoutConfigurationValue(
+                layout = LayoutConfigurationSignature.from(request.input, request.constraints),
+                baseDirection = paragraph.baseDirection,
+                language = paragraph.language,
+                backendIdentity = paragraph.shapingBackend.identity,
+                materialization = paragraph.materializationIdentity,
+                overflowPolicy = paragraph.overflowPolicy,
+                positioning = paragraph.positioning,
+                hyphenationMode = paragraph.hyphenationMode,
+                hyphenationServiceIdentity = paragraph.hyphenationService?.identity,
+                inlineObjects = paragraph.inlineObjects,
+                textOrientation = paragraph.textOrientation,
+                verticalMetricsPolicy = paragraph.verticalMetricsPolicy,
+                features = paragraph.features,
+                flowCompositionIdentity = request.flowChain.compositionIdentity,
+                regionIdentities = request.flowChain.regions.map(FlowRegion::identity),
+            ),
+        )
+    }
+}
+
+private data class FlowLayoutConfigurationValue(
+    val layout: LayoutConfigurationSignature,
+    val baseDirection: BaseDirection,
+    val language: String,
+    val backendIdentity: ShapingBackendIdentity,
+    val materialization: ParagraphMaterializationIdentity,
+    val overflowPolicy: OverflowPolicy,
+    val positioning: ParagraphPositioningPolicy,
+    val hyphenationMode: HyphenationMode,
+    val hyphenationServiceIdentity: HyphenationServiceIdentity?,
+    val inlineObjects: InlineObjectSnapshot?,
+    val textOrientation: TextOrientation,
+    val verticalMetricsPolicy: VerticalMetricsPolicy,
+    val features: List<OpenTypeFeature>,
+    val flowCompositionIdentity: FlowCompositionIdentity,
+    val regionIdentities: List<FlowRegionIdentity>,
+)
+
+/**
+ * Immutable portable request for bounded incremental composition through [flowChain].
+ *
+ * The chain is borrowed synchronously by the layout engine. Published state snapshots only opaque
+ * chain and region identities and therefore retains no consumer geometry provider.
+ */
+public class IncrementalFlowLayoutRequest internal constructor(
+    /** Target text and typography snapshots. */
+    public val input: LayoutInput,
+    /** Source range whose containing complete flow lines must be materialized. */
+    public val requestedRange: TextRange,
+    /** Writing mode and line metrics shared by the flow regions. */
+    public val constraints: ParagraphConstraints,
+    /** Ordered application-owned region chain borrowed for this operation. */
+    public val flowChain: FlowChain,
+    /** Number of complete lines requested after the line covering [requestedRange]. */
+    public val overscan: LineOverscan,
+    /** Optional prior portable flow state. */
+    public val previousState: FlowLayoutState?,
+    /** Optional authoritative transition from [previousState] to [input]. */
+    public val delta: LayoutDelta?,
+    /** Cooperative cancellation signal checked between bounded operations. */
+    public val cancellationToken: CancellationToken,
+)
+
+/** Validates and creates a portable incremental flow-layout request. */
+public fun createIncrementalFlowLayoutRequest(
+    input: LayoutInput,
+    requestedRange: TextRange,
+    constraints: ParagraphConstraints,
+    flowChain: FlowChain,
+    overscan: LineOverscan,
+    previousState: FlowLayoutState? = null,
+    delta: LayoutDelta? = null,
+    cancellationToken: CancellationToken = CancellationToken.none,
+): FlowCompositionResult<IncrementalFlowLayoutRequest> {
+    if (!requestedRange.start.sharesVersionWith(input.text.range.start) || !input.text.contains(requestedRange)) {
+        return FlowCompositionResult.Failure(
+            FlowCompositionError.IncompatibleState(
+                "The requested flow range must belong to and stay inside the target snapshot.",
+            ),
+        )
+    }
+    if (delta?.text != null && delta.text.targetVersion != input.text.version) {
+        return FlowCompositionResult.Failure(
+            FlowCompositionError.IncompatibleState("The text delta target does not match the requested text revision."),
+        )
+    }
+    if (delta?.typography != null && delta.typography.targetVersion != input.typography.version) {
+        return FlowCompositionResult.Failure(
+            FlowCompositionError.IncompatibleState(
+                "The typography delta target does not match the requested typography revision.",
+            ),
+        )
+    }
+    if (previousState != null && previousState.flowCompositionIdentity != flowChain.compositionIdentity) {
+        return FlowCompositionResult.Failure(
+            FlowCompositionError.IncompatibleState("The retained flow state belongs to another flow chain."),
+        )
+    }
+    if (previousState != null) {
+        val textChanged = previousState.inputIdentity.textVersion != input.text.version
+        val textDelta = delta?.text
+        if (textChanged && textDelta == null || textDelta != null && textDelta.sourceVersion != previousState.inputIdentity.textVersion) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.IncompatibleState(
+                    "A text delta must start at the retained flow state when the text revision changes.",
+                ),
+            )
+        }
+        val typographyChanged = previousState.inputIdentity.typographyVersion != input.typography.version
+        val typographyDelta = delta?.typography
+        if (
+            typographyChanged && typographyDelta == null ||
+            typographyDelta != null && typographyDelta.sourceVersion != previousState.inputIdentity.typographyVersion
+        ) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.IncompatibleState(
+                    "A typography delta must start at the retained flow state when the typography revision changes.",
+                ),
+            )
+        }
+    }
+    return FlowCompositionResult.Success(
+        IncrementalFlowLayoutRequest(
+            input,
+            requestedRange,
+            constraints,
+            flowChain,
+            overscan,
+            previousState,
+            delta,
+            cancellationToken,
+        ),
+    )
+}
+
+/** Immutable incremental restart information for one portable flow publication. */
+public data class FlowLayoutDiagnostics(
+    /** Exact target boundary at which forward composition began. */
+    public val reflowStart: TextIndex,
+    /** Whether insufficient semantic proof forced restart at the target document start. */
+    public val usedConservativeInvalidation: Boolean,
+    /** Mapped checkpoint where recomposed output converged, or `null` when none was observed. */
+    public val stabilizedAt: TextIndex? = null,
+)
+
+/**
+ * Resource-free immutable flow state retained between bounded layout requests.
+ *
+ * Checkpoints carry current structured continuations and observable fragment signatures. The
+ * state retains no region, snapshot, backend, resolver, renderer, page, or native handle.
+ */
+public class FlowLayoutState(
+    /** Exact text and typography revisions represented by this state. */
+    public val inputIdentity: FlowCompositionInputIdentity,
+    /** Opaque identity of the chain that produced this state. */
+    public val flowCompositionIdentity: FlowCompositionIdentity,
+    /** Complete materialized coverage published with this state. */
+    public val coverage: LayoutCoverage,
+    /** Complete semantic configuration required for reuse. */
+    public val configuration: FlowLayoutConfigurationSignature,
+    materializedFragments: List<ParagraphFragment>,
+    checkpoints: List<FlowLayoutCheckpoint>,
+    /** Exact continuation of the unmaterialized suffix, or `null` at physical paragraph end. */
+    public val continuation: FlowContinuation?,
+) {
+    /** Immutable fragments available for a no-work compatible publication. */
+    public val materializedFragments: List<ParagraphFragment> = materializedFragments.immutableListSnapshot()
+
+    /** Immutable structured checkpoints ordered by their source boundary. */
+    public val checkpoints: List<FlowLayoutCheckpoint> = checkpoints.immutableListSnapshot()
+
+    init {
+        require(coverage.textVersion == inputIdentity.textVersion) {
+            "Flow state coverage must use its input text revision."
+        }
+        require(this.materializedFragments.zipWithNext().all { (left, right) ->
+            left.laidOutRange.endExclusive == right.laidOutRange.start
+        }) {
+            "Flow state materialized fragments must be consecutive."
+        }
+        require(this.checkpoints.zipWithNext().all { (left, right) ->
+            left.laidOutRange.endExclusive <= right.laidOutRange.endExclusive
+        }) {
+            "Flow state checkpoints must be ordered."
+        }
+        require(continuation == null || continuation.remainingSourceRange.start == coverage.range.endExclusive) {
+            "Flow state continuation must begin at the published coverage end."
+        }
+    }
+}
+
+/**
+ * Immutable consumer-visible bounded flow layout.
+ *
+ * The value contains complete existing [ParagraphFragment] and [LineLayout] models only. Its tail
+ * is explicit and it owns no page, renderer, resolver, backend, or platform resource.
+ */
+public class FlowLayout(
+    /** Target text and typography revisions used by every fragment. */
+    public val inputIdentity: FlowCompositionInputIdentity,
+    /** Caller range that drove bounded materialization. */
+    public val requestedRange: TextRange,
+    fragments: List<ParagraphFragment>,
+    /** Exact source coverage represented by [fragments]. */
+    public val coverage: LayoutCoverage,
+    /** Exact suffix continuation, or `null` at physical paragraph end. */
+    public val unmaterializedTail: FlowContinuation?,
+    /** Resource-free state accepted by a compatible later request. */
+    public val state: FlowLayoutState,
+    /** Incremental restart and convergence information. */
+    public val diagnostics: FlowLayoutDiagnostics,
+) {
+    /** Immutable complete fragments in source order. */
+    public val fragments: List<ParagraphFragment> = fragments.immutableListSnapshot()
+
+    /** Immutable complete lines flattened in logical source order. */
+    public val lines: List<LineLayout> = this.fragments.flatMap(ParagraphFragment::lines).immutableListSnapshot()
 }
 
 /** Whether published flow fragments cover the complete paragraph or an exact prefix. */

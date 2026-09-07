@@ -1094,7 +1094,9 @@ public interface FlowParagraphLayouter {
      * range as [ParagraphLayoutRequest.sourceRange]. [inputIdentity] proves the immutable text and
      * typography revisions and is required even for the first fragment so a reusable continuation
      * can be issued. Only source-preserving [OverflowPolicy.Continue] is accepted; truncating
-     * policies fail before a region is queried. The borrowed [materialization] is never retained.
+     * policies fail before a region is queried. [maximumLines] may bound publication inside a
+     * region after complete lines while preserving an exact same-region continuation. The borrowed
+     * [materialization] is never retained.
      */
     public fun layoutFragment(
         request: ParagraphLayoutRequest,
@@ -1102,6 +1104,7 @@ public interface FlowParagraphLayouter {
         chain: FlowChain,
         inputIdentity: FlowCompositionInputIdentity,
         continuation: FlowContinuation? = null,
+        maximumLines: Int? = null,
     ): FlowCompositionResult<ParagraphFragment>
 }
 

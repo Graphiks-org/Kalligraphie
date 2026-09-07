@@ -511,6 +511,88 @@ public class LineCheckpointSignature private constructor(
     }
 }
 
+/**
+ * Structured resource-free checkpoint after one complete flow fragment.
+ *
+ * [continuation] contains the exact current replay identity, region ordinal and revision, block
+ * cursor, fragmentation state, and paragraph inputs. Observable comparison uses captured line
+ * geometry and shaping facts without a serialized string identity.
+ */
+public class FlowLayoutCheckpoint private constructor(
+    /** Exact source range represented immediately before [continuation]. */
+    public val laidOutRange: TextRange,
+    /** Exact structured continuation after [laidOutRange]. */
+    public val continuation: FlowContinuation,
+    private val observable: FlowFragmentObservableSignature,
+) {
+    /** Zero-based region ordinal at which replay resumes. */
+    public val resumeRegionOrdinal: Int = continuation.regionIndex
+
+    /** Exact immutable region revision at [resumeRegionOrdinal]. */
+    public val resumeRegionIdentity: FlowRegionIdentity = continuation.regionIdentity
+
+    /** Exact logical block-axis cursor at which replay resumes. */
+    public val blockCursor: Float = continuation.nextBlockOffset
+
+    /** Compares all captured fragment observables independently of absolute source versions. */
+    public fun hasSameObservableLayout(other: FlowLayoutCheckpoint): Boolean = observable == other.observable
+
+    /** Compares structured region, cursor, writing-mode, and fragmentation continuation state. */
+    public fun hasSameFlowSemantics(other: FlowLayoutCheckpoint): Boolean =
+        continuation.inputIdentity == other.continuation.inputIdentity &&
+            continuation.paragraphRange == other.continuation.paragraphRange &&
+            continuation.remainingSourceRange == other.continuation.remainingSourceRange &&
+            continuation.compositionIdentity == other.continuation.compositionIdentity &&
+            continuation.regionIndex == other.continuation.regionIndex &&
+            continuation.regionIdentity == other.continuation.regionIdentity &&
+            continuation.writingMode == other.continuation.writingMode &&
+            continuation.nextBlockOffset == other.continuation.nextBlockOffset &&
+            continuation.fragmentationConstraints == other.continuation.fragmentationConstraints &&
+            continuation.relaxedConstraints == other.continuation.relaxedConstraints &&
+            continuation.paragraphReplayIdentity?.let { replay ->
+                other.continuation.paragraphReplayIdentity?.let(replay::hasSameReplayIdentity)
+            } == true
+
+    /**
+     * Rebinds this unchanged observable checkpoint to a proven target range and freshly captured
+     * target continuation.
+     */
+    public fun remap(
+        laidOutRange: TextRange,
+        continuation: FlowContinuation,
+    ): FlowLayoutCheckpoint {
+        require(laidOutRange.endExclusive == continuation.remainingSourceRange.start) {
+            "A remapped flow checkpoint must end where its continuation begins."
+        }
+        return FlowLayoutCheckpoint(laidOutRange, continuation, observable)
+    }
+
+    /** Factories for exact complete-fragment checkpoint capture. */
+    public companion object {
+        /** Captures every line observable and the fragment's exact structured continuation. */
+        public fun capture(fragment: ParagraphFragment): FlowLayoutCheckpoint {
+            val continuation = requireNotNull(fragment.continuation) {
+                "Only a non-final flow fragment can create a replay checkpoint."
+            }
+            return FlowLayoutCheckpoint(
+                fragment.laidOutRange,
+                continuation,
+                FlowFragmentObservableSignature(
+                    isFirstFragment = fragment.isFirstFragment,
+                    lines = fragment.lines.map(LineLayout::toObservableSignature),
+                    diagnostics = fragment.diagnostics,
+                ),
+            )
+        }
+    }
+}
+
+private data class FlowFragmentObservableSignature(
+    val isFirstFragment: Boolean,
+    val lines: List<ObservableLineSignature>,
+    val diagnostics: List<FlowCompositionDiagnostic>,
+)
+
 /** Semantically complete resource-free configuration used to validate checkpoint reuse. */
 public class LayoutConfigurationSignature private constructor(
     private val value: LayoutConfigurationValue,

@@ -10,6 +10,8 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.FlowChain
 import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionResult
+import org.graphiks.kalligraphie.api.FlowLayout
+import org.graphiks.kalligraphie.api.FlowLayoutState
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionIdentity
 import org.graphiks.kalligraphie.api.FlowRegionResult
@@ -28,6 +30,7 @@ import org.graphiks.kalligraphie.api.TextChange
 import org.graphiks.kalligraphie.api.TextChangeSet
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.WritingMode
+import org.graphiks.kalligraphie.api.createIncrementalFlowLayoutRequest
 
 class FlowCompositionEditorJourneyTest {
     @Test
@@ -122,14 +125,14 @@ class FlowCompositionEditorJourneyTest {
         )
         val tail = assertNotNull(partial.unmaterializedTail)
         assertEquals(fixture.snapshot.incrementalRange(3, 8), tail.remainingSourceRange)
-        assertEquals(1, tail.regionIndex)
-        assertEquals(chain.regions[1].identity, tail.regionIdentity)
-        assertEquals(0f, tail.nextBlockOffset)
+        assertEquals(0, tail.regionIndex)
+        assertEquals(chain.regions[0].identity, tail.regionIdentity)
+        assertEquals(1_200f, tail.nextBlockOffset)
         assertEquals(listOf(true, false, false, false), queries.map { it > 0 })
         assertEquals(1, partial.state.checkpoints.size)
-        assertEquals(1, partial.state.checkpoints.single().resumeRegionOrdinal)
-        assertEquals(chain.regions[1].identity, partial.state.checkpoints.single().resumeRegionIdentity)
-        assertEquals(0f, partial.state.checkpoints.single().blockCursor)
+        assertEquals(0, partial.state.checkpoints.single().resumeRegionOrdinal)
+        assertEquals(chain.regions[0].identity, partial.state.checkpoints.single().resumeRegionIdentity)
+        assertEquals(1_200f, partial.state.checkpoints.single().blockCursor)
     }
 
     @Test
@@ -210,19 +213,156 @@ class FlowCompositionEditorJourneyTest {
         val originalCount = originalQueries.sum()
 
         val rejected = assertIs<FlowCompositionResult.Failure>(
-            JvmFlowCompositionFacade.layout(
-                request(
-                    fixture,
-                    replacementChain,
-                    requestedRange = fixture.snapshot.incrementalRange(3, 4),
-                    previousState = partial.state,
-                ),
+            createIncrementalFlowLayoutRequest(
+                input = LayoutInput(fixture.snapshot, fixture.typography),
+                requestedRange = fixture.snapshot.incrementalRange(3, 4),
+                constraints = incrementalTestConstraints(width = 1_600f, top = 100f, height = 1_200f),
+                flowChain = replacementChain,
+                overscan = LineOverscan(0),
+                previousState = partial.state,
             ),
         )
 
         assertIs<FlowCompositionError.IncompatibleState>(rejected.error)
         assertEquals(originalCount, originalQueries.sum())
         assertTrue(replacementQueries.all { it == 0 })
+    }
+
+    @Test
+    fun middleRegionEditRestartsAfterPreservedEarlierRegions() {
+        val source = incrementalRealFontFixture("fi fi fi fi fi")
+        val target = source.withText("fi fi ii fi fi")
+        val queries = MutableList(5) { 0 }
+        val chain = horizontalChain(5, queries)
+        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(6, 7),
+                        target.snapshot.incrementalRange(6, 7),
+                    ),
+                ),
+            ),
+        ).value
+        val beforeEdit = queries.toList()
+
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    requestedRange = target.snapshot.incrementalRange(9, 10),
+                    previousState = initial.state,
+                    delta = LayoutDelta(text = change),
+                ),
+            ),
+        )
+
+        assertEquals(beforeEdit[0], queries[0])
+        assertEquals(beforeEdit[1], queries[1])
+        assertTrue(queries[2] > beforeEdit[2])
+        assertTrue(queries[3] > beforeEdit[3])
+        assertEquals(beforeEdit[4], queries[4])
+        assertEquals(target.snapshot.textIndexAtScalarBoundary(6), edited.diagnostics.reflowStart)
+        assertEquals(target.snapshot.textIndexAtScalarBoundary(12), edited.diagnostics.stabilizedAt)
+        assertEquals(
+            listOf(target.snapshot.incrementalRange(6, 9), target.snapshot.incrementalRange(9, 12)),
+            edited.fragments.map { it.laidOutRange },
+        )
+
+        val full = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    horizontalChain(5),
+                    requestedRange = target.snapshot.incrementalRange(9, 10),
+                ),
+            ),
+        )
+        val matchingFullLines = full.lines.filter { line -> line.range.start >= edited.coverage.range.start }
+        assertEquals(matchingFullLines.map(LineLayout::range), edited.lines.map(LineLayout::range))
+        assertEquals(matchingFullLines.map(LineLayout::glyphIds), edited.lines.map(LineLayout::glyphIds))
+        assertEquals(matchingFullLines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            matchingFullLines.map { line -> line.allCaretCandidates.map { it.position.index } },
+            edited.lines.map { line -> line.allCaretCandidates.map { it.position.index } },
+        )
+    }
+
+    @Test
+    fun overscanPastPhysicalEndStillPublishesCompleteSingleLineDocument() {
+        val fixture = incrementalRealFontFixture("fi")
+        val chain = horizontalChain(1)
+
+        val result = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    overscan = 1,
+                ),
+            ),
+        )
+
+        assertEquals(listOf(fixture.snapshot.range), result.fragments.map { it.laidOutRange })
+        assertEquals(LayoutTailState.MaterializedThroughDocumentEnd, result.coverage.tailState)
+        assertNull(result.unmaterializedTail)
+    }
+
+    @Test
+    fun oneRequestedLineInTallRegionStopsInsideRegionWithExactContinuation() {
+        val fixture = incrementalRealFontFixture("fi fi fi")
+        var queries = 0
+        val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(1_700f), LayoutUnit(6_100f))
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(bounds, listOf(InlineInterval(0f, 1_600f))) { queries += 1 },
+            ),
+        )
+
+        val result = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = ParagraphConstraints(
+                        bounds,
+                        LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+                        WritingMode.HORIZONTAL_TB,
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(listOf(fixture.snapshot.incrementalRange(0, 3)), result.fragments.map { it.laidOutRange })
+        val tail = assertNotNull(result.unmaterializedTail)
+        assertEquals(0, tail.regionIndex)
+        assertEquals(1_200f, tail.nextBlockOffset)
+        assertEquals(fixture.snapshot.incrementalRange(3, 8), tail.remainingSourceRange)
+        assertTrue(queries > 0)
+    }
+
+    @Test
+    fun compatibleCompleteStateSatisfiesSecondRequestWithoutRegionQuery() {
+        val fixture = incrementalRealFontFixture("fi")
+        val queries = mutableListOf(0)
+        val chain = horizontalChain(1, queries)
+        val first = success(JvmFlowCompositionFacade.layout(request(fixture, chain)))
+        val beforeSecond = queries.single()
+
+        val second = success(
+            JvmFlowCompositionFacade.layout(
+                request(fixture, chain, previousState = first.state),
+            ),
+        )
+
+        assertEquals(beforeSecond, queries.single())
+        assertEquals(first.fragments.map { it.laidOutRange }, second.fragments.map { it.laidOutRange })
+        assertEquals(first.lines.map(LineLayout::glyphIds), second.lines.map(LineLayout::glyphIds))
     }
 
     @Test
@@ -253,19 +393,26 @@ class FlowCompositionEditorJourneyTest {
         requestedRange: TextRange = fixture.snapshot.range,
         constraints: ParagraphConstraints = incrementalTestConstraints(width = 1_600f, top = 100f, height = 1_200f),
         overscan: Int = 0,
-        previousState: JvmFlowCompositionState? = null,
+        previousState: FlowLayoutState? = null,
         delta: LayoutDelta? = null,
-    ): JvmFlowCompositionRequest = JvmFlowCompositionRequest(
-        input = LayoutInput(fixture.snapshot, fixture.typography),
-        requestedRange = requestedRange,
-        constraints = constraints,
-        flowChain = chain,
-        overscan = LineOverscan(overscan),
-        previousState = previousState,
-        delta = delta,
-        baseDirection = BaseDirection.LEFT_TO_RIGHT,
-        language = "en",
-    )
+    ): JvmFlowCompositionRequest {
+        val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
+            createIncrementalFlowLayoutRequest(
+                input = LayoutInput(fixture.snapshot, fixture.typography),
+                requestedRange = requestedRange,
+                constraints = constraints,
+                flowChain = chain,
+                overscan = LineOverscan(overscan),
+                previousState = previousState,
+                delta = delta,
+            ),
+        ).value
+        return JvmFlowCompositionRequest(
+            request = portable,
+            baseDirection = BaseDirection.LEFT_TO_RIGHT,
+            language = "en",
+        )
+    }
 
     private fun horizontalChain(count: Int, queries: MutableList<Int>? = null): FlowChain = FlowChain(
         List(count) { index ->
@@ -283,8 +430,8 @@ class FlowCompositionEditorJourneyTest {
     )
 
     private fun success(
-        result: FlowCompositionResult<JvmFlowCompositionLayout>,
-    ): JvmFlowCompositionLayout = assertIs<FlowCompositionResult.Success<JvmFlowCompositionLayout>>(
+        result: FlowCompositionResult<FlowLayout>,
+    ): FlowLayout = assertIs<FlowCompositionResult.Success<FlowLayout>>(
         result,
         "Expected flow success, got ${(result as? FlowCompositionResult.Failure)?.error}",
     ).value
