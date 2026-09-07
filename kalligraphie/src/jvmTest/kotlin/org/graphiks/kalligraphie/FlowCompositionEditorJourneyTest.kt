@@ -669,6 +669,28 @@ class FlowCompositionEditorJourneyTest {
     }
 
     @Test
+    fun flowStateRejectsASingleFinalFragmentFromAnotherChain() {
+        val fixture = incrementalRealFontFixture("fi")
+        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
+        val foreign = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
+        assertNull(foreign.fragments.single().continuation)
+
+        val rejected = assertIs<FlowCompositionResult.Failure>(
+            FlowLayoutState.create(
+                inputIdentity = legitimate.state.inputIdentity,
+                flowCompositionIdentity = legitimate.state.flowCompositionIdentity,
+                coverage = legitimate.coverage,
+                configuration = legitimate.state.configuration,
+                materializedFragments = foreign.fragments,
+                checkpoints = emptyList(),
+                continuation = null,
+            ),
+        )
+
+        assertIs<FlowCompositionError.InvalidState>(rejected.error)
+    }
+
+    @Test
     fun verticalRegionUsesTheSameFacadeWithoutOwningAPageOrRenderer() {
         val fixture = incrementalRealFontFixture("f")
         val bounds = LayoutRect(LayoutUnit(400f), LayoutUnit(200f), LayoutUnit(3_400f), LayoutUnit(4_200f))

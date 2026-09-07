@@ -129,6 +129,7 @@ public object IncrementalFlowLayoutEngine {
                 inputIdentity = inputIdentity,
                 continuation = continuation,
                 maximumLines = 1,
+                flowConfiguration = configuration,
             )
             val success = when (composed) {
                 is FlowCompositionResult.Success -> composed

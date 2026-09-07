@@ -913,6 +913,11 @@ public class FlowLayoutConfigurationSignature private constructor(
         value.flowCompositionIdentity == continuation.compositionIdentity &&
             value.regionIdentities.getOrNull(continuation.regionIndex) == continuation.regionIdentity
 
+    internal fun acceptsProvenance(provenance: FlowFragmentProvenance): Boolean =
+        this == provenance.configuration &&
+            value.flowCompositionIdentity == provenance.flowCompositionIdentity &&
+            value.regionIdentities.getOrNull(provenance.regionIndex) == provenance.regionIdentity
+
     /** Factories for portable flow configuration signatures. */
     public companion object {
         /** Captures all replay-relevant values from [request], [paragraph], and its region chain. */
@@ -1131,6 +1136,17 @@ public class FlowLayoutState private constructor(
             val paragraphRange = fragments.first().paragraphRange
             if (fragments.any { fragment -> fragment.paragraphRange != paragraphRange }) {
                 return invalid("Every flow state fragment must describe the same paragraph range.")
+            }
+            if (fragments.any { fragment ->
+                    fragment.flowProvenance?.let { provenance ->
+                        provenance.inputIdentity != inputIdentity ||
+                            provenance.paragraphRange != fragment.paragraphRange ||
+                            provenance.laidOutRange != fragment.laidOutRange ||
+                            !configuration.acceptsProvenance(provenance)
+                    } != false
+                }
+            ) {
+                return invalid("Every flow state fragment must carry compatible structured flow provenance.")
             }
             if (fragments.any { fragment ->
                     fragment.continuation?.let { fragmentContinuation ->
@@ -1356,6 +1372,8 @@ public class ParagraphFragment(
     /** Exact continuation for partial coverage, otherwise `null`. */
     public val continuation: FlowContinuation? = null,
     diagnostics: List<FlowCompositionDiagnostic> = emptyList(),
+    /** Structured incremental-flow provenance, including for a final fragment without continuation. */
+    public val flowProvenance: FlowFragmentProvenance? = null,
 ) {
     /** Complete immutable logical lines in block-progression order. */
     public val lines: List<LineLayout> = lines.immutableListSnapshot()
@@ -1409,6 +1427,40 @@ public class ParagraphFragment(
             require(continuation.remainingSourceRange.start == laidOutRange.endExclusive) {
                 "A paragraph fragment must end exactly where its continuation begins."
             }
+        }
+    }
+}
+
+/**
+ * Complete resource-free provenance binding a [ParagraphFragment] to one incremental flow input.
+ *
+ * Unlike a continuation, this value also exists for a final fragment. It records the complete
+ * configuration signature and the exact region revision that produced the fragment, without
+ * retaining a region provider, renderer, page, backend, or native resource.
+ */
+public data class FlowFragmentProvenance(
+    /** Exact text and typography revisions used to produce the fragment. */
+    public val inputIdentity: FlowCompositionInputIdentity,
+    /** Opaque identity of the producing flow chain. */
+    public val flowCompositionIdentity: FlowCompositionIdentity,
+    /** Zero-based ordinal of the region containing the fragment. */
+    public val regionIndex: Int,
+    /** Exact immutable revision of the producing region. */
+    public val regionIdentity: FlowRegionIdentity,
+    /** Complete paragraph range represented by the composition operation. */
+    public val paragraphRange: TextRange,
+    /** Exact source range covered by this fragment. */
+    public val laidOutRange: TextRange,
+    /** Complete resource-free configuration required to accept this fragment in retained state. */
+    public val configuration: FlowLayoutConfigurationSignature,
+) {
+    init {
+        require(regionIndex >= 0) { "A flow fragment provenance region index must be non-negative." }
+        require(paragraphRange.start.sharesVersionWith(laidOutRange.start)) {
+            "Flow fragment provenance ranges must use one text revision."
+        }
+        require(laidOutRange.start >= paragraphRange.start && laidOutRange.endExclusive <= paragraphRange.endExclusive) {
+            "Flow fragment provenance coverage must stay inside its paragraph."
         }
     }
 }

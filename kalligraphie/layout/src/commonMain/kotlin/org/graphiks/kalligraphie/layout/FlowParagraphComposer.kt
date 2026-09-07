@@ -10,6 +10,8 @@ import org.graphiks.kalligraphie.api.FlowCompositionInputIdentity
 import org.graphiks.kalligraphie.api.FlowCompositionResult
 import org.graphiks.kalligraphie.api.FlowContinuation
 import org.graphiks.kalligraphie.api.FlowFragmentationCommitment
+import org.graphiks.kalligraphie.api.FlowFragmentProvenance
+import org.graphiks.kalligraphie.api.FlowLayoutConfigurationSignature
 import org.graphiks.kalligraphie.api.FlowParagraphLayouter
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionResult
@@ -92,6 +94,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         inputIdentity: FlowCompositionInputIdentity,
         continuation: FlowContinuation?,
         maximumLines: Int?,
+        flowConfiguration: FlowLayoutConfigurationSignature?,
     ): FlowCompositionResult<ParagraphFragment> {
         require(maximumLines == null || maximumLines > 0) {
             "A bounded flow fragment must allow at least one complete line."
@@ -157,6 +160,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     relaxedBefore = initiallyRelaxed,
                     newlyRelaxed = newlyRelaxed,
                     activeCommitment = fragmentationCommitment,
+                    flowConfiguration = flowConfiguration,
                 )
             }
 
@@ -185,6 +189,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                                 relaxedBefore = initiallyRelaxed,
                                 newlyRelaxed = newlyRelaxed,
                                 activeCommitment = fragmentationCommitment,
+                                flowConfiguration = flowConfiguration,
                             )
                         }
                     }
@@ -269,6 +274,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         relaxedBefore: List<FragmentationConstraintKind>,
         newlyRelaxed: List<FragmentationConstraintKind>,
         activeCommitment: FlowFragmentationCommitment?,
+        flowConfiguration: FlowLayoutConfigurationSignature?,
     ): FlowCompositionResult<ParagraphFragment> {
         val lines = maximumLines?.let(candidate.composition.lines::take) ?: candidate.composition.lines
         val laidOutRange = TextRange(lines.first().range.start, lines.last().range.endExclusive)
@@ -325,6 +331,17 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 lines = lines,
                 continuation = continuation,
                 diagnostics = diagnostics,
+                flowProvenance = flowConfiguration?.let { configuration ->
+                    FlowFragmentProvenance(
+                        inputIdentity = inputIdentity,
+                        flowCompositionIdentity = chain.compositionIdentity,
+                        regionIndex = candidate.regionIndex,
+                        regionIdentity = chain.regions[candidate.regionIndex].identity,
+                        paragraphRange = paragraphRange,
+                        laidOutRange = laidOutRange,
+                        configuration = configuration,
+                    )
+                },
             ),
             diagnostics,
         )

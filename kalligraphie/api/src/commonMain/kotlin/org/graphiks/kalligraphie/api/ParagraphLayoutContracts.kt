@@ -1096,7 +1096,8 @@ public interface FlowParagraphLayouter {
      * can be issued. Only source-preserving [OverflowPolicy.Continue] is accepted; truncating
      * policies fail before a region is queried. [maximumLines] may bound publication inside a
      * region after complete lines while preserving an exact same-region continuation. The borrowed
-     * [materialization] is never retained.
+     * [materialization] is never retained. Supplying [flowConfiguration] attaches the complete
+     * structured provenance required to aggregate the result into an incremental [FlowLayoutState].
      */
     public fun layoutFragment(
         request: ParagraphLayoutRequest,
@@ -1105,6 +1106,7 @@ public interface FlowParagraphLayouter {
         inputIdentity: FlowCompositionInputIdentity,
         continuation: FlowContinuation? = null,
         maximumLines: Int? = null,
+        flowConfiguration: FlowLayoutConfigurationSignature? = null,
     ): FlowCompositionResult<ParagraphFragment>
 }
 
