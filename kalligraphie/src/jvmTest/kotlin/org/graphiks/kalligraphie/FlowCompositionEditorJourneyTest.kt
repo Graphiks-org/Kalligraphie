@@ -7,6 +7,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.FlowChain
 import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionResult
@@ -21,8 +22,14 @@ import org.graphiks.kalligraphie.api.HyphenationMinimums
 import org.graphiks.kalligraphie.api.HyphenationService
 import org.graphiks.kalligraphie.api.HyphenationServiceIdentity
 import org.graphiks.kalligraphie.api.InlineInterval
+import org.graphiks.kalligraphie.api.InlineObjectAlignment
+import org.graphiks.kalligraphie.api.InlineObjectDefinition
+import org.graphiks.kalligraphie.api.InlineObjectEntry
+import org.graphiks.kalligraphie.api.InlineObjectId
+import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutInput
+import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutTailState
 import org.graphiks.kalligraphie.api.LayoutUnit
@@ -32,13 +39,196 @@ import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphFragment
+import org.graphiks.kalligraphie.api.RangeChange
 import org.graphiks.kalligraphie.api.TextChange
 import org.graphiks.kalligraphie.api.TextChangeSet
 import org.graphiks.kalligraphie.api.TextRange
+import org.graphiks.kalligraphie.api.TypographyDelta
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.createIncrementalFlowLayoutRequest
 
 class FlowCompositionEditorJourneyTest {
+    @Test
+    fun foreignTypographyProofRangesAreRejectedBeforeFlowLayout() {
+        val source = incrementalRealFontFixture("fi fi")
+        val target = source.withTypography()
+        val chain = horizontalChain(2)
+        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val foreignSource = incrementalSnapshot("ab")
+        val foreignTarget = incrementalSnapshot("ac")
+        val foreignChange = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                foreignSource,
+                foreignTarget,
+                listOf(
+                    TextChange(
+                        foreignSource.incrementalRange(1, 2),
+                        foreignTarget.incrementalRange(1, 2),
+                    ),
+                ),
+            ),
+        ).value
+
+        val rejected = assertIs<FlowCompositionResult.Failure>(
+            createIncrementalFlowLayoutRequest(
+                input = LayoutInput(target.snapshot, target.typography),
+                requestedRange = target.snapshot.range,
+                constraints = incrementalTestConstraints(width = 1_600f, top = 100f, height = 1_200f),
+                flowChain = chain,
+                overscan = LineOverscan(0),
+                previousState = initial.state,
+                delta = LayoutDelta(
+                    typography = TypographyDelta(
+                        sourceVersion = source.typography.version,
+                        targetVersion = target.typography.version,
+                        rangeChange = RangeChange.from(foreignChange),
+                    ),
+                ),
+            ),
+        )
+
+        assertIs<FlowCompositionError.IncompatibleState>(rejected.error)
+
+        val foreignTargetOnly = incrementalSnapshot("fi xi")
+        val foreignTargetChange = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                foreignTargetOnly,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(3, 4),
+                        foreignTargetOnly.incrementalRange(3, 4),
+                    ),
+                ),
+            ),
+        ).value
+        val targetRejected = assertIs<FlowCompositionResult.Failure>(
+            createIncrementalFlowLayoutRequest(
+                input = LayoutInput(target.snapshot, target.typography),
+                requestedRange = target.snapshot.range,
+                constraints = incrementalTestConstraints(width = 1_600f, top = 100f, height = 1_200f),
+                flowChain = chain,
+                overscan = LineOverscan(0),
+                previousState = initial.state,
+                delta = LayoutDelta(
+                    typography = TypographyDelta(
+                        sourceVersion = source.typography.version,
+                        targetVersion = target.typography.version,
+                        rangeChange = RangeChange.from(foreignTargetChange),
+                    ),
+                ),
+            ),
+        )
+
+        assertIs<FlowCompositionError.IncompatibleState>(targetRejected.error)
+    }
+
+    @Test
+    fun exclusionGapPublishesTheSameLogicalCaretAtBothGeometricEdges() {
+        val fixture = incrementalRealFontFixture("abcd")
+        val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(4_100f), LayoutUnit(1_300f))
+        val intervals = listOf(InlineInterval(0f, 1_300f), InlineInterval(2_200f, 4_000f))
+        val chain = FlowChain(listOf(FixedFlowRegion(bounds, intervals)))
+
+        val line = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    constraints = incrementalTestConstraints(width = 4_000f, top = 100f, height = 1_200f),
+                ),
+            ),
+        ).lines.single()
+
+        assertEquals(2, line.fragments.size)
+        val preceding = line.fragments.first().caretCandidates
+        val following = line.fragments.last().caretCandidates
+        val sharedIndex = assertNotNull(
+            preceding.map { it.position.index }.toSet()
+                .intersect(following.map { it.position.index }.toSet())
+                .singleOrNull(),
+            "The logical interval boundary must be represented on both sides of the exclusion.",
+        )
+        val precedingEdge = assertNotNull(
+            preceding.singleOrNull {
+                it.position.index == sharedIndex && it.position.affinity == CaretAffinity.UPSTREAM
+            },
+        )
+        val followingEdge = assertNotNull(
+            following.singleOrNull {
+                it.position.index == sharedIndex && it.position.affinity == CaretAffinity.DOWNSTREAM
+            },
+        )
+
+        assertEquals(
+            precedingEdge.position,
+            line.hitTest(
+                LayoutPoint(LayoutUnit(precedingEdge.geometry.start.x.value + 1f), line.baseline.y),
+            ).position,
+        )
+        assertEquals(
+            followingEdge.position,
+            line.hitTest(
+                LayoutPoint(LayoutUnit(followingEdge.geometry.start.x.value - 1f), line.baseline.y),
+            ).position,
+        )
+        assertTrue(precedingEdge.geometry.start.x < followingEdge.geometry.start.x)
+    }
+
+    @Test
+    fun refinedExclusionMayShortenTheLineWhileKeepingTheEstablishedTallBand() {
+        val fixture = incrementalRealFontFixture(
+            "a \uFFFC",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val objectDefinition = InlineObjectDefinition(
+            id = InlineObjectId.create("flow-refinement-tall"),
+            width = LayoutUnit(900f),
+            height = LayoutUnit(1_400f),
+            baselineOffset = LayoutUnit(1_200f),
+            alignment = InlineObjectAlignment.BASELINE,
+        )
+        val inlineObjects = InlineObjectSnapshot(
+            listOf(InlineObjectEntry(fixture.snapshot.textIndexAtScalarBoundary(2), objectDefinition)),
+        )
+        val bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(2_300f), LayoutUnit(3_100f))
+        val region = object : FlowRegion {
+            override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+            override val bounds: LayoutRect = bounds
+
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult =
+                FlowRegionResult.AvailableIntervals(
+                    listOf(
+                        InlineInterval(
+                            0f,
+                            if (lineBand.blockExtent <= 1_200f) 2_200f else 1_100f,
+                        ),
+                    ),
+                )
+        }
+
+        val composed = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture = fixture,
+                    chain = FlowChain(listOf(region)),
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = incrementalTestConstraints(width = 2_200f, top = 100f, height = 3_000f),
+                    inlineObjects = inlineObjects,
+                ),
+            ),
+        )
+
+        val line = composed.lines.single()
+        assertEquals(fixture.snapshot.incrementalRange(0, 2), line.range)
+        assertEquals(1_500f, line.lineBox.bottom.value - line.lineBox.top.value)
+        assertTrue(line.positionedInlineObjects.isEmpty())
+        assertEquals(
+            fixture.snapshot.incrementalRange(2, 3),
+            assertNotNull(composed.unmaterializedTail).remainingSourceRange,
+        )
+    }
+
     @Test
     fun earlyEditMatchesIndependentFullFlowCompositionForMaterializedCoverage() {
         val source = incrementalRealFontFixture("fi fi fi")
@@ -774,6 +964,7 @@ class FlowCompositionEditorJourneyTest {
         delta: LayoutDelta? = null,
         hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
         hyphenationService: HyphenationService? = null,
+        inlineObjects: InlineObjectSnapshot? = null,
     ): JvmFlowCompositionRequest {
         val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
             createIncrementalFlowLayoutRequest(
@@ -792,6 +983,7 @@ class FlowCompositionEditorJourneyTest {
             language = "en",
             hyphenationMode = hyphenationMode,
             hyphenationService = hyphenationService,
+            inlineObjects = inlineObjects,
         )
     }
 

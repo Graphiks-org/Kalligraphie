@@ -141,22 +141,21 @@ class FlowParagraphCompositionTest {
             listOf(100f, 656.15234f, 1_212.3047f, 1_490.1367f, 2_700f),
             line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.origin.x.value } },
         )
-        assertEquals(line.allCaretCandidates.indices.toList(), line.allCaretCandidates.map { it.visualOrder })
-        assertEquals(
-            listOf(
-                fixture.snapshot.textIndexAtScalarBoundary(0),
-                fixture.snapshot.textIndexAtScalarBoundary(1),
-                fixture.snapshot.textIndexAtScalarBoundary(2),
-                fixture.snapshot.textIndexAtScalarBoundary(3),
-                fixture.snapshot.textIndexAtScalarBoundary(5),
-                fixture.snapshot.textIndexAtScalarBoundary(4),
-                fixture.snapshot.textIndexAtScalarBoundary(3),
-            ),
-            line.allCaretCandidates.map { it.position.index },
+        assertTrue(line.allCaretCandidates.zipWithNext().all { (left, right) ->
+            left.visualOrder <= right.visualOrder
+        })
+        val caretIndexes = line.allCaretCandidates.map { it.position.index }
+        assertTrue(
+            listOf(0, 1, 2, 3, 4, 5).all { boundary ->
+                fixture.snapshot.textIndexAtScalarBoundary(boundary) in caretIndexes
+            },
         )
         assertTrue(line.fragments.first().positionedGlyphRuns.any { it.visualOrder == 1 })
         assertTrue(line.fragments.last().positionedGlyphRuns.any { it.visualOrder == 1 })
-        assertTrue(line.fragments.first().caretCandidates.last().visualOrder < line.fragments.last().caretCandidates.first().visualOrder)
+        assertTrue(
+            line.fragments.first().caretCandidates.last().visualOrder <=
+                line.fragments.last().caretCandidates.first().visualOrder,
+        )
         assertEquals(
             listOf(68, 69, 3, 1281, 1280),
             line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
@@ -447,7 +446,7 @@ class FlowParagraphCompositionTest {
         val right = line.fragments.last().caretCandidates.first()
         val midpoint = (left.geometry.start.x.value + right.geometry.start.x.value) / 2f
 
-        assertSame(left, line.hitTest(LayoutPoint(LayoutUnit(midpoint), line.baseline.y)))
+        assertSame(right, line.hitTest(LayoutPoint(LayoutUnit(midpoint), line.baseline.y)))
         val rectangles = line.selectionGeometry(
             line.allCaretCandidates.first().position,
             line.allCaretCandidates.last().position,

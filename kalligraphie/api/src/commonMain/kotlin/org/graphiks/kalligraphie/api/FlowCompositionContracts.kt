@@ -918,6 +918,9 @@ public class FlowLayoutConfigurationSignature private constructor(
             value.flowCompositionIdentity == provenance.flowCompositionIdentity &&
             value.regionIdentities.getOrNull(provenance.regionIndex) == provenance.regionIdentity
 
+    internal fun matchesFontResolutionPolicy(policy: FontResolutionPolicySnapshot): Boolean =
+        value.layout.matchesFontResolutionPolicy(policy)
+
     /** Factories for portable flow configuration signatures. */
     public companion object {
         /** Captures all replay-relevant values from [request], [paragraph], and its region chain. */
@@ -1018,6 +1021,32 @@ public fun createIncrementalFlowLayoutRequest(
                 "The typography delta target does not match the requested typography revision.",
             ),
         )
+    }
+    if (delta?.typography != null) {
+        val sourceTextVersion = previousState?.inputIdentity?.textVersion
+            ?: delta.text?.sourceVersion
+            ?: input.text.version
+        val proofError = validateTypographyProofs(
+            sourceTextVersion = sourceTextVersion,
+            target = input.text,
+            targetConfiguration = LayoutConfigurationSignature.from(input, constraints),
+            typographyDelta = delta.typography,
+        )
+        if (proofError != null) {
+            return FlowCompositionResult.Failure(FlowCompositionError.IncompatibleState(proofError.message))
+        }
+        val policyDelta = delta.typography.fontResolutionPolicy
+        if (
+            previousState != null &&
+            policyDelta != null &&
+            !previousState.configuration.matchesFontResolutionPolicy(policyDelta.source)
+        ) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.IncompatibleState(
+                    "Font resolution policy delta source does not match the retained flow configuration.",
+                ),
+            )
+        }
     }
     if (previousState != null && previousState.flowCompositionIdentity != flowChain.compositionIdentity) {
         return FlowCompositionResult.Failure(
@@ -1344,7 +1373,13 @@ public class LineFragment(
     /** Immutable final glyph runs in their original line visual order. */
     public val positionedGlyphRuns: List<PositionedGlyphRun> = positionedGlyphRuns.immutableListSnapshot()
 
-    /** Immutable final caret candidates in their original line visual order. */
+    /**
+     * Immutable final caret candidates in line visual order.
+     *
+     * When an unavailable inline gap splits one logical boundary, the preceding fragment exposes
+     * its upstream geometry and the following fragment exposes its downstream geometry. Both
+     * candidates retain the same real snapshot-bound text index.
+     */
     public val caretCandidates: List<CaretCandidate> = caretCandidates.immutableListSnapshot()
 
     /** Immutable indivisible inline objects assigned to this interval. */

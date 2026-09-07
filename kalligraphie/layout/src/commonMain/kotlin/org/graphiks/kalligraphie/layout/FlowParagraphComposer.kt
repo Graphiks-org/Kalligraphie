@@ -1,6 +1,8 @@
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.CaretCandidate
+import org.graphiks.kalligraphie.api.CaretAffinity
+import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.EditableLine
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FlowChain
@@ -410,7 +412,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
         var currentBlockStart = blockStart
         var bandExtent = request.constraints.lineMetrics.height.value
-        var previousBandExtent: Float? = null
         var previousIntervals: List<InlineInterval>? = null
         var refinements = 0
         var emptyTransitions = 0
@@ -446,7 +447,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         )
                     }
                     currentBlockStart = regionResult.nextBlockOffset
-                    previousBandExtent = null
                     previousIntervals = null
                     bandExtent = request.constraints.lineMetrics.height.value
                     refinements = 0
@@ -517,11 +517,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                             geometryOverflow("The refined flow line band overflowed finite layout coordinates."),
                         )
                     }
-                    if (previousBandExtent != null && requiredBandExtent < previousBandExtent) {
-                        return LineAttempt.Failure(
-                            nonConvergent("A refined candidate attempted to shrink its established line band."),
-                        )
-                    }
                     val fingerprint = RefinementFingerprint(
                         bandExtent = bandExtent,
                         intervals = intervals.map { it.start to it.endExclusive },
@@ -533,7 +528,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                                 nonConvergent("The flow region entered a repeated line-band refinement cycle."),
                             )
                         }
-                        previousBandExtent = requiredBandExtent
                         previousIntervals = intervals
                         bandExtent = requiredBandExtent
                         continue
@@ -682,6 +676,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     originalEnd = originalStart + width,
                     translation = translation,
                     objectRange = objectItem?.sourceRange,
+                    sourceRange = group.sourceRange(),
                 )
                 cursor += width
                 precedingEnd = originalStart + width
@@ -689,15 +684,68 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
 
         if (allocations.isEmpty()) {
-            allocations += Allocation(0, 0.0, 0.0, intervals.first().start.toDouble(), null)
+            allocations += Allocation(0, 0.0, 0.0, intervals.first().start.toDouble(), null, null)
         }
         val runs = glyphsByFragment.map { allocated -> allocated.toProjectedRuns() }
         val carets = intervals.indices.map { mutableListOf<CaretCandidate>() }
         line.allCaretCandidates.forEach { candidate ->
             val inline = candidate.inlineCoordinate(writingMode)
-            val allocation = allocations.minWith(compareBy<Allocation>({ it.distanceFrom(inline) }, { it.fragmentIndex }))
+            val affinityAllocations = allocations.filter { allocation ->
+                when (candidate.position.affinity) {
+                    CaretAffinity.DOWNSTREAM -> allocation.sourceRange?.start == candidate.position.index
+                    CaretAffinity.UPSTREAM -> allocation.sourceRange?.endExclusive == candidate.position.index
+                }
+            }
+            val allocation = (affinityAllocations.ifEmpty { allocations })
+                .minWith(compareBy<Allocation>({ it.distanceFrom(inline) }, { it.fragmentIndex }))
             carets[allocation.fragmentIndex] += candidate.translatedInline(allocation.translation, baseline, writingMode)
         }
+        allocations.zipWithNext().forEach transition@{ (preceding, following) ->
+            if (preceding.fragmentIndex == following.fragmentIndex) return@transition
+            val precedingRange = preceding.sourceRange
+            val followingRange = following.sourceRange
+            val boundary = when {
+                precedingRange != null && followingRange != null &&
+                    precedingRange.endExclusive == followingRange.start -> precedingRange.endExclusive
+                precedingRange != null && followingRange != null &&
+                    followingRange.endExclusive == precedingRange.start -> followingRange.endExclusive
+                else -> null
+            } ?: return@transition
+            val boundaryCandidates = line.allCaretCandidates.filter { candidate ->
+                candidate.position.index == boundary
+            }
+            if (boundaryCandidates.isEmpty()) return@transition
+            listOf(preceding, following).forEach edge@{ allocation ->
+                val range = checkNotNull(allocation.sourceRange)
+                val affinity = when (boundary) {
+                    range.start -> CaretAffinity.DOWNSTREAM
+                    range.endExclusive -> CaretAffinity.UPSTREAM
+                    else -> return@edge
+                }
+                val originalEdge = if (affinity == CaretAffinity.UPSTREAM) {
+                    allocation.originalEnd
+                } else {
+                    allocation.originalStart
+                }
+                val template = boundaryCandidates.minBy { candidate ->
+                    kotlin.math.abs(candidate.inlineCoordinate(writingMode) - originalEdge)
+                }
+                val projected = template.translatedInline(
+                    allocation.translation,
+                    baseline,
+                    writingMode,
+                    affinity,
+                )
+                val target = carets[allocation.fragmentIndex]
+                if (target.none { candidate ->
+                        candidate.position == projected.position && candidate.geometry == projected.geometry
+                    }
+                ) {
+                    target += projected
+                }
+            }
+        }
+        carets.forEach { candidates -> candidates.sortBy(CaretCandidate::visualOrder) }
         val objects = intervals.indices.map { mutableListOf<PositionedInlineObject>() }
         line.positionedInlineObjects.forEach { item ->
             val allocation = allocations.firstOrNull { it.objectRange == item.sourceRange }
@@ -1042,6 +1090,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         inlineTranslation: Double,
         baseline: LayoutPoint,
         writingMode: WritingMode,
+        affinity: CaretAffinity = position.affinity,
     ): CaretCandidate {
         fun point(value: LayoutPoint): LayoutPoint = when (writingMode) {
             WritingMode.HORIZONTAL_TB -> LayoutPoint(
@@ -1056,8 +1105,16 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 finite(value.y.value.toDouble() + inlineTranslation + baseline.y.value.toDouble(), "vertical fragment caret y"),
             )
         }
-        return CaretCandidate(position, LayoutSegment(point(geometry.start), point(geometry.end)), visualOrder,
-            visualRunOrder, bidiLevel, direction, strength, edge)
+        return CaretCandidate(
+            CaretPosition(position.index, affinity),
+            LayoutSegment(point(geometry.start), point(geometry.end)),
+            visualOrder,
+            visualRunOrder,
+            bidiLevel,
+            direction,
+            strength,
+            edge,
+        )
     }
 
     private fun PositionedInlineObject.translatedInline(
@@ -1266,6 +1323,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val originalEnd: Double,
         val translation: Double,
         val objectRange: TextRange?,
+        val sourceRange: TextRange?,
     ) {
         fun distanceFrom(position: Double): Double = when {
             position < originalStart -> originalStart - position

@@ -813,7 +813,7 @@ public fun createIncrementalLayoutRequest(
     )
 }
 
-private fun validateTypographyProofs(
+internal fun validateTypographyProofs(
     sourceTextVersion: TextVersion,
     target: TextSnapshot,
     targetConfiguration: LayoutConfigurationSignature,

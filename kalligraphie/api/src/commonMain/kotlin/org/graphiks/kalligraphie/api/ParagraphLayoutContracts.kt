@@ -1227,15 +1227,22 @@ private fun List<PositionedGlyphRun>.preserveGlyphSemanticsOf(
 
 private fun List<CaretCandidate>.preserveCaretSemanticsOf(
     original: List<CaretCandidate>,
-): Boolean = size == original.size && zip(original).all { (actual, expected) ->
-    actual.position == expected.position &&
-        actual.visualOrder == expected.visualOrder &&
-        actual.visualRunOrder == expected.visualRunOrder &&
-        actual.bidiLevel == expected.bidiLevel &&
-        actual.direction == expected.direction &&
-        actual.strength == expected.strength &&
-        actual.edge == expected.edge
-}
+): Boolean =
+    original.all { expected -> any { actual -> actual.sameCaretSemanticsAs(expected, preserveAffinity = true) } } &&
+        all { actual -> original.any { expected -> actual.sameCaretSemanticsAs(expected, preserveAffinity = false) } }
+
+private fun CaretCandidate.sameCaretSemanticsAs(
+    original: CaretCandidate,
+    preserveAffinity: Boolean,
+): Boolean =
+    position.index == original.position.index &&
+        (!preserveAffinity || position.affinity == original.position.affinity) &&
+        visualOrder == original.visualOrder &&
+        visualRunOrder == original.visualRunOrder &&
+        bidiLevel == original.bidiLevel &&
+        direction == original.direction &&
+        strength == original.strength &&
+        edge == original.edge
 
 private fun List<PositionedInlineObject>.preserveInlineObjectSemanticsOf(
     original: List<PositionedInlineObject>,
