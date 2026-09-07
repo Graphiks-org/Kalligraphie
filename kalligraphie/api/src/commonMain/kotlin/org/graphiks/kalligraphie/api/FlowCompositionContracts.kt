@@ -372,7 +372,18 @@ public fun queryFlowRegion(
             FlowCompositionError.NonFiniteCoordinate(FlowCoordinate.BAND_BLOCK_EXTENT),
         )
     }
+    val inlineExtent = region.logicalInlineExtent(writingMode)
     val blockExtent = region.logicalBlockExtent(writingMode)
+    if (
+        !inlineExtent.isFinite() || inlineExtent > Float.MAX_VALUE.toDouble() ||
+        !blockExtent.isFinite() || blockExtent > Float.MAX_VALUE.toDouble()
+    ) {
+        return FlowCompositionResult.Failure(
+            FlowCompositionError.GeometryOverflow(
+                "The flow region's logical extent cannot be represented by finite layout coordinates.",
+            ),
+        )
+    }
     val bandEnd = lineBand.blockStart.toDouble() + lineBand.blockExtent.toDouble()
     if (region.maximumRefinements <= 0) {
         return FlowCompositionResult.Failure(
@@ -384,7 +395,7 @@ public fun queryFlowRegion(
     if (
         lineBand.blockStart < 0f ||
         lineBand.blockExtent <= 0f ||
-        bandEnd > blockExtent.toDouble()
+        bandEnd > blockExtent
     ) {
         return FlowCompositionResult.Failure(FlowCompositionError.InvalidLineBand(lineBand))
     }
@@ -392,7 +403,7 @@ public fun queryFlowRegion(
     return when (val result = region.query(writingMode, lineBand)) {
         is FlowRegionResult.AvailableIntervals -> validateAvailableIntervals(
             result,
-            region.logicalInlineExtent(writingMode),
+            inlineExtent,
         )
 
         is FlowRegionResult.Empty -> when {
@@ -404,7 +415,7 @@ public fun queryFlowRegion(
                 FlowCompositionError.NonProgressingEmpty(lineBand.blockStart, result.nextBlockOffset),
             )
 
-            result.nextBlockOffset > blockExtent -> FlowCompositionResult.Failure(
+            result.nextBlockOffset.toDouble() > blockExtent -> FlowCompositionResult.Failure(
                 FlowCompositionError.EmptyOutOfBounds(result.nextBlockOffset),
             )
 
@@ -417,7 +428,7 @@ public fun queryFlowRegion(
 
 private fun validateAvailableIntervals(
     result: FlowRegionResult.AvailableIntervals,
-    inlineExtent: Float,
+    inlineExtent: Double,
 ): FlowCompositionResult<FlowRegionResult> {
     if (result.intervals.isEmpty()) {
         return FlowCompositionResult.Failure(FlowCompositionError.NonCanonicalIntervals(0))
@@ -433,7 +444,7 @@ private fun validateAvailableIntervals(
                 FlowCompositionError.NonFiniteCoordinate(FlowCoordinate.INTERVAL_END, index),
             )
         }
-        if (interval.start < 0f || interval.endExclusive > inlineExtent) {
+        if (interval.start < 0f || interval.endExclusive.toDouble() > inlineExtent) {
             return FlowCompositionResult.Failure(FlowCompositionError.IntervalOutOfBounds(index))
         }
         if (interval.start >= interval.endExclusive) {
@@ -566,7 +577,7 @@ public class FlowChain(
         require(nextBlockOffset.isFinite() && nextBlockOffset >= 0f) {
             "A continuation block offset must be finite and non-negative."
         }
-        require(nextBlockOffset <= region.logicalBlockExtent(writingMode)) {
+        require(nextBlockOffset.toDouble() <= region.logicalBlockExtent(writingMode)) {
             "A continuation block offset must stay within its region."
         }
         return FlowContinuation(
@@ -1556,16 +1567,16 @@ public data class FlowFragmentProvenance(
     }
 }
 
-private fun FlowRegion.logicalInlineExtent(writingMode: WritingMode): Float = when (writingMode) {
-    WritingMode.HORIZONTAL_TB -> bounds.right.value - bounds.left.value
+private fun FlowRegion.logicalInlineExtent(writingMode: WritingMode): Double = when (writingMode) {
+    WritingMode.HORIZONTAL_TB -> bounds.right.value.toDouble() - bounds.left.value.toDouble()
     WritingMode.VERTICAL_RL,
     WritingMode.VERTICAL_LR,
-    -> bounds.bottom.value - bounds.top.value
+    -> bounds.bottom.value.toDouble() - bounds.top.value.toDouble()
 }
 
-private fun FlowRegion.logicalBlockExtent(writingMode: WritingMode): Float = when (writingMode) {
-    WritingMode.HORIZONTAL_TB -> bounds.bottom.value - bounds.top.value
+private fun FlowRegion.logicalBlockExtent(writingMode: WritingMode): Double = when (writingMode) {
+    WritingMode.HORIZONTAL_TB -> bounds.bottom.value.toDouble() - bounds.top.value.toDouble()
     WritingMode.VERTICAL_RL,
     WritingMode.VERTICAL_LR,
-    -> bounds.right.value - bounds.left.value
+    -> bounds.right.value.toDouble() - bounds.left.value.toDouble()
 }

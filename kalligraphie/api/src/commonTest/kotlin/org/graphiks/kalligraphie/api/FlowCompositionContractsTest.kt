@@ -8,6 +8,66 @@ import kotlin.test.assertSame
 
 class FlowCompositionContractsTest {
     @Test
+    fun horizontalFlowRejectsOverflowedInlineAndBlockExtentsBeforeQueryingTheRegion() {
+        val inlineOverflow = LayoutRect(
+            LayoutUnit(-Float.MAX_VALUE),
+            LayoutUnit(0f),
+            LayoutUnit(Float.MAX_VALUE),
+            LayoutUnit(100f),
+        )
+        val blockOverflow = LayoutRect(
+            LayoutUnit(0f),
+            LayoutUnit(-Float.MAX_VALUE),
+            LayoutUnit(100f),
+            LayoutUnit(Float.MAX_VALUE),
+        )
+
+        listOf(inlineOverflow, blockOverflow).forEach { bounds ->
+            var queries = 0
+            val result = queryFlowRegion(
+                region(FlowRegionResult.EndOfRegion, bounds = bounds) { queries += 1 },
+                WritingMode.HORIZONTAL_TB,
+                LineBand(0f, 12f),
+            )
+
+            assertIs<FlowCompositionError.GeometryOverflow>(
+                assertIs<FlowCompositionResult.Failure>(result).error,
+            )
+            assertEquals(0, queries)
+        }
+    }
+
+    @Test
+    fun verticalFlowRejectsOverflowedInlineAndBlockExtentsBeforeQueryingTheRegion() {
+        val inlineOverflow = LayoutRect(
+            LayoutUnit(0f),
+            LayoutUnit(-Float.MAX_VALUE),
+            LayoutUnit(100f),
+            LayoutUnit(Float.MAX_VALUE),
+        )
+        val blockOverflow = LayoutRect(
+            LayoutUnit(-Float.MAX_VALUE),
+            LayoutUnit(0f),
+            LayoutUnit(Float.MAX_VALUE),
+            LayoutUnit(100f),
+        )
+
+        listOf(inlineOverflow, blockOverflow).forEach { bounds ->
+            var queries = 0
+            val result = queryFlowRegion(
+                region(FlowRegionResult.EndOfRegion, bounds = bounds) { queries += 1 },
+                WritingMode.VERTICAL_RL,
+                LineBand(0f, 12f),
+            )
+
+            assertIs<FlowCompositionError.GeometryOverflow>(
+                assertIs<FlowCompositionResult.Failure>(result).error,
+            )
+            assertEquals(0, queries)
+        }
+    }
+
+    @Test
     fun flowQueryRejectsIntervalsThatAreNotInCanonicalLogicalOrder() {
         val region = region(
             FlowRegionResult.AvailableIntervals(
@@ -314,15 +374,16 @@ class FlowCompositionContractsTest {
     private fun region(
         result: FlowRegionResult,
         maximumRefinements: Int = 8,
-        onQuery: () -> Unit = {},
-    ): FlowRegion = object : FlowRegion {
-        override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
-        override val bounds: LayoutRect = LayoutRect(
+        bounds: LayoutRect = LayoutRect(
             left = LayoutUnit(0f),
             top = LayoutUnit(0f),
             right = LayoutUnit(100f),
             bottom = LayoutUnit(100f),
-        )
+        ),
+        onQuery: () -> Unit = {},
+    ): FlowRegion = object : FlowRegion {
+        override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+        override val bounds: LayoutRect = bounds
         override val maximumRefinements: Int = maximumRefinements
 
         override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult {
