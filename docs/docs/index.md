@@ -1,6 +1,10 @@
 # Kalligraphie documentation
 
-Kalligraphie is a portable KMP font library. Its API is split into focused Gradle modules so font contracts, SFNT parsing, metrics, and glyph access can evolve independently.
+Kalligraphie is a portable KMP typography library. Applications provide text,
+fonts, and composition geometry; Kalligraphie publishes exact renderer-neutral
+glyph and editing geometry. Its API is split into focused Gradle modules so
+font contracts, Unicode analysis, shaping, layout, and glyph access can evolve
+independently.
 
 ## Modules
 
@@ -8,11 +12,27 @@ Kalligraphie is a portable KMP font library. Its API is split into focused Gradl
 - `:kalligraphie:api` contains the portable public contracts and immutable value types.
 - `:kalligraphie:unicode` provides canonical text decoding and the JVM reference Unicode analysis.
 - `:kalligraphie:shaping` provides the reference JVM HarfBuzz adapter behind portable shaping contracts.
-- `:kalligraphie:layout` positions shaped runs and provides exact editable-line and editable-paragraph geometry.
+- `:kalligraphie:layout` positions shaped runs and provides exact editable-line, editable-paragraph, flow-region, and incremental geometry.
 - `:kalligraphie:font:core` provides font sources, faces, and instances.
 - `:kalligraphie:font:sfnt` parses bounded SFNT and OpenType data.
 - `:kalligraphie:font:scaler` resolves metrics and TrueType outlines.
 - `:kalligraphie:font:glyph` materializes detached render assets.
+
+## Consumer guides
+
+- [Font management](font-management.md) covers embedded catalogs, ordered
+  fallback, exact editable lines, and detached render assets.
+- [Editable paragraphs](editable-paragraphs.md) covers rectangular paragraphs,
+  application-supplied `FlowRegion` exclusions, multi-region `FlowChain`
+  composition, geometric line fragments, exact continuations, and bounded
+  forward rematerialization.
+- [Advanced typography](advanced-typography.md) covers derived glyph
+  provenance, hyphenation, justification, tabs, inline objects, ellipsis, and
+  vertical writing.
+
+Kalligraphie does not create pages or render pixels. The application owns its
+document, page objects and their global placement, viewport, scheduling,
+renderer, and GPU resources.
 
 ## Useful commands
 

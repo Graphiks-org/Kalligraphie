@@ -46,6 +46,7 @@ import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.LineBreakKind
 import org.graphiks.kalligraphie.api.LineContentMetrics
 import org.graphiks.kalligraphie.api.LineEllipsisPolicy
+import org.graphiks.kalligraphie.api.LineFragment
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
 import org.graphiks.kalligraphie.api.OverflowPolicy
@@ -175,7 +176,6 @@ public object ParagraphComposer : ParagraphLayouter {
             )
         }
         if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
-
         val sourceClusters = request.unicodeAnalysis.graphemeClusters.filter { cluster ->
             cluster.start >= request.sourceRange.start && cluster.endExclusive <= request.sourceRange.endExclusive
         }
@@ -317,6 +317,172 @@ public object ParagraphComposer : ParagraphLayouter {
         return ParagraphCompositionResult.Success(placed, remainingSourceRange = null)
     }
 
+    /**
+     * Composes one complete line while bounding provisional shaping to an exponentially growing
+     * grapheme prefix. The first prefix that cannot be published supplies the same legal line
+     * choice as full-suffix composition; an unbreakable segment falls back to the last complete
+     * grapheme that fitted. No source after the decisive probe is resolved or shaped.
+     */
+    internal fun composeFirstLineBounded(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        maximumEndExclusive: TextIndex? = null,
+    ): ParagraphCompositionResult {
+        if (materialization.identity() != request.materializationIdentity) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput("Paragraph materialization does not match the captured request identity."),
+            )
+        }
+        if (materialization is EditableLineMaterialization.Renderable &&
+            materialization.resolver.generation != request.fontCatalog.generation
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput(
+                    "Renderable paragraph materialization resolver must belong to the captured font catalog generation.",
+                ),
+            )
+        }
+        if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
+        if (maximumEndExclusive != null && (
+                maximumEndExclusive <= request.sourceRange.start ||
+                    maximumEndExclusive > request.sourceRange.endExclusive ||
+                    !maximumEndExclusive.sharesVersionWith(request.sourceRange.start)
+                )
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput("A bounded first-line end must lie inside the paragraph source range."),
+            )
+        }
+        if (request.sourceRange.start == request.sourceRange.endExclusive) {
+            return compose(request, materialization)
+        }
+
+        val allClusters = request.unicodeAnalysis.graphemeClusters
+        val firstClusterIndex = allClusters.firstStartingAtOrAfter(request.sourceRange.start)
+        val sourceEndIndex = allClusters.firstStartingAtOrAfter(request.sourceRange.endExclusive)
+        if (
+            firstClusterIndex >= allClusters.size ||
+            allClusters[firstClusterIndex].start != request.sourceRange.start ||
+            sourceEndIndex <= firstClusterIndex ||
+            allClusters[sourceEndIndex - 1].endExclusive != request.sourceRange.endExclusive
+        ) {
+            return ParagraphCompositionResult.Failure(
+                EditableLineError.InvalidInput("Paragraph source ranges must begin and end at extended grapheme boundaries."),
+            )
+        }
+        if (!blockLineFits(request, initialBlockCursor(request))) {
+            return ParagraphCompositionResult.Success(
+                emptyList(),
+                TextRange(request.sourceRange.start, request.sourceRange.endExclusive),
+            )
+        }
+
+        val finalClusterIndexExclusive = maximumEndExclusive?.let { boundary ->
+            allClusters.firstStartingAtOrAfter(boundary).also { index ->
+                if (index <= firstClusterIndex || allClusters[index - 1].endExclusive != boundary) {
+                    return ParagraphCompositionResult.Failure(
+                        EditableLineError.InvalidInput("A bounded first-line end must be a grapheme boundary."),
+                    )
+                }
+            }
+        } ?: sourceEndIndex
+        var probeOrdinal = 0
+        var lastFittingForced: FinalizationResult.Success? = null
+        var lastFittingClusterIndex: Int? = null
+        var firstFailingClusterIndex: Int? = null
+        while (true) {
+            if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
+            val absoluteProbeIndex = minOf(
+                firstClusterIndex + probeOrdinal,
+                finalClusterIndexExclusive - 1,
+            )
+            val boundary = allClusters[absoluteProbeIndex].endExclusive
+            val probeRange = TextRange(request.sourceRange.start, boundary)
+            val sourceClusters = allClusters.subList(firstClusterIndex, absoluteProbeIndex + 1)
+            val provisionalAnalysis = analysisForLine(request, probeRange, resetLineTrailingWhitespace = false)
+            val provisionalRuns = when (
+                val resolved = FontFallbackResolver.resolveRange(
+                    request = request,
+                    sourceRange = probeRange,
+                    shapingContextRange = request.sourceRange,
+                    unicodeAnalysis = provisionalAnalysis,
+                    materialization = materialization,
+                )
+            ) {
+                is FontOperationResult.Success -> resolved.value.shapedRuns
+                is FontOperationResult.Failure -> return ParagraphCompositionResult.Failure(
+                    EditableLineError.FontResolutionFailure(resolved.error),
+                    resolved.diagnostics.map(::fontDiagnostic),
+                )
+                is FontOperationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(
+                    resolved.diagnostics.map(::fontDiagnostic),
+                )
+            }
+            val candidates = boundedCandidatesForLine(request, request.sourceRange.start, boundary)
+            val selected = when (
+                val finalized = selectFinalLine(
+                    request = request,
+                    start = request.sourceRange.start,
+                    candidates = candidates,
+                    sourceClusters = sourceClusters,
+                    provisionalRuns = provisionalRuns,
+                    materialization = materialization,
+                )
+            ) {
+                is FinalizationResult.Success -> finalized
+                is FinalizationResult.Failure -> return ParagraphCompositionResult.Failure(
+                    finalized.error,
+                    finalized.diagnostics,
+                )
+                is FinalizationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(finalized.diagnostics)
+            }
+            if (selected.fits && selected.line.range.endExclusive == boundary) {
+                lastFittingForced = selected
+                lastFittingClusterIndex = absoluteProbeIndex
+                val failingIndex = firstFailingClusterIndex
+                if (failingIndex != null && absoluteProbeIndex + 1 < failingIndex) {
+                    probeOrdinal = absoluteProbeIndex + (failingIndex - absoluteProbeIndex) / 2 - firstClusterIndex
+                    continue
+                }
+                if (failingIndex == null && absoluteProbeIndex + 1 < finalClusterIndexExclusive) {
+                    probeOrdinal = minOf(
+                        (probeOrdinal + 1) * 2 - 1,
+                        finalClusterIndexExclusive - firstClusterIndex - 1,
+                    )
+                    continue
+                }
+            } else {
+                firstFailingClusterIndex = absoluteProbeIndex
+                val fittingIndex = lastFittingClusterIndex
+                if (fittingIndex != null && fittingIndex + 1 < absoluteProbeIndex) {
+                    probeOrdinal = fittingIndex + (absoluteProbeIndex - fittingIndex) / 2 - firstClusterIndex
+                    continue
+                }
+            }
+            val publishable = lastFittingForced?.takeIf { forced ->
+                !selected.fits || forced.line.range.endExclusive > selected.line.range.endExclusive
+            } ?: selected
+            val line = place(
+                publishable.line,
+                request,
+                initialBlockCursor(request),
+                publishable.fontInstances,
+            )
+            val lineEnd = publishable.line.range.endExclusive
+            val remaining = lineEnd.takeIf { it < request.sourceRange.endExclusive }?.let { end ->
+                TextRange(end, request.sourceRange.endExclusive)
+            }
+            val trailingEmptyRequired = remaining == null && request.lineBreakAnalysis.opportunities.any { opportunity ->
+                opportunity.boundary == request.sourceRange.endExclusive && opportunity.kind == LineBreakKind.MANDATORY
+            }
+            return ParagraphCompositionResult.Success(
+                lines = listOf(line),
+                remainingSourceRange = remaining,
+                hasUnplacedTrailingEmptyLine = trailingEmptyRequired,
+            )
+        }
+    }
+
     private fun projectComposition(
         request: ParagraphLayoutRequest,
         composition: ParagraphCompositionResult.Success,
@@ -371,14 +537,16 @@ public object ParagraphComposer : ParagraphLayouter {
         }
     }
 
-    private fun projectLine(
+    internal fun projectLine(
         composed: ComposedParagraphLine,
         cancellationToken: org.graphiks.kalligraphie.api.CancellationToken,
+        fragments: List<LineFragment>? = null,
     ): ProjectedLine {
         if (cancellationToken.isCancellationRequested()) return ProjectedLine.Cancelled()
         val instances = composed.fontInstances.associateBy(FontInstance::key)
         val glyphBounds = mutableListOf<LayoutBounds>()
-        composed.line.positionedGlyphRuns.forEach { run ->
+        val projectedGlyphRuns = fragments?.flatMap(LineFragment::positionedGlyphRuns)
+        (projectedGlyphRuns ?: composed.line.positionedGlyphRuns).forEach { run ->
             val instance = instances[run.fontInstanceKey]
                 ?: return ProjectedLine.Failure(
                     ParagraphLayoutError.FontFailure(
@@ -392,10 +560,14 @@ public object ParagraphComposer : ParagraphLayouter {
                         .takeUnless { it == LayoutBounds.empty }
                         ?.let { bounds ->
                             glyphBounds += translatedGlyphBounds(
-                                LayoutPoint(
-                                    finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
-                                    finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
-                                ),
+                                if (projectedGlyphRuns == null) {
+                                    LayoutPoint(
+                                        finiteUnit(composed.baseline.x.value.toDouble() + glyph.origin.x.value.toDouble(), "glyph paragraph origin x"),
+                                        finiteUnit(composed.baseline.y.value.toDouble() + glyph.origin.y.value.toDouble(), "glyph paragraph origin y"),
+                                    )
+                                } else {
+                                    glyph.origin
+                                },
                                 bounds,
                                 glyph.transform,
                             )
@@ -447,6 +619,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     contentMetrics = contentMetrics,
                     lineBox = composed.lineBox,
                     designInkBounds = inkBounds,
+                    fragments = fragments,
                 ),
             )
         } catch (invalidGeometry: IllegalArgumentException) {
@@ -495,7 +668,7 @@ public object ParagraphComposer : ParagraphLayouter {
         )
     }
 
-    private sealed interface ProjectedLine {
+    internal sealed interface ProjectedLine {
         data class Success(val line: LineLayout) : ProjectedLine
         class Failure(
             val error: ParagraphLayoutError,
@@ -527,6 +700,55 @@ public object ParagraphComposer : ParagraphLayouter {
             addAll(automatic)
             if (lastOrNull() != terminal) add(terminal)
         }.distinct().sortedWith(TextIndex::compareTo)
+    }
+
+    /** Returns only legal candidates observed through one bounded grapheme probe. */
+    private fun boundedCandidatesForLine(
+        request: ParagraphLayoutRequest,
+        start: TextIndex,
+        probeEnd: TextIndex,
+    ): List<TextIndex> {
+        val opportunities = request.lineBreakAnalysis.opportunities
+        var index = opportunities.firstBoundaryAfter(start)
+        val legal = mutableListOf<TextIndex>()
+        var terminal = probeEnd
+        while (index < opportunities.size) {
+            val opportunity = opportunities[index]
+            if (opportunity.boundary > probeEnd) break
+            legal += opportunity.boundary
+            if (opportunity.kind == LineBreakKind.MANDATORY) {
+                terminal = opportunity.boundary
+                break
+            }
+            index += 1
+        }
+        if (request.hyphenationMode == HyphenationMode.AUTO) {
+            legal += automaticCandidatesInSegment(request, start, terminal)
+        }
+        if (legal.lastOrNull() != terminal) legal += terminal
+        return legal.distinct().sortedWith(TextIndex::compareTo)
+    }
+
+    private fun List<TextRange>.firstStartingAtOrAfter(boundary: TextIndex): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].start < boundary) low = middle + 1 else high = middle
+        }
+        return low
+    }
+
+    private fun List<org.graphiks.kalligraphie.api.LineBreakOpportunity>.firstBoundaryAfter(
+        boundary: TextIndex,
+    ): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].boundary <= boundary) low = middle + 1 else high = middle
+        }
+        return low
     }
 
     /** Service candidates strictly inside the segment, when the service serves the language. */
@@ -1157,13 +1379,20 @@ public object ParagraphComposer : ParagraphLayouter {
         if (range.start == range.endExclusive) {
             return UnicodeAnalysis(range, request.unicodeAnalysis.unicodeData, emptyList(), emptyList(), emptyList(), emptyList())
         }
-        val graphemes = request.unicodeAnalysis.graphemeClusters.mapNotNull { intersection(it, range) }
-        val scripts = request.unicodeAnalysis.scriptLanguageRuns.mapNotNull { source ->
+        val graphemes = request.unicodeAnalysis.graphemeClusters.overlapping(range).mapNotNull { source ->
+            intersection(source, range)
+        }
+        val scripts = request.unicodeAnalysis.scriptLanguageRuns.overlappingScriptRuns(range).mapNotNull { source ->
             intersection(source.range, range)?.let { clipped -> ScriptLanguageRun(clipped, source.script, source.language) }
         }
+        val bidiRuns = request.unicodeAnalysis.logicalBidiRuns.overlappingBidiRuns(range)
+        var bidiIndex = 0
         val baseLevel = if (request.baseDirection == BaseDirection.LEFT_TO_RIGHT) 0 else 1
         val levels = request.snapshot.scalarRanges(range).map { scalarRange ->
-            val paragraphLevel = request.unicodeAnalysis.logicalBidiRuns.first { bidi -> overlaps(bidi.range, scalarRange) }.level
+            while (bidiIndex + 1 < bidiRuns.size && bidiRuns[bidiIndex].range.endExclusive <= scalarRange.start) {
+                bidiIndex += 1
+            }
+            val paragraphLevel = bidiRuns[bidiIndex].level
             MutableSourceLevel(scalarRange, paragraphLevel, bidiClass(request.snapshot.scalarValues(scalarRange).single()))
         }.toMutableList()
 
@@ -1684,6 +1913,42 @@ public object ParagraphComposer : ParagraphLayouter {
     private fun overlaps(left: TextRange, right: TextRange): Boolean =
         left.start < right.endExclusive && right.start < left.endExclusive
 
+    private fun List<TextRange>.overlapping(range: TextRange): List<TextRange> {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].endExclusive <= range.start) low = middle + 1 else high = middle
+        }
+        val start = low
+        while (low < size && this[low].start < range.endExclusive) low += 1
+        return subList(start, low)
+    }
+
+    private fun List<ScriptLanguageRun>.overlappingScriptRuns(range: TextRange): List<ScriptLanguageRun> {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].range.endExclusive <= range.start) low = middle + 1 else high = middle
+        }
+        val start = low
+        while (low < size && this[low].range.start < range.endExclusive) low += 1
+        return subList(start, low)
+    }
+
+    private fun List<BidiRun>.overlappingBidiRuns(range: TextRange): List<BidiRun> {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val middle = (low + high) ushr 1
+            if (this[middle].range.endExclusive <= range.start) low = middle + 1 else high = middle
+        }
+        val start = low
+        while (low < size && this[low].range.start < range.endExclusive) low += 1
+        return subList(start, low)
+    }
+
     private fun BaseDirection.shapingDirection(): ShapingDirection = when (this) {
         BaseDirection.LEFT_TO_RIGHT -> ShapingDirection.LEFT_TO_RIGHT
         BaseDirection.RIGHT_TO_LEFT -> ShapingDirection.RIGHT_TO_LEFT
@@ -1819,7 +2084,7 @@ private class FinalParagraphLayout(
     private fun allCandidates(): List<CaretCandidate> = lines.flatMap(LineLayout::allCaretCandidates)
 }
 
-private fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
+internal fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
     is EditableLineError.InvalidInput -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.GeometryOverflow -> ParagraphLayoutError.GeometryOverflow(message)
     is EditableLineError.FontMaterializationFailure -> ParagraphLayoutError.FontFailure(fontError)
@@ -1827,7 +2092,7 @@ private fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (t
     is EditableLineError.FontResolutionFailure -> ParagraphLayoutError.FontFailure(fontError)
 }
 
-private class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)
+internal class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)
 
     private fun <Element> Iterable<Element>.immutableSnapshot(): List<Element> = ParagraphImmutableList(toList())
 

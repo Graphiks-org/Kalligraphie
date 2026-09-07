@@ -511,6 +511,96 @@ public class LineCheckpointSignature private constructor(
     }
 }
 
+/**
+ * Structured resource-free checkpoint after one complete flow fragment.
+ *
+ * [continuation] contains the exact current replay identity, region ordinal and revision, block
+ * cursor, fragmentation state, and paragraph inputs. Observable comparison uses captured line
+ * geometry and shaping facts without a serialized string identity.
+ */
+public class FlowLayoutCheckpoint private constructor(
+    /** Exact source range represented immediately before [continuation]. */
+    public val laidOutRange: TextRange,
+    /** Exact structured continuation after [laidOutRange]. */
+    public val continuation: FlowContinuation,
+    private val observable: FlowFragmentObservableSignature,
+) {
+    /** Zero-based region ordinal at which replay resumes. */
+    public val resumeRegionOrdinal: Int = continuation.regionIndex
+
+    /** Exact immutable region revision at [resumeRegionOrdinal]. */
+    public val resumeRegionIdentity: FlowRegionIdentity = continuation.regionIdentity
+
+    /** Exact logical block-axis cursor at which replay resumes. */
+    public val blockCursor: Float = continuation.nextBlockOffset
+
+    /**
+     * Whether the captured UAX #9 structure prevents proving a local text-edit dependency closure.
+     * Such edits must restart at paragraph start rather than reuse this checkpoint.
+     */
+    public val hasNonLocalBidiDependencies: Boolean =
+        continuation.paragraphReplayIdentity?.hasNonLocalBidiDependencies ?: true
+
+    /** Compares all captured fragment observables independently of absolute source versions. */
+    public fun hasSameObservableLayout(other: FlowLayoutCheckpoint): Boolean = observable == other.observable
+
+    /** Compares structured region, cursor, writing-mode, and fragmentation continuation state. */
+    public fun hasSameFlowSemantics(other: FlowLayoutCheckpoint): Boolean =
+        continuation.inputIdentity == other.continuation.inputIdentity &&
+            continuation.paragraphRange == other.continuation.paragraphRange &&
+            continuation.remainingSourceRange == other.continuation.remainingSourceRange &&
+            continuation.compositionIdentity == other.continuation.compositionIdentity &&
+            continuation.regionIndex == other.continuation.regionIndex &&
+            continuation.regionIdentity == other.continuation.regionIdentity &&
+            continuation.writingMode == other.continuation.writingMode &&
+            continuation.nextBlockOffset == other.continuation.nextBlockOffset &&
+            continuation.fragmentationConstraints == other.continuation.fragmentationConstraints &&
+            continuation.relaxedConstraints == other.continuation.relaxedConstraints &&
+            continuation.fragmentationCommitment == other.continuation.fragmentationCommitment &&
+            continuation.paragraphReplayIdentity?.let { replay ->
+                other.continuation.paragraphReplayIdentity?.let(replay::hasSameReplayIdentity)
+            } == true
+
+    /**
+     * Rebinds this unchanged observable checkpoint to a proven target range and freshly captured
+     * target continuation.
+     */
+    public fun remap(
+        laidOutRange: TextRange,
+        continuation: FlowContinuation,
+    ): FlowLayoutCheckpoint {
+        require(laidOutRange.endExclusive == continuation.remainingSourceRange.start) {
+            "A remapped flow checkpoint must end where its continuation begins."
+        }
+        return FlowLayoutCheckpoint(laidOutRange, continuation, observable)
+    }
+
+    /** Factories for exact complete-fragment checkpoint capture. */
+    public companion object {
+        /** Captures every line observable and the fragment's exact structured continuation. */
+        public fun capture(fragment: ParagraphFragment): FlowLayoutCheckpoint {
+            val continuation = requireNotNull(fragment.continuation) {
+                "Only a non-final flow fragment can create a replay checkpoint."
+            }
+            return FlowLayoutCheckpoint(
+                fragment.laidOutRange,
+                continuation,
+                FlowFragmentObservableSignature(
+                    isFirstFragment = fragment.isFirstFragment,
+                    lines = fragment.lines.map(LineLayout::toObservableSignature),
+                    diagnostics = fragment.diagnostics,
+                ),
+            )
+        }
+    }
+}
+
+private data class FlowFragmentObservableSignature(
+    val isFirstFragment: Boolean,
+    val lines: List<ObservableLineSignature>,
+    val diagnostics: List<FlowCompositionDiagnostic>,
+)
+
 /** Semantically complete resource-free configuration used to validate checkpoint reuse. */
 public class LayoutConfigurationSignature private constructor(
     private val value: LayoutConfigurationValue,
@@ -723,7 +813,7 @@ public fun createIncrementalLayoutRequest(
     )
 }
 
-private fun validateTypographyProofs(
+internal fun validateTypographyProofs(
     sourceTextVersion: TextVersion,
     target: TextSnapshot,
     targetConfiguration: LayoutConfigurationSignature,
@@ -988,6 +1078,19 @@ private data class CaretSignature(
     val edge: CaretBoundaryEdge,
 )
 
+private data class PositionedInlineObjectSignature(
+    val sourceRange: RelativeRange,
+    val definition: InlineObjectDefinition,
+    val rect: LayoutRect,
+)
+
+private data class LineFragmentSignature(
+    val availableInterval: InlineInterval,
+    val positionedRuns: List<PositionedRunSignature>,
+    val carets: List<CaretSignature>,
+    val positionedInlineObjects: List<PositionedInlineObjectSignature>,
+)
+
 private data class DiagnosticSignature(
     val code: String,
     val severity: EditableLineDiagnosticSeverity,
@@ -999,8 +1102,7 @@ private data class DiagnosticSignature(
 private data class ObservableLineSignature(
     val baseDirection: ShapingDirection,
     val verticalMetrics: LineVerticalMetrics,
-    val positionedRuns: List<PositionedRunSignature>,
-    val carets: List<CaretSignature>,
+    val fragments: List<LineFragmentSignature>,
     val diagnostics: List<DiagnosticSignature>,
     val baseline: LayoutPoint,
     val contentMetrics: LineContentMetrics,
@@ -1013,18 +1115,18 @@ private fun LineLayout.toObservableSignature(): ObservableLineSignature {
     return ObservableLineSignature(
         baseDirection = baseDirection,
         verticalMetrics = verticalMetrics,
-        positionedRuns = positionedGlyphRuns.map { run -> run.toSignature(base) },
-        carets = allCaretCandidates.map { candidate ->
-            CaretSignature(
-                boundary = candidate.position.index.ordinal - base,
-                affinity = candidate.position.affinity,
-                geometry = candidate.geometry,
-                visualOrder = candidate.visualOrder,
-                visualRunOrder = candidate.visualRunOrder,
-                bidiLevel = candidate.bidiLevel,
-                direction = candidate.direction,
-                strength = candidate.strength,
-                edge = candidate.edge,
+        fragments = fragments.map { fragment ->
+            LineFragmentSignature(
+                availableInterval = fragment.availableInterval,
+                positionedRuns = fragment.positionedGlyphRuns.map { run -> run.toSignature(base) },
+                carets = fragment.caretCandidates.map { candidate -> candidate.toSignature(base) },
+                positionedInlineObjects = fragment.positionedInlineObjects.map { item ->
+                    PositionedInlineObjectSignature(
+                        sourceRange = item.sourceRange.relativeTo(base),
+                        definition = item.definition,
+                        rect = item.rect,
+                    )
+                },
             )
         },
         diagnostics = diagnostics.map { diagnostic ->
@@ -1042,6 +1144,18 @@ private fun LineLayout.toObservableSignature(): ObservableLineSignature {
         designInkBounds = designInkBounds,
     )
 }
+
+private fun CaretCandidate.toSignature(base: Int): CaretSignature = CaretSignature(
+    boundary = position.index.ordinal - base,
+    affinity = position.affinity,
+    geometry = geometry,
+    visualOrder = visualOrder,
+    visualRunOrder = visualRunOrder,
+    bidiLevel = bidiLevel,
+    direction = direction,
+    strength = strength,
+    edge = edge,
+)
 
 private fun PositionedGlyphRun.toSignature(base: Int): PositionedRunSignature = PositionedRunSignature(
     sourceRun = sourceRun.toSignature(base),
