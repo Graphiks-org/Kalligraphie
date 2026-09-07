@@ -893,8 +893,9 @@ internal class FlowParagraphReplayIdentity private constructor(
 /**
  * Complete resource-free signature of inputs that may affect flow breaking or geometry.
  *
- * The signature snapshots region revision identities and paragraph configuration while retaining
- * no [FlowRegion], text snapshot, shaping backend, resolver, renderer, or platform resource.
+ * The signature snapshots region revision identities, paragraph configuration, and the complete
+ * structural Unicode and line-break analyses while retaining no [FlowRegion], text snapshot,
+ * shaping backend, resolver, renderer, or platform resource.
  */
 public class FlowLayoutConfigurationSignature private constructor(
     private val value: FlowLayoutConfigurationValue,
@@ -921,6 +922,28 @@ public class FlowLayoutConfigurationSignature private constructor(
     internal fun matchesFontResolutionPolicy(policy: FontResolutionPolicySnapshot): Boolean =
         value.layout.matchesFontResolutionPolicy(policy)
 
+    /**
+     * Reports whether only prepared Unicode or line-break analyses may differ from [other].
+     *
+     * A layout engine may use this proof to discard retained geometry and compose afresh without
+     * rejecting an otherwise compatible request. It does not authorize reuse of fragments,
+     * continuations, or checkpoints because those remain bound to the exact captured analyses.
+     */
+    public fun matchesExceptPreparedAnalyses(other: FlowLayoutConfigurationSignature): Boolean =
+        value.copy(preparedAnalyses = other.value.preparedAnalyses) == other.value
+
+    /**
+     * Reports whether [other] may be considered for versioned checkpoint mapping.
+     *
+     * Paragraph and flow inputs plus Unicode and line-break producer identities must match. The
+     * actual version-bound partitions may differ; a layout engine must additionally prove their
+     * unaffected dependency ranges through the authoritative text delta before reusing anything.
+     */
+    public fun matchesForVersionedCheckpointMapping(other: FlowLayoutConfigurationSignature): Boolean =
+        matchesExceptPreparedAnalyses(other) &&
+            value.preparedAnalyses.unicodeData == other.value.preparedAnalyses.unicodeData &&
+            value.preparedAnalyses.lineBreakUnicodeData == other.value.preparedAnalyses.lineBreakUnicodeData
+
     /** Factories for portable flow configuration signatures. */
     public companion object {
         /** Captures all replay-relevant values from [request], [paragraph], and its region chain. */
@@ -942,6 +965,18 @@ public class FlowLayoutConfigurationSignature private constructor(
                 textOrientation = paragraph.textOrientation,
                 verticalMetricsPolicy = paragraph.verticalMetricsPolicy,
                 features = paragraph.features,
+                preparedAnalyses = FlowPreparedAnalysisValue(
+                    unicodeRange = paragraph.unicodeAnalysis.range,
+                    unicodeData = paragraph.unicodeAnalysis.unicodeData,
+                    graphemeClusters = paragraph.unicodeAnalysis.graphemeClusters,
+                    scriptLanguageRuns = paragraph.unicodeAnalysis.scriptLanguageRuns,
+                    logicalBidiRuns = paragraph.unicodeAnalysis.logicalBidiRuns,
+                    visualBidiRuns = paragraph.unicodeAnalysis.visualBidiRuns,
+                    lineBreakRange = paragraph.lineBreakAnalysis.range,
+                    lineBreakUnicodeData = paragraph.lineBreakAnalysis.unicodeData,
+                    lineBreakGraphemeClusters = paragraph.lineBreakAnalysis.graphemeClusters,
+                    lineBreakOpportunities = paragraph.lineBreakAnalysis.opportunities,
+                ),
                 flowCompositionIdentity = request.flowChain.compositionIdentity,
                 regionIdentities = request.flowChain.regions.map(FlowRegion::identity),
             ),
@@ -963,8 +998,22 @@ private data class FlowLayoutConfigurationValue(
     val textOrientation: TextOrientation,
     val verticalMetricsPolicy: VerticalMetricsPolicy,
     val features: List<OpenTypeFeature>,
+    val preparedAnalyses: FlowPreparedAnalysisValue,
     val flowCompositionIdentity: FlowCompositionIdentity,
     val regionIdentities: List<FlowRegionIdentity>,
+)
+
+private data class FlowPreparedAnalysisValue(
+    val unicodeRange: TextRange,
+    val unicodeData: UnicodeDataIdentity,
+    val graphemeClusters: List<TextRange>,
+    val scriptLanguageRuns: List<ScriptLanguageRun>,
+    val logicalBidiRuns: List<BidiRun>,
+    val visualBidiRuns: List<BidiRun>,
+    val lineBreakRange: TextRange,
+    val lineBreakUnicodeData: UnicodeDataIdentity,
+    val lineBreakGraphemeClusters: List<TextRange>,
+    val lineBreakOpportunities: List<LineBreakOpportunity>,
 )
 
 /**

@@ -7,7 +7,9 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.CaretAffinity
+import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FlowChain
 import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionResult
@@ -37,11 +39,13 @@ import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutTailState
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBand
+import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphFragment
+import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.RangeChange
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
@@ -50,11 +54,83 @@ import org.graphiks.kalligraphie.api.TextChange
 import org.graphiks.kalligraphie.api.TextChangeSet
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TypographyDelta
+import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.createIncrementalFlowLayoutRequest
+import org.graphiks.kalligraphie.layout.IncrementalFlowLayoutEngine
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class FlowCompositionEditorJourneyTest {
+    @Test
+    fun changedPreparedAnalysesCannotFastPathACompleteLayoutFromTheSameInputVersions() {
+        val fixture = incrementalRealFontFixture(
+            "ab cd",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val queries = MutableList(2) { 0 }
+        val chain = horizontalChain(count = 2, queries = queries, inlineExtent = 1_600f)
+        val initialRequest = request(fixture, chain)
+        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
+            JvmHarfBuzzShapingBackend.open(),
+        ).value
+        try {
+            val prepared = prepareParagraph(initialRequest, backend)
+            val initial = success(
+                IncrementalFlowLayoutEngine.layout(
+                    initialRequest.request,
+                    prepared,
+                    EditableLineMaterialization.LayoutOnly,
+                ),
+            )
+            assertNull(initial.unmaterializedTail)
+            val split = fixture.snapshot.incrementalRange(0, 3)
+            val suffix = fixture.snapshot.incrementalRange(3, 5)
+            val changedUnicode = UnicodeAnalysis(
+                range = prepared.unicodeAnalysis.range,
+                unicodeData = prepared.unicodeAnalysis.unicodeData,
+                graphemeClusters = prepared.unicodeAnalysis.graphemeClusters,
+                scriptLanguageRuns = prepared.unicodeAnalysis.scriptLanguageRuns,
+                logicalBidiRuns = listOf(BidiRun(split, 0), BidiRun(suffix, 2)),
+                visualBidiRuns = listOf(BidiRun(split, 0), BidiRun(suffix, 2)),
+            )
+            val changedBreaks = LineBreakAnalysis(
+                range = prepared.lineBreakAnalysis.range,
+                unicodeData = changedUnicode.unicodeData,
+                graphemeClusters = changedUnicode.graphemeClusters,
+                opportunities = emptyList(),
+            )
+            val changedParagraph = prepared.withAnalyses(changedUnicode, changedBreaks)
+            val resumedRequest = request(fixture, chain, previousState = initial.state)
+            queries.indices.forEach { queries[it] = 0 }
+
+            val resumed = success(
+                IncrementalFlowLayoutEngine.layout(
+                    resumedRequest.request,
+                    changedParagraph,
+                    EditableLineMaterialization.LayoutOnly,
+                ),
+            )
+
+            assertTrue(
+                queries.sum() > 0,
+                "Different prepared analyses must recompose instead of republishing the complete retained state.",
+            )
+            val independent = success(
+                IncrementalFlowLayoutEngine.layout(
+                    initialRequest.request,
+                    changedParagraph,
+                    EditableLineMaterialization.LayoutOnly,
+                ),
+            )
+            assertEquals(independent.fragments.map { it.laidOutRange }, resumed.fragments.map { it.laidOutRange })
+            assertEquals(independent.lines.map(LineLayout::glyphIds), resumed.lines.map(LineLayout::glyphIds))
+            assertEquals(independent.lines.map(LineLayout::lineBox), resumed.lines.map(LineLayout::lineBox))
+            assertEquals(independent.coverage.tailState, resumed.coverage.tailState)
+        } finally {
+            backend.close()
+        }
+    }
+
     @Test
     fun pureRtlPackingPublishesALogicalPrefixWhenEveryClusterFitsIndividually() {
         val fixture = incrementalRealFontFixture(
@@ -1366,6 +1442,64 @@ class FlowCompositionEditorJourneyTest {
             inlineObjects = inlineObjects,
         )
     }
+
+    private fun prepareParagraph(
+        request: JvmFlowCompositionRequest,
+        backend: ShapingBackend,
+    ): ParagraphLayoutRequest = checkNotNull(
+        JvmEditableParagraphFacade.prepareParagraphRequestBorrowing(
+            JvmEditableParagraphFacadeRequest(
+                snapshot = request.request.input.text,
+                sourceRange = request.request.input.text.range,
+                constraints = request.request.constraints,
+                baseDirection = request.baseDirection,
+                language = request.language,
+                fontCatalog = request.request.input.typography.fontCatalog,
+                resolutionPolicy = request.request.input.typography.resolutionPolicy,
+                fontInstanceDescriptor = request.request.input.typography.fontInstanceDescriptor,
+                features = request.features,
+                materialization = request.materialization,
+                overflowPolicy = request.overflowPolicy,
+                positioning = request.positioning,
+                hyphenationMode = request.hyphenationMode,
+                hyphenationService = request.hyphenationService,
+                inlineObjects = request.inlineObjects,
+                textOrientation = request.textOrientation,
+                verticalMetricsPolicy = request.verticalMetricsPolicy,
+                cancellationToken = request.request.cancellationToken,
+            ),
+            backend,
+        ),
+    )
+
+    private fun ParagraphLayoutRequest.withAnalyses(
+        unicodeAnalysis: UnicodeAnalysis,
+        lineBreakAnalysis: LineBreakAnalysis,
+    ): ParagraphLayoutRequest = ParagraphLayoutRequest(
+        snapshot = snapshot,
+        sourceRange = sourceRange,
+        unicodeAnalysis = unicodeAnalysis,
+        lineBreakAnalysis = lineBreakAnalysis,
+        constraints = constraints,
+        baseDirection = baseDirection,
+        language = language,
+        featurePolicy = featurePolicy,
+        features = features,
+        fontCatalog = fontCatalog,
+        resolutionPolicy = resolutionPolicy,
+        fontInstanceDescriptor = fontInstanceDescriptor,
+        shapingBackend = shapingBackend,
+        materializationIdentity = materializationIdentity,
+        overflowPolicy = overflowPolicy,
+        continuation = continuation,
+        positioning = positioning,
+        hyphenationMode = hyphenationMode,
+        hyphenationService = hyphenationService,
+        inlineObjects = inlineObjects,
+        textOrientation = textOrientation,
+        verticalMetricsPolicy = verticalMetricsPolicy,
+        cancellationToken = cancellationToken,
+    )
 
     private fun horizontalChain(
         count: Int,

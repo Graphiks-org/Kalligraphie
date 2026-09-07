@@ -60,11 +60,18 @@ public object IncrementalFlowLayoutEngine {
         )
         val previous = request.previousState
         val sameInput = previous != null && previous.inputIdentity == inputIdentity
-        if (sameInput && previous.configuration != configuration) {
-            return incompatible("The retained flow state uses different paragraph or region inputs.")
+        val sameReplayInputs = sameInput && checkNotNull(previous).configuration == configuration
+        if (sameInput) {
+            val retained = checkNotNull(previous)
+            if (
+                retained.configuration != configuration &&
+                !retained.configuration.matchesExceptPreparedAnalyses(configuration)
+            ) {
+                return incompatible("The retained flow state uses different paragraph or region inputs.")
+            }
         }
 
-        if (sameInput) {
+        if (sameReplayInputs) {
             checkNotNull(previous)
             selectSatisfiedPrefix(request, previous.materializedFragments)?.let { selected ->
                 val tail = selected.last().continuation
@@ -86,18 +93,24 @@ public object IncrementalFlowLayoutEngine {
             }
         }
 
-        val mappedPrevious = if (previous != null && previous.configuration == configuration) {
+        val mappedPrevious = if (
+            previous != null &&
+            (
+                previous.configuration == configuration ||
+                    (!sameInput && previous.configuration.matchesForVersionedCheckpointMapping(configuration))
+            )
+        ) {
             mapPreviousCheckpoints(request, paragraph, previous, inputIdentity)
         } else {
             emptyList()
         }
         val affectedStart = firstAffectedTargetBoundary(request, paragraph, previous)
-        val resumeFromPublishedTail = sameInput && checkNotNull(previous).let { state ->
+        val resumeFromPublishedTail = sameReplayInputs && checkNotNull(previous).let { state ->
             state.continuation != null && request.requestedRange.start >= state.coverage.range.start
         }
-        val restart = if (sameInput && resumeFromPublishedTail) {
+        val restart = if (sameReplayInputs && resumeFromPublishedTail) {
             FlowLayoutCheckpoint.capture(checkNotNull(previous).materializedFragments.last())
-        } else if (sameInput) {
+        } else if (sameReplayInputs) {
             checkNotNull(previous).checkpoints.lastOrNull { checkpoint ->
                 checkpoint.laidOutRange.endExclusive <= request.requestedRange.start
             }

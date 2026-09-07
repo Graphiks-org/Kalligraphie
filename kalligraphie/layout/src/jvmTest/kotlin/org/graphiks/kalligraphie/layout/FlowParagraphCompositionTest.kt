@@ -77,6 +77,50 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun latePackingFallbackPublishesTheExactPrefixWithoutScanningEarlierClusters() {
+        val fixture = fixture("a".repeat(4_093) + "abc")
+        val lateSource = range(fixture.snapshot, 4_093, 4_096)
+        val region = FixedRegion(
+            fixture.request.constraints.region,
+            listOf(InlineInterval(0f, 900f), InlineInterval(1_200f, 2_100f)),
+        )
+
+        val fragment = success(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request.withFlowSourceRange(lateSource),
+                EditableLineMaterialization.LayoutOnly,
+                FlowChain(listOf(region)),
+                flowIdentity(fixture),
+                maximumLines = 1,
+            ),
+        )
+
+        assertEquals(range(fixture.snapshot, 4_093, 4_095), fragment.laidOutRange)
+        val clusters = fixture.request.unicodeAnalysis.graphemeClusters
+        var reads = 0
+        val observed = object : AbstractList<TextRange>() {
+            override val size: Int = clusters.size
+
+            override fun get(index: Int): TextRange {
+                reads += 1
+                return clusters[index]
+            }
+        }
+        val lateLine = lateSource
+
+        val prefixEnds = logicalPackingPrefixEnds(observed, lateLine)
+
+        assertEquals(
+            listOf(4_095, 4_094).map(fixture.snapshot::textIndexAtScalarBoundary),
+            prefixEnds,
+        )
+        assertTrue(
+            reads <= 32,
+            "A late line must use logarithmic boundary lookup plus its local candidate window; reads=$reads.",
+        )
+    }
+
+    @Test
     fun exclusionProjectsOneLogicalLatinLineIntoTwoSourceExactFragments() {
         val fixture = fixture("abcd")
         val region = FixedRegion(

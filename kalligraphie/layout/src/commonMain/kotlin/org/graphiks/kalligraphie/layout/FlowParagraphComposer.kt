@@ -552,14 +552,10 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             PackingProbe.Complete -> return initial
             is PackingProbe.Failure -> {
                 var firstLogicalFailure: PackingProbe.Failure = packing
-                val logicalPrefixEnds = request.unicodeAnalysis.graphemeClusters
-                    .asSequence()
-                    .dropWhile { cluster -> cluster.endExclusive <= initialLine.line.range.start }
-                    .takeWhile { cluster -> cluster.endExclusive < initialLine.line.range.endExclusive }
-                    .map(TextRange::endExclusive)
-                    .distinct()
-                    .toList()
-                    .asReversed()
+                val logicalPrefixEnds = logicalPackingPrefixEnds(
+                    request.unicodeAnalysis.graphemeClusters,
+                    initialLine.line.range,
+                )
                 logicalPrefixEnds.forEach { prefixEnd ->
                     val prefix = when (
                         val composed = composeBoundedCandidate(request, materialization, prefixEnd)
@@ -1458,4 +1454,30 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         data object Complete : PackingProbe
         data class Failure(val error: FlowCompositionError) : PackingProbe
     }
+}
+
+internal fun logicalPackingPrefixEnds(
+    graphemeClusters: List<TextRange>,
+    lineRange: TextRange,
+): List<TextIndex> {
+    val firstCandidate = graphemeClusters.lowerBound { cluster ->
+        cluster.endExclusive > lineRange.start
+    }
+    val afterLastCandidate = graphemeClusters.lowerBound { cluster ->
+        cluster.endExclusive >= lineRange.endExclusive
+    }
+    if (firstCandidate >= afterLastCandidate) return emptyList()
+    return graphemeClusters.subList(firstCandidate, afterLastCandidate)
+        .asReversed()
+        .map(TextRange::endExclusive)
+}
+
+private inline fun <T> List<T>.lowerBound(predicate: (T) -> Boolean): Int {
+    var low = 0
+    var high = size
+    while (low < high) {
+        val middle = low + (high - low) / 2
+        if (predicate(this[middle])) high = middle else low = middle + 1
+    }
+    return low
 }
