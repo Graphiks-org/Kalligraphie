@@ -62,6 +62,31 @@ import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class FlowCompositionEditorJourneyTest {
     @Test
+    fun boundedFlowPublishesTheLargestActuallyPlaceableClusterPrefixBetweenExponentialProbes() {
+        val fixture = incrementalRealFontFixture(
+            "aaaaaaaaaa",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+
+        val result = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    horizontalChain(count = 1, inlineExtent = 3_800f),
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = incrementalTestConstraints(width = 3_800f, top = 100f, height = 1_200f),
+                ),
+            ),
+        )
+
+        assertEquals(fixture.snapshot.incrementalRange(0, 6), result.fragments.single().laidOutRange)
+        assertEquals(
+            fixture.snapshot.incrementalRange(6, 10),
+            assertNotNull(result.unmaterializedTail).remainingSourceRange,
+        )
+    }
+
+    @Test
     fun changedPreparedAnalysesCannotFastPathACompleteLayoutFromTheSameInputVersions() {
         val fixture = incrementalRealFontFixture(
             "ab cd",

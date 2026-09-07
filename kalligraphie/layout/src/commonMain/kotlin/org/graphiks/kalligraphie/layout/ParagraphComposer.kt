@@ -388,6 +388,8 @@ public object ParagraphComposer : ParagraphLayouter {
         } ?: sourceEndIndex
         var probeOrdinal = 0
         var lastFittingForced: FinalizationResult.Success? = null
+        var lastFittingClusterIndex: Int? = null
+        var firstFailingClusterIndex: Int? = null
         while (true) {
             if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
             val absoluteProbeIndex = minOf(
@@ -436,15 +438,30 @@ public object ParagraphComposer : ParagraphLayouter {
             }
             if (selected.fits && selected.line.range.endExclusive == boundary) {
                 lastFittingForced = selected
-                if (absoluteProbeIndex + 1 < finalClusterIndexExclusive) {
+                lastFittingClusterIndex = absoluteProbeIndex
+                val failingIndex = firstFailingClusterIndex
+                if (failingIndex != null && absoluteProbeIndex + 1 < failingIndex) {
+                    probeOrdinal = absoluteProbeIndex + (failingIndex - absoluteProbeIndex) / 2 - firstClusterIndex
+                    continue
+                }
+                if (failingIndex == null && absoluteProbeIndex + 1 < finalClusterIndexExclusive) {
                     probeOrdinal = minOf(
                         (probeOrdinal + 1) * 2 - 1,
                         finalClusterIndexExclusive - firstClusterIndex - 1,
                     )
                     continue
                 }
+            } else {
+                firstFailingClusterIndex = absoluteProbeIndex
+                val fittingIndex = lastFittingClusterIndex
+                if (fittingIndex != null && fittingIndex + 1 < absoluteProbeIndex) {
+                    probeOrdinal = fittingIndex + (absoluteProbeIndex - fittingIndex) / 2 - firstClusterIndex
+                    continue
+                }
             }
-            val publishable = if (selected.fits) selected else lastFittingForced ?: selected
+            val publishable = lastFittingForced?.takeIf { forced ->
+                !selected.fits || forced.line.range.endExclusive > selected.line.range.endExclusive
+            } ?: selected
             val line = place(
                 publishable.line,
                 request,
