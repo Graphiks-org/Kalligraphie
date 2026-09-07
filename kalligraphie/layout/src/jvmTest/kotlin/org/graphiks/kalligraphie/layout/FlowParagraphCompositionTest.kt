@@ -8,6 +8,7 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EllipsisSide
 import org.graphiks.kalligraphie.api.FlowChain
 import org.graphiks.kalligraphie.api.FlowCompositionDiagnostic
 import org.graphiks.kalligraphie.api.FlowCompositionError
@@ -39,8 +40,10 @@ import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBand
+import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.NoProgressReason
+import org.graphiks.kalligraphie.api.OverflowPolicy
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
@@ -50,6 +53,7 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TypographyVersion
+import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
@@ -715,6 +719,82 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun eachRelaxationReevaluatesLaterCandidatesBeforeRelaxingTheNextRule() {
+        val fixture = fixture("ab ab ab")
+        val first = FixedRegion(
+            LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(1_600f), LayoutUnit(1_000f)),
+            listOf(InlineInterval(0f, 1_600f)),
+        )
+        val secondBounds =
+            LayoutRect(LayoutUnit(40f), LayoutUnit(60f), LayoutUnit(1_640f), LayoutUnit(2_060f))
+        val second = FixedRegion(secondBounds, listOf(InlineInterval(0f, 1_600f)))
+        val result = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                FlowChain(
+                    listOf(first, second),
+                    FragmentationConstraints(
+                        minLinesAtEnd = 2,
+                        keepTogether = true,
+                        keepWithNext = true,
+                    ),
+                ),
+                flowIdentity(fixture),
+            ),
+        )
+
+        assertEquals(secondBounds.top, result.value.lines.first().lineBox.top)
+        assertEquals(2, result.value.lines.size)
+        assertEquals(
+            listOf(
+                FragmentationConstraintKind.KEEP_WITH_NEXT,
+                FragmentationConstraintKind.KEEP_TOGETHER,
+            ),
+            result.diagnostics.map { diagnostic ->
+                assertIs<FlowCompositionDiagnostic.FragmentationRelaxed>(diagnostic).constraint
+            },
+        )
+        assertEquals(
+            listOf(
+                FragmentationConstraintKind.KEEP_WITH_NEXT,
+                FragmentationConstraintKind.KEEP_TOGETHER,
+            ),
+            checkNotNull(result.value.continuation).relaxedConstraints,
+        )
+    }
+
+    @Test
+    fun keepWithNextRelaxesBeforeEvenACompleteParagraphIsFitted() {
+        val fixture = fixture("ab")
+        val result = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                FlowChain(
+                    listOf(
+                        FixedRegion(
+                            fixture.request.constraints.region,
+                            listOf(InlineInterval(0f, 4_000f)),
+                        ),
+                    ),
+                    FragmentationConstraints(keepWithNext = true),
+                ),
+                flowIdentity(fixture),
+            ),
+        )
+
+        assertEquals(fixture.snapshot.range, result.value.laidOutRange)
+        assertEquals(null, result.value.continuation)
+        assertEquals(
+            listOf(FragmentationConstraintKind.KEEP_WITH_NEXT),
+            result.diagnostics.map { diagnostic ->
+                assertIs<FlowCompositionDiagnostic.FragmentationRelaxed>(diagnostic).constraint
+            },
+        )
+    }
+
+    @Test
     fun keepTogetherMovesTheCompleteParagraphToTheNextRegionWhenItFitsThere() {
         val fixture = fixture("ab ab")
         val first = FixedRegion(
@@ -761,6 +841,75 @@ class FlowParagraphCompositionTest {
         assertEquals(listOf(fixture.snapshot.range), fragment.lines.map { it.range })
         assertTrue(fragment.isFirstFragment)
         assertTrue(fragment.isLastFragment)
+    }
+
+    @Test
+    fun mandatoryTerminalEmptyLineContinuesWithoutDroppingItsPhysicalLine() {
+        val fixture = fixture("ab\n")
+        val regions = List(2) {
+            FixedRegion(
+                LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(4_000f), LayoutUnit(1_000f)),
+                listOf(InlineInterval(0f, 4_000f)),
+            )
+        }
+        val chain = FlowChain(regions)
+        val identity = flowIdentity(fixture)
+
+        val first = success(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                identity,
+            ),
+        )
+        val continuation = checkNotNull(first.continuation)
+        val second = success(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request.withFlowSourceRange(continuation.remainingSourceRange),
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                identity,
+                continuation,
+            ),
+        )
+
+        val terminal = TextRange(fixture.snapshot.range.endExclusive, fixture.snapshot.range.endExclusive)
+        assertEquals(listOf(fixture.snapshot.range), first.lines.map { it.range })
+        assertEquals(terminal, continuation.remainingSourceRange)
+        assertTrue(!first.isLastFragment)
+        assertEquals(listOf(terminal), second.lines.map { it.range })
+        assertTrue(second.isLastFragment)
+        assertEquals(null, second.continuation)
+    }
+
+    @Test
+    fun flowChainRejectsEllipsisBeforeQueryingARegion() {
+        val fixture = fixture("ab ab")
+        var queries = 0
+        val region = object : FlowRegion {
+            override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+            override val bounds: LayoutRect = fixture.request.constraints.region
+            override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult {
+                queries += 1
+                return FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 1_600f)))
+            }
+        }
+
+        val result = assertIs<FlowCompositionResult.Failure>(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request.withFlowSourceRange(
+                    fixture.snapshot.range,
+                    overflowPolicy = OverflowPolicy.Ellipsis(EllipsisSide.INLINE_END),
+                ),
+                EditableLineMaterialization.LayoutOnly,
+                FlowChain(listOf(region)),
+                flowIdentity(fixture),
+            ),
+        )
+
+        assertIs<FlowCompositionError.UnsupportedOverflowPolicy>(result.error)
+        assertEquals(0, queries)
     }
 
     @Test
@@ -933,6 +1082,80 @@ class FlowParagraphCompositionTest {
         assertIs<FlowCompositionError.ForeignContinuation>(error())
     }
 
+    @Test
+    fun chainResumeRejectsContradictoryAnalysesSharingUnicodeDataBeforeQueryingARegion() {
+        val fixture = fixture("ab ab")
+        var queries = 0
+        val regions = List(2) {
+            object : FlowRegion {
+                override val identity: FlowRegionIdentity = FlowRegionIdentity.create()
+                override val bounds: LayoutRect =
+                    LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(1_600f), LayoutUnit(1_000f))
+                override fun query(writingMode: WritingMode, lineBand: LineBand): FlowRegionResult {
+                    queries += 1
+                    return FlowRegionResult.AvailableIntervals(listOf(InlineInterval(0f, 1_600f)))
+                }
+            }
+        }
+        val chain = FlowChain(regions)
+        val identity = flowIdentity(fixture)
+        val first = success(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                identity,
+            ),
+        )
+        val continuation = checkNotNull(first.continuation)
+        val queriesBeforeResume = queries
+        val originalUnicode = fixture.request.unicodeAnalysis
+        val contradictoryUnicode = UnicodeAnalysis(
+            range = originalUnicode.range,
+            unicodeData = originalUnicode.unicodeData,
+            graphemeClusters = originalUnicode.graphemeClusters,
+            scriptLanguageRuns = originalUnicode.scriptLanguageRuns.map { run ->
+                run.copy(script = if (run.script == "Latn") "Arab" else "Latn")
+            },
+            logicalBidiRuns = originalUnicode.logicalBidiRuns,
+            visualBidiRuns = originalUnicode.visualBidiRuns,
+        )
+        val originalBreaks = fixture.request.lineBreakAnalysis
+        val contradictoryBreaks = LineBreakAnalysis(
+            range = originalBreaks.range,
+            unicodeData = originalBreaks.unicodeData,
+            graphemeClusters = originalBreaks.graphemeClusters,
+            opportunities = originalBreaks.opportunities.drop(1),
+        )
+
+        fun rejected(request: ParagraphLayoutRequest) {
+            val result = assertIs<FlowCompositionResult.Failure>(
+                FlowParagraphComposer.layoutFragment(
+                    request,
+                    EditableLineMaterialization.LayoutOnly,
+                    chain,
+                    identity,
+                    continuation,
+                ),
+            )
+            assertIs<FlowCompositionError.IncompatibleContinuation>(result.error)
+            assertEquals(queriesBeforeResume, queries)
+        }
+
+        rejected(
+            fixture.request.withFlowSourceRange(
+                continuation.remainingSourceRange,
+                unicodeAnalysis = contradictoryUnicode,
+            ),
+        )
+        rejected(
+            fixture.request.withFlowSourceRange(
+                continuation.remainingSourceRange,
+                lineBreakAnalysis = contradictoryBreaks,
+            ),
+        )
+    }
+
     private fun success(result: FlowCompositionResult<org.graphiks.kalligraphie.api.ParagraphFragment>) =
         assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
             result,
@@ -946,6 +1169,9 @@ class FlowParagraphCompositionTest {
         sourceRange: TextRange,
         lineMetrics: LineVerticalMetrics = constraints.lineMetrics,
         fontInstanceDescriptor: FontInstanceDescriptor = this.fontInstanceDescriptor,
+        unicodeAnalysis: UnicodeAnalysis = this.unicodeAnalysis,
+        lineBreakAnalysis: LineBreakAnalysis = this.lineBreakAnalysis,
+        overflowPolicy: OverflowPolicy = this.overflowPolicy,
     ): ParagraphLayoutRequest =
         ParagraphLayoutRequest(
             snapshot = snapshot,

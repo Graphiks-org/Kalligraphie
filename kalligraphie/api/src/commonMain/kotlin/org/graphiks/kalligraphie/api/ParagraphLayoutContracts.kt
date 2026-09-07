@@ -1093,7 +1093,8 @@ public interface FlowParagraphLayouter {
      * partial success carries an exact [FlowContinuation]; callers resume by passing its remaining
      * range as [ParagraphLayoutRequest.sourceRange]. [inputIdentity] proves the immutable text and
      * typography revisions and is required even for the first fragment so a reusable continuation
-     * can be issued. The borrowed [materialization] is never retained.
+     * can be issued. Only source-preserving [OverflowPolicy.Continue] is accepted; truncating
+     * policies fail before a region is queried. The borrowed [materialization] is never retained.
      */
     public fun layoutFragment(
         request: ParagraphLayoutRequest,

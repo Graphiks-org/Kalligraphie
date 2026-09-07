@@ -25,6 +25,7 @@ import org.graphiks.kalligraphie.api.LineFragment
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.NoProgressReason
+import org.graphiks.kalligraphie.api.OverflowPolicy
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphFragment
 import org.graphiks.kalligraphie.api.ParagraphLayoutError
@@ -96,6 +97,11 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         if (inputIdentity.textVersion != request.snapshot.version) {
             return FlowCompositionResult.Failure(FlowCompositionError.TextIdentityMismatch)
         }
+        if (request.overflowPolicy != OverflowPolicy.Continue) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.UnsupportedOverflowPolicy(request.overflowPolicy),
+            )
+        }
         if (request.cancellationToken.isCancellationRequested()) {
             return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
         }
@@ -108,105 +114,84 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
         val paragraphRange = continuation?.paragraphRange ?: request.sourceRange
         val initiallyRelaxed = continuation?.relaxedConstraints.orEmpty()
+        val relaxed = initiallyRelaxed.toMutableList()
+        val newlyRelaxed = mutableListOf<FragmentationConstraintKind>()
+        val constraints = chain.fragmentationConstraints
+        if (
+            constraints.keepWithNext &&
+            FragmentationConstraintKind.KEEP_WITH_NEXT !in relaxed
+        ) {
+            relaxed += FragmentationConstraintKind.KEEP_WITH_NEXT
+            newlyRelaxed += FragmentationConstraintKind.KEEP_WITH_NEXT
+        }
         val startRegionIndex = continuation?.regionIndex ?: 0
         val startBlockOffset = continuation?.nextBlockOffset ?: 0f
         var regionIndex = startRegionIndex
         var blockOffset = startBlockOffset
-        var selected: RegionCandidate? = null
-
-        while (regionIndex < chain.regions.size && selected == null) {
-            when (
-                val candidate = composeRegion(
-                    request,
-                    materialization,
-                    chain.regions[regionIndex],
-                    blockOffset,
-                )
-            ) {
-                is RegionComposition.Failure -> return candidate.failure
-                is RegionComposition.Success -> {
-                    if (candidate.lines.isEmpty()) {
-                        regionIndex += 1
-                        blockOffset = 0f
-                    } else {
-                        selected = RegionCandidate(candidate, regionIndex)
-                    }
-                }
-            }
-        }
-        val current = selected ?: return noSpaceForFirstUnit(request)
-        if (current.composition.isComplete) {
-            return publishFragment(
-                request = request,
-                chain = chain,
-                inputIdentity = inputIdentity,
-                paragraphRange = paragraphRange,
-                candidate = current,
-                relaxedBefore = initiallyRelaxed,
-                newlyRelaxed = emptyList(),
-            )
-        }
-
-        val constraints = chain.fragmentationConstraints
         val isFirstFragment = request.sourceRange.start == paragraphRange.start
-        val activeKeepTogether = constraints.keepTogether &&
-            FragmentationConstraintKind.KEEP_TOGETHER !in initiallyRelaxed
-        val activeMinEnd = constraints.minLinesAtEnd > current.composition.lines.size &&
-            FragmentationConstraintKind.MIN_LINES_AT_END !in initiallyRelaxed
-        val activeMinStart = constraints.minLinesAtStart > current.composition.lines.size &&
-            FragmentationConstraintKind.MIN_LINES_AT_START !in initiallyRelaxed
+        val candidates = mutableListOf<RegionCandidate>()
 
-        if ((activeKeepTogether && isFirstFragment) || activeMinEnd || activeMinStart) {
-            var laterIndex = current.regionIndex + 1
-            while (laterIndex < chain.regions.size) {
+        while (true) {
+            candidates.firstOrNull { candidate ->
+                candidate.satisfies(constraints, relaxed, isFirstFragment)
+            }?.let { selected ->
+                return publishFragment(
+                    request = request,
+                    chain = chain,
+                    inputIdentity = inputIdentity,
+                    paragraphRange = paragraphRange,
+                    candidate = selected,
+                    relaxedBefore = initiallyRelaxed,
+                    newlyRelaxed = newlyRelaxed,
+                )
+            }
+
+            while (regionIndex < chain.regions.size) {
                 when (
-                    val later = composeRegion(
+                    val composition = composeRegion(
                         request,
                         materialization,
-                        chain.regions[laterIndex],
-                        0f,
+                        chain.regions[regionIndex],
+                        blockOffset,
                     )
                 ) {
-                    is RegionComposition.Failure -> return later.failure
-                    is RegionComposition.Success -> {
-                        val satisfiesKeepTogether = !activeKeepTogether || later.isComplete
-                        val satisfiesEnd = !activeMinEnd || later.lines.size >= constraints.minLinesAtEnd
-                        val satisfiesStart = !activeMinStart || later.lines.size >= constraints.minLinesAtStart
-                        if (later.lines.isNotEmpty() && satisfiesKeepTogether && satisfiesEnd && satisfiesStart) {
+                    is RegionComposition.Failure -> return composition.failure
+                    is RegionComposition.Success -> if (composition.lines.isNotEmpty()) {
+                        val candidate = RegionCandidate(composition, regionIndex)
+                        candidates += candidate
+                        if (candidate.satisfies(constraints, relaxed, isFirstFragment)) {
                             return publishFragment(
                                 request = request,
                                 chain = chain,
                                 inputIdentity = inputIdentity,
                                 paragraphRange = paragraphRange,
-                                candidate = RegionCandidate(later, laterIndex),
+                                candidate = candidate,
                                 relaxedBefore = initiallyRelaxed,
-                                newlyRelaxed = emptyList(),
+                                newlyRelaxed = newlyRelaxed,
                             )
                         }
                     }
                 }
-                laterIndex += 1
+                regionIndex += 1
+                blockOffset = 0f
             }
-        }
 
-        val newlyRelaxed = buildList {
-            if (
-                constraints.keepWithNext &&
-                FragmentationConstraintKind.KEEP_WITH_NEXT !in initiallyRelaxed
-            ) add(FragmentationConstraintKind.KEEP_WITH_NEXT)
-            if (activeKeepTogether) add(FragmentationConstraintKind.KEEP_TOGETHER)
-            if (activeMinEnd) add(FragmentationConstraintKind.MIN_LINES_AT_END)
-            if (activeMinStart) add(FragmentationConstraintKind.MIN_LINES_AT_START)
+            if (candidates.isEmpty()) return noSpaceForFirstUnit(request)
+            val nextRelaxation = listOf(
+                FragmentationConstraintKind.KEEP_TOGETHER,
+                FragmentationConstraintKind.MIN_LINES_AT_END,
+                FragmentationConstraintKind.MIN_LINES_AT_START,
+            ).firstOrNull { constraint ->
+                constraint !in relaxed && when (constraint) {
+                    FragmentationConstraintKind.KEEP_WITH_NEXT -> false
+                    FragmentationConstraintKind.KEEP_TOGETHER -> constraints.keepTogether && isFirstFragment
+                    FragmentationConstraintKind.MIN_LINES_AT_END -> constraints.minLinesAtEnd > 1
+                    FragmentationConstraintKind.MIN_LINES_AT_START -> constraints.minLinesAtStart > 1
+                }
+            } ?: return noSpaceForFirstUnit(request)
+            relaxed += nextRelaxation
+            newlyRelaxed += nextRelaxation
         }
-        return publishFragment(
-            request = request,
-            chain = chain,
-            inputIdentity = inputIdentity,
-            paragraphRange = paragraphRange,
-            candidate = current,
-            relaxedBefore = initiallyRelaxed,
-            newlyRelaxed = newlyRelaxed,
-        )
     }
 
     private fun composeRegion(
@@ -236,7 +221,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     lines += attempt.line
                     remainingStart = attempt.line.range.endExclusive
                     blockOffset = attempt.blockStart + attempt.blockExtent
-                    emptyLineRequired = false
+                    emptyLineRequired = attempt.hasUnplacedTrailingEmptyLine
                 }
             }
         }
@@ -361,16 +346,13 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                             geometryOverflow("The total flow inline extent overflowed finite layout coordinates."),
                         )
                     }
-                    val candidate = when (
+                    val composition = when (
                         val composed = ParagraphComposer.compose(
                             request.withSingleLineExtent(totalInlineExtent.toFloat()),
                             materialization,
                         )
                     ) {
-                        is ParagraphCompositionResult.Success -> composed.lines.singleOrNull()
-                            ?: return LineAttempt.Failure(
-                                paragraphFailure("Flow line composition did not produce exactly one complete candidate line."),
-                            )
+                        is ParagraphCompositionResult.Success -> composed
 
                         is ParagraphCompositionResult.Failure -> return LineAttempt.Failure(
                             FlowCompositionResult.Failure(
@@ -383,6 +365,10 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                                 FlowCompositionResult.Failure(FlowCompositionError.Cancelled),
                             )
                     }
+                    val candidate = composition.lines.singleOrNull()
+                        ?: return LineAttempt.Failure(
+                            paragraphFailure("Flow line composition did not produce exactly one complete candidate line."),
+                        )
                     val measured = when (
                         val projection = ParagraphComposer.projectLine(candidate, request.cancellationToken)
                     ) {
@@ -432,6 +418,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                             published.value,
                             band.blockStart,
                             band.blockExtent,
+                            composition.hasUnplacedTrailingEmptyLine,
                         )
                     }
                 }
@@ -1078,6 +1065,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             val line: LineLayout,
             val blockStart: Float,
             val blockExtent: Float,
+            val hasUnplacedTrailingEmptyLine: Boolean,
         ) : LineAttempt
 
         data object EndOfRegion : LineAttempt
@@ -1098,7 +1086,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     private data class RegionCandidate(
         val composition: RegionComposition.Success,
         val regionIndex: Int,
-    )
+    ) {
+        fun satisfies(
+            constraints: org.graphiks.kalligraphie.api.FragmentationConstraints,
+            relaxed: List<FragmentationConstraintKind>,
+            isFirstFragment: Boolean,
+        ): Boolean = composition.isComplete ||
+            ((!constraints.keepTogether || !isFirstFragment || FragmentationConstraintKind.KEEP_TOGETHER in relaxed) &&
+                (constraints.minLinesAtEnd <= composition.lines.size ||
+                    FragmentationConstraintKind.MIN_LINES_AT_END in relaxed) &&
+                (constraints.minLinesAtStart <= composition.lines.size ||
+                    FragmentationConstraintKind.MIN_LINES_AT_START in relaxed))
+    }
 
     private data class RefinementFingerprint(
         val bandExtent: Float,

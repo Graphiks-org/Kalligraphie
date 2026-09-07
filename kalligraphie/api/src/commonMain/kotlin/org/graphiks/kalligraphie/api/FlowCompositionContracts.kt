@@ -248,6 +248,15 @@ public sealed interface FlowCompositionError {
         override val message: String = "The flow continuation belongs to another typography revision."
     }
 
+    /** Flow-chain composition requires source-preserving [OverflowPolicy.Continue] semantics. */
+    public data class UnsupportedOverflowPolicy(
+        /** Rejected paragraph overflow behavior. */
+        public val overflowPolicy: OverflowPolicy,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-unsupported-overflow-policy"
+        override val message: String = "Flow-chain composition requires OverflowPolicy.Continue."
+    }
+
     /** A continuation disagrees with the requested writing mode, constraints, or exact block cursor. */
     public data class IncompatibleContinuation(
         override val message: String,
@@ -621,7 +630,7 @@ public class FlowChain(
             writingMode = basic.writingMode,
             nextBlockOffset = basic.nextBlockOffset,
             fragmentationConstraints = basic.fragmentationConstraints,
-            paragraphReplayIdentity = LayoutContinuation.create(request, remainingSourceRange),
+            paragraphReplayIdentity = FlowParagraphReplayIdentity.capture(request, remainingSourceRange),
             relaxedConstraints = relaxedConstraints,
         )
     }
@@ -681,9 +690,12 @@ public class FlowChain(
 /**
  * Exact immutable capability for resuming flow composition.
  *
- * It binds the source revision and suffix, opaque composition and region-revision identities,
- * fragmentation policy, writing mode, region index, and exact logical block cursor. It owns no
- * snapshot, page, renderer, provider, or platform resource and is safe for concurrent reads.
+ * A reusable instance binds the source revision and suffix, complete structural Unicode and
+ * line-break replay proof, opaque composition and region-revision identities, fragmentation
+ * policy, writing mode, region index, and exact logical block cursor. An empty suffix represents
+ * only a pending required terminal physical line. Instances created without a complete paragraph
+ * request omit replay proof and are rejected conservatively. The value owns no snapshot, page,
+ * renderer, provider, or platform resource and is safe for concurrent reads.
  */
 public class FlowContinuation internal constructor(
     /** Exact text and typography revisions captured by this continuation. */
@@ -705,7 +717,7 @@ public class FlowContinuation internal constructor(
     /** Fragmentation policy whose state must be replayed. */
     public val fragmentationConstraints: FragmentationConstraints,
     /** Complete paragraph replay proof, absent on legacy manually-created continuations. */
-    internal val paragraphReplayIdentity: LayoutContinuation?,
+    internal val paragraphReplayIdentity: FlowParagraphReplayIdentity?,
     relaxedConstraints: List<FragmentationConstraintKind>,
 ) {
     /** Fragmentation rules already relaxed for this paragraph in deterministic order. */
@@ -720,34 +732,76 @@ public class FlowContinuation internal constructor(
         get() = inputIdentity.typographyVersion
 }
 
-private fun LayoutContinuation.hasSameFlowInputs(request: ParagraphLayoutRequest): Boolean =
-    request.snapshot.version == originalVersion &&
-        request.constraints.writingMode == writingMode &&
-        request.constraints.lineMetrics == lineMetrics &&
-        request.baseDirection == baseDirection &&
-        request.language == language &&
-        request.lineBreakAnalysis.unicodeData == unicodeData &&
-        request.fontCatalog.generation == fontCatalogGeneration &&
-        request.resolutionPolicy.policyId == resolutionPolicyId &&
-        request.resolutionPolicy.version == resolutionPolicyVersion &&
-        request.fontInstanceDescriptor == fontInstanceDescriptor &&
-        request.shapingBackend.identity == shapingBackendIdentity &&
-        request.featurePolicy == featurePolicy &&
-        request.features == features &&
-        request.materializationIdentity == materializationIdentity &&
-        request.overflowPolicy == overflowPolicy &&
-        request.positioning == positioning &&
-        request.hyphenationMode == hyphenationMode &&
-        request.hyphenationService?.identity == hyphenationServiceIdentity &&
-        request.inlineObjects?.entries.orEmpty() == inlineObjects?.entries.orEmpty().filter { entry ->
-            entry.index >= request.sourceRange.start && entry.index < request.sourceRange.endExclusive
-        } &&
-        request.textOrientation == textOrientation &&
-        request.verticalMetricsPolicy == verticalMetricsPolicy
+internal class FlowParagraphReplayIdentity private constructor(
+    private val paragraph: LayoutContinuation,
+    private val unicodeRange: TextRange,
+    private val unicodeData: UnicodeDataIdentity,
+    private val graphemeClusters: List<TextRange>,
+    private val scriptLanguageRuns: List<ScriptLanguageRun>,
+    private val logicalBidiRuns: List<BidiRun>,
+    private val visualBidiRuns: List<BidiRun>,
+    private val lineBreakRange: TextRange,
+    private val lineBreakGraphemeClusters: List<TextRange>,
+    private val lineBreakOpportunities: List<LineBreakOpportunity>,
+) {
+    fun hasSameFlowInputs(request: ParagraphLayoutRequest): Boolean =
+        request.snapshot.version == paragraph.originalVersion &&
+            request.constraints.writingMode == paragraph.writingMode &&
+            request.constraints.lineMetrics == paragraph.lineMetrics &&
+            request.baseDirection == paragraph.baseDirection &&
+            request.language == paragraph.language &&
+            request.fontCatalog.generation == paragraph.fontCatalogGeneration &&
+            request.resolutionPolicy.policyId == paragraph.resolutionPolicyId &&
+            request.resolutionPolicy.version == paragraph.resolutionPolicyVersion &&
+            request.fontInstanceDescriptor == paragraph.fontInstanceDescriptor &&
+            request.shapingBackend.identity == paragraph.shapingBackendIdentity &&
+            request.featurePolicy == paragraph.featurePolicy &&
+            request.features == paragraph.features &&
+            request.materializationIdentity == paragraph.materializationIdentity &&
+            request.overflowPolicy == paragraph.overflowPolicy &&
+            request.positioning == paragraph.positioning &&
+            request.hyphenationMode == paragraph.hyphenationMode &&
+            request.hyphenationService?.identity == paragraph.hyphenationServiceIdentity &&
+            request.inlineObjects?.entries.orEmpty() == paragraph.inlineObjects?.entries.orEmpty().filter { entry ->
+                entry.index >= request.sourceRange.start && entry.index < request.sourceRange.endExclusive
+            } &&
+            request.textOrientation == paragraph.textOrientation &&
+            request.verticalMetricsPolicy == paragraph.verticalMetricsPolicy &&
+            request.unicodeAnalysis.let { analysis ->
+                analysis.range == unicodeRange &&
+                    analysis.unicodeData == unicodeData &&
+                    analysis.graphemeClusters == graphemeClusters &&
+                    analysis.scriptLanguageRuns == scriptLanguageRuns &&
+                    analysis.logicalBidiRuns == logicalBidiRuns &&
+                    analysis.visualBidiRuns == visualBidiRuns
+            } &&
+            request.lineBreakAnalysis.let { analysis ->
+                analysis.range == lineBreakRange &&
+                    analysis.unicodeData == unicodeData &&
+                    analysis.graphemeClusters == lineBreakGraphemeClusters &&
+                    analysis.opportunities == lineBreakOpportunities
+            }
+
+    companion object {
+        fun capture(request: ParagraphLayoutRequest, remainingSourceRange: TextRange): FlowParagraphReplayIdentity =
+            FlowParagraphReplayIdentity(
+                paragraph = LayoutContinuation.create(request, remainingSourceRange),
+                unicodeRange = request.unicodeAnalysis.range,
+                unicodeData = request.unicodeAnalysis.unicodeData,
+                graphemeClusters = request.unicodeAnalysis.graphemeClusters,
+                scriptLanguageRuns = request.unicodeAnalysis.scriptLanguageRuns,
+                logicalBidiRuns = request.unicodeAnalysis.logicalBidiRuns,
+                visualBidiRuns = request.unicodeAnalysis.visualBidiRuns,
+                lineBreakRange = request.lineBreakAnalysis.range,
+                lineBreakGraphemeClusters = request.lineBreakAnalysis.graphemeClusters,
+                lineBreakOpportunities = request.lineBreakAnalysis.opportunities,
+            )
+    }
+}
 
 /** Whether published flow fragments cover the complete paragraph or an exact prefix. */
 public enum class FlowCoverageStatus {
-    /** The paragraph is represented through its requested end boundary. */
+    /** The paragraph source and every required physical line are represented. */
     COMPLETE,
 
     /** Complete fragments cover a prefix and [ParagraphFragment.continuation] owns the suffix. */
@@ -837,7 +891,8 @@ public class LineFragment(
  *
  * [lines] contains complete logical lines only. [laidOutRange] is an exact subrange of
  * [paragraphRange]; a partial final fragment publishes a [continuation] beginning exactly at its
- * end. The value owns no page, renderer, font handle, or mutable collection.
+ * end. That continuation may be empty only when a source-required terminal physical empty line
+ * remains. The value owns no page, renderer, font handle, or mutable collection.
  */
 public class ParagraphFragment(
     /** Complete logical paragraph range. */
@@ -873,8 +928,11 @@ public class ParagraphFragment(
         require(isFirstFragment == (laidOutRange.start == paragraphRange.start)) {
             "The first-fragment flag must agree with the laid-out paragraph start."
         }
-        require(isLastFragment == (laidOutRange.endExclusive == paragraphRange.endExclusive)) {
-            "The last-fragment flag must agree with complete paragraph coverage."
+        require(
+            isLastFragment ==
+                (laidOutRange.endExclusive == paragraphRange.endExclusive && continuation == null),
+        ) {
+            "The last-fragment flag must agree with complete physical paragraph coverage."
         }
         require(this.lines.all { line ->
             line.range.start >= laidOutRange.start && line.range.endExclusive <= laidOutRange.endExclusive
@@ -891,9 +949,6 @@ public class ParagraphFragment(
                 this.lines.last().range.endExclusive == laidOutRange.endExclusive,
         ) {
             "Paragraph fragment lines must cover the laid-out source range exactly."
-        }
-        require((continuation == null) == isLastFragment) {
-            "Only a non-final paragraph fragment may publish a continuation."
         }
         if (continuation != null) {
             require(continuation.paragraphRange == paragraphRange) {
