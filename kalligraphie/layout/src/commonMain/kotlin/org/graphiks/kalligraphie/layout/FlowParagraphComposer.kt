@@ -134,6 +134,12 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         var blockOffset = startBlockOffset
         val isFirstFragment = request.sourceRange.start == paragraphRange.start
         val candidates = mutableListOf<RegionCandidate>()
+        val needsUnboundedFeasibilityProbe = maximumLines != null && (
+            constraints.keepTogether && isFirstFragment && FragmentationConstraintKind.KEEP_TOGETHER !in relaxed ||
+                constraints.minLinesAtEnd > maximumLines && FragmentationConstraintKind.MIN_LINES_AT_END !in relaxed ||
+                constraints.minLinesAtStart > maximumLines && FragmentationConstraintKind.MIN_LINES_AT_START !in relaxed
+            )
+        val feasibilityLineLimit = if (needsUnboundedFeasibilityProbe) null else maximumLines
 
         while (true) {
             candidates.firstOrNull { candidate ->
@@ -145,6 +151,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     inputIdentity = inputIdentity,
                     paragraphRange = paragraphRange,
                     candidate = selected,
+                    maximumLines = maximumLines,
                     relaxedBefore = initiallyRelaxed,
                     newlyRelaxed = newlyRelaxed,
                 )
@@ -157,7 +164,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         materialization,
                         chain.regions[regionIndex],
                         blockOffset,
-                        maximumLines,
+                        feasibilityLineLimit,
                     )
                 ) {
                     is RegionComposition.Failure -> return composition.failure
@@ -171,6 +178,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                                 inputIdentity = inputIdentity,
                                 paragraphRange = paragraphRange,
                                 candidate = candidate,
+                                maximumLines = maximumLines,
                                 relaxedBefore = initiallyRelaxed,
                                 newlyRelaxed = newlyRelaxed,
                             )
@@ -207,6 +215,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         maximumLines: Int?,
     ): RegionComposition {
         val lines = mutableListOf<LineLayout>()
+        val lineBlockEnds = mutableListOf<Float>()
         var remainingStart = request.sourceRange.start
         var blockOffset = initialBlockOffset
         var emptyLineRequired = request.sourceRange.start == request.sourceRange.endExclusive
@@ -214,7 +223,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             val remaining = TextRange(remainingStart, request.sourceRange.endExclusive)
             when (val attempt = composeLine(request.withSourceRange(remaining), materialization, region, blockOffset)) {
                 is LineAttempt.Failure -> return RegionComposition.Failure(attempt.failure)
-                LineAttempt.EndOfRegion -> return RegionComposition.Success(lines, blockOffset, false)
+                LineAttempt.EndOfRegion -> return RegionComposition.Success(lines, lineBlockEnds, blockOffset, false)
                 is LineAttempt.Placed -> {
                     if (
                         attempt.line.range.start != remainingStart ||
@@ -227,16 +236,23 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     lines += attempt.line
                     remainingStart = attempt.line.range.endExclusive
                     blockOffset = attempt.blockStart + attempt.blockExtent
+                    lineBlockEnds += blockOffset
                     emptyLineRequired = attempt.hasUnplacedTrailingEmptyLine
                     val physicalParagraphComplete =
                         remainingStart == request.sourceRange.endExclusive && !emptyLineRequired
                     if (maximumLines != null && lines.size >= maximumLines && !physicalParagraphComplete) {
-                        return RegionComposition.Success(lines, blockOffset, false, stoppedByLineLimit = true)
+                        return RegionComposition.Success(
+                            lines,
+                            lineBlockEnds,
+                            blockOffset,
+                            false,
+                            stoppedByLineLimit = true,
+                        )
                     }
                 }
             }
         }
-        return RegionComposition.Success(lines, blockOffset, true, stoppedByLineLimit = false)
+        return RegionComposition.Success(lines, lineBlockEnds, blockOffset, true, stoppedByLineLimit = false)
     }
 
     private fun publishFragment(
@@ -245,21 +261,26 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         inputIdentity: FlowCompositionInputIdentity,
         paragraphRange: TextRange,
         candidate: RegionCandidate,
+        maximumLines: Int?,
         relaxedBefore: List<FragmentationConstraintKind>,
         newlyRelaxed: List<FragmentationConstraintKind>,
     ): FlowCompositionResult<ParagraphFragment> {
-        val lines = candidate.composition.lines
+        val lines = maximumLines?.let(candidate.composition.lines::take) ?: candidate.composition.lines
         val laidOutRange = TextRange(lines.first().range.start, lines.last().range.endExclusive)
-        val continuation = if (candidate.composition.isComplete) {
+        val stoppedInsideRegion =
+            candidate.composition.stoppedByLineLimit || lines.size < candidate.composition.lines.size
+        val publicationIsComplete = candidate.composition.isComplete && !stoppedInsideRegion
+        val continuation = if (publicationIsComplete) {
             null
         } else {
-            val resumesInSameRegion = candidate.composition.stoppedByLineLimit
-            val nextIndex = if (resumesInSameRegion || candidate.regionIndex + 1 >= chain.regions.size) {
+            val nextIndex = if (stoppedInsideRegion || candidate.regionIndex + 1 >= chain.regions.size) {
                 candidate.regionIndex
             } else {
                 candidate.regionIndex + 1
             }
-            val nextOffset = if (resumesInSameRegion || nextIndex == candidate.regionIndex) {
+            val nextOffset = if (stoppedInsideRegion) {
+                candidate.composition.lineBlockEnds[lines.lastIndex]
+            } else if (nextIndex == candidate.regionIndex) {
                 candidate.composition.nextBlockOffset
             } else {
                 0f
@@ -1095,6 +1116,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     private sealed interface RegionComposition {
         data class Success(
             val lines: List<LineLayout>,
+            val lineBlockEnds: List<Float>,
             val nextBlockOffset: Float,
             val isComplete: Boolean,
             val stoppedByLineLimit: Boolean = false,

@@ -534,6 +534,13 @@ public class FlowLayoutCheckpoint private constructor(
     /** Exact logical block-axis cursor at which replay resumes. */
     public val blockCursor: Float = continuation.nextBlockOffset
 
+    /**
+     * Whether the captured UAX #9 structure prevents proving a local text-edit dependency closure.
+     * Such edits must restart at paragraph start rather than reuse this checkpoint.
+     */
+    public val hasNonLocalBidiDependencies: Boolean =
+        continuation.paragraphReplayIdentity?.hasNonLocalBidiDependencies ?: true
+
     /** Compares all captured fragment observables independently of absolute source versions. */
     public fun hasSameObservableLayout(other: FlowLayoutCheckpoint): Boolean = observable == other.observable
 

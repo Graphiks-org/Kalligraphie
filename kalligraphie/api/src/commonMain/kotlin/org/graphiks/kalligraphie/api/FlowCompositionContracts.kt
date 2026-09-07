@@ -271,6 +271,13 @@ public sealed interface FlowCompositionError {
         override val code: String = "layout.flow-incompatible-state"
     }
 
+    /** Caller-supplied flow state fields contradict one another and cannot form a capability. */
+    public data class InvalidState(
+        override val message: String,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-invalid-state"
+    }
+
     /** A region violated deterministic monotone bounded refinement. */
     public data class NonConvergentFlowRegion(
         override val message: String,
@@ -751,6 +758,11 @@ internal class FlowParagraphReplayIdentity private constructor(
     private val lineBreakGraphemeClusters: List<TextRange>,
     private val lineBreakOpportunities: List<LineBreakOpportunity>,
 ) {
+    val hasNonLocalBidiDependencies: Boolean = logicalBidiRuns.let { runs ->
+        val baseLevel = if (paragraph.baseDirection == BaseDirection.LEFT_TO_RIGHT) 0 else 1
+        runs.size != 1 || runs.any { run -> run.level != baseLevel }
+    }
+
     fun hasSameReplayIdentity(other: FlowParagraphReplayIdentity): Boolean =
         paragraph.originalVersion == other.paragraph.originalVersion &&
             paragraph.originalSourceRange == other.paragraph.originalSourceRange &&
@@ -1018,9 +1030,10 @@ public data class FlowLayoutDiagnostics(
  * Resource-free immutable flow state retained between bounded layout requests.
  *
  * Checkpoints carry current structured continuations and observable fragment signatures. The
- * state retains no region, snapshot, backend, resolver, renderer, page, or native handle.
+ * state retains no region, snapshot, backend, resolver, renderer, page, or native handle. Public
+ * callers obtain coherent instances through [create].
  */
-public class FlowLayoutState(
+public class FlowLayoutState private constructor(
     /** Exact text and typography revisions represented by this state. */
     public val inputIdentity: FlowCompositionInputIdentity,
     /** Opaque identity of the chain that produced this state. */
@@ -1040,22 +1053,99 @@ public class FlowLayoutState(
     /** Immutable structured checkpoints ordered by their source boundary. */
     public val checkpoints: List<FlowLayoutCheckpoint> = checkpoints.immutableListSnapshot()
 
-    init {
-        require(coverage.textVersion == inputIdentity.textVersion) {
-            "Flow state coverage must use its input text revision."
-        }
-        require(this.materializedFragments.zipWithNext().all { (left, right) ->
-            left.laidOutRange.endExclusive == right.laidOutRange.start
-        }) {
-            "Flow state materialized fragments must be consecutive."
-        }
-        require(this.checkpoints.zipWithNext().all { (left, right) ->
-            left.laidOutRange.endExclusive <= right.laidOutRange.endExclusive
-        }) {
-            "Flow state checkpoints must be ordered."
-        }
-        require(continuation == null || continuation.remainingSourceRange.start == coverage.range.endExclusive) {
-            "Flow state continuation must begin at the published coverage end."
+    /** Validated construction for portable flow-state capabilities. */
+    public companion object {
+        /**
+         * Creates a state only when coverage, fragments, checkpoints, identities, and continuation
+         * describe one coherent publication. Contradictions return [FlowCompositionError.InvalidState].
+         */
+        public fun create(
+            inputIdentity: FlowCompositionInputIdentity,
+            flowCompositionIdentity: FlowCompositionIdentity,
+            coverage: LayoutCoverage,
+            configuration: FlowLayoutConfigurationSignature,
+            materializedFragments: List<ParagraphFragment>,
+            checkpoints: List<FlowLayoutCheckpoint>,
+            continuation: FlowContinuation?,
+        ): FlowCompositionResult<FlowLayoutState> {
+            val fragments = materializedFragments.immutableListSnapshot()
+            val capturedCheckpoints = checkpoints.immutableListSnapshot()
+            fun invalid(message: String): FlowCompositionResult.Failure =
+                FlowCompositionResult.Failure(FlowCompositionError.InvalidState(message))
+
+            if (fragments.isEmpty()) return invalid("Flow state must retain at least one complete fragment.")
+            if (coverage.textVersion != inputIdentity.textVersion) {
+                return invalid("Flow state coverage must use its input text revision.")
+            }
+            val versionOrigin = TextIndex(inputIdentity.textVersion, 0)
+            if (fragments.any { fragment ->
+                    !fragment.laidOutRange.start.sharesVersionWith(versionOrigin) ||
+                        !fragment.paragraphRange.start.sharesVersionWith(versionOrigin)
+                }
+            ) {
+                return invalid("Every flow state fragment must use its input text revision.")
+            }
+            if (fragments.zipWithNext().any { (left, right) ->
+                    left.laidOutRange.endExclusive != right.laidOutRange.start
+                }
+            ) {
+                return invalid("Flow state materialized fragments must be consecutive.")
+            }
+            val fragmentCoverage = TextRange(
+                fragments.first().laidOutRange.start,
+                fragments.last().laidOutRange.endExclusive,
+            )
+            if (coverage.range != fragmentCoverage) {
+                return invalid("Flow state coverage must equal its complete fragment coverage.")
+            }
+            if (continuation !== fragments.last().continuation) {
+                return invalid("Flow state continuation must be the exact final fragment continuation.")
+            }
+            val tailRange = when (val tail = coverage.tailState) {
+                is LayoutTailState.Invalidated -> tail.range
+                is LayoutTailState.Stable -> tail.range
+                LayoutTailState.MaterializedThroughDocumentEnd -> null
+            }
+            if (continuation == null && tailRange != null) {
+                return invalid("A complete flow state cannot retain an unmaterialized coverage tail.")
+            }
+            if (continuation != null && tailRange != continuation.remainingSourceRange) {
+                return invalid("Flow state coverage tail must equal its continuation remainder.")
+            }
+            if (continuation != null && (
+                    continuation.inputIdentity != inputIdentity ||
+                        continuation.compositionIdentity != flowCompositionIdentity
+                    )
+            ) {
+                return invalid("Flow state continuation identities must equal the state identities.")
+            }
+            if (capturedCheckpoints.zipWithNext().any { (left, right) ->
+                    left.laidOutRange.endExclusive > right.laidOutRange.endExclusive
+                }
+            ) {
+                return invalid("Flow state checkpoints must be ordered.")
+            }
+            if (capturedCheckpoints.any { checkpoint ->
+                    checkpoint.continuation.inputIdentity != inputIdentity ||
+                        checkpoint.continuation.compositionIdentity != flowCompositionIdentity
+                }
+            ) {
+                return invalid("Every flow checkpoint must use the state input and chain identities.")
+            }
+            if (continuation != null && capturedCheckpoints.lastOrNull()?.continuation !== continuation) {
+                return invalid("The final flow checkpoint must carry the published continuation.")
+            }
+            return FlowCompositionResult.Success(
+                FlowLayoutState(
+                    inputIdentity,
+                    flowCompositionIdentity,
+                    coverage,
+                    configuration,
+                    fragments,
+                    capturedCheckpoints,
+                    continuation,
+                ),
+            )
         }
     }
 }

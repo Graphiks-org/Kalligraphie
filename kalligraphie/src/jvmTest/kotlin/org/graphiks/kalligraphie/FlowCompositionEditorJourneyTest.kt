@@ -15,6 +15,7 @@ import org.graphiks.kalligraphie.api.FlowLayoutState
 import org.graphiks.kalligraphie.api.FlowRegion
 import org.graphiks.kalligraphie.api.FlowRegionIdentity
 import org.graphiks.kalligraphie.api.FlowRegionResult
+import org.graphiks.kalligraphie.api.FragmentationConstraints
 import org.graphiks.kalligraphie.api.InlineInterval
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutInput
@@ -231,7 +232,7 @@ class FlowCompositionEditorJourneyTest {
     @Test
     fun middleRegionEditRestartsAfterPreservedEarlierRegions() {
         val source = incrementalRealFontFixture("fi fi fi fi fi")
-        val target = source.withText("fi fi ii fi fi")
+        val target = source.withText("fi fi fx fi fi")
         val queries = MutableList(5) { 0 }
         val chain = horizontalChain(5, queries)
         val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
@@ -241,8 +242,8 @@ class FlowCompositionEditorJourneyTest {
                 target.snapshot,
                 listOf(
                     TextChange(
-                        source.snapshot.incrementalRange(6, 7),
-                        target.snapshot.incrementalRange(6, 7),
+                        source.snapshot.incrementalRange(7, 8),
+                        target.snapshot.incrementalRange(7, 8),
                     ),
                 ),
             ),
@@ -290,6 +291,132 @@ class FlowCompositionEditorJourneyTest {
             matchingFullLines.map { line -> line.allCaretCandidates.map { it.position.index } },
             edited.lines.map { line -> line.allCaretCandidates.map { it.position.index } },
         )
+    }
+
+    @Test
+    fun boundedPublicationDoesNotRelaxSatisfiableKeepTogetherOrMinimumLines() {
+        val fixture = incrementalRealFontFixture("fi fi")
+        val firstBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(100f), LayoutUnit(1_700f), LayoutUnit(1_300f))
+        val secondBounds = LayoutRect(LayoutUnit(100f), LayoutUnit(2_100f), LayoutUnit(1_700f), LayoutUnit(4_500f))
+        val chain = FlowChain(
+            listOf(
+                FixedFlowRegion(firstBounds, listOf(InlineInterval(0f, 1_600f))),
+                FixedFlowRegion(secondBounds, listOf(InlineInterval(0f, 1_600f))),
+            ),
+            FragmentationConstraints(
+                minLinesAtStart = 2,
+                minLinesAtEnd = 2,
+                keepTogether = true,
+            ),
+        )
+
+        val result = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                ),
+            ),
+        )
+
+        assertEquals(secondBounds.top, result.lines.single().lineBox.top)
+        assertEquals(emptyList(), result.fragments.flatMap { fragment -> fragment.diagnostics })
+        val tail = assertNotNull(result.unmaterializedTail)
+        assertEquals(1, tail.regionIndex)
+        assertEquals(1_200f, tail.nextBlockOffset)
+    }
+
+    @Test
+    fun bidiEditAtCheckpointBoundaryInvalidatesToAPrerequisiteIndependentBoundary() {
+        val source = incrementalRealFontFixture("fi fi fi")
+        val target = source.withText("fi \u200Fi fi")
+        val queries = MutableList(4) { 0 }
+        val chain = horizontalChain(4, queries)
+        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(3, 4),
+                        target.snapshot.incrementalRange(3, 4),
+                    ),
+                ),
+            ),
+        ).value
+        val beforeEdit = queries.toList()
+
+        val edited = success(
+            JvmFlowCompositionFacade.layout(
+                request(target, chain, previousState = initial.state, delta = LayoutDelta(text = change)),
+            ),
+        )
+        val full = success(JvmFlowCompositionFacade.layout(request(target, horizontalChain(4))))
+
+        assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
+        assertTrue(edited.diagnostics.usedConservativeInvalidation)
+        assertTrue(queries[0] > beforeEdit[0])
+        assertEquals(full.fragments.map { it.laidOutRange }, edited.fragments.map { it.laidOutRange })
+        assertEquals(full.lines.map(LineLayout::glyphIds), edited.lines.map(LineLayout::glyphIds))
+        assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
+        assertEquals(
+            full.lines.map { line -> line.allCaretCandidates.map { it.position.index } },
+            edited.lines.map { line -> line.allCaretCandidates.map { it.position.index } },
+        )
+    }
+
+    @Test
+    fun earlierCoverageCanBeRequestedAfterPublishingAnEditedMiddleSuffix() {
+        val source = incrementalRealFontFixture("fi fi fi fi fi")
+        val target = source.withText("fi fi fx fi fi")
+        val chain = horizontalChain(5)
+        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(
+                    TextChange(
+                        source.snapshot.incrementalRange(7, 8),
+                        target.snapshot.incrementalRange(7, 8),
+                    ),
+                ),
+            ),
+        ).value
+        val middle = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    requestedRange = target.snapshot.incrementalRange(7, 8),
+                    previousState = initial.state,
+                    delta = LayoutDelta(text = change),
+                ),
+            ),
+        )
+
+        val earlier = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    target,
+                    chain,
+                    requestedRange = target.snapshot.incrementalRange(0, 1),
+                    previousState = middle.state,
+                ),
+            ),
+        )
+        val full = success(
+            JvmFlowCompositionFacade.layout(
+                request(target, horizontalChain(5), requestedRange = target.snapshot.incrementalRange(0, 1)),
+            ),
+        )
+
+        assertEquals(target.snapshot.range.start, earlier.diagnostics.reflowStart)
+        assertEquals(full.fragments.map { it.laidOutRange }, earlier.fragments.map { it.laidOutRange })
+        assertEquals(full.lines.map(LineLayout::glyphIds), earlier.lines.map(LineLayout::glyphIds))
+        assertEquals(full.lines.map(LineLayout::lineBox), earlier.lines.map(LineLayout::lineBox))
     }
 
     @Test
@@ -363,6 +490,35 @@ class FlowCompositionEditorJourneyTest {
         assertEquals(beforeSecond, queries.single())
         assertEquals(first.fragments.map { it.laidOutRange }, second.fragments.map { it.laidOutRange })
         assertEquals(first.lines.map(LineLayout::glyphIds), second.lines.map(LineLayout::glyphIds))
+    }
+
+    @Test
+    fun contradictoryFlowStateIsRejectedAsAPublicBusinessError() {
+        val fixture = incrementalRealFontFixture("fi fi")
+        val chain = horizontalChain(2)
+        val partial = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                ),
+            ),
+        )
+
+        val rejected = assertIs<FlowCompositionResult.Failure>(
+            FlowLayoutState.create(
+                inputIdentity = partial.state.inputIdentity,
+                flowCompositionIdentity = partial.state.flowCompositionIdentity,
+                coverage = partial.coverage,
+                configuration = partial.state.configuration,
+                materializedFragments = partial.fragments,
+                checkpoints = partial.state.checkpoints,
+                continuation = null,
+            ),
+        )
+
+        assertIs<FlowCompositionError.InvalidState>(rejected.error)
     }
 
     @Test

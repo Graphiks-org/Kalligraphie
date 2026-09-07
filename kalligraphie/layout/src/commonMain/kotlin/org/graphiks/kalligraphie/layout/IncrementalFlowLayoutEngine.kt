@@ -87,10 +87,15 @@ public object IncrementalFlowLayoutEngine {
         } else {
             emptyList()
         }
-        val affectedStart = firstAffectedTargetBoundary(request)
-        val restart = if (sameInput) {
-            checkNotNull(previous).continuation?.let {
-                FlowLayoutCheckpoint.capture(previous.materializedFragments.last())
+        val affectedStart = firstAffectedTargetBoundary(request, paragraph, previous)
+        val resumeFromPublishedTail = sameInput && checkNotNull(previous).let { state ->
+            state.continuation != null && request.requestedRange.start >= state.coverage.range.start
+        }
+        val restart = if (sameInput && resumeFromPublishedTail) {
+            FlowLayoutCheckpoint.capture(checkNotNull(previous).materializedFragments.last())
+        } else if (sameInput) {
+            checkNotNull(previous).checkpoints.lastOrNull { checkpoint ->
+                checkpoint.laidOutRange.endExclusive <= request.requestedRange.start
             }
         } else {
             mappedPrevious.lastOrNull { checkpoint -> checkpoint.laidOutRange.endExclusive <= affectedStart }
@@ -101,7 +106,7 @@ public object IncrementalFlowLayoutEngine {
         val carriedCheckpoints = mappedPrevious.takeWhile { checkpoint ->
             checkpoint.laidOutRange.endExclusive <= reflowStart
         }.toMutableList()
-        val fragments = if (sameInput && continuationAtStart != null) {
+        val fragments = if (resumeFromPublishedTail && continuationAtStart != null) {
             checkNotNull(previous).materializedFragments.toMutableList()
         } else {
             mutableListOf()
@@ -216,9 +221,36 @@ public object IncrementalFlowLayoutEngine {
         }
     }
 
-    private fun firstAffectedTargetBoundary(request: IncrementalFlowLayoutRequest): TextIndex {
+    private fun firstAffectedTargetBoundary(
+        request: IncrementalFlowLayoutRequest,
+        paragraph: ParagraphLayoutRequest,
+        previous: FlowLayoutState?,
+    ): TextIndex {
         val candidates = mutableListOf<TextIndex>()
-        request.delta?.text?.changes?.mapTo(candidates) { change -> change.insertedTargetRange.start }
+        val textChanges = request.delta?.text?.changes.orEmpty()
+        if (textChanges.isNotEmpty()) {
+            val baseLevel = if (paragraph.baseDirection == org.graphiks.kalligraphie.api.BaseDirection.LEFT_TO_RIGHT) {
+                0
+            } else {
+                1
+            }
+            val targetHasNonLocalBidiDependencies = paragraph.unicodeAnalysis.logicalBidiRuns.let { runs ->
+                runs.size != 1 || runs.any { run -> run.level != baseLevel }
+            }
+            if (
+                targetHasNonLocalBidiDependencies ||
+                previous?.checkpoints?.any(FlowLayoutCheckpoint::hasNonLocalBidiDependencies) == true
+            ) {
+                return request.input.text.range.start
+            }
+            val editStart = textChanges
+                .map { change -> change.insertedTargetRange.start }
+                .minWith(TextIndex::compareTo)
+            val precedingCluster = paragraph.unicodeAnalysis.graphemeClusters.lastOrNull { cluster ->
+                cluster.start < editStart && cluster.endExclusive <= editStart
+            }
+            candidates += precedingCluster?.start ?: request.input.text.range.start
+        }
         when (val typographyChange = request.delta?.typography?.rangeChange) {
             is RangeChange.Proven -> typographyChange.targetRanges.mapTo(candidates, TextRange::start)
             RangeChange.FullInvalidation -> candidates += request.input.text.range.start
@@ -286,15 +318,20 @@ public object IncrementalFlowLayoutEngine {
             is LayoutContractResult.Success -> created.value
             is LayoutContractResult.Failure -> return incompatible(created.error.message)
         }
-        val state = FlowLayoutState(
-            inputIdentity,
-            request.flowChain.compositionIdentity,
-            coverage,
-            configuration,
-            fragments,
-            checkpoints,
-            tail,
-        )
+        val state = when (
+            val created = FlowLayoutState.create(
+                inputIdentity,
+                request.flowChain.compositionIdentity,
+                coverage,
+                configuration,
+                fragments,
+                checkpoints,
+                tail,
+            )
+        ) {
+            is FlowCompositionResult.Success -> created.value
+            is FlowCompositionResult.Failure -> return created
+        }
         return FlowCompositionResult.Success(
             FlowLayout(
                 inputIdentity,
