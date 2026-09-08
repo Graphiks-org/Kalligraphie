@@ -2107,6 +2107,7 @@ private class FinalParagraphLayout(
 internal fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
     is EditableLineError.InvalidInput -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.GeometryOverflow -> ParagraphLayoutError.GeometryOverflow(message)
+    is EditableLineError.UnicodeAnalysisLimitExceeded -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.FontMaterializationFailure -> ParagraphLayoutError.FontFailure(fontError)
     is EditableLineError.ShapingFailure -> ParagraphLayoutError.FontFailure(fontError)
     is EditableLineError.FontResolutionFailure -> ParagraphLayoutError.FontFailure(fontError)
