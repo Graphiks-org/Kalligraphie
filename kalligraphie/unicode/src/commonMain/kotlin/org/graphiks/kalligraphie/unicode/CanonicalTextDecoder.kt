@@ -1,8 +1,12 @@
 package org.graphiks.kalligraphie.unicode
 
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.SourceOffset
 import org.graphiks.kalligraphie.api.SourceEncoding
 import org.graphiks.kalligraphie.api.SourceRange
+import org.graphiks.kalligraphie.api.TextDecodingLimit
+import org.graphiks.kalligraphie.api.TextDecodingOutcome
+import org.graphiks.kalligraphie.api.TextDecodingProfile
 import org.graphiks.kalligraphie.api.TextDecodingResult
 import org.graphiks.kalligraphie.api.TextDiagnostic
 import org.graphiks.kalligraphie.api.TextSlice
@@ -17,14 +21,41 @@ public object TextSnapshots {
      * Ill-formed input contributes one U+FFFD scalar and one diagnostic for each
      * Unicode maximal subpart.
      */
-    public fun decodeUtf8(version: TextVersion, slices: List<TextSlice.Utf8>): TextDecodingResult {
-        val bytes = joinUtf8Slices(slices)
+    public fun decodeUtf8(version: TextVersion, slices: List<TextSlice.Utf8>): TextDecodingResult =
+        requireComplete(decodeUtf8(version, slices, TextDecodingProfile.unbounded, CancellationToken.none))
+
+    /**
+     * Decodes UTF-8 slices while enforcing [profile] and observing [cancellationToken].
+     *
+     * A limit failure or cancellation discards every provisional scalar and diagnostic: callers
+     * receive no partial snapshot. Source-unit limits are checked before a joined decoder buffer
+     * is allocated; scalar limits are checked before the next scalar is published.
+     */
+    public fun decodeUtf8(
+        version: TextVersion,
+        slices: List<TextSlice.Utf8>,
+        profile: TextDecodingProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): TextDecodingOutcome {
+        val capturedSlices = slices.toList()
+        sourceUnitLimit(capturedSlices.map(TextSlice.Utf8::size), profile)?.let { observed ->
+            return TextDecodingOutcome.LimitExceeded(TextDecodingLimit.SOURCE_UNITS, observed)
+        }
+        if (cancellationToken.isCancellationRequested()) return TextDecodingOutcome.Cancelled
+        val bytes = joinUtf8Slices(capturedSlices)
         val scalars = mutableListOf<Int>()
         val sourceRanges = mutableListOf<SourceRange>()
         val diagnostics = mutableListOf<TextDiagnostic>()
         var offset = 0
         while (offset < bytes.size) {
+            if (scalars.size % profile.cancellationCheckInterval == 0 && cancellationToken.isCancellationRequested()) {
+                return TextDecodingOutcome.Cancelled
+            }
             val decoded = decodeUtf8Scalar(bytes, offset)
+            val scalarCount = scalars.size.toLong() + 1
+            if (scalarCount > profile.maxScalars) {
+                return TextDecodingOutcome.LimitExceeded(TextDecodingLimit.SCALARS, scalarCount)
+            }
             val range = sourceRange(version, SourceEncoding.UTF8, offset, offset + decoded.length)
             scalars += decoded.scalar
             sourceRanges += range
@@ -37,7 +68,9 @@ public object TextSnapshots {
             }
             offset += decoded.length
         }
-        return TextDecodingResult(TextSnapshot(version, SourceEncoding.UTF8, scalars, sourceRanges), diagnostics)
+        return TextDecodingOutcome.Success(
+            TextDecodingResult(TextSnapshot(version, SourceEncoding.UTF8, scalars, sourceRanges), diagnostics),
+        )
     }
 
     /**
@@ -46,18 +79,45 @@ public object TextSnapshots {
      * Each unpaired surrogate contributes one U+FFFD scalar and a diagnostic
      * retaining its source range.
      */
-    public fun decodeUtf16(version: TextVersion, slices: List<TextSlice.Utf16>): TextDecodingResult {
-        val codeUnits = joinUtf16Slices(slices)
+    public fun decodeUtf16(version: TextVersion, slices: List<TextSlice.Utf16>): TextDecodingResult =
+        requireComplete(decodeUtf16(version, slices, TextDecodingProfile.unbounded, CancellationToken.none))
+
+    /**
+     * Decodes UTF-16 slices while enforcing [profile] and observing [cancellationToken].
+     *
+     * A limit failure or cancellation discards every provisional scalar and diagnostic: callers
+     * receive no partial snapshot. Source-unit limits are checked before a joined decoder buffer
+     * is allocated; scalar limits are checked before the next scalar is published.
+     */
+    public fun decodeUtf16(
+        version: TextVersion,
+        slices: List<TextSlice.Utf16>,
+        profile: TextDecodingProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): TextDecodingOutcome {
+        val capturedSlices = slices.toList()
+        sourceUnitLimit(capturedSlices.map(TextSlice.Utf16::size), profile)?.let { observed ->
+            return TextDecodingOutcome.LimitExceeded(TextDecodingLimit.SOURCE_UNITS, observed)
+        }
+        if (cancellationToken.isCancellationRequested()) return TextDecodingOutcome.Cancelled
+        val codeUnits = joinUtf16Slices(capturedSlices)
         val scalars = mutableListOf<Int>()
         val sourceRanges = mutableListOf<SourceRange>()
         val diagnostics = mutableListOf<TextDiagnostic>()
         var offset = 0
         while (offset < codeUnits.size) {
+            if (scalars.size % profile.cancellationCheckInterval == 0 && cancellationToken.isCancellationRequested()) {
+                return TextDecodingOutcome.Cancelled
+            }
             val first = codeUnits[offset].code
             val hasPair = first in HIGH_SURROGATE_RANGE &&
                 offset + 1 < codeUnits.size &&
                 codeUnits[offset + 1].code in LOW_SURROGATE_RANGE
             val length = if (hasPair) 2 else 1
+            val scalarCount = scalars.size.toLong() + 1
+            if (scalarCount > profile.maxScalars) {
+                return TextDecodingOutcome.LimitExceeded(TextDecodingLimit.SCALARS, scalarCount)
+            }
             val range = sourceRange(version, SourceEncoding.UTF16, offset, offset + length)
             when {
                 hasPair -> {
@@ -80,8 +140,26 @@ public object TextSnapshots {
             sourceRanges += range
             offset += length
         }
-        return TextDecodingResult(TextSnapshot(version, SourceEncoding.UTF16, scalars, sourceRanges), diagnostics)
+        return TextDecodingOutcome.Success(
+            TextDecodingResult(TextSnapshot(version, SourceEncoding.UTF16, scalars, sourceRanges), diagnostics),
+        )
     }
+}
+
+private fun requireComplete(outcome: TextDecodingOutcome): TextDecodingResult = when (outcome) {
+    is TextDecodingOutcome.Success -> outcome.value
+    is TextDecodingOutcome.LimitExceeded -> error("The unbounded decoder exceeded ${outcome.limit}.")
+    TextDecodingOutcome.Cancelled -> error("The non-cancellable decoder was cancelled.")
+}
+
+private fun sourceUnitLimit(sizes: List<Int>, profile: TextDecodingProfile): Long? {
+    var total = 0L
+    val maximum = profile.maxSourceUnits.toLong()
+    sizes.forEach { size ->
+        total += size.toLong()
+        if (total > maximum) return total
+    }
+    return null
 }
 
 private data class DecodedUtf8Scalar(
