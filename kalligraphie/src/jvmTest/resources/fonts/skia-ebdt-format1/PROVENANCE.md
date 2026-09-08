@@ -1,37 +1,30 @@
-# Provenance du jeu de données de test Skia EBDT format 1
+# Skia EBDT Format 1 Fixture Provenance
 
-- Fichier : `ebdt_fmt1.ttf`.
-- Source immuable : dépôt
-  [`google/skia`](https://chromium.googlesource.com/skia/), commit
-  `4b24321eb36cac92020d8154307de78ecf1d1e50`,
+- File: `ebdt_fmt1.ttf`.
+- Immutable source: [`google/skia`](https://chromium.googlesource.com/skia/)
+  repository, commit `4b24321eb36cac92020d8154307de78ecf1d1e50`,
   `resources/fonts/ebdt_fmt1.ttf`.
-- URL de téléchargement figée :
+- Pinned download URL:
   `https://chromium.googlesource.com/skia/+/4b24321eb36cac92020d8154307de78ecf1d1e50/resources/fonts/ebdt_fmt1.ttf?format=TEXT`.
-- Empreinte SHA-256 :
+- SHA-256 digest:
   `e99cebed4d9421bc89964b9dc6a3bedfc6a286029d64336a07844708cce76274`.
-- Licence : BSD-3-Clause ; voir `LICENSE.md`.
-- Format déclaré par cette fixture : TrueType avec `EBLC` version 2.0 et `EBDT`
-  version 2.0, index-subtable format 1, image format 1, profondeur d'un bit.
+- License: BSD-3-Clause; see `LICENSE.md`.
+- Structurally verified format: TrueType with EBLC version 2.0 and EBDT
+  version 2.0, index-subtable format 1, image format 1, and one-bit depth.
 
-## Oracle indépendant
+## Independent oracle
 
-L'oracle décrit la table EBDT, pas une sortie de l'implémentation testée :
+The oracle describes the EBDT table, not output from the implementation under
+test:
 
-- `cmap` associe U+1F600 au glyph ID 3 ;
-- le strike exact 16 × 16 fournit une image de 13 × 13 pixels, origine `(0,13)`
-  et avance horizontale 12 ;
-- ses treize lignes de masque alpha sont
-  `.............`, `....#####....`, `..#########..`, `.##########..`,
-  `.###########.`, `.###########.`, `############.`, `.###########.`,
-  `.###########.`, `.###########.`, `..#########..`, `...#######...`,
-  `.....##......`.
+- `cmap` maps `U+1F600` to glyph ID 3;
+- the exact 16 × 16 strike provides a 13 × 13 pixel image with origin `(0,13)`
+  and horizontal advance 12;
+- its thirteen alpha-mask rows are `.............`, `....#####....`,
+  `..#########..`, `.##########..`, `.###########.`, `.###########.`,
+  `############.`, `.###########.`, `.###########.`, `.###########.`,
+  `..#########..`, `...#######...`, and `.....##......`.
 
-Les valeurs ont été lues hors de l'implémentation testée avec un lecteur
-structurel indépendant basé sur Python 3.14.7 et `struct` (entiers big-endian),
-puis contrôlées contre les octets EBDT au moyen de `xxd` 2025-01-14.
-
-## Validation humaine
-
-Un mainteneur a vérifié la provenance, la licence, l’empreinte et l’oracle
-attendu de cette fixture, puis a validé son utilisation comme référence de
-test. Cette revue reste indépendante du décodeur bitmap de Kalligraphie.
+The values were read independently of the implementation under test with a
+Python 3.14.7 structural reader based on `struct` (big-endian integers), then
+checked against the EBDT bytes with `xxd` 2025-01-14.

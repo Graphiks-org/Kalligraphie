@@ -1,36 +1,30 @@
-# Provenance de la fixture Bungee Color
+# Bungee Color Fixture Provenance
 
-- Fichier : `BungeeColor-Regular.ttf`.
-- Source immuable : dépôt
-  [`google/fonts`](https://github.com/google/fonts), commit
-  `5e35378e6bda803962ee6fd257e444a7d459660d`,
+- File: `BungeeColor-Regular.ttf`.
+- Immutable source: [`google/fonts`](https://github.com/google/fonts) repository,
+  commit `5e35378e6bda803962ee6fd257e444a7d459660d`,
   `ofl/bungeecolor/BungeeColor-Regular.ttf`.
-- URL de téléchargement figée :
+- Pinned download URL:
   `https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/bungeecolor/BungeeColor-Regular.ttf`.
-- Empreinte SHA-256 :
+- SHA-256 digest:
   `cf21a786e54f43694f4edbb51a38f81331a4c3414217c524c8cb2d091aa7fd63`.
-- Licence : SIL Open Font License 1.1 ; copyright The Bungee Project Authors,
-  David Jonathan Ross, conformément à `OFL.txt` du dépôt source.
-- Format vérifié structurellement : TrueType avec `COLR` version 0 et `CPAL`
-  version 0, neuf palettes de deux entrées.
+- License: SIL Open Font License 1.1; copyright The Bungee Project Authors and
+  David Jonathan Ross, as specified by `OFL.txt` in the source repository.
+- Structurally verified format: TrueType with COLR version 0 and CPAL version
+  0, with nine palettes of two entries.
 
-## Oracle indépendant
+## Independent oracle
 
-L'oracle a été extrait avant l'ajout du test par un lecteur structural Python
-3.14.7 (`struct`, entiers big-endian), sans appeler l'implémentation testée :
+Before the test was added, the oracle was extracted by a Python 3.14.7
+structural reader (`struct`, big-endian integers) without calling the
+implementation under test:
 
-- `cmap` associe `U+0041` à glyph ID 43 ;
-- le record COLR 43 référence les records de couche 86 et 87, dans cet ordre,
-  pour les glyph IDs 292 et 293 avec les indices CPAL 0 et 1 ;
-- la palette CPAL 0 donne les RGBA `(201,9,0,255)` et `(255,149,128,255)` ;
-- la palette CPAL 1 donne les RGBA `(255,255,255,255)` et
+- `cmap` maps `U+0041` to glyph ID 43;
+- COLR record 43 references layer records 86 and 87, in that order, for glyph
+  IDs 292 and 293 with CPAL indices 0 and 1;
+- CPAL palette 0 contains RGBA `(201,9,0,255)` and `(255,149,128,255)`;
+- CPAL palette 1 contains RGBA `(255,255,255,255)` and
   `(232,232,231,255)`.
 
-Les données sont recoupées avec les tables publiées dans la révision figée de
-Google Fonts.
-
-## Validation humaine
-
-Un mainteneur a vérifié la provenance, la licence, l’empreinte et l’oracle
-attendu de cette fixture, puis a validé son utilisation comme référence de
-test. Cette revue est indépendante de l’implémentation Kalligraphie.
+The values are cross-checked against the tables published in the pinned Google
+Fonts revision.
