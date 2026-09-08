@@ -90,15 +90,69 @@ public data class FontFaceMetadata(
 public class FontAccessRequirementsSnapshot private constructor(
     /** Requested access mode. */
     public val mode: Mode,
-    /** Outline representation constraints, when rendering is requested. */
-    public val outlineProfile: OutlineProfile?,
+    acceptedProfiles: List<GlyphRepresentationProfile>,
+    /** Whether a native-only route is forbidden for this request. */
+    public val portableDataRequired: Boolean,
 ) {
+    /**
+     * Ordered immutable profiles eligible for materialization.
+     *
+     * Native profiles supplied alongside [portableDataRequired] are excluded before providers
+     * observe this list, so a portable-data request cannot be satisfied by a native route ahead
+     * of a portable alternative. The relative order of the remaining profiles is preserved.
+     */
+    public val acceptedProfiles: List<GlyphRepresentationProfile> =
+        acceptedProfiles
+            .filter { profile -> !portableDataRequired || profile !is NativeHandleProfile }
+            .immutableListSnapshot()
+
+    /** First accepted outline profile, retained for compatibility with outline-only consumers. */
+    public val outlineProfile: OutlineProfile? = this.acceptedProfiles.filterIsInstance<OutlineProfile>().firstOrNull()
+
+    init {
+        when (mode) {
+            Mode.LAYOUT_ONLY -> require(this.acceptedProfiles.isEmpty()) {
+                "LAYOUT_ONLY requirements must not accept a render profile."
+            }
+
+            Mode.RENDERABLE -> require(this.acceptedProfiles.isNotEmpty()) {
+                "RENDERABLE requirements must accept at least one render profile."
+            }
+        }
+        require(!portableDataRequired || this.acceptedProfiles.any { it !is NativeHandleProfile }) {
+            "portableDataRequired cannot be satisfied by native-only profiles."
+        }
+    }
+
+    /**
+     * Compares the complete immutable requirement value rather than its allocation identity.
+     *
+     * This lets continuation and cache identities distinguish a changed ordered profile set,
+     * while independently reconstructed equal requirements remain replay-compatible.
+     */
+    override fun equals(other: Any?): Boolean =
+        other is FontAccessRequirementsSnapshot &&
+            mode == other.mode &&
+            acceptedProfiles == other.acceptedProfiles &&
+            portableDataRequired == other.portableDataRequired
+
+    /** Hash code for the complete immutable requirement value. */
+    override fun hashCode(): Int {
+        var result = mode.hashCode()
+        result = 31 * result + acceptedProfiles.hashCode()
+        return 31 * result + portableDataRequired.hashCode()
+    }
+
+    /** Human-readable complete immutable requirement value. */
+    override fun toString(): String =
+        "FontAccessRequirementsSnapshot(mode=$mode, acceptedProfiles=$acceptedProfiles, portableDataRequired=$portableDataRequired)"
+
     /** Supported levels of font access. */
     public enum class Mode {
         /** Metrics and glyph mapping only. */
         LAYOUT_ONLY,
 
-        /** Metrics, glyph mapping, and outlines. */
+        /** Metrics, glyph mapping, and one selected certified glyph representation route. */
         RENDERABLE,
     }
 
@@ -106,18 +160,65 @@ public class FontAccessRequirementsSnapshot private constructor(
     public companion object {
         /** Creates requirements for layout-only access. */
         public fun layoutOnly(): FontAccessRequirementsSnapshot =
-            FontAccessRequirementsSnapshot(Mode.LAYOUT_ONLY, null)
+            FontAccessRequirementsSnapshot(Mode.LAYOUT_ONLY, emptyList(), false)
 
         /** Creates requirements for bounded outline access. */
         public fun renderable(outlineProfile: OutlineProfile): FontAccessRequirementsSnapshot =
-            FontAccessRequirementsSnapshot(Mode.RENDERABLE, outlineProfile)
+            renderable(listOf(outlineProfile))
+
+        /**
+         * Creates requirements for explicitly ordered render profiles.
+         *
+         * The order expresses consumer preference only. It never authorizes a less faithful
+         * profile merely because an operation is cancelled or takes longer than expected.
+         */
+        public fun renderable(
+            acceptedProfiles: List<GlyphRepresentationProfile>,
+            portableDataRequired: Boolean = false,
+        ): FontAccessRequirementsSnapshot =
+            FontAccessRequirementsSnapshot(Mode.RENDERABLE, acceptedProfiles, portableDataRequired)
+    }
+}
+
+/**
+ * One versioned glyph-materialization profile accepted by a consumer.
+ *
+ * Implementations are immutable value snapshots. A provider may select only a profile declared
+ * in [FontAccessRequirementsSnapshot.acceptedProfiles], and must reject a route that exceeds its
+ * associated limits before publishing a certificate.
+ */
+public sealed interface GlyphRepresentationProfile {
+    /** Version of the representation schema understood by the consumer. */
+    public val schemaVersion: Int
+}
+
+/**
+ * Explicit permission to borrow one platform-native materialization route.
+ *
+ * This profile carries only stable bridge metadata; it never exposes a platform object from the
+ * common API. A request with [FontAccessRequirementsSnapshot.portableDataRequired] removes every
+ * native profile before provider negotiation, so a native-only list becomes invalid and native
+ * profiles never take precedence over portable alternatives.
+ */
+public data class NativeHandleProfile(
+    /** Stable kind of the platform bridge, such as a platform-font bridge. */
+    public val bridgeKind: String,
+    /** Version of the platform bridge contract. */
+    public val bridgeVersion: String,
+    /** Version of the common native-route schema. */
+    override val schemaVersion: Int = 1,
+) : GlyphRepresentationProfile {
+    init {
+        require(bridgeKind.isNotBlank()) { "bridgeKind must not be blank." }
+        require(bridgeVersion.isNotBlank()) { "bridgeVersion must not be blank." }
+        require(schemaVersion > 0) { "schemaVersion must be positive." }
     }
 }
 
 /** Resource and geometry limits applied while materializing outlines. */
 public data class OutlineProfile(
     /** Version of the outline representation contract. */
-    public val schemaVersion: Int = 1,
+    public override val schemaVersion: Int = 1,
     /** Maximum number of bytes that may be materialized. */
     public val maxBytes: Int,
     /** Maximum number of contours in one outline. */
@@ -128,7 +229,7 @@ public data class OutlineProfile(
     public val maxCompositeDepth: Int,
     /** Maximum number of composite components in one outline. */
     public val maxCompositeComponents: Int,
-) {
+) : GlyphRepresentationProfile {
     init {
         require(schemaVersion > 0) { "schemaVersion must be positive." }
         require(maxBytes > 0) { "maxBytes must be positive." }
@@ -156,23 +257,104 @@ public data class FontRenderVariantKey(
 }
 
 /**
- * Portable identity of one acquired render asset.
+ * Content-based identity of one acquired render asset, independent of a provider generation.
  *
- * The key binds the exact catalog generation, font instance, render variant, and immutable
- * outline profile used by an asset. It owns only portable values, carries no native handle, and
- * is safe to retain or share between threads after the corresponding asset has been closed. A
- * key does not keep the catalog, resolver, or asset resource alive.
+ * For a portable [FontSourceId], equal source content, instance geometry, variant, and profile
+ * produce equal identities across independently captured catalog generations. For an opaque
+ * source, the provider domain and source token already carried by [FontInstanceKey] remain part
+ * of equality, so independent providers cannot collide. This value is safe for semantic caches
+ * but is not a locator: reopening still requires the generation-bound [FontRenderAssetKey] and a
+ * live matching resolver.
+ */
+public data class FontRenderAssetSemanticIdentity(
+    /** Exact font instance whose content and geometric interpretation are materialized. */
+    public val fontInstanceKey: FontInstanceKey,
+    /** Geometry-neutral visual variant selected for the materialized payload. */
+    public val variant: FontRenderVariantKey,
+    /** Immutable representation profile that constrains the materialized payload. */
+    public val representationProfile: GlyphRepresentationProfile,
+    /** Complete variant context when a non-default variant needs it for semantic equality. */
+    public val variantSnapshot: FontRenderVariantSnapshot? = null,
+) {
+    init {
+        require(variantSnapshot == null || variantSnapshot.key == variant) {
+            "Render-variant snapshot must match the asset variant key."
+        }
+        require(variant != FontRenderVariantKey.default || variantSnapshot == null) {
+            "The default render variant must not retain redundant snapshot context."
+        }
+    }
+}
+
+/**
+ * Generation-bound reopening context of one acquired render asset.
+ *
+ * [semanticIdentity] supplies the content-based identity suitable for portable semantic caches;
+ * [generation] supplies the provider domain and immutable snapshot required for reopening. This
+ * key owns only immutable values, carries no native handle, and is safe to retain after the asset
+ * closes, but it does not keep a resolver, catalogue, or resource alive.
  */
 public data class FontRenderAssetKey(
     /** Exact font instance served by the asset. */
     public val fontInstanceKey: FontInstanceKey,
     /** Render variant selected when the asset was acquired. */
     public val variant: FontRenderVariantKey,
-    /** Outline representation profile enforced by the asset. */
-    public val outlineProfile: OutlineProfile,
+    /** Immutable representation profile enforced by the asset. */
+    public val representationProfile: GlyphRepresentationProfile,
     /** Exact immutable catalogue generation through which this asset is reopenable. */
     public val generation: FontCatalogGeneration,
-)
+    /**
+     * Full visual selection required to reopen a non-default render variant.
+     *
+     * A `null` value denotes the canonical default snapshot only when [variant] is the default.
+     * A non-default key without this context remains a valid identity but is not a universal
+     * locator: a resolver must reject its reopening rather than infer a palette or foreground
+     * color from an opaque key string. Provider-created non-default assets retain this snapshot.
+     */
+    public val variantSnapshot: FontRenderVariantSnapshot? = null,
+) {
+    init {
+        require(variantSnapshot == null || variantSnapshot.key == variant) {
+            "Render-variant snapshot must match the asset variant key."
+        }
+        require(variant != FontRenderVariantKey.default || variantSnapshot == null) {
+            "The default render variant must not retain redundant snapshot context."
+        }
+    }
+
+    /**
+     * Content-based identity without [generation].
+     *
+     * This value is recreated from immutable fields and therefore does not retain an asset or
+     * provider resource. Use this value, rather than this reopening key, when sharing portable
+     * cache entries across equal catalog generations.
+     */
+    public val semanticIdentity: FontRenderAssetSemanticIdentity
+        get() = FontRenderAssetSemanticIdentity(
+            fontInstanceKey = fontInstanceKey,
+            variant = variant,
+            representationProfile = representationProfile,
+            variantSnapshot = variantSnapshot,
+        )
+
+    /**
+     * Outline profile enforced by this asset, or `null` when its selected representation is not
+     * an outline. Callers must not substitute a different profile when this value is absent.
+     */
+    public val outlineProfile: OutlineProfile?
+        get() = representationProfile as? OutlineProfile
+
+    /**
+     * Creates an outline asset key using the compatibility constructor retained for existing
+     * outline-only consumers.
+     */
+    public constructor(
+        fontInstanceKey: FontInstanceKey,
+        variant: FontRenderVariantKey,
+        outlineProfile: OutlineProfile,
+        generation: FontCatalogGeneration,
+    ) : this(fontInstanceKey, variant, outlineProfile as GlyphRepresentationProfile, generation)
+}
 
 /** Selects a glyph by its numeric identifier. */
 public data class FontGlyphRequest(
@@ -251,7 +433,7 @@ public interface FontAssetResolverHandle {
  * successful detached handle and must close both handles independently.
  */
 public interface FontRenderAssetHandle {
-    /** Portable identity of this exact instance, variant, and outline profile. */
+    /** Portable identity of this exact instance, variant, and representation profile. */
     public val key: FontRenderAssetKey
 
     /** Identifier of the face served by this asset. */
@@ -271,9 +453,11 @@ public interface FontRenderAssetHandle {
      * Resolves [request] to a glyph representation.
      *
      * The operation is read-only and may be invoked concurrently. It returns
-     * [FontError.GlyphOutOfRange] for an unknown glyph, a representation or
-     * resource-limit failure when the requested output cannot be produced, and
-     * [FontError.ResourceClosed] after the handle's close linearization point.
+     * [FontError.GlyphOutOfRange] for an unknown glyph,
+     * [FontError.GlyphRepresentationUnavailable] when an accepted route has no data for an
+     * in-range glyph, a representation or resource-limit failure when the requested output
+     * cannot be produced, and [FontError.ResourceClosed] after the handle's close linearization
+     * point.
      */
     public fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation>
 
@@ -395,6 +579,25 @@ public interface FontInstance {
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontRenderAssetHandle> =
         unsupportedContractOperation("This font instance does not support render assets.")
+
+    /**
+     * Acquires a render asset using the full geometry-neutral [renderVariant] snapshot.
+     *
+     * The default implementation preserves the legacy key-only route. Providers that support
+     * palette selection or foreground-color substitution override this operation and must bind
+     * every visual selection into the returned asset key. The snapshot is copied by value and
+     * does not alter shaping, advances, line breaking, or carets.
+     *
+     * @param resolver live resolver for the exact provider generation.
+     * @param renderVariant palette and foreground selection used for materialization.
+     * @param requirements ordered representation profiles and mandatory resource bounds.
+     * @return an owned asset, or a typed requirement, lifecycle, or provider-generation failure.
+     */
+    public fun acquireRenderAsset(
+        resolver: FontAssetResolverHandle,
+        renderVariant: FontRenderVariantSnapshot,
+        requirements: FontAccessRequirementsSnapshot,
+    ): FontOperationResult<FontRenderAssetHandle> = acquireRenderAsset(resolver, renderVariant.key, requirements)
 }
 
 /**
@@ -474,13 +677,30 @@ public data class VerticalGlyphMetrics(
 
 /** Representation returned for a resolved glyph. */
 public sealed interface GlyphRepresentation {
-    /** Represents a glyph without materialized outline data. */
+    /**
+     * Represents a glyph certified to have no paintable ink on the selected route.
+     *
+     * This is never used as a substitute for missing, unsupported, or invalid representation
+     * data; those conditions return a typed [FontError] instead.
+     */
     public data object Empty : GlyphRepresentation
 
     /** Represents a glyph with a materialized outline. */
     public data class Outline(
         /** Materialized outline intermediate representation. */
         public val outline: GlyphOutlineIR,
+    ) : GlyphRepresentation
+
+    /** Represents a glyph with a complete portable paint graph. */
+    public data class Paint(
+        /** Materialized paint-graph intermediate representation. */
+        public val paint: GlyphPaintIR,
+    ) : GlyphRepresentation
+
+    /** Represents a glyph with decoded portable bitmap pixels. */
+    public data class Bitmap(
+        /** Materialized bitmap intermediate representation. */
+        public val bitmap: BitmapGlyphIR,
     ) : GlyphRepresentation
 }
 

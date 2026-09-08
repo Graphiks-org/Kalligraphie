@@ -244,12 +244,21 @@ public enum class GlyphMaterializationRoute {
     /** The final glyph was validated as an outline accepted by the requested profile. */
     OUTLINE,
 
+    /** The final glyph was validated as a complete portable paint graph. */
+    PAINT_GRAPH,
+
+    /** The final glyph was validated as decoded portable bitmap pixels. */
+    BITMAP,
+
+    /** The final glyph was validated for an explicitly negotiated native bridge. */
+    NATIVE_HANDLE,
+
     /** The final glyph was validated as a glyph without ink. */
     EMPTY,
 }
 
 /**
- * Immutable record that one final positioned glyph passed the requested outline route.
+ * Immutable record that one final positioned glyph passed one exact materialization route.
  *
  * A certificate contains no render asset, outline payload, native handle, or borrowed resource.
  * Its validity is limited to the exact [assetKey] and [glyphId] synchronously inspected while
@@ -257,13 +266,49 @@ public enum class GlyphMaterializationRoute {
  * constructor is not a cryptographic authenticity mechanism for manually constructed values.
  */
 public data class GlyphMaterializationCertificate(
-    /** Exact font instance, variant, and outline profile used for validation. */
+    /** Exact font instance, variant, and representation profile used for validation. */
     public val assetKey: FontRenderAssetKey,
     /** Final glyph identifier whose route was validated. */
     public val glyphId: GlyphId,
     /** Successfully validated route. */
     public val route: GlyphMaterializationRoute,
-)
+    /** Version of the selected representation-profile schema. */
+    public val representationSchemaVersion: Int = assetKey.representationProfile.schemaVersion,
+) {
+    init {
+        require(representationSchemaVersion > 0) { "representationSchemaVersion must be positive." }
+        require(representationSchemaVersion == assetKey.representationProfile.schemaVersion) {
+            "Certificate schema version must match its asset profile."
+        }
+        when (route) {
+            GlyphMaterializationRoute.OUTLINE -> require(assetKey.representationProfile is OutlineProfile) {
+                "An outline certificate requires an outline profile."
+            }
+            GlyphMaterializationRoute.PAINT_GRAPH -> require(assetKey.representationProfile is PaintGraphProfile) {
+                "A paint-graph certificate requires a paint-graph profile."
+            }
+            GlyphMaterializationRoute.BITMAP -> require(assetKey.representationProfile is BitmapProfile) {
+                "A bitmap certificate requires a bitmap profile."
+            }
+            GlyphMaterializationRoute.NATIVE_HANDLE -> require(assetKey.representationProfile is NativeHandleProfile) {
+                "A native-handle certificate requires a native-handle profile."
+            }
+            GlyphMaterializationRoute.EMPTY -> Unit
+        }
+    }
+
+    /**
+     * Returns whether this certificate still covers [candidateGlyphId] from [candidateAssetKey].
+     *
+     * Equality is exact: the asset key includes the font instance, render variant, profile, and
+     * catalog generation. Callers must recertify rather than reuse this value after any of those
+     * inputs changes.
+     */
+    public fun matches(
+        candidateAssetKey: FontRenderAssetKey,
+        candidateGlyphId: GlyphId,
+    ): Boolean = assetKey == candidateAssetKey && glyphId == candidateGlyphId
+}
 
 /**
  * Final placement of one shaped glyph with direct source-cluster relationships.
@@ -284,7 +329,7 @@ public class PositionedGlyph(
     public val transform: LayoutAffineTransform = LayoutAffineTransform.identity,
     /** Exact render asset key in renderable mode, or `null` in layout-only mode. */
     public val renderAssetKey: FontRenderAssetKey?,
-    /** Trusted outline-route validation record in renderable mode, or `null` in layout-only mode. */
+    /** Trusted representation-route validation record in renderable mode, or `null` in layout-only mode. */
     public val materializationCertificate: GlyphMaterializationCertificate?,
     /**
      * Typed provenance of this final glyph.
@@ -592,7 +637,7 @@ public sealed interface EditableLineResult {
 }
 
 /**
- * Selects whether a line is positioned only or synchronously proven renderable as outlines.
+ * Selects whether a line is positioned only or synchronously proven materializable.
  *
  * [Renderable] borrows its resolver. The layouter neither closes nor retains that resolver;
  * callers retain ownership and must keep it open for the duration of the synchronous call.
@@ -601,15 +646,55 @@ public sealed interface EditableLineMaterialization {
     /** Position geometry, carets, selection, and hit-testing without acquiring a font asset. */
     public data object LayoutOnly : EditableLineMaterialization
 
-    /** Acquire a temporary render asset and validate every final glyph through the outline route. */
+    /**
+     * Acquires temporary render assets and validates every final glyph through one selected
+     * profile accepted by [requirements].
+     *
+     * The asset provider chooses the first route it can certify in the declared profile order.
+     * A successful line retains only certificates and asset keys; it never retains an asset,
+     * resolver, native handle, or paint/bitmap payload.
+     */
     public class Renderable(
         /** Borrowed resolver used only during the synchronous layout call. */
         public val resolver: FontAssetResolverHandle,
-        /** Explicit font render variant to validate. */
-        public val variant: FontRenderVariantKey,
-        /** Bounded outline profile required for every non-empty final glyph. */
-        public val outlineProfile: OutlineProfile,
-    ) : EditableLineMaterialization
+        /** Exact geometry-neutral visual variant to validate and record in every certificate. */
+        public val renderVariant: FontRenderVariantSnapshot,
+        /** Ordered immutable representation requirements enforced for every final glyph. */
+        public val requirements: FontAccessRequirementsSnapshot,
+    ) : EditableLineMaterialization {
+        /** Stable key of [renderVariant], retained for code that only needs identity. */
+        public val variant: FontRenderVariantKey
+            get() = renderVariant.key
+
+        init {
+            require(requirements.mode == FontAccessRequirementsSnapshot.Mode.RENDERABLE) {
+                "Renderable line materialization requires RENDERABLE font access requirements."
+            }
+        }
+
+        /**
+         * Compatibility constructor for a default-variant outline-only request.
+         *
+         * A non-default key lacks the palette and foreground context required to reopen a
+         * materialized asset, so callers must use the primary constructor for that case.
+         */
+        public constructor(
+            resolver: FontAssetResolverHandle,
+            variant: FontRenderVariantKey,
+            outlineProfile: OutlineProfile,
+        ) : this(
+            resolver = resolver,
+            renderVariant = renderVariantSnapshot(variant),
+            requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile),
+        )
+    }
+}
+
+private fun renderVariantSnapshot(variant: FontRenderVariantKey): FontRenderVariantSnapshot {
+    require(variant == FontRenderVariantKey.default) {
+        "A non-default FontRenderVariantKey lacks the palette and foreground context required for renderable layout."
+    }
+    return FontRenderVariantSnapshot.default
 }
 
 /**
@@ -639,7 +724,7 @@ public class MultiFontEditableLineRequest(
     public val baseDirection: BaseDirection,
     /** Explicit line-box metrics supplied by the consumer. */
     public val verticalMetrics: LineVerticalMetrics,
-    /** Explicit layout-only or outline-renderable publication mode. */
+    /** Explicit layout-only or profile-certified renderable publication mode. */
     public val materialization: EditableLineMaterialization,
     features: List<OpenTypeFeature> = emptyList(),
     /** Cooperative cancellation signal observed between bounded fallback attempts. */
@@ -700,7 +785,7 @@ public class EditableLineRequest(
     fontInstances: List<FontInstance> = listOfNotNull(font),
     /** Explicit line-box metrics supplied by the consumer. */
     public val verticalMetrics: LineVerticalMetrics,
-    /** Explicit layout-only or outline-renderable publication mode. */
+    /** Explicit layout-only or profile-certified renderable publication mode. */
     public val materialization: EditableLineMaterialization,
     /**
      * Explicit soft-hyphen handling, or `null` for the legacy raw shaping of
