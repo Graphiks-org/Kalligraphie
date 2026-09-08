@@ -1,12 +1,13 @@
 package org.graphiks.kalligraphie.layout
 
+import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontCatalogGeneration
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
@@ -27,9 +28,6 @@ import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.TextVersion
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
@@ -54,14 +52,8 @@ class MultiFontEditableLineTest {
     fun renderableMultiscriptLineSelectsLatinAndArabicFacesWithCertifiedFinalGlyphs() {
         val latin = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
         val arabic = source("/fonts/amiri/Amiri-Regular.ttf", "Amiri Regular")
-        val generation = FontCatalogGeneration("audited-multiscript-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue()),
-                EmbeddedFontCatalogEntry(arabic, SfntReader.readMetadata(arabic).successValue()),
-            ),
-        )
+        val catalog = catalogOf(latin, arabic)
+        val generation = catalog.generation
         val latinFace = FontFaceId(latin.id, 0)
         val arabicFace = FontFaceId(arabic.id, 0)
         val policy = FontResolutionPolicySnapshot(
@@ -121,11 +113,7 @@ class MultiFontEditableLineTest {
     @Test
     fun detachedAssetsRemainUsableAndReopenOnlyInTheirCapturedGeneration() {
         val latin = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
-        val generation = FontCatalogGeneration("audited-detached-asset-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue())),
-        )
+        val catalog = catalogOf(latin)
         val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile())
         val face = catalog.resolveFace(catalog.faces.single().id, requirements).successValue()
         val instance = face.instantiate(FontInstanceDescriptor(LayoutUnit(1000f))).successValue()
@@ -154,9 +142,9 @@ class MultiFontEditableLineTest {
                 sameGenerationResolver.close()
             }
 
-            val incompatibleCatalog = EmbeddedFontCatalog(
-                generation = FontCatalogGeneration("audited-detached-asset-fixture-v2"),
-                entries = listOf(EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue())),
+            val incompatibleCatalog = catalogOf(
+                latin,
+                source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
             )
             val incompatibleResolver = incompatibleCatalog.openAssetResolver().successValue()
             try {
@@ -178,14 +166,8 @@ class MultiFontEditableLineTest {
     fun renderableFallbackRejectsAShapedGlyphWhoseOutlineExceedsTheProfile() {
         val complex = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
         val simple = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
-        val generation = FontCatalogGeneration("audited-outline-fallback-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(complex, SfntReader.readMetadata(complex).successValue()),
-                EmbeddedFontCatalogEntry(simple, SfntReader.readMetadata(simple).successValue()),
-            ),
-        )
+        val catalog = catalogOf(complex, simple)
+        val generation = catalog.generation
         val complexFace = FontFaceId(complex.id, 0)
         val simpleFace = FontFaceId(simple.id, 0)
         val policy = FontResolutionPolicySnapshot(
@@ -244,15 +226,8 @@ class MultiFontEditableLineTest {
         val latin = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
         val universal = source("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")
         val arabic = source("/fonts/amiri/Amiri-Regular.ttf", "Amiri Regular")
-        val generation = FontCatalogGeneration("audited-deep-fallback-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue()),
-                EmbeddedFontCatalogEntry(universal, SfntReader.readMetadata(universal).successValue()),
-                EmbeddedFontCatalogEntry(arabic, SfntReader.readMetadata(arabic).successValue()),
-            ),
-        )
+        val catalog = catalogOf(latin, universal, arabic)
+        val generation = catalog.generation
         val latinFace = FontFaceId(latin.id, 0)
         val universalFace = FontFaceId(universal.id, 0)
         val arabicFace = FontFaceId(arabic.id, 0)
@@ -309,11 +284,8 @@ class MultiFontEditableLineTest {
     @Test
     fun exhaustionReturnsATypedFailureWithoutPublishingAPartialLine() {
         val latin = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
-        val generation = FontCatalogGeneration("audited-exhaustion-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue())),
-        )
+        val catalog = catalogOf(latin)
+        val generation = catalog.generation
         val latinFace = FontFaceId(latin.id, 0)
         val policy = FontResolutionPolicySnapshot(
             generation = generation,
@@ -338,14 +310,8 @@ class MultiFontEditableLineTest {
     fun graphemeVariationAndEmojiZwJSequencesRemainAssignedToOneFace() {
         val selective = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
         val complete = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
-        val generation = FontCatalogGeneration("audited-unicode-unit-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(selective, SfntReader.readMetadata(selective).successValue()),
-                EmbeddedFontCatalogEntry(complete, SfntReader.readMetadata(complete).successValue()),
-            ),
-        )
+        val catalog = catalogOf(selective, complete)
+        val generation = catalog.generation
         val selectiveFace = FontFaceId(selective.id, 0)
         val completeFace = FontFaceId(complete.id, 0)
         val policy = FontResolutionPolicySnapshot(
@@ -377,14 +343,8 @@ class MultiFontEditableLineTest {
     fun variationSequenceFallsBackOnlyToFaceWithAnExplicitUvsMapping() {
         val baseOnly = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
         val uvs = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
-        val generation = FontCatalogGeneration("audited-variation-sequence-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(baseOnly, SfntReader.readMetadata(baseOnly).successValue()),
-                EmbeddedFontCatalogEntry(uvs, SfntReader.readMetadata(uvs).successValue()),
-            ),
-        )
+        val catalog = catalogOf(baseOnly, uvs)
+        val generation = catalog.generation
         val uvsFace = FontFaceId(uvs.id, 0)
         val policy = FontResolutionPolicySnapshot(
             generation = generation,
@@ -409,14 +369,8 @@ class MultiFontEditableLineTest {
     fun fallbackKeepsThePreferredFaceOnBothSidesOfAnUnsupportedSameScriptGrapheme() {
         val preferred = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
         val fallback = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
-        val generation = FontCatalogGeneration("audited-intra-script-fallback-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(preferred, SfntReader.readMetadata(preferred).successValue()),
-                EmbeddedFontCatalogEntry(fallback, SfntReader.readMetadata(fallback).successValue()),
-            ),
-        )
+        val catalog = catalogOf(preferred, fallback)
+        val generation = catalog.generation
         val preferredFace = FontFaceId(preferred.id, 0)
         val fallbackFace = FontFaceId(fallback.id, 0)
         val policy = FontResolutionPolicySnapshot(
@@ -445,14 +399,8 @@ class MultiFontEditableLineTest {
     fun fallbackDoesNotDiscardTheCyrillicFragmentInsideAGraphemeBeforeArabicFallback() {
         val latin = source("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")
         val arabic = source("/fonts/amiri/Amiri-Regular.ttf", "Amiri Regular")
-        val generation = FontCatalogGeneration("audited-cross-itemization-fallback-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue()),
-                EmbeddedFontCatalogEntry(arabic, SfntReader.readMetadata(arabic).successValue()),
-            ),
-        )
+        val catalog = catalogOf(latin, arabic)
+        val generation = catalog.generation
         val latinFace = FontFaceId(latin.id, 0)
         val arabicFace = FontFaceId(arabic.id, 0)
         val policy = FontResolutionPolicySnapshot(
@@ -503,14 +451,8 @@ class MultiFontEditableLineTest {
     fun cancellationBetweenFragmentsInOneFallbackGroupStartsNoSecondShape() {
         val latin = source("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")
         val arabic = source("/fonts/amiri/Amiri-Regular.ttf", "Amiri Regular")
-        val generation = FontCatalogGeneration("fragment-cancellation-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(
-                EmbeddedFontCatalogEntry(latin, SfntReader.readMetadata(latin).successValue()),
-                EmbeddedFontCatalogEntry(arabic, SfntReader.readMetadata(arabic).successValue()),
-            ),
-        )
+        val catalog = catalogOf(latin, arabic)
+        val generation = catalog.generation
         val latinFace = FontFaceId(latin.id, 0)
         val arabicFace = FontFaceId(arabic.id, 0)
         val policy = FontResolutionPolicySnapshot(
@@ -544,11 +486,8 @@ class MultiFontEditableLineTest {
     fun emptyMultiFontLineUsesTheExplicitRightToLeftCaretDirectionWithoutResolvingAFace() {
         val source = text("")
         val fallback = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
-        val generation = FontCatalogGeneration("audited-empty-multi-font-fixture-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation = generation,
-            entries = listOf(EmbeddedFontCatalogEntry(fallback, SfntReader.readMetadata(fallback).successValue())),
-        )
+        val catalog = catalogOf(fallback)
+        val generation = catalog.generation
         val fallbackFace = FontFaceId(fallback.id, 0)
         val policy = FontResolutionPolicySnapshot(
             generation = generation,
@@ -584,6 +523,9 @@ class MultiFontEditableLineTest {
     private fun fixtureBytes(resource: String): ByteArray =
         checkNotNull(javaClass.getResourceAsStream(resource)).use { it.readBytes() }
 
+    private fun catalogOf(vararg sources: FontSource): FontCatalogSnapshot =
+        Kalligraphie.embedded(sources.toList()).successValue()
+
     private fun outlineProfile(maxContours: Int = 10_000): OutlineProfile = OutlineProfile(
         maxBytes = 1_000_000,
         maxContours = maxContours,
@@ -614,7 +556,7 @@ class MultiFontEditableLineTest {
     private fun request(
         text: org.graphiks.kalligraphie.api.TextSnapshot,
         analysis: org.graphiks.kalligraphie.api.UnicodeAnalysis,
-        catalog: EmbeddedFontCatalog,
+        catalog: FontCatalogSnapshot,
         policy: FontResolutionPolicySnapshot,
         backend: org.graphiks.kalligraphie.api.ShapingBackend,
         materialization: EditableLineMaterialization,

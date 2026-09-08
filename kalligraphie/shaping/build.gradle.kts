@@ -12,6 +12,7 @@ kotlin {
             api(project(":kalligraphie:api"))
         }
         jvmTest.dependencies {
+            implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:unicode"))
             implementation(project(":kalligraphie:font:core"))
             implementation(project(":kalligraphie:font:sfnt"))

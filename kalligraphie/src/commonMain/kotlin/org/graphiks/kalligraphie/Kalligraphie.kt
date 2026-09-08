@@ -1,22 +1,18 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
-import org.graphiks.kalligraphie.api.FontCatalogGeneration
-import org.graphiks.kalligraphie.api.FontDiagnostic
-import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
-import org.graphiks.kalligraphie.api.FontProviderId
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontSource
-import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.KalligraphieInternalApi
 import org.graphiks.kalligraphie.api.TextDecodingResult
+import org.graphiks.kalligraphie.api.TextDecodingOutcome
+import org.graphiks.kalligraphie.api.TextDecodingProfile
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
-import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
+import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogFactory
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 
 /**
@@ -25,6 +21,7 @@ import org.graphiks.kalligraphie.unicode.TextSnapshots
  * The facade performs parsing and validation only; it does not select a
  * document, renderer, platform font service, or rasterization backend.
  */
+@OptIn(KalligraphieInternalApi::class)
 public object Kalligraphie {
     /**
      * Decodes UTF-8 source slices into one immutable, canonical [TextDecodingResult].
@@ -41,6 +38,21 @@ public object Kalligraphie {
     ): TextDecodingResult = TextSnapshots.decodeUtf8(version, slices)
 
     /**
+     * Decodes UTF-8 source under an explicit resource [profile] and cancellation signal.
+     *
+     * Source-unit limits are checked before a joined buffer is allocated. Scalar limits and
+     * [cancellationToken] are observed before a further scalar is published. A cancelled or
+     * limited result exposes no partial snapshot or diagnostics; a successful result preserves
+     * the same canonical Unicode and source-range semantics as [decodeUtf8].
+     */
+    public fun decodeUtf8(
+        version: TextVersion,
+        slices: List<TextSlice.Utf8>,
+        profile: TextDecodingProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): TextDecodingOutcome = TextSnapshots.decodeUtf8(version, slices, profile, cancellationToken)
+
+    /**
      * Decodes UTF-16 source slices into one immutable, canonical [TextDecodingResult].
      *
      * [version] remains the opaque identity of the returned snapshot. Every slice is copied by
@@ -53,6 +65,21 @@ public object Kalligraphie {
         version: TextVersion,
         slices: List<TextSlice.Utf16>,
     ): TextDecodingResult = TextSnapshots.decodeUtf16(version, slices)
+
+    /**
+     * Decodes UTF-16 source under an explicit resource [profile] and cancellation signal.
+     *
+     * Source-unit limits are checked before a joined buffer is allocated. Scalar limits and
+     * [cancellationToken] are observed before a further scalar is published. A cancelled or
+     * limited result exposes no partial snapshot or diagnostics; a successful result preserves
+     * the same canonical Unicode and source-range semantics as [decodeUtf16].
+     */
+    public fun decodeUtf16(
+        version: TextVersion,
+        slices: List<TextSlice.Utf16>,
+        profile: TextDecodingProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): TextDecodingOutcome = TextSnapshots.decodeUtf16(version, slices, profile, cancellationToken)
 
     /**
      * Loads one single-face TrueType font from an in-memory byte array.
@@ -107,44 +134,5 @@ public object Kalligraphie {
     public fun embedded(
         sources: List<FontSource>,
         cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
-    ): FontOperationResult<FontCatalogSnapshot> {
-        val capturedSources = sources.toList()
-        if (capturedSources.isEmpty()) {
-            return embeddedCatalogFailure("An embedded font catalog requires at least one source.")
-        }
-        if (capturedSources.map(FontSource::id).distinct().size != capturedSources.size) {
-            return embeddedCatalogFailure("An embedded font catalog must not contain the same source twice.")
-        }
-
-        val diagnostics = mutableListOf<FontDiagnostic>()
-        val entries = mutableListOf<EmbeddedFontCatalogEntry>()
-        capturedSources.forEach { source ->
-            when (val parsed = SfntReader.readMetadata(source)) {
-                is FontOperationResult.Success<*> -> {
-                    entries += EmbeddedFontCatalogEntry(source, parsed.value as ParsedTrueTypeFont)
-                    diagnostics += parsed.diagnostics
-                }
-
-                is FontOperationResult.Failure -> return FontOperationResult.Failure(
-                    parsed.error,
-                    diagnostics + parsed.diagnostics,
-                )
-
-                is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(
-                    diagnostics + parsed.diagnostics,
-                )
-            }
-        }
-
-        val generation = FontCatalogGeneration(
-            provider = FontProviderId("embedded-opentype"),
-            value = capturedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
-                (source.id as FontSourceId.Portable).contentDigest.value
-            },
-        )
-        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, cachePolicy), diagnostics)
-    }
-
-    private fun embeddedCatalogFailure(message: String): FontOperationResult.Failure =
-        FontOperationResult.Failure(FontError.InvalidFontData(message))
+    ): FontOperationResult<FontCatalogSnapshot> = EmbeddedFontCatalogFactory.create(sources, cachePolicy)
 }

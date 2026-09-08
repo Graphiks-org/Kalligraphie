@@ -143,6 +143,10 @@ public sealed interface TextSlice {
     public class Utf8(bytes: ByteArray) : TextSlice {
         private val capturedBytes: ByteArray = bytes.copyOf()
 
+        /** Number of UTF-8 code units in this immutable fragment. */
+        public val size: Int
+            get() = capturedBytes.size
+
         /** Returns a defensive copy of this fragment's bytes. */
         public fun copyBytes(): ByteArray = capturedBytes.copyOf()
     }
@@ -150,6 +154,10 @@ public sealed interface TextSlice {
     /** Immutable snapshot of one UTF-16 code-unit fragment. */
     public class Utf16(codeUnits: CharArray) : TextSlice {
         private val capturedCodeUnits: CharArray = codeUnits.copyOf()
+
+        /** Number of UTF-16 code units in this immutable fragment. */
+        public val size: Int
+            get() = capturedCodeUnits.size
 
         /** Returns a defensive copy of this fragment's UTF-16 code units. */
         public fun copyCodeUnits(): CharArray = capturedCodeUnits.copyOf()
@@ -263,6 +271,35 @@ public class TextSnapshot(
     }
 
     /**
+     * @suppress
+     *
+     * Returns the scalar count of [range] without materializing scalar values or ranges.
+     * This implementation detail exists for bounded cross-module text processing.
+     */
+    @KalligraphieInternalApi
+    public fun scalarCount(range: TextRange): Int {
+        require(contains(range)) { "Text range must belong to this snapshot." }
+        return range.endExclusive.ordinal - range.start.ordinal
+    }
+
+    /**
+     * @suppress
+     *
+     * Visits each scalar and its one-scalar range lazily in logical order. This implementation
+     * detail lets bounded consumers observe cancellation before retaining every input range.
+     */
+    @KalligraphieInternalApi
+    public fun forEachScalar(range: TextRange, action: (value: Int, scalarRange: TextRange) -> Unit) {
+        require(contains(range)) { "Text range must belong to this snapshot." }
+        for (ordinal in range.start.ordinal until range.endExclusive.ordinal) {
+            action(
+                scalars[ordinal],
+                TextRange(textIndexAtScalarBoundary(ordinal), textIndexAtScalarBoundary(ordinal + 1)),
+            )
+        }
+    }
+
+    /**
      * Returns one half-open scalar range per scalar in [range], in logical order.
      *
      * The input must belong to this snapshot. Returned ranges are bound to this snapshot's
@@ -315,6 +352,64 @@ public data class TextDiagnostic(
         require(code.isNotBlank()) { "Text diagnostic code must not be blank." }
         require(message.isNotBlank()) { "Text diagnostic message must not be blank." }
     }
+}
+
+/** Resource dimension enforced while decoding one complete source snapshot. */
+public enum class TextDecodingLimit {
+    /** Total UTF-8 bytes or UTF-16 code units accepted from all source slices. */
+    SOURCE_UNITS,
+
+    /** Unicode scalars that would be published in the canonical snapshot. */
+    SCALARS,
+}
+
+/**
+ * Immutable resource profile for one canonical text-decoding operation.
+ *
+ * The limits protect memory and work without changing Unicode replacement or source-mapping
+ * semantics for a successful result. Reaching either limit or observing cancellation never
+ * publishes a partial [TextSnapshot]. [cancellationCheckInterval] bounds only the number of
+ * decoded scalars between cooperative cancellation observations; it does not change the decoded
+ * content.
+ */
+public class TextDecodingProfile(
+    /** Maximum accepted UTF-8 bytes or UTF-16 code units across all slices. */
+    public val maxSourceUnits: Int = Int.MAX_VALUE,
+    /** Maximum Unicode scalars in a successfully decoded snapshot. */
+    public val maxScalars: Int = Int.MAX_VALUE,
+    /** Positive number of decoded scalars between cooperative cancellation checks. */
+    public val cancellationCheckInterval: Int = 256,
+) {
+    init {
+        require(maxSourceUnits >= 0) { "Text decoding source-unit budget must be non-negative." }
+        require(maxScalars >= 0) { "Text decoding scalar budget must be non-negative." }
+        require(cancellationCheckInterval > 0) { "Text decoding cancellation interval must be positive." }
+    }
+
+    /** Standard profile with no practical source or scalar limit. */
+    public companion object {
+        public val unbounded: TextDecodingProfile = TextDecodingProfile()
+    }
+}
+
+/** Complete, atomic outcome of decoding one source revision under a [TextDecodingProfile]. */
+public sealed interface TextDecodingOutcome {
+    /** Complete immutable snapshot and its diagnostics. */
+    public class Success(
+        /** Decoded immutable text snapshot and source diagnostics. */
+        public val value: TextDecodingResult,
+    ) : TextDecodingOutcome
+
+    /** A resource limit was reached before a complete snapshot could be published. */
+    public class LimitExceeded(
+        /** Resource dimension that rejected this operation. */
+        public val limit: TextDecodingLimit,
+        /** First source-unit or scalar count exceeding the configured limit. */
+        public val observed: Long,
+    ) : TextDecodingOutcome
+
+    /** Cooperative cancellation was observed before a complete snapshot could be published. */
+    public data object Cancelled : TextDecodingOutcome
 }
 
 /** Canonical decoded snapshot and immutable diagnostics that belong to that snapshot. */

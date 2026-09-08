@@ -122,12 +122,12 @@ this route must not be treated as conformant on those platforms.
 
 ## Deterministic multi-font fallback
 
-`EmbeddedFontCatalog` can capture several audited OpenType sources in one
-`FontCatalogGeneration`. `FontResolutionPolicySnapshot` binds a complete,
+`Kalligraphie.embedded(sources)` captures several audited OpenType sources in
+one `FontCatalogGeneration`. `FontResolutionPolicySnapshot` binds a complete,
 versioned candidate order and an explicit final last-resort face to that exact
-generation. `ExactEditableLineLayouter.layout(MultiFontEditableLineRequest)`
-derives fallback units from Unicode grapheme analysis, assigns every unit to
-one face, and shapes the affected contiguous context.
+generation. The JVM editable-line facade derives fallback units from Unicode
+grapheme analysis, assigns every unit to one face, and shapes the affected
+contiguous context.
 
 In `LAYOUT_ONLY`, a candidate must map and shape the complete unit. In
 `RENDERABLE`, it must additionally materialize every final shaped glyph with

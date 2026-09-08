@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.layout
 
+import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.CaretBoundaryEdge
 import org.graphiks.kalligraphie.api.CaretCandidate
@@ -13,6 +14,7 @@ import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
@@ -58,8 +60,6 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
 import org.graphiks.kalligraphie.api.BidiRun
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -1341,8 +1341,7 @@ class EditableLineTest {
 
     private fun fontFixture(): FontFixture {
         val source = FontSource(fixtureBytes("/fonts/dejavu/DejaVuSans.ttf"), FontSourceProvenance("DejaVu Sans"))
-        val parsed = SfntReader.readMetadata(source).successValue()
-        val catalog = EmbeddedFontCatalog(source, parsed)
+        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
         val face = catalog.resolveFace(FontFaceId(source.id, 0), FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return FontFixture(catalog, face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(2048f))).successValue())
     }
@@ -1398,7 +1397,7 @@ class EditableLineTest {
     }
 
     private data class FontFixture(
-        val catalog: EmbeddedFontCatalog,
+        val catalog: FontCatalogSnapshot,
         val instance: FontInstance,
     )
 

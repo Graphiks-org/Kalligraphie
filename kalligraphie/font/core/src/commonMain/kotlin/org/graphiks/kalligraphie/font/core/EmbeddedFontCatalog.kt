@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.core
 
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
@@ -14,6 +16,7 @@ import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontFaceRecord
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.KalligraphieInternalApi
 import org.graphiks.kalligraphie.api.FontProviderId
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderAssetKey
@@ -41,6 +44,7 @@ import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
+import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeReader
 import org.graphiks.kalligraphie.font.sfnt.slice
 import kotlin.concurrent.atomics.AtomicInt
@@ -59,6 +63,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * @param entries captured source bytes, provenance, and parsed metadata for every face.
  * @param cachePolicy bounded portable representation retention independently applied per face.
  */
+@KalligraphieInternalApi
 public class EmbeddedFontCatalog(
     override val generation: FontCatalogGeneration,
     entries: List<EmbeddedFontCatalogEntry>,
@@ -266,12 +271,65 @@ private fun supportsEbdtFormatOneRoute(
  * defensive copy of its bytes and parsed metadata is immutable; callers retain no provider
  * resource by retaining this entry.
  */
+@KalligraphieInternalApi
 public data class EmbeddedFontCatalogEntry(
     /** Captured portable font source. */
     public val source: FontSource,
     /** Parsed metadata for the source's sole TrueType face. */
     public val parsedFont: ParsedTrueTypeFont,
 )
+
+/**
+ * Implementation bridge from the supported facade to the embedded TrueType catalog.
+ *
+ * This factory exists only because the facade and the catalog implementation live in separate
+ * Kotlin modules. Applications must call [org.graphiks.kalligraphie.Kalligraphie.embedded].
+ */
+@KalligraphieInternalApi
+public object EmbeddedFontCatalogFactory {
+    /** Creates one immutable embedded catalog after validating every supplied source. */
+    public fun create(
+        sources: List<FontSource>,
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+    ): FontOperationResult<FontCatalogSnapshot> {
+        val capturedSources = sources.toList()
+        if (capturedSources.isEmpty()) return invalidCatalog("An embedded font catalog requires at least one source.")
+        if (capturedSources.map(FontSource::id).distinct().size != capturedSources.size) {
+            return invalidCatalog("An embedded font catalog must not contain the same source twice.")
+        }
+
+        val diagnostics = mutableListOf<FontDiagnostic>()
+        val entries = mutableListOf<EmbeddedFontCatalogEntry>()
+        capturedSources.forEach { source ->
+            when (val parsed = SfntReader.readMetadata(source)) {
+                is FontOperationResult.Success<*> -> {
+                    entries += EmbeddedFontCatalogEntry(source, parsed.value as ParsedTrueTypeFont)
+                    diagnostics += parsed.diagnostics
+                }
+
+                is FontOperationResult.Failure -> return FontOperationResult.Failure(
+                    parsed.error,
+                    diagnostics + parsed.diagnostics,
+                )
+
+                is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(
+                    diagnostics + parsed.diagnostics,
+                )
+            }
+        }
+
+        val generation = FontCatalogGeneration(
+            provider = FontProviderId("embedded-opentype"),
+            value = capturedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
+                (source.id as FontSourceId.Portable).contentDigest.value
+            },
+        )
+        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, cachePolicy), diagnostics)
+    }
+
+    private fun invalidCatalog(message: String): FontOperationResult.Failure =
+        FontOperationResult.Failure(FontError.InvalidFontData(message))
+}
 
 internal class EmbeddedFontAssetResolver(
     override val generation: FontCatalogGeneration,

@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.layout
 
+import org.graphiks.kalligraphie.Kalligraphie
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -9,7 +10,6 @@ import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
-import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -34,9 +34,6 @@ import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
@@ -125,11 +122,8 @@ class EditableParagraphEditingTest {
             checkNotNull(javaClass.getResourceAsStream(fontResource)).use { it.readBytes() },
             FontSourceProvenance(fontName),
         )
-        val generation = FontCatalogGeneration("paragraph-editing-test-v1")
-        val catalog = EmbeddedFontCatalog(
-            generation,
-            listOf(EmbeddedFontCatalogEntry(source, SfntReader.readMetadata(source).successValue())),
-        )
+        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
+        val generation = catalog.generation
         val face = FontFaceId(source.id, 0)
         val policy = FontResolutionPolicySnapshot(
             generation = generation,

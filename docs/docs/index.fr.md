@@ -15,10 +15,12 @@ l’accès aux glyphes.
 - `:kalligraphie:unicode` fournit le décodage canonique du texte et l’analyse Unicode de référence sur la JVM.
 - `:kalligraphie:shaping` fournit l’adaptateur HarfBuzz de référence sur la JVM derrière des contrats de composition portables.
 - `:kalligraphie:layout` positionne les séquences composées et fournit la géométrie exacte des lignes, paragraphes, régions de composition et résultats incrémentaux.
-- `:kalligraphie:font:core` fournit les sources, faces (variantes de fonte) et instances de polices.
-- `:kalligraphie:font:sfnt` analyse les données de fontes aux formats SFNT et OpenType dans des limites explicites.
-- `:kalligraphie:font:scaler` calcule les métriques et les contours TrueType.
-- `:kalligraphie:font:glyph` matérialise les ressources de rendu détachées.
+
+Les modules `:kalligraphie:font:core`, `:kalligraphie:font:sfnt`,
+`:kalligraphie:font:scaler` et `:kalligraphie:font:glyph` sont des détails
+d’implémentation internes. Ce ne sont ni des artefacts consommateur supportés,
+ni des API d’extension : une application charge les catalogues embarqués via
+`Kalligraphie.embedded(...)` et utilise les contrats publics de fontes.
 
 ## Guides consommateur
 

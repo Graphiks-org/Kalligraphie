@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.unicode
 
 import com.ibm.icu.lang.UCharacter
+import com.ibm.icu.lang.UCharacterEnums
 import com.ibm.icu.lang.UProperty
 import com.ibm.icu.lang.UScript
 import com.ibm.icu.text.Bidi
@@ -11,17 +12,21 @@ import com.ibm.icu.util.VersionInfo
 import java.util.BitSet
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.UnicodeAnalysisLimit
+import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
+import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 
 /** Factory for the pinned JVM-reference Unicode analyzer. */
 public object JvmUnicodeAnalyzer {
     /** Creates an analyzer backed internally by ICU4J 77.1 and Unicode 16.0 data. */
-    public fun create(): UnicodeAnalyzer = IcuUnicodeAnalyzer()
+    public fun create(): BoundedUnicodeAnalyzer = IcuUnicodeAnalyzer()
 
     /**
      * Validates [language] and returns the canonical BCP 47 form used by this JVM analyzer.
@@ -34,25 +39,54 @@ public object JvmUnicodeAnalyzer {
     public fun canonicalizeLanguageTag(language: String): String = parseLanguage(language).toLanguageTag()
 }
 
-internal class IcuUnicodeAnalyzer : UnicodeAnalyzer {
+internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
     init {
         verifyPinnedUnicodeData()
     }
 
-    override fun analyze(snapshot: TextSnapshot, request: UnicodeAnalysisRequest): UnicodeAnalysis {
-        val locale = parseLanguage(request.language)
-        val canonicalLanguage = locale.toLanguageTag()
-        val canonicalText = CanonicalUtf16Text(snapshot)
-        val logicalBidiRuns = logicalBidiRuns(snapshot, canonicalText, request.baseDirection)
-        return UnicodeAnalysis(
-            range = snapshot.range,
-            unicodeData = UNICODE_DATA,
-            graphemeClusters = graphemeClusters(snapshot, canonicalText),
-            scriptLanguageRuns = scriptLanguageRuns(snapshot, locale, canonicalLanguage),
-            logicalBidiRuns = logicalBidiRuns,
-            visualBidiRuns = visualBidiRuns(snapshot, canonicalText, request.baseDirection),
-        )
+    override fun analyze(snapshot: TextSnapshot, request: UnicodeAnalysisRequest): UnicodeAnalysis =
+        requireComplete(analyze(snapshot, request, UnicodeAnalysisProfile.unbounded, CancellationToken.none))
+
+    override fun analyze(
+        snapshot: TextSnapshot,
+        request: UnicodeAnalysisRequest,
+        profile: UnicodeAnalysisProfile,
+        cancellationToken: CancellationToken,
+    ): UnicodeAnalysisOutcome {
+        if (snapshot.scalars.size > profile.maxScalars) {
+            return UnicodeAnalysisOutcome.LimitExceeded(UnicodeAnalysisLimit.SCALARS, snapshot.scalars.size)
+        }
+        return try {
+            observeCancellation(cancellationToken)
+            val locale = parseLanguage(request.language)
+            val canonicalLanguage = locale.toLanguageTag()
+            val canonicalText = CanonicalUtf16Text(snapshot, profile, cancellationToken)
+            val bidi = bidi(canonicalText.value, request.baseDirection)
+            val resolvedBidiLevels = resolvedBidiLevels(snapshot, bidi, profile, cancellationToken)
+            val logicalBidiRuns = bidiRuns(snapshot, resolvedBidiLevels, profile, cancellationToken)
+            val graphemes = graphemeClusters(snapshot, canonicalText, cancellationToken)
+            val scripts = scriptLanguageRuns(snapshot, locale, canonicalLanguage, profile, cancellationToken)
+            val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, profile, cancellationToken)
+            UnicodeAnalysisOutcome.Success(
+                UnicodeAnalysis(
+                    range = snapshot.range,
+                    unicodeData = UNICODE_DATA,
+                    graphemeClusters = graphemes,
+                    scriptLanguageRuns = scripts,
+                    logicalBidiRuns = logicalBidiRuns,
+                    visualBidiRuns = visualBidiRuns,
+                ),
+            )
+        } catch (_: UnicodeAnalysisCancelled) {
+            UnicodeAnalysisOutcome.Cancelled
+        }
     }
+}
+
+private fun requireComplete(outcome: UnicodeAnalysisOutcome): UnicodeAnalysis = when (outcome) {
+    is UnicodeAnalysisOutcome.Success -> outcome.value
+    is UnicodeAnalysisOutcome.LimitExceeded -> error("The unbounded Unicode analyzer exceeded ${outcome.limit}.")
+    UnicodeAnalysisOutcome.Cancelled -> error("The non-cancellable Unicode analyzer was cancelled.")
 }
 
 private fun parseLanguage(language: String): ULocale = try {
@@ -61,7 +95,11 @@ private fun parseLanguage(language: String): ULocale = try {
     throw IllegalArgumentException(INVALID_LANGUAGE_MESSAGE)
 }
 
-private fun graphemeClusters(snapshot: TextSnapshot, text: CanonicalUtf16Text): List<TextRange> {
+private fun graphemeClusters(
+    snapshot: TextSnapshot,
+    text: CanonicalUtf16Text,
+    cancellationToken: CancellationToken,
+): List<TextRange> {
     if (snapshot.scalars.isEmpty()) return emptyList()
     val iterator = BreakIterator.getCharacterInstance(ULocale.ROOT)
     iterator.setText(text.value)
@@ -69,6 +107,7 @@ private fun graphemeClusters(snapshot: TextSnapshot, text: CanonicalUtf16Text): 
     var startUtf16 = iterator.first()
     var endUtf16 = iterator.next()
     while (endUtf16 != BreakIterator.DONE) {
+        observeCancellation(cancellationToken)
         ranges += text.range(snapshot, startUtf16, endUtf16)
         startUtf16 = endUtf16
         endUtf16 = iterator.next()
@@ -80,24 +119,31 @@ private fun scriptLanguageRuns(
     snapshot: TextSnapshot,
     locale: ULocale,
     language: String,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
 ): List<ScriptLanguageRun> {
     if (snapshot.scalars.isEmpty()) return emptyList()
     val languageScript = likelyScript(locale)
-    val scriptProperties = snapshot.scalars.map(::scriptProperties)
-    val pairedScripts = pairedPunctuationScripts(snapshot.scalars, scriptProperties)
+    val scriptProperties = snapshot.scalars.mapIndexed { index, scalar ->
+        observeCancellation(index, profile, cancellationToken)
+        scriptProperties(scalar)
+    }
+    val pairedScripts = pairedPunctuationScripts(snapshot.scalars, scriptProperties, profile, cancellationToken)
     val resolvedScripts = IntArray(snapshot.scalars.size)
     var previousScript: Int? = null
     snapshot.scalars.indices.forEach { scalarIndex ->
+        observeCancellation(scalarIndex, profile, cancellationToken)
         val properties = scriptProperties[scalarIndex]
         val resolved = when {
             properties.script == UScript.UNKNOWN -> UScript.UNKNOWN
             pairedScripts[scalarIndex] != null -> pairedScripts.getValue(scalarIndex)
             properties.candidates.isEmpty() ->
-                previousScript ?: nextContextScript(scriptProperties, scalarIndex + 1) ?: properties.script
+                previousScript ?: nextContextScript(scriptProperties, scalarIndex + 1, profile, cancellationToken)
+                    ?: properties.script
             else -> resolveCandidateScript(
                 properties = properties,
                 previousScript = previousScript,
-                nextScript = nextContextScript(scriptProperties, scalarIndex + 1),
+                nextScript = nextContextScript(scriptProperties, scalarIndex + 1, profile, cancellationToken),
                 languageScript = languageScript,
             )
         }
@@ -109,6 +155,7 @@ private fun scriptLanguageRuns(
     var runStart = 0
     var script = resolvedScripts.first()
     for (scalarIndex in 1 until resolvedScripts.size) {
+        observeCancellation(scalarIndex, profile, cancellationToken)
         if (resolvedScripts[scalarIndex] != script) {
             runs += scriptRun(snapshot, runStart, scalarIndex, script, language)
             runStart = scalarIndex
@@ -157,8 +204,14 @@ private fun resolveCandidateScript(
     else -> properties.candidates.minByOrNull(UScript::getShortName) ?: properties.script
 }
 
-private fun nextContextScript(scriptProperties: List<ScriptProperties>, start: Int): Int? {
+private fun nextContextScript(
+    scriptProperties: List<ScriptProperties>,
+    start: Int,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): Int? {
     for (scalarIndex in start until scriptProperties.size) {
+        observeCancellation(scalarIndex, profile, cancellationToken)
         val properties = scriptProperties[scalarIndex]
         when {
             properties.script == UScript.UNKNOWN -> return null
@@ -172,17 +225,20 @@ private fun nextContextScript(scriptProperties: List<ScriptProperties>, start: I
 private fun pairedPunctuationScripts(
     scalars: List<Int>,
     scriptProperties: List<ScriptProperties>,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
 ): Map<Int, Int> {
     val openingIndexes = mutableListOf<Int>()
     val resolvedScripts = mutableMapOf<Int, Int>()
     scalars.forEachIndexed { scalarIndex, scalar ->
+        observeCancellation(scalarIndex, profile, cancellationToken)
         when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)) {
             UCharacter.BidiPairedBracketType.OPEN -> openingIndexes += scalarIndex
             UCharacter.BidiPairedBracketType.CLOSE -> {
                 val openingIndex = openingIndexes.lastOrNull() ?: return@forEachIndexed
                 if (UCharacter.getBidiPairedBracket(scalars[openingIndex]) == scalar) {
                     openingIndexes.removeAt(openingIndexes.lastIndex)
-                    enclosingScript(scriptProperties, openingIndex, scalarIndex)?.let { script ->
+                    enclosingScript(scriptProperties, openingIndex, scalarIndex, profile, cancellationToken)?.let { script ->
                         resolvedScripts[openingIndex] = script
                         resolvedScripts[scalarIndex] = script
                     }
@@ -197,14 +253,22 @@ private fun enclosingScript(
     scriptProperties: List<ScriptProperties>,
     openingIndex: Int,
     closingIndex: Int,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
 ): Int? {
-    val before = previousContextScript(scriptProperties, openingIndex - 1)
-    val after = nextContextScript(scriptProperties, closingIndex + 1)
+    val before = previousContextScript(scriptProperties, openingIndex - 1, profile, cancellationToken)
+    val after = nextContextScript(scriptProperties, closingIndex + 1, profile, cancellationToken)
     return before?.takeIf { it == after }
 }
 
-private fun previousContextScript(scriptProperties: List<ScriptProperties>, start: Int): Int? {
+private fun previousContextScript(
+    scriptProperties: List<ScriptProperties>,
+    start: Int,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): Int? {
     for (scalarIndex in start downTo 0) {
+        observeCancellation(scalarIndex, profile, cancellationToken)
         val properties = scriptProperties[scalarIndex]
         when {
             properties.script == UScript.UNKNOWN -> return null
@@ -236,33 +300,113 @@ private fun scriptRun(
     language = language,
 )
 
-private fun logicalBidiRuns(
+private fun resolvedBidiLevels(
     snapshot: TextSnapshot,
-    text: CanonicalUtf16Text,
-    baseDirection: BaseDirection,
-): List<BidiRun> {
-    if (snapshot.scalars.isEmpty()) return emptyList()
-    val bidi = bidi(text.value, baseDirection)
-    val runs = mutableListOf<BidiRun>()
-    var utf16Start = 0
-    while (utf16Start < text.value.length) {
-        val run = bidi.getLogicalRun(utf16Start)
-        runs += BidiRun(text.range(snapshot, run.start, run.limit), run.embeddingLevel.toInt())
-        utf16Start = run.limit
+    bidi: Bidi,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): IntArray {
+    val levels = IntArray(snapshot.scalars.size)
+    var utf16Offset = 0
+    snapshot.scalars.forEachIndexed { scalarIndex, scalar ->
+        observeCancellation(scalarIndex, profile, cancellationToken)
+        val level = bidi.getLevelAt(utf16Offset).toInt()
+        levels[scalarIndex] = if (
+            scalarIndex > 0 && isNonSpacingMark(scalar) && !isIsolateInitiator(snapshot.scalars[scalarIndex - 1])
+        ) {
+            levels[scalarIndex - 1]
+        } else {
+            level
+        }
+        utf16Offset += Character.charCount(scalar)
     }
+    return levels
+}
+
+private fun isNonSpacingMark(scalar: Int): Boolean =
+    UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS) == UCharacterEnums.ECharacterDirection.DIR_NON_SPACING_MARK
+
+private fun isIsolateInitiator(scalar: Int): Boolean = when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS)) {
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt(),
+    -> true
+
+    else -> false
+}
+
+private fun bidiRuns(
+    snapshot: TextSnapshot,
+    levels: IntArray,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): List<BidiRun> {
+    if (levels.isEmpty()) return emptyList()
+    val runs = mutableListOf<BidiRun>()
+    var start = 0
+    var level = levels.first()
+    for (scalarIndex in 1 until levels.size) {
+        observeCancellation(scalarIndex, profile, cancellationToken)
+        if (levels[scalarIndex] != level) {
+            runs += BidiRun(scalarRange(snapshot, start, scalarIndex), level)
+            start = scalarIndex
+            level = levels[scalarIndex]
+        }
+    }
+    runs += BidiRun(scalarRange(snapshot, start, levels.size), level)
     return runs
 }
 
-private fun visualBidiRuns(
-    snapshot: TextSnapshot,
-    text: CanonicalUtf16Text,
-    baseDirection: BaseDirection,
+private fun reorderBidiRuns(
+    logicalRuns: List<BidiRun>,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
 ): List<BidiRun> {
-    if (snapshot.scalars.isEmpty()) return emptyList()
-    val bidi = bidi(text.value, baseDirection)
-    return List(bidi.countRuns()) { visualIndex ->
-        val run = bidi.getVisualRun(visualIndex)
-        BidiRun(text.range(snapshot, run.start, run.limit), run.embeddingLevel.toInt())
+    var minimumOddLevel: Int? = null
+    var maximumLevel = 0
+    val visualRuns = ArrayList<BidiRun>(logicalRuns.size)
+    logicalRuns.forEachIndexed { runIndex, run ->
+        observeCancellation(runIndex, profile, cancellationToken)
+        if (run.level.rem(2) == 1) {
+            minimumOddLevel = minOf(minimumOddLevel ?: run.level, run.level)
+        }
+        maximumLevel = maxOf(maximumLevel, run.level)
+        visualRuns += run
+    }
+    val firstReorderingLevel = minimumOddLevel ?: return logicalRuns
+    for (level in maximumLevel downTo firstReorderingLevel) {
+        var sequenceStart: Int? = null
+        for (runIndex in 0..visualRuns.size) {
+            observeCancellation(runIndex, profile, cancellationToken)
+            if (runIndex < visualRuns.size && visualRuns[runIndex].level >= level) {
+                if (sequenceStart == null) sequenceStart = runIndex
+            } else if (sequenceStart != null) {
+                reverseBidiRunSequence(visualRuns, sequenceStart, runIndex, profile, cancellationToken)
+                sequenceStart = null
+            }
+        }
+    }
+    return visualRuns
+}
+
+private fun reverseBidiRunSequence(
+    runs: MutableList<BidiRun>,
+    start: Int,
+    endExclusive: Int,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+) {
+    var left = start
+    var right = endExclusive - 1
+    var swapIndex = 0
+    while (left < right) {
+        observeCancellation(swapIndex, profile, cancellationToken)
+        val run = runs[left]
+        runs[left] = runs[right]
+        runs[right] = run
+        left += 1
+        right -= 1
+        swapIndex += 1
     }
 }
 
@@ -274,13 +418,18 @@ private fun bidi(text: String, baseDirection: BaseDirection): Bidi = Bidi().appl
     setPara(text, paragraphLevel, null)
 }
 
-private class CanonicalUtf16Text(snapshot: TextSnapshot) {
+private class CanonicalUtf16Text(
+    snapshot: TextSnapshot,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+) {
     val value: String
     private val scalarBoundaryToUtf16: IntArray = IntArray(snapshot.scalars.size + 1)
 
     init {
         val builder = StringBuilder()
         snapshot.scalars.forEachIndexed { scalarIndex, scalar ->
+            observeCancellation(scalarIndex, profile, cancellationToken)
             scalarBoundaryToUtf16[scalarIndex] = builder.length
             builder.appendCodePoint(scalar)
         }
@@ -301,6 +450,20 @@ private class CanonicalUtf16Text(snapshot: TextSnapshot) {
         return scalarBoundary
     }
 }
+
+private fun observeCancellation(cancellationToken: CancellationToken) {
+    if (cancellationToken.isCancellationRequested()) throw UnicodeAnalysisCancelled
+}
+
+private fun observeCancellation(
+    scalarIndex: Int,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+) {
+    if (scalarIndex % profile.cancellationCheckInterval == 0) observeCancellation(cancellationToken)
+}
+
+private data object UnicodeAnalysisCancelled : RuntimeException()
 
 private fun scalarRange(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange =
     TextRange(

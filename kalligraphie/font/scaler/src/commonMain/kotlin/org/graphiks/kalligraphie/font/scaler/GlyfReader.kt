@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -233,6 +235,7 @@ internal object GlyfReader {
  * implicit points and composite transforms. [bounds] remains an integer
  * envelope for compatibility with the public design-bounds contract.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class ScalerGlyphOutline(
     /** Numeric glyph identifier. */
     public val glyphId: Int,

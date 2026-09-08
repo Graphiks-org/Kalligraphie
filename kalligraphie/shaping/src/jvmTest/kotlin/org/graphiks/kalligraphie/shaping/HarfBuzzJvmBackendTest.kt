@@ -1,6 +1,8 @@
 package org.graphiks.kalligraphie.shaping
 
+import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstance
@@ -15,6 +17,8 @@ import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
 import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapingResourceLimit
+import org.graphiks.kalligraphie.api.ShapingResourceProfile
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
@@ -22,8 +26,6 @@ import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.ShaperCluster
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -544,6 +546,74 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
+    fun cancellationAfterNativeShapingDoesNotPublishAGlyphRun() {
+        val prepared = text("fi")
+        var observations = 0
+
+        val result = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                resourceProfile = ShapingResourceProfile(maxGlyphs = 0),
+                cancellationToken = CancellationToken { observations++ >= 3 },
+            ),
+        )
+
+        assertIs<FontOperationResult.Cancelled>(result)
+        assertEquals(4, observations)
+    }
+
+    @Test
+    fun scalarBudgetRejectsTheShapingRequestBeforeNativeGlyphPublication() {
+        val prepared = text("fi")
+
+        val result = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                resourceProfile = ShapingResourceProfile(maxScalars = 1),
+            ),
+        )
+
+        val error = assertIs<FontError.ShapingResourceLimitExceeded>(
+            assertIs<FontOperationResult.Failure>(result).error,
+        )
+        assertEquals(ShapingResourceLimit.SCALARS, error.limit)
+        assertEquals(2, error.observed)
+    }
+
+    @Test
+    fun glyphBudgetRejectsNativeOutputBeforePortableRunPublication() {
+        val prepared = text("fi")
+
+        val result = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                resourceProfile = ShapingResourceProfile(maxGlyphs = 0),
+            ),
+        )
+
+        val error = assertIs<FontError.ShapingResourceLimitExceeded>(
+            assertIs<FontOperationResult.Failure>(result).error,
+        )
+        assertEquals(ShapingResourceLimit.GLYPHS, error.limit)
+        assertEquals(1, error.observed)
+    }
+
+    @Test
     fun invalidRequestDoesNotInventALeftToRightDefault() {
         val prepared = text("a")
 
@@ -604,6 +674,8 @@ class HarfBuzzJvmBackendTest {
         featurePolicy: ShapingFeaturePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
         features: List<OpenTypeFeature> = emptyList(),
         graphemeRanges: List<TextRange> = prepared.scalarRanges(),
+        resourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+        cancellationToken: CancellationToken = CancellationToken.none,
     ): ShapingRequest =
         ShapingRequest(
             snapshot = prepared.snapshot,
@@ -618,6 +690,8 @@ class HarfBuzzJvmBackendTest {
             featurePolicy = featurePolicy,
             features = features,
             graphemeClusters = graphemeRanges,
+            resourceProfile = resourceProfile,
+            cancellationToken = cancellationToken,
         )
 
     private fun text(value: String): PreparedText {
@@ -634,8 +708,7 @@ class HarfBuzzJvmBackendTest {
         layoutSize: LayoutUnit = LayoutUnit(2048f),
     ): FontInstance {
         val source = FontSource(fixtureBytes(resource), FontSourceProvenance(declaredName))
-        val parsed = SfntReader.readMetadata(source).successValue()
-        val catalog = EmbeddedFontCatalog(source, parsed)
+        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
         val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return face.instantiate(FontInstanceDescriptor(layoutSize = layoutSize)).successValue()
     }

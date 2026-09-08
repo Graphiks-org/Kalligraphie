@@ -4,6 +4,7 @@ import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import kotlin.test.Test
@@ -11,6 +12,25 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 class EmbeddedFontFaceContractTest {
+    @Test
+    fun loadsEveryEmbeddedFaceFromAMultiSourceCatalogThroughThePublishedFacade() {
+        val liberation = FontSource(
+            sourceBytes = fixtureBytes("/fonts/liberation/LiberationSans-Regular.ttf"),
+            provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
+        )
+        val bungee = FontSource(
+            sourceBytes = fixtureBytes("/fonts/bungee-color/BungeeColor-Regular.ttf"),
+            provenance = FontSourceProvenance(declaredName = "Bungee Color Regular"),
+        )
+
+        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+            Kalligraphie.embedded(listOf(liberation, bungee)),
+        ).value
+
+        assertEquals(listOf(liberation.id, bungee.id), catalog.faces.map { it.id.source })
+        assertEquals(2, catalog.faces.size)
+    }
+
     @Test
     fun opensTheLiberationSansTrueTypeFaceThroughThePublishedFacade() {
         val result = Kalligraphie.embedded(
@@ -31,8 +51,8 @@ class EmbeddedFontFaceContractTest {
         assertEquals(64, sourceId.contentDigest.value.length)
     }
 
-    private fun fixtureBytes(): ByteArray =
-        checkNotNull(javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf")) {
-            "fixture font resource is missing"
+    private fun fixtureBytes(path: String = "/fonts/liberation/LiberationSans-Regular.ttf"): ByteArray =
+        checkNotNull(javaClass.getResourceAsStream(path)) {
+            "fixture font resource $path is missing"
         }.use { it.readBytes() }
 }
