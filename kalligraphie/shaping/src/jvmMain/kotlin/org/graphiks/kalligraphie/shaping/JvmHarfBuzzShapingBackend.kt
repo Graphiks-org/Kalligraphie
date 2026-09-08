@@ -820,11 +820,20 @@ internal class HarfBuzzNativeLibrary(
             }
         }.sorted()
         if (observedTokens.isEmpty()) return emptyList()
-        val requestBoundaries = buildSet {
+        val requestBoundaries = buildList {
             request.graphemeClusters.forEachIndexed { graphemeIndex, grapheme ->
                 observeCancellation(request, graphemeIndex)
-                add(grapheme.start)
+                if (graphemeIndex == 0) add(grapheme.start)
                 add(grapheme.endExclusive)
+            }
+        }
+        var firstBoundaryIndex = 0
+        var cancellationCountdown = request.resourceProfile.cancellationCheckInterval
+        fun observeBoundaryCancellation() {
+            cancellationCountdown -= 1
+            if (cancellationCountdown == 0) {
+                observeCancellation(request)
+                cancellationCountdown = request.resourceProfile.cancellationCheckInterval
             }
         }
         return observedTokens.mapIndexed { index, tokenValue ->
@@ -832,10 +841,25 @@ internal class HarfBuzzNativeLibrary(
             val endTokenExclusive = observedTokens.getOrNull(index + 1) ?: scalarRanges.size
             val sourceScalars = scalarRanges.subList(tokenValue, endTokenExclusive)
             val sourceRange = TextRange(sourceScalars.first().start, sourceScalars.last().endExclusive)
-            val admissibleBoundaries = requestBoundaries.filter { boundary ->
-                boundary.sharesVersionWith(sourceRange.start) &&
-                    boundary.compareTo(sourceRange.start) >= 0 &&
-                    boundary.compareTo(sourceRange.endExclusive) <= 0
+            while (
+                firstBoundaryIndex + 1 < requestBoundaries.size &&
+                requestBoundaries[firstBoundaryIndex + 1].compareTo(sourceRange.start) <= 0
+            ) {
+                observeBoundaryCancellation()
+                firstBoundaryIndex += 1
+            }
+            val admissibleBoundaries = buildList {
+                var boundaryIndex = firstBoundaryIndex
+                while (
+                    boundaryIndex < requestBoundaries.size &&
+                    requestBoundaries[boundaryIndex].compareTo(sourceRange.endExclusive) <= 0
+                ) {
+                    observeBoundaryCancellation()
+                    val boundary = requestBoundaries[boundaryIndex]
+                    if (boundary.compareTo(sourceRange.start) >= 0) add(boundary)
+                    boundaryIndex += 1
+                }
+                firstBoundaryIndex = (boundaryIndex - 1).coerceAtLeast(firstBoundaryIndex)
             }
             ShaperCluster(
                 token = ShaperClusterToken(tokenValue),
