@@ -1,8 +1,11 @@
 package org.graphiks.kalligraphie.unicode
 
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.LineBreakAnalysis
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
+import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 /** Portable contract for complete, snapshot-bound Unicode line analysis. */
@@ -14,6 +17,22 @@ public fun interface UnicodeAnalyzer {
      * reject unsupported or malformed explicit inputs deterministically.
      */
     public fun analyze(snapshot: TextSnapshot, request: UnicodeAnalysisRequest): UnicodeAnalysis
+}
+
+/** Unicode analyzer that atomically observes explicit resource limits and cancellation. */
+public interface BoundedUnicodeAnalyzer : UnicodeAnalyzer {
+    /**
+     * Analyzes [snapshot] under [profile] while observing [cancellationToken] cooperatively.
+     *
+     * A limit failure or cancellation publishes no partial grapheme, script, or BiDi result.
+     * Successful analysis has exactly the same Unicode semantics as [UnicodeAnalyzer.analyze].
+     */
+    public fun analyze(
+        snapshot: TextSnapshot,
+        request: UnicodeAnalysisRequest,
+        profile: UnicodeAnalysisProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): UnicodeAnalysisOutcome
 }
 
 /** Portable contract for UAX #14 line-break opportunities over a complete Unicode analysis. */

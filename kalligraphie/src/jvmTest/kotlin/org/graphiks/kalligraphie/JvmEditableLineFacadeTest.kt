@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
@@ -23,6 +24,7 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingRequest
@@ -169,6 +171,63 @@ class JvmEditableLineFacadeTest {
             assertEquals("font.test-close-failure", failure.diagnostics.single().code)
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(backend.close())
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun cancelled_unicode_analysis_does_not_publish_an_editable_line() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A\uD83D\uDE00".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val result = JvmEditableLineFacade.layout(
+                JvmEditableLineFacadeRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    features = emptyList(),
+                    verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                    cancellationToken = CancellationToken.cancelled,
+                ),
+            )
+
+            assertIs<EditableLineResult.Cancelled>(result)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun unicode_scalar_budget_rejects_the_line_before_shaping_or_publication() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A\uD83D\uDE00".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val result = JvmEditableLineFacade.layout(
+                JvmEditableLineFacadeRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    features = emptyList(),
+                    verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                    unicodeAnalysisProfile = UnicodeAnalysisProfile(maxScalars = 1),
+                ),
+            )
+
+            val failure = assertIs<EditableLineResult.Failure>(result)
+            assertIs<EditableLineError.UnicodeAnalysisLimitExceeded>(failure.error)
+        } finally {
             assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
         }
     }
