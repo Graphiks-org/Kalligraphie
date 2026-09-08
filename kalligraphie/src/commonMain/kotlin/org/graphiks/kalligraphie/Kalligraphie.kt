@@ -4,7 +4,9 @@ import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontProviderId
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -74,14 +76,17 @@ public object Kalligraphie {
      * @param sourceBytes bytes containing exactly one supported SFNT face.
      * @param provenance caller-declared name or origin used for diagnostics and
      * audit trails.
+     * @param cachePolicy bounded portable representation retention applied per captured face.
      * @return a catalog snapshot, or a typed failure describing why the bytes
      * cannot be consumed.
      */
     public fun embedded(
         sourceBytes: ByteArray,
         provenance: FontSourceProvenance,
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
     ): FontOperationResult<FontCatalogSnapshot> = embedded(
         listOf(FontSource(sourceBytes = sourceBytes, provenance = provenance)),
+        cachePolicy,
     )
 
     /**
@@ -92,9 +97,17 @@ public object Kalligraphie {
      * callers can build a `FontResolutionPolicySnapshot`. Every source contributes exactly one
      * face; duplicate source content, an empty list, malformed data, and unsupported containers
      * produce typed [FontOperationResult.Failure] values. A successful catalog retains no native
-     * handle or renderer resource and is safe to share between threads.
+     * handle or renderer resource and is safe to share between threads. [cachePolicy] is a
+     * retention budget only: it never changes catalog, face, instance, asset, or representation
+     * identity and never retains a caller's resolver or asset handle.
+     *
+     * @param cachePolicy bounded portable representation retention applied independently to every
+     * captured face.
      */
-    public fun embedded(sources: List<FontSource>): FontOperationResult<FontCatalogSnapshot> {
+    public fun embedded(
+        sources: List<FontSource>,
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+    ): FontOperationResult<FontCatalogSnapshot> {
         val capturedSources = sources.toList()
         if (capturedSources.isEmpty()) {
             return embeddedCatalogFailure("An embedded font catalog requires at least one source.")
@@ -124,11 +137,12 @@ public object Kalligraphie {
         }
 
         val generation = FontCatalogGeneration(
-            capturedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
+            provider = FontProviderId("embedded-opentype"),
+            value = capturedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
                 (source.id as FontSourceId.Portable).contentDigest.value
             },
         )
-        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries), diagnostics)
+        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, cachePolicy), diagnostics)
     }
 
     private fun embeddedCatalogFailure(message: String): FontOperationResult.Failure =

@@ -5,7 +5,7 @@ Kalligraphie exposes an embedded TrueType path through
 contracts stay portable, but this executable route is JVM-only. A
 consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
 selects a stable face record, creates a font instance, and uses a render asset handle to
-materialize `GlyphOutlineIR` outlines.
+materialize a portable glyph representation.
 
 The supported functional scope is intentionally narrow:
 
@@ -13,9 +13,23 @@ The supported functional scope is intentionally narrow:
 - static SFNT TrueType only: `0x00010000` and `true`;
 - embedded OpenType sources with face index `0` for each source;
 - `LAYOUT_ONLY` for cmap and metrics;
-- `RENDERABLE` only with `OutlineProfile` schema version `1`;
-- glyph outlines in design units, with separately scaled `LayoutUnit`
+- `RENDERABLE` with schema version `1` `OutlineProfile`, `PaintGraphProfile`,
+  or `BitmapProfile` when the selected face advertises the matching route;
+- `glyf` outlines in design units, with separately scaled `LayoutUnit`
   metrics;
+- COLR version 0 and CPAL version 0 paint graphs made from solid outlines,
+  ordered groups, exact CPAL palette selection, and an explicit foreground
+  color;
+- SVG-in-OpenType table version 0 with raw UTF-8 documents only: `svg`, `g`,
+  and self-closing `path` elements; `translate` and `scale`; `M`, `L`, `H`,
+  `V`, `C`, `S`, and `Z` path commands; opaque `#RRGGBB` fills; and `fill="none"`
+  for explicitly inkless paths. Scripts,
+  external resources, entities, animation, compression, gradients, clips,
+  masks, strokes, and unlisted attributes are rejected before an asset is
+  published;
+- EBLC version 2 / EBDT version 2 bitmap strikes using index subtable format 1
+  and image format 1 only: byte-aligned one-bit alpha decoded to `ALPHA_8` in
+  sRGB, with an exact requested strike;
 - detached render assets that keep resolving after the owning resolver or
   attached handle is closed.
 
@@ -26,10 +40,35 @@ val size = FontInstanceDescriptor(LayoutUnit(2048f))
 val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile)
 ```
 
-Renderable glyph access requires an explicit outline profile. Closing a
+Renderable glyph access requires an explicit representation profile. Closing a
 resolver or render asset is idempotent. New acquisitions after closure return
 `font.resource-closed`; a detached asset owns the immutable data required for
 `resolveGlyph(...)`.
+
+### Bounded representation retention
+
+`FontMaterializationCachePolicy` optionally retains complete immutable portable outline,
+paint-graph, and decoded-bitmap results for one captured face. The policy is disabled by default and can be passed to
+`Kalligraphie.embedded(...)` or `MacosSystemFontCatalogOptions`. Its byte budget is a cost policy
+only: it neither changes route selection nor any representation key, certificate, diagnostic, or
+glyph result. Entries are scoped to one provider generation and face, weighted by retained
+normalized contour and paint data plus decoded bitmap pixels, and evicted least-recently-used first. Cancellation and operational
+errors are never retained; a result larger than the budget is returned normally without being
+retained. No cache entry holds a resolver, render asset, catalog, or native resource.
+
+```kotlin
+val cachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 4L * 1024L * 1024L)
+val catalogResult = Kalligraphie.embedded(bytes, provenance, cachePolicy)
+```
+
+The cache is released after the last resolver or render asset using that face closes. Detached
+assets keep their ordinary resource lease, so detaching does not change an already-admitted
+operation or expose a closed cache entry.
+
+On macOS, the JVM artifact also exposes `MacosSystemFontCatalog.open()`. It
+captures bounded, regular `.ttf` files into a portable snapshot and uses the
+same routes as embedded fonts. It does not expose CoreText handles, nor claim
+support for `.otf` or `.ttc` files.
 
 ## Exact editable Unicode lines
 
@@ -68,9 +107,12 @@ navigation, selection geometry, and deterministic hit testing.
 
 For `RENDERABLE` output, replace `LayoutOnly` with
 `EditableLineMaterialization.Renderable` and provide an open resolver, a
-variant, and an `OutlineProfile`. Every published final glyph then carries an
-outline-route certificate tied to its exact `FontRenderAssetKey`. The resolver
-remains caller-owned; the facade borrows it only during the synchronous call.
+`FontRenderVariantSnapshot`, and `FontAccessRequirementsSnapshot` containing
+one or more ordered representation profiles. The provider selects the first
+profile it can certify. Every published final glyph then carries an exact
+outline, paint-graph, bitmap, or inkless-route certificate tied to its
+`FontRenderAssetKey`. The resolver remains caller-owned; the facade borrows it
+only during the synchronous call.
 
 The embedded HarfBuzz 14.3.0 backend is the JVM reference implementation. Its
 Linux and macOS x64/arm64 resources are pinned, hash-verified, and never found
@@ -89,7 +131,7 @@ one face, and shapes the affected contiguous context.
 
 In `LAYOUT_ONLY`, a candidate must map and shape the complete unit. In
 `RENDERABLE`, it must additionally materialize every final shaped glyph with
-the requested outline profile. Failed candidates are blacklisted for the
+one accepted representation profile. Failed candidates are blacklisted for the
 operation and never silently retried for the same unit and profile. The
 published `PositionedGlyphRun` records its actual `FontInstanceKey`; every
 renderable glyph carries a certificate tied to its exact generation-bound
@@ -99,6 +141,6 @@ closes.
 
 Out of scope for the editable-line API: hyphenation,
 justification, vertical writing, rendering pixels, GPU APIs, TTC/OTC,
-CFF/CFF2, variations, synthetic styles, COLR, SVG, bitmap glyphs, and system
-fonts. See [Editable Paragraphs](editable-paragraphs.md) for the JVM multiline
-paragraph route.
+CFF/CFF2, variations, and synthetic styles. See
+[Editable Paragraphs](editable-paragraphs.md) for the JVM multiline paragraph
+route.
