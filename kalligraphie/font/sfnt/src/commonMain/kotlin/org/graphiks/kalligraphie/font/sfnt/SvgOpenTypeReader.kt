@@ -32,8 +32,8 @@ public sealed interface SvgGlyphPaint {
  * Immutable, profile-certified SVG-in-OpenType data for one TrueType face.
  *
  * The value owns no source bytes. It can safely outlive parsing and be shared by detached render
- * assets. [glyphPaint] returns `null` when no SVG document covers the requested glyph and an
- * explicit [SvgGlyphPaint.Empty] when a covered document has no ink.
+ * assets. [glyphPaint] returns `null` when no SVG document targets the requested glyph and an
+ * explicit [SvgGlyphPaint.Empty] when that document has no ink.
  */
 public class SvgOpenTypeData internal constructor(
     records: List<SvgOpenTypeDocumentRecord>,
@@ -41,22 +41,23 @@ public class SvgOpenTypeData internal constructor(
     private val records: List<SvgOpenTypeDocumentRecord> = records.toList()
 
     /**
-     * Returns the normalized result for [glyphId], or `null` when no SVG document covers it.
+     * Returns the normalized result for [glyphId], or `null` when no SVG document targets it.
      *
      * This operation is read-only, deterministic, and safe for concurrent calls.
      */
     public fun glyphPaint(glyphId: GlyphId): SvgGlyphPaint? =
-        records.firstOrNull { record -> glyphId.value in record.firstGlyphId..record.lastGlyphId }?.paint
+        records.firstNotNullOfOrNull { record -> record.glyphPaints[glyphId.value] }
 }
 
 /**
  * Decodes the deliberately small, safe SVG-in-OpenType subset implemented by Kalligraphie.
  *
- * Only SVG table version 0 with raw UTF-8 documents is accepted. Supported documents contain
- * `svg`, `g`, and self-closing `path` elements; `g` may contain `translate` and `scale`
- * transforms; paths may use `M`, `L`, `H`, `V`, `C`, `S`, and `Z` commands (and their relative forms)
- * with a solid `#RRGGBB` fill or `fill="none"` for an explicitly inkless path. All transforms are
- * applied to the portable path coordinates.
+ * Only SVG table version 0 with raw UTF-8 documents is accepted. Every glyph in a document record
+ * is targeted exactly once by either the root `svg` or a descendant `g` whose `id` is exactly
+ * `glyph<N>`. Supported documents contain `svg`, `g`, and self-closing `path` elements; `g` may
+ * contain `translate` and `scale` transforms; paths may use `M`, `L`, `H`, `V`, `C`, `S`, and `Z`
+ * commands (and their relative forms) with a solid `#RRGGBB` fill or `fill="none"` for an
+ * explicitly inkless path. All transforms are applied to the portable path coordinates.
  * Scripts, network or external references, entities, animation, compressed documents, XML
  * declarations, gradients, clips, strokes, opacity, masks, and every unlisted element or
  * attribute are rejected before any [SvgOpenTypeData] is returned.
@@ -142,13 +143,24 @@ public object SvgOpenTypeReader {
             } catch (_: IllegalArgumentException) {
                 return invalid("font.svg.invalid-utf8", "SVG document is not valid UTF-8.")
             }
-            val paint = when (val parsed = SvgDocumentParser(profile, transformBudget).parse(xml)) {
-                is FontOperationResult.Success -> parsed.value
-                is FontOperationResult.Failure -> return parsed
-                is FontOperationResult.Cancelled -> return parsed
+            val parsed = when (val result = SvgDocumentParser(profile, transformBudget).parse(xml)) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
             }
-            records += SvgOpenTypeDocumentRecord(firstGlyphId, lastGlyphId, paint)
+            records += SvgOpenTypeDocumentRecord(firstGlyphId, lastGlyphId, parsed.glyphPaints)
             previousLastGlyphId = lastGlyphId
+        }
+        if (records.any { record ->
+                val expectedGlyphCount = record.lastGlyphId - record.firstGlyphId + 1
+                record.glyphPaints.size != expectedGlyphCount ||
+                    record.glyphPaints.keys.any { glyphId -> glyphId !in record.firstGlyphId..record.lastGlyphId }
+            }
+        ) {
+            return invalid(
+                "font.svg.incomplete-glyph-targets",
+                "Each SVG document record must declare exactly one compatible glyph<N> target for every covered glyph.",
+            )
         }
         return FontOperationResult.Success(SvgOpenTypeData(records))
     }
@@ -166,16 +178,21 @@ public object SvgOpenTypeReader {
 internal data class SvgOpenTypeDocumentRecord(
     val firstGlyphId: Int,
     val lastGlyphId: Int,
-    val paint: SvgGlyphPaint,
+    val glyphPaints: Map<Int, SvgGlyphPaint>,
+)
+
+private data class ParsedSvgDocument(
+    val glyphPaints: Map<Int, SvgGlyphPaint>,
 )
 
 private class SvgDocumentParser(
     private val profile: PaintGraphProfile,
     private val transformBudget: SvgTransformBudget,
 ) {
-    private val paths = mutableListOf<GlyphPaintNode.Path>()
+    private val glyphs = linkedMapOf<Int, SvgGlyphPaintBuilder>()
+    private var unassignedPathCount: Int = 0
 
-    fun parse(xml: String): FontOperationResult<SvgGlyphPaint> {
+    fun parse(xml: String): FontOperationResult<ParsedSvgDocument> {
         if (xml.contains("<!") || xml.contains("<?") || xml.contains('&')) {
             return unsupported("SVG declarations, entities, and processing instructions are not supported.")
         }
@@ -213,15 +230,33 @@ private class SvgDocumentParser(
                         return unsupported("Only one non-empty root svg element with declared attributes is supported.")
                     }
                     if (attributes["xmlns"] != SVG_NAMESPACE) return unsupported("SVG root must declare the SVG namespace.")
+                    val targetGlyphId = attributes["id"]?.let(::parseGlyphTargetId)
+                    if ("id" in attributes && targetGlyphId == null) {
+                        return invalid("font.svg.invalid-glyph-target", "SVG root id must have the form glyph<N>.")
+                    }
+                    if (targetGlyphId != null && !registerGlyphTarget(targetGlyphId)) {
+                        return invalid("font.svg.duplicate-glyph-target", "SVG document declares a glyph target more than once.")
+                    }
                     rootSeen = true
-                    stack.addLast(SvgElement("svg", AffineTransform.identity))
+                    stack.addLast(SvgElement("svg", AffineTransform.identity, targetGlyphId))
                 }
 
                 "g" -> {
-                    if (stack.isEmpty() || selfClosing || attributes.keys.any { key -> key != "transform" }) {
-                        return unsupported("SVG group attributes other than transform are not supported.")
+                    if (stack.isEmpty() || selfClosing || attributes.keys.any { key -> key !in GROUP_ATTRIBUTES }) {
+                        return unsupported("SVG group attributes other than transform and glyph target id are not supported.")
                     }
                     if (stack.size + 1 > profile.limits.maxDepth) return limit("SVG nesting-depth limit exceeded.")
+                    val targetGlyphId = attributes["id"]?.let(::parseGlyphTargetId)
+                    if ("id" in attributes && targetGlyphId == null) {
+                        return invalid("font.svg.invalid-glyph-target", "SVG group id must have the form glyph<N>.")
+                    }
+                    val parent = stack.last()
+                    if (targetGlyphId != null && parent.glyphTargetId != null) {
+                        return unsupported("Nested SVG glyph targets are not supported.")
+                    }
+                    if (targetGlyphId != null && !registerGlyphTarget(targetGlyphId)) {
+                        return invalid("font.svg.duplicate-glyph-target", "SVG document declares a glyph target more than once.")
+                    }
                     val local = if ("transform" in attributes) {
                         when (val parsed = parseTransform(attributes.getValue("transform"))) {
                             is FontOperationResult.Success -> parsed.value
@@ -231,8 +266,14 @@ private class SvgDocumentParser(
                     } else {
                         AffineTransform.identity
                     }
-                    val parent = stack.last().transform
-                    stack.addLast(SvgElement("g", parent.then(local)))
+                    val transform = if (targetGlyphId != null) local else parent.transform.then(local)
+                    stack.addLast(
+                        SvgElement(
+                            "g",
+                            transform,
+                            targetGlyphId ?: parent.glyphTargetId,
+                        ),
+                    )
                 }
 
                 "path" -> {
@@ -243,9 +284,11 @@ private class SvgDocumentParser(
                     val fill = attributes["fill"] ?: "#000000"
                     if (fill == "none") continue
                     val color = parseColor(fill) ?: return unsupported("Only #RRGGBB SVG fills are supported.")
-                    val pathsAfterAppend = paths.size + 1
+                    val target = stack.last().glyphTargetId?.let(glyphs::get)
+                    val existingPathCount = target?.paths?.size ?: unassignedPathCount
+                    val pathsAfterAppend = existingPathCount + 1
                     val nodesAfterAppend = if (pathsAfterAppend == 1) pathsAfterAppend else pathsAfterAppend + 1
-                    if (paths.size >= profile.limits.maxPaths || nodesAfterAppend > profile.limits.maxNodes) {
+                    if (existingPathCount >= profile.limits.maxPaths || nodesAfterAppend > profile.limits.maxNodes) {
                         return limit("SVG path or paint-node limit exceeded.")
                     }
                     val path = when (val parsed = parsePath(pathData, stack.last().transform)) {
@@ -253,25 +296,26 @@ private class SvgDocumentParser(
                         is FontOperationResult.Failure -> return parsed
                         is FontOperationResult.Cancelled -> return parsed
                     }
-                    paths += GlyphPaintNode.Path(path, color)
+                    if (target != null) target.paths += GlyphPaintNode.Path(path, color)
+                    else unassignedPathCount += 1
                 }
 
                 else -> return unsupported("SVG element $name is not supported.")
             }
         }
         if (!rootSeen || stack.isNotEmpty()) return invalid("font.svg.unclosed-element", "SVG root or group element is not closed.")
-        if (paths.isEmpty()) return FontOperationResult.Success(SvgGlyphPaint.Empty)
-        val nodes = ArrayList<GlyphPaintNode>(paths.size + 1)
-        nodes += paths
-        val rootNode = if (paths.size == 1) {
-            0
-        } else {
-            nodes += GlyphPaintNode.Group(paths.indices.toList())
-            nodes.lastIndex
+        val glyphPaints = linkedMapOf<Int, SvgGlyphPaint>()
+        glyphs.forEach { (glyphId, target) ->
+            val paint = target.paint(profile) ?: return unsupported("SVG paint graph exceeds the selected profile.")
+            glyphPaints[glyphId] = paint
         }
-        val paint = org.graphiks.kalligraphie.api.GlyphPaintIR(profile.schemaVersion, rootNode, nodes)
-        if (!profile.accepts(paint)) return unsupported("SVG paint graph exceeds the selected profile.")
-        return FontOperationResult.Success(SvgGlyphPaint.Paint(paint))
+        return FontOperationResult.Success(ParsedSvgDocument(glyphPaints))
+    }
+
+    private fun registerGlyphTarget(glyphId: Int): Boolean {
+        if (glyphId in glyphs) return false
+        glyphs[glyphId] = SvgGlyphPaintBuilder()
+        return true
     }
 
     private fun parseTransform(value: String): FontOperationResult<AffineTransform> {
@@ -448,7 +492,29 @@ private class SvgDocumentParser(
     }
 }
 
-private data class SvgElement(val name: String, val transform: AffineTransform)
+private data class SvgElement(
+    val name: String,
+    val transform: AffineTransform,
+    val glyphTargetId: Int?,
+)
+
+private class SvgGlyphPaintBuilder {
+    val paths: MutableList<GlyphPaintNode.Path> = mutableListOf()
+
+    fun paint(profile: PaintGraphProfile): SvgGlyphPaint? {
+        if (paths.isEmpty()) return SvgGlyphPaint.Empty
+        val nodes = ArrayList<GlyphPaintNode>(paths.size + 1)
+        nodes += paths
+        val rootNode = if (paths.size == 1) {
+            0
+        } else {
+            nodes += GlyphPaintNode.Group(paths.indices.toList())
+            nodes.lastIndex
+        }
+        val paint = org.graphiks.kalligraphie.api.GlyphPaintIR(profile.schemaVersion, rootNode, nodes)
+        return if (profile.accepts(paint)) SvgGlyphPaint.Paint(paint) else null
+    }
+}
 
 private class SvgTransformBudget(
     private val maximum: Int,
@@ -642,6 +708,12 @@ private fun parseColor(value: String): GlyphColor? {
     return GlyphColor(red, green, blue)
 }
 
+private fun parseGlyphTargetId(value: String): Int? {
+    val suffix = value.removePrefix("glyph")
+    if (suffix.length == value.length || suffix.isEmpty() || suffix.any { character -> !character.isDigit() }) return null
+    return suffix.toIntOrNull()
+}
+
 private fun requireOpenContour(open: Boolean): Unit? = if (open) Unit else null
 
 private fun invalid(code: String, message: String): FontOperationResult.Failure =
@@ -683,6 +755,7 @@ private const val DOCUMENT_LIST_HEADER_LENGTH: Int = 2
 private const val DOCUMENT_RECORD_LENGTH: Int = 12
 private const val SVG_NAMESPACE: String = "http://www.w3.org/2000/svg"
 private val SVG_ATTRIBUTES: Set<String> = setOf("xmlns", "id")
+private val GROUP_ATTRIBUTES: Set<String> = setOf("transform", "id")
 private val PATH_ATTRIBUTES: Set<String> = setOf("d", "fill")
 private const val GZIP_MAGIC_0: Byte = 0x1F
 private const val GZIP_MAGIC_1: Byte = 0x8B.toByte()
