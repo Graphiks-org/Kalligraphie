@@ -803,35 +803,57 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                         certificates.putAll(certified.certificates)
                         return@forEach
                     }
-                    when (
-                        val acquired = instance.acquireMaterializationAsset(materialization)
-                    ) {
-                        is FontOperationResult.Success -> when (
-                            val certified = certifyWithAsset(
-                                request,
-                                listOf(placement),
-                                instance,
-                                acquired.value,
-                                materialization,
-                                proofs,
-                            )
-                        ) {
-                            is CertificationResult.Success -> {
-                                assetKeys.putAll(certified.assetKeys)
-                                certificates.putAll(certified.certificates)
+                    var firstFailure: CertificationResult.Failure? = null
+                    var certifiedPlacement: CertificationResult.Success? = null
+                    for (profile in materialization.requirements.acceptedProfiles) {
+                        val profileMaterialization = EditableLineMaterialization.Renderable(
+                            resolver = materialization.resolver,
+                            renderVariant = materialization.renderVariant,
+                            requirements = FontAccessRequirementsSnapshot.renderable(
+                                acceptedProfiles = listOf(profile),
+                                portableDataRequired = materialization.requirements.portableDataRequired,
+                            ),
+                        )
+                        when (val acquired = instance.acquireMaterializationAsset(profileMaterialization)) {
+                            is FontOperationResult.Success -> when (
+                                val certified = certifyWithAsset(
+                                    request,
+                                    listOf(placement),
+                                    instance,
+                                    acquired.value,
+                                    profileMaterialization,
+                                    proofs,
+                                )
+                            ) {
+                                is CertificationResult.Success -> {
+                                    certifiedPlacement = certified
+                                    break
+                                }
+
+                                is CertificationResult.Failure -> if (firstFailure == null) firstFailure = certified
+                                is CertificationResult.Cancelled -> return certified
                             }
 
-                            is CertificationResult.Failure -> return certified
-                            is CertificationResult.Cancelled -> return certified
+                            is FontOperationResult.Failure -> if (firstFailure == null) {
+                                firstFailure = CertificationResult.Failure(
+                                    EditableLineError.FontMaterializationFailure(acquired.error),
+                                    acquired.diagnostics.map(::fontDiagnostic),
+                                )
+                            }
+
+                            is FontOperationResult.Cancelled -> return CertificationResult.Cancelled(acquired.diagnostics.map(::fontDiagnostic))
                         }
-
-                        is FontOperationResult.Failure -> return CertificationResult.Failure(
-                            EditableLineError.FontMaterializationFailure(acquired.error),
-                            acquired.diagnostics.map(::fontDiagnostic),
-                        )
-
-                        is FontOperationResult.Cancelled -> return CertificationResult.Cancelled(acquired.diagnostics.map(::fontDiagnostic))
                     }
+                    val certified = certifiedPlacement ?: return firstFailure ?: CertificationResult.Failure(
+                        EditableLineError.FontMaterializationFailure(
+                            org.graphiks.kalligraphie.api.FontError.UnsupportedRepresentationProfile(
+                                "No accepted representation profile can certify the final shaped glyphs.",
+                            ),
+                        ),
+                        emptyList(),
+                    )
+                    assetKeys.putAll(certified.assetKeys)
+                    certificates.putAll(certified.certificates)
                 }
                 CertificationResult.Success(assetKeys, certificates)
             }

@@ -447,6 +447,27 @@ internal object FontFallbackResolver {
         if (proofs.find(instance, materialization, shaped.glyphs.map { it.glyphId }) != null) {
             return Validation.Valid
         }
+        if (materialization.requirements.acceptedProfiles.size > 1) {
+            var firstRejection: Validation.Rejected? = null
+            for (profile in materialization.requirements.acceptedProfiles) {
+                val profileMaterialization = EditableLineMaterialization.Renderable(
+                    resolver = materialization.resolver,
+                    renderVariant = materialization.renderVariant,
+                    requirements = FontAccessRequirementsSnapshot.renderable(
+                        acceptedProfiles = listOf(profile),
+                        portableDataRequired = materialization.requirements.portableDataRequired,
+                    ),
+                )
+                when (val validation = validateMaterialization(shaped, instance, profileMaterialization, request, proofs)) {
+                    Validation.Valid -> return Validation.Valid
+                    is Validation.Rejected -> if (firstRejection == null) firstRejection = validation
+                    is Validation.Cancelled -> return validation
+                }
+            }
+            return firstRejection ?: Validation.Rejected(
+                listOf(rejectionDiagnostic("No accepted representation profile can certify the final shaped glyphs.")),
+            )
+        }
         val asset = when (
             val acquired = instance.acquireMaterializationAsset(materialization)
         ) {

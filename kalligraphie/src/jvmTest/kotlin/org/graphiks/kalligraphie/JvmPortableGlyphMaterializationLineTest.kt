@@ -56,6 +56,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
+private const val SFNT_HEADER_BYTES: Int = 12
+private const val SFNT_TABLE_RECORD_BYTES: Int = 16
+private const val HEAD_CHECKSUM_ADJUSTMENT_OFFSET: Int = 8
+private val OPEN_TYPE_CHECKSUM_MAGIC: UInt = 0xB1B0AFBAu
+
 class JvmPortableGlyphMaterializationLineTest {
     @Test
     fun reusesTheFallbackRouteProofInsteadOfResolvingAnUnchangedGlyphTwice() {
@@ -165,6 +170,60 @@ class JvmPortableGlyphMaterializationLineTest {
             } finally {
                 reopened.close()
             }
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun certifiesAnOutlineWhenThePreferredBitmapStrikeDoesNotContainTheFinalGlyph() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(), outlineProfile()))
+        val fixture = openFixture(
+            bytes = liberationSansWithSkiaBitmapTables(),
+            provenance = "Liberation Sans outlines with Skia EBDT format 1 tables",
+            requirements = requirements,
+            layoutSize = 16f,
+        )
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf('!'.code.toByte()))),
+        ).snapshot
+
+        try {
+            val line = layout(snapshot, fixture, FontRenderVariantSnapshot.default, requirements)
+            val glyph = line.positionedGlyphRuns.single().glyphs.single()
+            val certificate = checkNotNull(glyph.materializationCertificate)
+
+            assertEquals(GlyphId(4), glyph.shapedGlyph.glyphId)
+            assertEquals(GlyphMaterializationRoute.OUTLINE, certificate.route)
+            assertEquals(outlineProfile(), certificate.assetKey.representationProfile)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun paragraphCertificationFallsBackToAnOutlineWhenThePreferredBitmapStrikeDoesNotContainTheFinalGlyph() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(), outlineProfile()))
+        val fixture = openFixture(
+            bytes = liberationSansWithSkiaBitmapTables(),
+            provenance = "Liberation Sans outlines with Skia EBDT format 1 tables",
+            requirements = requirements,
+            layoutSize = 16f,
+        )
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf('!'.code.toByte()))),
+        ).snapshot
+
+        try {
+            val line = paragraphLine(snapshot, fixture, FontRenderVariantSnapshot.default, requirements)
+            val glyph = line.positionedGlyphRuns.single().glyphs.single()
+            val certificate = checkNotNull(glyph.materializationCertificate)
+
+            assertEquals(GlyphId(4), glyph.shapedGlyph.glyphId)
+            assertEquals(GlyphMaterializationRoute.OUTLINE, certificate.route)
+            assertEquals(outlineProfile(), certificate.assetKey.representationProfile)
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
         }
@@ -324,6 +383,120 @@ class JvmPortableGlyphMaterializationLineTest {
         maxCompositeComponents = 256,
     )
 
+    /**
+     * Joins audited Liberation Sans outlines with audited Skia bitmap tables for one real-font
+     * fallback scenario: Liberation glyph 4 (`!`) has a TrueType outline but no Skia bitmap
+     * record. Both source fixtures carry their own immutable provenance and license records.
+     */
+    private fun liberationSansWithSkiaBitmapTables(): ByteArray {
+        val bitmapSource = resourceBytes("/fonts/skia-ebdt-format1/ebdt_fmt1.ttf")
+        val bitmapTables = listOf("EBLC", "EBDT").map { tag -> table(bitmapSource, tag) }
+        return sfntWithAdditionalTables(
+            source = resourceBytes("/fonts/liberation/LiberationSans-Regular.ttf"),
+            additionalTables = bitmapTables,
+        )
+    }
+
+    private fun sfntWithAdditionalTables(source: ByteArray, additionalTables: List<SfntTable>): ByteArray {
+        val sourceTables = readTables(source)
+        require(additionalTables.none { additional -> sourceTables.any { sourceTable -> sourceTable.tag == additional.tag } }) {
+            "Test source already declares a bitmap table."
+        }
+        val tables = (sourceTables + additionalTables).sortedBy(SfntTable::tag)
+        val headerSize = SFNT_HEADER_BYTES + tables.size * SFNT_TABLE_RECORD_BYTES
+        val offsets = ArrayList<Int>(tables.size)
+        var totalSize = headerSize
+        tables.forEach { table ->
+            totalSize = alignToWord(totalSize)
+            offsets += totalSize
+            totalSize += table.bytes.size
+        }
+        totalSize = alignToWord(totalSize)
+
+        return ByteArray(totalSize).also { result ->
+            source.copyInto(result, destinationOffset = 0, startIndex = 0, endIndex = 4)
+            writeUInt16(result, 4, tables.size)
+            val largestPowerOfTwo = Integer.highestOneBit(tables.size)
+            writeUInt16(result, 6, largestPowerOfTwo * SFNT_TABLE_RECORD_BYTES)
+            writeUInt16(result, 8, Integer.numberOfTrailingZeros(largestPowerOfTwo))
+            writeUInt16(result, 10, tables.size * SFNT_TABLE_RECORD_BYTES - largestPowerOfTwo * SFNT_TABLE_RECORD_BYTES)
+
+            tables.forEachIndexed { index, table ->
+                val recordOffset = SFNT_HEADER_BYTES + index * SFNT_TABLE_RECORD_BYTES
+                writeTag(result, recordOffset, table.tag)
+                writeUInt32(result, recordOffset + 4, table.checksum)
+                writeUInt32(result, recordOffset + 8, offsets[index].toUInt())
+                writeUInt32(result, recordOffset + 12, table.bytes.size.toUInt())
+                table.bytes.copyInto(result, destinationOffset = offsets[index])
+            }
+
+            val headOffset = offsets[tables.indexOfFirst { table -> table.tag == "head" }]
+            writeUInt32(result, headOffset + HEAD_CHECKSUM_ADJUSTMENT_OFFSET, 0u)
+            writeUInt32(result, headOffset + HEAD_CHECKSUM_ADJUSTMENT_OFFSET, OPEN_TYPE_CHECKSUM_MAGIC - openTypeChecksum(result))
+        }
+    }
+
+    private fun table(source: ByteArray, tag: String): SfntTable =
+        readTables(source).single { table -> table.tag == tag }
+
+    private fun readTables(source: ByteArray): List<SfntTable> {
+        val tableCount = readUInt16(source, 4)
+        return List(tableCount) { index ->
+            val recordOffset = SFNT_HEADER_BYTES + index * SFNT_TABLE_RECORD_BYTES
+            val offset = readUInt32(source, recordOffset + 8)
+            val length = readUInt32(source, recordOffset + 12)
+            require(offset >= 0 && length >= 0 && offset <= source.size - length) { "Invalid SFNT table range in fixture." }
+            SfntTable(
+                tag = readTag(source, recordOffset),
+                bytes = source.copyOfRange(offset, offset + length),
+                checksum = readUInt32(source, recordOffset + 4).toUInt(),
+            )
+        }
+    }
+
+    private fun readTag(bytes: ByteArray, offset: Int): String =
+        CharArray(4) { index -> bytes[offset + index].toInt().toChar() }.concatToString()
+
+    private fun writeTag(bytes: ByteArray, offset: Int, tag: String) {
+        require(tag.length == 4) { "An SFNT tag must have exactly four characters." }
+        tag.forEachIndexed { index, character -> bytes[offset + index] = character.code.toByte() }
+    }
+
+    private fun readUInt16(bytes: ByteArray, offset: Int): Int =
+        ((bytes[offset].toInt() and 0xff) shl 8) or (bytes[offset + 1].toInt() and 0xff)
+
+    private fun writeUInt16(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = (value ushr 8).toByte()
+        bytes[offset + 1] = value.toByte()
+    }
+
+    private fun readUInt32(bytes: ByteArray, offset: Int): Int =
+        ((bytes[offset].toInt() and 0xff) shl 24) or
+            ((bytes[offset + 1].toInt() and 0xff) shl 16) or
+            ((bytes[offset + 2].toInt() and 0xff) shl 8) or
+            (bytes[offset + 3].toInt() and 0xff)
+
+    private fun writeUInt32(bytes: ByteArray, offset: Int, value: UInt) {
+        bytes[offset] = (value shr 24).toByte()
+        bytes[offset + 1] = (value shr 16).toByte()
+        bytes[offset + 2] = (value shr 8).toByte()
+        bytes[offset + 3] = value.toByte()
+    }
+
+    private fun openTypeChecksum(bytes: ByteArray): UInt {
+        var checksum = 0u
+        bytes.indices.step(4).forEach { offset ->
+            val word = (bytes[offset].toUInt() and 0xffu) shl 24 or
+                ((bytes.getOrElse(offset + 1) { 0 }.toUInt() and 0xffu) shl 16) or
+                ((bytes.getOrElse(offset + 2) { 0 }.toUInt() and 0xffu) shl 8) or
+                (bytes.getOrElse(offset + 3) { 0 }.toUInt() and 0xffu)
+            checksum += word
+        }
+        return checksum
+    }
+
+    private fun alignToWord(value: Int): Int = (value + 3) and 3.inv()
+
     private fun resourceBytes(path: String): ByteArray =
         checkNotNull(javaClass.getResourceAsStream(path)) { "Fixture font resource is missing: $path" }.use { it.readBytes() }
 
@@ -335,6 +508,12 @@ class JvmPortableGlyphMaterializationLineTest {
         val font: FontInstance,
         val resolver: FontAssetResolverHandle,
         val descriptor: FontInstanceDescriptor,
+    )
+
+    private data class SfntTable(
+        val tag: String,
+        val bytes: ByteArray,
+        val checksum: UInt,
     )
 
     private class CountingFontCatalog(

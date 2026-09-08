@@ -121,12 +121,27 @@ class SvgOpenTypeReaderTest {
     @Test
     fun acceptsOnePathWhenTheProfileAllowsExactlyOnePaintNode() {
         val result = SvgOpenTypeReader.read(
-            svgTable("<svg xmlns=\"http://www.w3.org/2000/svg\"><path fill=\"#000000\" d=\"M0 0L1 0Z\"/></svg>"),
+            svgTable("<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"glyph1\"><path fill=\"#000000\" d=\"M0 0L1 0Z\"/></svg>"),
             glyphCount = 2,
             profile = profile(maxNodes = 1),
         )
 
         assertIs<FontOperationResult.Success<SvgOpenTypeData>>(result)
+    }
+
+    @Test
+    fun rejectsAGlyphRangeUnlessEveryGlyphHasItsOwnSvgTarget() {
+        val result = SvgOpenTypeReader.read(
+            svgTable(
+                document = "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"glyph1\"><path fill=\"#000000\" d=\"M0 0L1 0Z\"/></svg>",
+                firstGlyphId = 1,
+                lastGlyphId = 2,
+            ),
+            glyphCount = 3,
+            profile = profile(),
+        )
+
+        assertIs<FontError.FontDataFailure>(assertIs<FontOperationResult.Failure>(result).error)
     }
 
     private fun profile(
@@ -156,7 +171,11 @@ class SvgOpenTypeReaderTest {
         ),
     )
 
-    private fun svgTable(document: String): ByteArray {
+    private fun svgTable(
+        document: String,
+        firstGlyphId: Int = 1,
+        lastGlyphId: Int = 1,
+    ): ByteArray {
         val documentBytes = document.encodeToByteArray()
         val documentListOffset = 10
         val documentOffset = 14
@@ -164,8 +183,8 @@ class SvgOpenTypeReaderTest {
             table.writeUInt32(2, documentListOffset.toUInt())
             table.writeUInt16(documentListOffset, 1)
             val record = documentListOffset + 2
-            table.writeUInt16(record, 1)
-            table.writeUInt16(record + 2, 1)
+            table.writeUInt16(record, firstGlyphId)
+            table.writeUInt16(record + 2, lastGlyphId)
             table.writeUInt32(record + 4, documentOffset.toUInt())
             table.writeUInt32(record + 8, documentBytes.size.toUInt())
             documentBytes.copyInto(table, destinationOffset = documentListOffset + documentOffset)
