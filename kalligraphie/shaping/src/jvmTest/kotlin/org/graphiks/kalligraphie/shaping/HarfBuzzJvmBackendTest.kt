@@ -546,7 +546,7 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
-    fun cancellationObservedAfterShapingStartsDoesNotPublishAGlyphRun() {
+    fun cancellationAfterNativeShapingDoesNotPublishAGlyphRun() {
         val prepared = text("fi")
         var observations = 0
 
@@ -558,12 +558,13 @@ class HarfBuzzJvmBackendTest {
                 script = OpenTypeScript("Latn"),
                 language = "en",
                 bidiLevel = 0,
-                cancellationToken = CancellationToken { observations++ >= 1 },
+                resourceProfile = ShapingResourceProfile(maxGlyphs = 0),
+                cancellationToken = CancellationToken { observations++ >= 3 },
             ),
         )
 
         assertIs<FontOperationResult.Cancelled>(result)
-        assertTrue(observations >= 2)
+        assertEquals(4, observations)
     }
 
     @Test

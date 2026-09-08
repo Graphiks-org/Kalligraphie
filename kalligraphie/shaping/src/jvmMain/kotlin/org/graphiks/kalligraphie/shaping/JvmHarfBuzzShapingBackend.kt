@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.shaping
 
 import java.lang.foreign.Arena
@@ -88,7 +90,7 @@ private class HarfBuzzJvmBackend(
                 )
             }
             if (request.cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
-            val scalarCount = request.snapshot.scalarRanges(request.range).size
+            val scalarCount = request.snapshot.scalarCount(request.range)
             if (scalarCount > request.resourceProfile.maxScalars) {
                 return shapingResourceLimitFailure(ShapingResourceLimit.SCALARS, scalarCount)
             }
@@ -659,9 +661,11 @@ internal class HarfBuzzNativeLibrary(
         val buffer = requireNativeHandle(address(bufferCreate), "buffer")
         try {
             configureBuffer(arena, buffer, request)
-            val scalarRanges = request.snapshot.scalarRanges(request.range)
-            request.snapshot.scalarValues(request.range).forEachIndexed { tokenValue, scalar ->
+            val scalarRanges = mutableListOf<TextRange>()
+            request.snapshot.forEachScalar(request.range) { scalar, scalarRange ->
+                val tokenValue = scalarRanges.size
                 observeCancellation(request, tokenValue)
+                scalarRanges += scalarRange
                 callVoid(bufferAdd, buffer, scalar, tokenValue)
             }
             observeCancellation(request)
