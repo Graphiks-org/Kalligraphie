@@ -581,6 +581,17 @@ public sealed interface EditableLineError {
         override val code: String = "layout.geometry-overflow"
     }
 
+    /** Unicode analysis exceeded an explicit resource limit before shaping or publication. */
+    public data class UnicodeAnalysisLimitExceeded(
+        /** Resource dimension that rejected the immutable source snapshot. */
+        public val limit: UnicodeAnalysisLimit,
+        /** First scalar count exceeding the configured limit. */
+        public val observed: Int,
+    ) : EditableLineError {
+        override val code: String = "layout.unicode-analysis-limit-exceeded"
+        override val message: String = "Unicode analysis exceeded $limit at $observed scalars."
+    }
+
     /** A borrowed font asset failed while validating the requested renderable route. */
     public data class FontMaterializationFailure(
         /** Underlying typed font failure. */

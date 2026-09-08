@@ -21,6 +21,57 @@ public data class UnicodeAnalysisRequest(
     }
 }
 
+/** Resource dimension enforced while analyzing a complete Unicode snapshot. */
+public enum class UnicodeAnalysisLimit {
+    /** Unicode scalars accepted from the immutable input snapshot. */
+    SCALARS,
+}
+
+/**
+ * Immutable resource profile for a complete Unicode analysis.
+ *
+ * Reaching [maxScalars] or observing cancellation never publishes a partial segmentation,
+ * script itemization, or BiDi result. [cancellationCheckInterval] bounds the number of scalar
+ * iterations between cooperative observations in analyzers that process scalar data directly;
+ * it does not alter Unicode semantics for successful analyses.
+ */
+public class UnicodeAnalysisProfile(
+    /** Maximum Unicode scalars accepted from the immutable input snapshot. */
+    public val maxScalars: Int = Int.MAX_VALUE,
+    /** Positive number of scalar iterations between cooperative cancellation observations. */
+    public val cancellationCheckInterval: Int = 256,
+) {
+    init {
+        require(maxScalars >= 0) { "Unicode analysis scalar budget must be non-negative." }
+        require(cancellationCheckInterval > 0) { "Unicode analysis cancellation interval must be positive." }
+    }
+
+    /** Standard profile accepting every snapshot representable by the public contracts. */
+    public companion object {
+        public val unbounded: UnicodeAnalysisProfile = UnicodeAnalysisProfile()
+    }
+}
+
+/** Complete, atomic outcome of Unicode analysis under a [UnicodeAnalysisProfile]. */
+public sealed interface UnicodeAnalysisOutcome {
+    /** Complete immutable Unicode segmentation, script, and BiDi analysis. */
+    public class Success(
+        /** Fully analyzed immutable snapshot revision. */
+        public val value: UnicodeAnalysis,
+    ) : UnicodeAnalysisOutcome
+
+    /** The analysis input exceeded its configured resource limit. */
+    public class LimitExceeded(
+        /** Resource dimension that rejected this operation. */
+        public val limit: UnicodeAnalysisLimit,
+        /** First scalar count exceeding the configured limit. */
+        public val observed: Int,
+    ) : UnicodeAnalysisOutcome
+
+    /** Cooperative cancellation was observed before a complete analysis could be published. */
+    public data object Cancelled : UnicodeAnalysisOutcome
+}
+
 /** Versioned identity of the Unicode data and implementation used for analysis. */
 public data class UnicodeDataIdentity(
     /** Unicode Standard data version used for segmentation, scripts, and BiDi. */
