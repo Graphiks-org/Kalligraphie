@@ -376,7 +376,7 @@ public data class FontGlyphRequest(
         get() = GlyphId(glyphId)
 }
 
-/** Cooperative cancellation signal for potentially expensive font operations. */
+/** Cooperative cancellation signal for potentially expensive font or text operations. */
 public fun interface CancellationToken {
     /** Returns whether the current operation should stop. */
     public fun isCancellationRequested(): Boolean
