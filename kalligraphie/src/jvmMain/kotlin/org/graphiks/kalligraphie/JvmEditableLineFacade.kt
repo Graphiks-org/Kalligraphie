@@ -22,6 +22,7 @@ import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
 import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapingResourceProfile
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
@@ -67,6 +68,8 @@ public class JvmEditableLineFacadeRequest(
     public val cancellationToken: CancellationToken = CancellationToken.none,
     /** Resource profile enforced before Unicode analysis and any shaping work begins. */
     public val unicodeAnalysisProfile: UnicodeAnalysisProfile = UnicodeAnalysisProfile.unbounded,
+    /** Resource profile enforced for each explicit HarfBuzz shaping run. */
+    public val shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
 ) {
     /** Immutable OpenType feature overrides applied in deterministic caller order. */
     public val features: List<OpenTypeFeature> = features.toList()
@@ -209,6 +212,8 @@ public object JvmEditableLineFacade {
                     featurePolicy = request.featurePolicy,
                     features = request.features,
                     graphemeClusters = plan.graphemeClusters,
+                    resourceProfile = request.shapingResourceProfile,
+                    cancellationToken = request.cancellationToken,
                 ),
             )) {
                 is FontOperationResult.Success -> runs += shaped.value

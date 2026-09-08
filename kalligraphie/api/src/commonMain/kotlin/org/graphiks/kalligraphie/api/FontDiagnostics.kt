@@ -151,6 +151,18 @@ public sealed interface FontError {
         override val code: String = "font.resource-limit-exceeded"
     }
 
+    /** One shaping operation exceeded its explicit scalar or glyph budget. */
+    public data class ShapingResourceLimitExceeded(
+        /** Resource dimension that rejected the shaping operation. */
+        public val limit: ShapingResourceLimit,
+        /** Observed scalar or glyph count. */
+        public val observed: Int,
+    ) : FontError {
+        override val code: String = "font.shaping-resource-limit-exceeded"
+        override val message: String = "Shaping exceeded $limit at $observed."
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source
+    }
+
     /** The requested resource has already been closed. */
     public data class ResourceClosed(
         /** Error message describing the closed resource. */

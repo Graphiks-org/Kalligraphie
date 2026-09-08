@@ -153,6 +153,42 @@ public data class ShapingBackendIdentity(
     }
 }
 
+/** Resource dimension enforced for one explicit shaping operation. */
+public enum class ShapingResourceLimit {
+    /** Unicode scalars admitted from the request range. */
+    SCALARS,
+
+    /** Glyphs emitted by the shaping engine before a portable run is published. */
+    GLYPHS,
+}
+
+/**
+ * Immutable resource profile for one [ShapingRequest].
+ *
+ * Reaching a limit or observing cancellation never publishes a partial [ShapedGlyphRun].
+ * [cancellationCheckInterval] bounds scalar and glyph iterations between cooperative
+ * observations outside one native shaping call; it does not alter successful shaping semantics.
+ */
+public class ShapingResourceProfile(
+    /** Maximum Unicode scalars accepted from the request range. */
+    public val maxScalars: Int = Int.MAX_VALUE,
+    /** Maximum shaped glyphs accepted before portable output is allocated. */
+    public val maxGlyphs: Int = Int.MAX_VALUE,
+    /** Positive interval between cooperative cancellation observations. */
+    public val cancellationCheckInterval: Int = 256,
+) {
+    init {
+        require(maxScalars >= 0) { "Shaping scalar budget must be non-negative." }
+        require(maxGlyphs >= 0) { "Shaping glyph budget must be non-negative." }
+        require(cancellationCheckInterval > 0) { "Shaping cancellation interval must be positive." }
+    }
+
+    /** Standard profile accepting every request representable by the public contracts. */
+    public companion object {
+        public val unbounded: ShapingResourceProfile = ShapingResourceProfile()
+    }
+}
+
 /**
  * Fully explicit, immutable input to one relative shaping operation.
  *
@@ -190,6 +226,10 @@ public class ShapingRequest(
     public val featurePolicy: ShapingFeaturePolicy,
     features: List<OpenTypeFeature>,
     graphemeClusters: List<TextRange>,
+    /** Resource profile enforced before and while this run is shaped. */
+    public val resourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+    /** Cooperative cancellation signal observed before portable output is published. */
+    public val cancellationToken: CancellationToken = CancellationToken.none,
 ) {
     /** Immutable feature overrides applied after [featurePolicy] in caller-specified deterministic order. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
