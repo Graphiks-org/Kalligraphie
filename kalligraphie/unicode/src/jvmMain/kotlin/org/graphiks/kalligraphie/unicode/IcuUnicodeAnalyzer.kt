@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.unicode
 
 import com.ibm.icu.lang.UCharacter
+import com.ibm.icu.lang.UCharacterEnums
 import com.ibm.icu.lang.UProperty
 import com.ibm.icu.lang.UScript
 import com.ibm.icu.text.Bidi
@@ -60,10 +61,12 @@ internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
             val locale = parseLanguage(request.language)
             val canonicalLanguage = locale.toLanguageTag()
             val canonicalText = CanonicalUtf16Text(snapshot, profile, cancellationToken)
-            val logicalBidiRuns = logicalBidiRuns(snapshot, canonicalText, request.baseDirection, cancellationToken)
+            val bidi = bidi(canonicalText.value, request.baseDirection)
+            val resolvedBidiLevels = resolvedBidiLevels(snapshot, bidi, cancellationToken)
+            val logicalBidiRuns = bidiRuns(snapshot, resolvedBidiLevels, cancellationToken)
             val graphemes = graphemeClusters(snapshot, canonicalText, cancellationToken)
             val scripts = scriptLanguageRuns(snapshot, locale, canonicalLanguage, profile, cancellationToken)
-            val visualBidiRuns = visualBidiRuns(snapshot, canonicalText, request.baseDirection, cancellationToken)
+            val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, cancellationToken)
             UnicodeAnalysisOutcome.Success(
                 UnicodeAnalysis(
                     range = snapshot.range,
@@ -297,40 +300,65 @@ private fun scriptRun(
     language = language,
 )
 
-private fun logicalBidiRuns(
+private fun resolvedBidiLevels(
     snapshot: TextSnapshot,
-    text: CanonicalUtf16Text,
-    baseDirection: BaseDirection,
+    bidi: Bidi,
+    cancellationToken: CancellationToken,
+): IntArray {
+    val levels = IntArray(snapshot.scalars.size)
+    var utf16Offset = 0
+    snapshot.scalars.forEachIndexed { scalarIndex, scalar ->
+        observeCancellation(cancellationToken)
+        val level = bidi.getLevelAt(utf16Offset).toInt()
+        levels[scalarIndex] = if (scalarIndex > 0 && isNonSpacingMark(scalar)) levels[scalarIndex - 1] else level
+        utf16Offset += Character.charCount(scalar)
+    }
+    return levels
+}
+
+private fun isNonSpacingMark(scalar: Int): Boolean =
+    UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS) == UCharacterEnums.ECharacterDirection.DIR_NON_SPACING_MARK
+
+private fun bidiRuns(
+    snapshot: TextSnapshot,
+    levels: IntArray,
     cancellationToken: CancellationToken,
 ): List<BidiRun> {
-    if (snapshot.scalars.isEmpty()) return emptyList()
-    val bidi = bidi(text.value, baseDirection)
+    if (levels.isEmpty()) return emptyList()
     val runs = mutableListOf<BidiRun>()
-    var utf16Start = 0
-    while (utf16Start < text.value.length) {
+    var start = 0
+    var level = levels.first()
+    for (scalarIndex in 1 until levels.size) {
         observeCancellation(cancellationToken)
-        val run = bidi.getLogicalRun(utf16Start)
-        runs += BidiRun(text.range(snapshot, run.start, run.limit), run.embeddingLevel.toInt())
-        utf16Start = run.limit
+        if (levels[scalarIndex] != level) {
+            runs += BidiRun(scalarRange(snapshot, start, scalarIndex), level)
+            start = scalarIndex
+            level = levels[scalarIndex]
+        }
     }
+    runs += BidiRun(scalarRange(snapshot, start, levels.size), level)
     return runs
 }
 
-private fun visualBidiRuns(
-    snapshot: TextSnapshot,
-    text: CanonicalUtf16Text,
-    baseDirection: BaseDirection,
+private fun reorderBidiRuns(
+    logicalRuns: List<BidiRun>,
     cancellationToken: CancellationToken,
 ): List<BidiRun> {
-    if (snapshot.scalars.isEmpty()) return emptyList()
-    val bidi = bidi(text.value, baseDirection)
-    return buildList {
-        repeat(bidi.countRuns()) { visualIndex ->
+    val minimumOddLevel = logicalRuns.map(BidiRun::level).filter { it.rem(2) == 1 }.minOrNull() ?: return logicalRuns
+    val visualRuns = logicalRuns.toMutableList()
+    for (level in visualRuns.maxOf(BidiRun::level) downTo minimumOddLevel) {
+        var sequenceStart: Int? = null
+        for (runIndex in 0..visualRuns.size) {
             observeCancellation(cancellationToken)
-            val run = bidi.getVisualRun(visualIndex)
-            add(BidiRun(text.range(snapshot, run.start, run.limit), run.embeddingLevel.toInt()))
+            if (runIndex < visualRuns.size && visualRuns[runIndex].level >= level) {
+                if (sequenceStart == null) sequenceStart = runIndex
+            } else if (sequenceStart != null) {
+                visualRuns.subList(sequenceStart, runIndex).reverse()
+                sequenceStart = null
+            }
         }
     }
+    return visualRuns
 }
 
 private fun bidi(text: String, baseDirection: BaseDirection): Bidi = Bidi().apply {
