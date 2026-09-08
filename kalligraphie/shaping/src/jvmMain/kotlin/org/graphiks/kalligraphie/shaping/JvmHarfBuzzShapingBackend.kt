@@ -37,6 +37,7 @@ import org.graphiks.kalligraphie.api.ShapingFeaturePolicyApplication
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapingResourceLimit
 import org.graphiks.kalligraphie.api.ShapingSafetyFlags
+import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.toDiagnostic
 
@@ -836,6 +837,10 @@ internal class HarfBuzzNativeLibrary(
                 cancellationCountdown = request.resourceProfile.cancellationCheckInterval
             }
         }
+        fun compareBoundary(boundary: TextIndex, limit: TextIndex): Int {
+            observeBoundaryCancellation()
+            return boundary.compareTo(limit)
+        }
         return observedTokens.mapIndexed { index, tokenValue ->
             observeCancellation(request, index)
             val endTokenExclusive = observedTokens.getOrNull(index + 1) ?: scalarRanges.size
@@ -843,20 +848,18 @@ internal class HarfBuzzNativeLibrary(
             val sourceRange = TextRange(sourceScalars.first().start, sourceScalars.last().endExclusive)
             while (
                 firstBoundaryIndex + 1 < requestBoundaries.size &&
-                requestBoundaries[firstBoundaryIndex + 1].compareTo(sourceRange.start) <= 0
+                compareBoundary(requestBoundaries[firstBoundaryIndex + 1], sourceRange.start) <= 0
             ) {
-                observeBoundaryCancellation()
                 firstBoundaryIndex += 1
             }
             val admissibleBoundaries = buildList {
                 var boundaryIndex = firstBoundaryIndex
                 while (
                     boundaryIndex < requestBoundaries.size &&
-                    requestBoundaries[boundaryIndex].compareTo(sourceRange.endExclusive) <= 0
+                    compareBoundary(requestBoundaries[boundaryIndex], sourceRange.endExclusive) <= 0
                 ) {
-                    observeBoundaryCancellation()
                     val boundary = requestBoundaries[boundaryIndex]
-                    if (boundary.compareTo(sourceRange.start) >= 0) add(boundary)
+                    if (compareBoundary(boundary, sourceRange.start) >= 0) add(boundary)
                     boundaryIndex += 1
                 }
                 firstBoundaryIndex = (boundaryIndex - 1).coerceAtLeast(firstBoundaryIndex)
