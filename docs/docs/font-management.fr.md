@@ -148,14 +148,13 @@ conforme sur ces plateformes.
 
 ## Repli déterministe entre fontes
 
-`EmbeddedFontCatalog` peut capturer plusieurs sources OpenType auditées dans
-une `FontCatalogGeneration` (génération immuable du catalogue).
+`Kalligraphie.embedded(sources)` capture plusieurs sources OpenType auditées
+dans une `FontCatalogGeneration` (génération immuable du catalogue).
 `FontResolutionPolicySnapshot` associe à cette génération un ordre total de
-candidats versionné et une face explicite de dernier recours.
-`ExactEditableLineLayouter.layout(MultiFontEditableLineRequest)` dérive des
-unités de repli à partir de l’analyse réelle des grappes de graphèmes Unicode,
-attribue chaque unité à une seule face, puis compose le contexte contigu
-affecté.
+candidats versionné et une face explicite de dernier recours. La façade JVM de
+ligne éditable dérive des unités de repli à partir de l’analyse réelle des
+grappes de graphèmes Unicode, attribue chaque unité à une seule face, puis
+compose le contexte contigu affecté.
 
 En mode `LAYOUT_ONLY`, un candidat doit couvrir et composer toute l’unité. En
 mode `RENDERABLE`, il doit aussi matérialiser chaque glyphe final composé dans

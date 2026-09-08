@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -33,6 +35,7 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * the lifetime of this object through its resource lease.
  */
 @OptIn(ExperimentalAtomicApi::class)
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class PreparedTrueTypeFont internal constructor(
     private val sourceBytes: ByteArray,
     private val parsedFont: ParsedTrueTypeFont,

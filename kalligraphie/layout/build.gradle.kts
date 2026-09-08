@@ -13,6 +13,7 @@ kotlin {
             implementation(project(":kalligraphie:unicode"))
         }
         jvmTest.dependencies {
+            implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:unicode"))
             implementation(project(":kalligraphie:shaping"))
             implementation(project(":kalligraphie:font:core"))

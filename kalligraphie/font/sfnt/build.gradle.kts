@@ -1,5 +1,5 @@
 plugins {
-    id("ygdrasil.conventions.kalligraphie-kmp-library")
+    id("ygdrasil.conventions.kalligraphie-internal-kmp-library")
 }
 
 kotlin {
