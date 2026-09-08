@@ -33,6 +33,7 @@ import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicyApplication
 import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapingResourceLimit
 import org.graphiks.kalligraphie.api.ShapingSafetyFlags
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.toDiagnostic
@@ -86,6 +87,11 @@ private class HarfBuzzJvmBackend(
                     FontError.ResourceClosed("The pinned HarfBuzz backend is closed."),
                 )
             }
+            if (request.cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+            val scalarCount = request.snapshot.scalarRanges(request.range).size
+            if (scalarCount > request.resourceProfile.maxScalars) {
+                return shapingResourceLimitFailure(ShapingResourceLimit.SCALARS, scalarCount)
+            }
             if (request.featurePolicy != identity.featurePolicy) {
                 return shapingFailure(
                     code = "font.shaping-feature-policy-unsupported",
@@ -123,6 +129,10 @@ private class HarfBuzzJvmBackend(
                 failure.result
             } catch (cancelled: PreparedFontCancelled) {
                 cancelled.result
+            } catch (_: ShapingCancelled) {
+                FontOperationResult.Cancelled()
+            } catch (limitExceeded: ShapingLimitExceeded) {
+                shapingResourceLimitFailure(limitExceeded.limit, limitExceeded.observed)
             } catch (error: Throwable) {
                 shapingFailure(
                     code = "font.shaping-native-failure",
@@ -651,12 +661,15 @@ internal class HarfBuzzNativeLibrary(
             configureBuffer(arena, buffer, request)
             val scalarRanges = request.snapshot.scalarRanges(request.range)
             request.snapshot.scalarValues(request.range).forEachIndexed { tokenValue, scalar ->
+                observeCancellation(request, tokenValue)
                 callVoid(bufferAdd, buffer, scalar, tokenValue)
             }
+            observeCancellation(request)
             val features = featureArray(arena, request.features)
             check(shapeWithExplicitOpenTypeShaper(arena, preparedFont.font, buffer, features, request.features.size)) {
                 "HarfBuzz did not accept the explicit OpenType shaper configuration."
             }
+            observeCancellation(request)
             shapedRun(arena, request, preparedFont.font, buffer, scalarRanges, preparedFont.designToLayout)
         } finally {
             callVoid(bufferDestroy, buffer)
@@ -711,9 +724,13 @@ internal class HarfBuzzNativeLibrary(
         designToLayout: DesignToLayoutScale,
     ): ShapedGlyphRun {
         val glyphCount = int(bufferGetLength, buffer)
+        if (glyphCount > request.resourceProfile.maxGlyphs) {
+            throw ShapingLimitExceeded(ShapingResourceLimit.GLYPHS, glyphCount)
+        }
         val infos = address(bufferGetGlyphInfos, buffer, MemorySegment.NULL).reinterpret(glyphCount.toLong() * GLYPH_INFO_BYTES)
         val positions = address(bufferGetGlyphPositions, buffer, MemorySegment.NULL).reinterpret(glyphCount.toLong() * GLYPH_POSITION_BYTES)
         val glyphRecords = List(glyphCount) { glyphIndex ->
+            observeCancellation(request, glyphIndex)
             val infoOffset = glyphIndex.toLong() * GLYPH_INFO_BYTES
             val positionOffset = glyphIndex.toLong() * GLYPH_POSITION_BYTES
             val tokenValue = infos.get(ValueLayout.JAVA_INT, infoOffset + 8)
@@ -730,7 +747,8 @@ internal class HarfBuzzNativeLibrary(
         }
         val clusters = buildClusters(request, scalarRanges, glyphRecords)
         val clustersByToken = clusters.associateBy { cluster -> cluster.token }
-        val glyphs = glyphRecords.map { record ->
+        val glyphs = glyphRecords.mapIndexed { glyphIndex, record ->
+            observeCancellation(request, glyphIndex)
             val flags = ShapingSafetyFlags(
                 unsafeToBreak = record.safetyMask and HB_GLYPH_FLAG_UNSAFE_TO_BREAK != 0,
                 unsafeToConcat = record.safetyMask and HB_GLYPH_FLAG_UNSAFE_TO_CONCAT != 0,
@@ -746,6 +764,7 @@ internal class HarfBuzzNativeLibrary(
             )
         }
         val caretFacts = glyphRecords.mapIndexedNotNull { glyphIndex, record ->
+            observeCancellation(request, glyphIndex)
             val cluster = clustersByToken.getValue(ShaperClusterToken(record.tokenValue))
             if (cluster.internalAdmissibleGraphemeBoundaries().isEmpty()) {
                 null
@@ -790,12 +809,22 @@ internal class HarfBuzzNativeLibrary(
         glyphs: List<NativeGlyphRecord>,
     ): List<ShaperCluster> {
         if (scalarRanges.isEmpty()) return emptyList()
-        val observedTokens = glyphs.map(NativeGlyphRecord::tokenValue).distinct().sorted()
+        val observedTokens = buildSet {
+            glyphs.forEachIndexed { glyphIndex, glyph ->
+                observeCancellation(request, glyphIndex)
+                add(glyph.tokenValue)
+            }
+        }.sorted()
         if (observedTokens.isEmpty()) return emptyList()
-        val requestBoundaries = request.graphemeClusters
-            .flatMap { grapheme -> listOf(grapheme.start, grapheme.endExclusive) }
-            .distinct()
+        val requestBoundaries = buildSet {
+            request.graphemeClusters.forEachIndexed { graphemeIndex, grapheme ->
+                observeCancellation(request, graphemeIndex)
+                add(grapheme.start)
+                add(grapheme.endExclusive)
+            }
+        }
         return observedTokens.mapIndexed { index, tokenValue ->
+            observeCancellation(request, index)
             val endTokenExclusive = observedTokens.getOrNull(index + 1) ?: scalarRanges.size
             val sourceScalars = scalarRanges.subList(tokenValue, endTokenExclusive)
             val sourceRange = TextRange(sourceScalars.first().start, sourceScalars.last().endExclusive)
@@ -1032,6 +1061,29 @@ private fun shapingFailure(code: String, message: String): FontOperationResult.F
     val error = FontError.FontDataFailure(code, message, FontDiagnosticLocation.Source)
     return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
 }
+
+private fun shapingResourceLimitFailure(
+    limit: ShapingResourceLimit,
+    observed: Int,
+): FontOperationResult.Failure {
+    val error = FontError.ShapingResourceLimitExceeded(limit, observed)
+    return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
+}
+
+private fun observeCancellation(request: ShapingRequest) {
+    if (request.cancellationToken.isCancellationRequested()) throw ShapingCancelled
+}
+
+private fun observeCancellation(request: ShapingRequest, itemIndex: Int) {
+    if (itemIndex % request.resourceProfile.cancellationCheckInterval == 0) observeCancellation(request)
+}
+
+private data object ShapingCancelled : RuntimeException()
+
+private class ShapingLimitExceeded(
+    val limit: ShapingResourceLimit,
+    val observed: Int,
+) : RuntimeException()
 
 private const val HARFBUZZ_VERSION: String = "14.3.0"
 private const val LWJGL_HARFBUZZ_SOURCE_REVISION: String = "9f2f03173b7fee860cc00d999857d09fa4a362e2"

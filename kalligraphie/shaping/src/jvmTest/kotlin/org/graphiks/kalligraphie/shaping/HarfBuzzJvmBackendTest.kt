@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.shaping
 
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstance
@@ -16,6 +17,8 @@ import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
 import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapingResourceLimit
+import org.graphiks.kalligraphie.api.ShapingResourceProfile
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
@@ -543,6 +546,73 @@ class HarfBuzzJvmBackendTest {
     }
 
     @Test
+    fun cancellationObservedAfterShapingStartsDoesNotPublishAGlyphRun() {
+        val prepared = text("fi")
+        var observations = 0
+
+        val result = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                cancellationToken = CancellationToken { observations++ >= 1 },
+            ),
+        )
+
+        assertIs<FontOperationResult.Cancelled>(result)
+        assertTrue(observations >= 2)
+    }
+
+    @Test
+    fun scalarBudgetRejectsTheShapingRequestBeforeNativeGlyphPublication() {
+        val prepared = text("fi")
+
+        val result = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                resourceProfile = ShapingResourceProfile(maxScalars = 1),
+            ),
+        )
+
+        val error = assertIs<FontError.ShapingResourceLimitExceeded>(
+            assertIs<FontOperationResult.Failure>(result).error,
+        )
+        assertEquals(ShapingResourceLimit.SCALARS, error.limit)
+        assertEquals(2, error.observed)
+    }
+
+    @Test
+    fun glyphBudgetRejectsNativeOutputBeforePortableRunPublication() {
+        val prepared = text("fi")
+
+        val result = backend().shape(
+            request(
+                prepared = prepared,
+                font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans"),
+                direction = ShapingDirection.LEFT_TO_RIGHT,
+                script = OpenTypeScript("Latn"),
+                language = "en",
+                bidiLevel = 0,
+                resourceProfile = ShapingResourceProfile(maxGlyphs = 0),
+            ),
+        )
+
+        val error = assertIs<FontError.ShapingResourceLimitExceeded>(
+            assertIs<FontOperationResult.Failure>(result).error,
+        )
+        assertEquals(ShapingResourceLimit.GLYPHS, error.limit)
+        assertEquals(1, error.observed)
+    }
+
+    @Test
     fun invalidRequestDoesNotInventALeftToRightDefault() {
         val prepared = text("a")
 
@@ -603,6 +673,8 @@ class HarfBuzzJvmBackendTest {
         featurePolicy: ShapingFeaturePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
         features: List<OpenTypeFeature> = emptyList(),
         graphemeRanges: List<TextRange> = prepared.scalarRanges(),
+        resourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+        cancellationToken: CancellationToken = CancellationToken.none,
     ): ShapingRequest =
         ShapingRequest(
             snapshot = prepared.snapshot,
@@ -617,6 +689,8 @@ class HarfBuzzJvmBackendTest {
             featurePolicy = featurePolicy,
             features = features,
             graphemeClusters = graphemeRanges,
+            resourceProfile = resourceProfile,
+            cancellationToken = cancellationToken,
         )
 
     private fun text(value: String): PreparedText {
