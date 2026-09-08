@@ -271,6 +271,35 @@ public class TextSnapshot(
     }
 
     /**
+     * @suppress
+     *
+     * Returns the scalar count of [range] without materializing scalar values or ranges.
+     * This implementation detail exists for bounded cross-module text processing.
+     */
+    @KalligraphieInternalApi
+    public fun scalarCount(range: TextRange): Int {
+        require(contains(range)) { "Text range must belong to this snapshot." }
+        return range.endExclusive.ordinal - range.start.ordinal
+    }
+
+    /**
+     * @suppress
+     *
+     * Visits each scalar and its one-scalar range lazily in logical order. This implementation
+     * detail lets bounded consumers observe cancellation before retaining every input range.
+     */
+    @KalligraphieInternalApi
+    public fun forEachScalar(range: TextRange, action: (value: Int, scalarRange: TextRange) -> Unit) {
+        require(contains(range)) { "Text range must belong to this snapshot." }
+        for (ordinal in range.start.ordinal until range.endExclusive.ordinal) {
+            action(
+                scalars[ordinal],
+                TextRange(textIndexAtScalarBoundary(ordinal), textIndexAtScalarBoundary(ordinal + 1)),
+            )
+        }
+    }
+
+    /**
      * Returns one half-open scalar range per scalar in [range], in logical order.
      *
      * The input must belong to this snapshot. Returned ranges are bound to this snapshot's
