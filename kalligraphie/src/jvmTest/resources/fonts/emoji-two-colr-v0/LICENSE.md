@@ -1,12 +1,12 @@
-# Licence de la fixture EmojiTwo COLRv0
+# EmojiTwo COLRv0 fixture license
 
-`EmojiTwoCOLRv0.ttf` est dérivée des illustrations EmojiTwo / EmojiOne 2.2 et
-est distribuée sous [Creative Commons Attribution 4.0 International
-(CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/legalcode).
+`EmojiTwoCOLRv0.ttf` is derived from EmojiTwo / EmojiOne 2.2 artwork and is
+distributed under the [Creative Commons Attribution 4.0 International
+(CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/legalcode) license.
 
-Attribution demandée par la source : les illustrations Emoji sont fournies par
-EmojiTwo, initialement publiées comme EmojiOne 2.2 par Ranks.com, avec des
-contributions de la communauté EmojiTwo. Les adaptations de la source du
-générateur sont attribuées à Emoji-COLRv0.
+Source-required attribution: the Emoji artwork is provided by EmojiTwo,
+originally published as EmojiOne 2.2 by Ranks.com, with contributions from the
+EmojiTwo community. Adaptations from the generator source are attributed to
+Emoji-COLRv0.
 
-La source et la provenance immuable sont détaillées dans `PROVENANCE.md`.
+The source and immutable provenance are documented in `PROVENANCE.md`.
