@@ -30,6 +30,10 @@ This project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, 
 
 Every pull request must satisfy the repository contract below before it can merge.
 
+### Fork workflow (mandatory)
+
+The primary repository is [Graphiks-org/Kalligraphie](https://github.com/Graphiks-org/Kalligraphie). **You must work from your own fork** of this repository: do not create contribution branches directly in the primary repository. Open every contribution pull request from a branch in your fork, with [Graphiks-org/Kalligraphie](https://github.com/Graphiks-org/Kalligraphie) as its target repository.
+
 ### Machine-enforced blocking rules
 
 These are the checks that must pass before merge. They are enforced by the PR policy, CI, or the protected `master` branch ruleset.
