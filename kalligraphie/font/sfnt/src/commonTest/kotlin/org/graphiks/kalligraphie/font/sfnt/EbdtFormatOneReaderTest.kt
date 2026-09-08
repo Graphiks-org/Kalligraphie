@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.sfnt
 
 import org.graphiks.kalligraphie.api.BitmapLimits

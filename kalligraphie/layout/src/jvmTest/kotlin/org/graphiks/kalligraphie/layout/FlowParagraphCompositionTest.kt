@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.layout
 
+import org.graphiks.kalligraphie.Kalligraphie
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -22,7 +23,6 @@ import org.graphiks.kalligraphie.api.FlowRegionIdentity
 import org.graphiks.kalligraphie.api.FlowRegionResult
 import org.graphiks.kalligraphie.api.FragmentationConstraintKind
 import org.graphiks.kalligraphie.api.FragmentationConstraints
-import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -58,9 +58,6 @@ import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.WritingMode
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
@@ -1383,11 +1380,8 @@ class FlowParagraphCompositionTest {
             checkNotNull(javaClass.getResourceAsStream(fontResource)).use { it.readBytes() },
             FontSourceProvenance(fontName),
         )
-        val generation = FontCatalogGeneration("flow-composition-$fontName-v1")
-        val catalog: FontCatalogSnapshot = EmbeddedFontCatalog(
-            generation,
-            listOf(EmbeddedFontCatalogEntry(source, SfntReader.readMetadata(source).successValue())),
-        )
+        val catalog: FontCatalogSnapshot = Kalligraphie.embedded(listOf(source)).successValue()
+        val generation = catalog.generation
         val face = FontFaceId(source.id, 0)
         val policy = FontResolutionPolicySnapshot(
             generation = generation,

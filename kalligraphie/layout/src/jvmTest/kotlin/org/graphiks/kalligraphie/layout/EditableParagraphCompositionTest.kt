@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.layout
 
+import org.graphiks.kalligraphie.Kalligraphie
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -11,7 +12,6 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -47,9 +47,6 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
-import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
-import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
@@ -387,7 +384,7 @@ class EditableParagraphCompositionTest {
             "",
             width = 3_000f,
             height = 1_000f,
-            catalogGeneration = "foreign-empty-renderable-generation",
+            fontResources = listOf(FontFixture("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")),
         )
         val profile = OutlineProfile(
             maxBytes = 1_024,
@@ -428,7 +425,7 @@ class EditableParagraphCompositionTest {
             "",
             width = 3_000f,
             height = 1_000f,
-            catalogGeneration = "foreign-terminal-empty-renderable-generation",
+            fontResources = listOf(FontFixture("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")),
         )
         val profile = OutlineProfile(
             maxBytes = 1_024,
@@ -811,7 +808,6 @@ class EditableParagraphCompositionTest {
         fontResources: List<FontFixture> = listOf(FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")),
         sourceStartOrdinal: Int = 0,
         recordShapingRequests: Boolean = false,
-        catalogGeneration: String = "paragraph-composition-${fontResources.joinToString("-") { it.declaredName }}-v1",
     ): Fixture {
         val snapshot = TextSnapshots.decodeUtf16(
             version = TextVersion.create(),
@@ -823,11 +819,8 @@ class EditableParagraphCompositionTest {
         )
         val lineBreakAnalysis = JvmLineBreakAnalyzer.create().analyze(snapshot, unicodeAnalysis)
         val sources = fontResources.map { font -> source(font.resource, font.declaredName) }
-        val generation = FontCatalogGeneration(catalogGeneration)
-        val catalog = EmbeddedFontCatalog(
-            generation,
-            sources.map { source -> EmbeddedFontCatalogEntry(source, SfntReader.readMetadata(source).successValue()) },
-        )
+        val catalog = Kalligraphie.embedded(sources).successValue()
+        val generation = catalog.generation
         val faces = sources.map { source -> FontFaceId(source.id, 0) }
         val policy = FontResolutionPolicySnapshot(
             generation = generation,

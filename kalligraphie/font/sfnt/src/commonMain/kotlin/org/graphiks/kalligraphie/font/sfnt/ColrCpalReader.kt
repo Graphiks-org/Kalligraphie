@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.sfnt
 
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -7,6 +9,7 @@ import org.graphiks.kalligraphie.api.GlyphColor
 import org.graphiks.kalligraphie.api.GlyphId
 
 /** Limits applied before decoding a COLR version 0 and CPAL version 0 table pair. */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public data class ColrCpalV0Limits(
     /** Maximum CPAL palettes retained by one decoded table pair. */
     public val maxPalettes: Int,
@@ -45,6 +48,7 @@ public data class ColrCpalV0Limits(
 }
 
 /** One COLR version 0 layer, in source paint order. */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public data class ColrV0Layer(
     /** Glyph painted by this layer. */
     public val glyphId: GlyphId,
@@ -70,6 +74,7 @@ public data class ColrV0Layer(
  * Every returned list is a fresh caller-owned snapshot, so concurrent consumers cannot mutate the
  * decoded state held by the font asset.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class ColrCpalV0Data internal constructor(
     palettes: List<List<GlyphColor>>,
     layersByGlyph: Map<GlyphId, List<ColrV0Layer>>,
@@ -99,6 +104,7 @@ public class ColrCpalV0Data internal constructor(
  * that cannot be resolved against the complete CPAL palette domain fail before a glyph route is
  * made available.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object ColrCpalReader {
     /**
      * Returns whether both tables declare the only versions this reader implements.

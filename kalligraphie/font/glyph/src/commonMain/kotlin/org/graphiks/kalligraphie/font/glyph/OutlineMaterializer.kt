@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.glyph
 
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -20,6 +22,7 @@ import org.graphiks.kalligraphie.font.scaler.ScalerGlyphOutline
  * Materialization is read-only, publishes only complete immutable values, and
  * returns typed failures when a profile limit is exceeded.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object OutlineMaterializer {
     /**
      * Materializes [outline] while enforcing [profile] and cooperative

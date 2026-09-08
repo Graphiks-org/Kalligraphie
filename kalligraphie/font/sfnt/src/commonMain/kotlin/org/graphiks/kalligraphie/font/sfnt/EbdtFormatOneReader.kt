@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.sfnt
 
 import org.graphiks.kalligraphie.api.BitmapGlyphIR
@@ -21,6 +23,7 @@ import org.graphiks.kalligraphie.api.GlyphId
  * rejected while opening the route. It retains only the selected strike's validated records and
  * never exposes raw EBDT bytes to a consumer.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class EbdtFormatOneData internal constructor(
     private val strike: BitmapStrike,
     private val glyphCount: Int,
@@ -74,6 +77,7 @@ public class EbdtFormatOneData internal constructor(
 }
 
 /** Reads the declared EBDT format-1 bitmap route into portable bounded records. */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object EbdtFormatOneReader {
     /**
      * Reports whether both bitmap tables declare the only versions this route can open.
