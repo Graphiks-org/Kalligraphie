@@ -14,6 +14,7 @@ import org.graphiks.kalligraphie.api.FontProviderId
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.KalligraphieInternalApi
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
@@ -77,6 +78,7 @@ public class MacosSystemFontCatalogOptions(
  * from its exact generation. The returned snapshot exposes only portable routes implemented by
  * the embedded TrueType provider; it does not retain a CoreText object or expose a native handle.
  */
+@OptIn(KalligraphieInternalApi::class)
 public object MacosSystemFontCatalog {
     /**
      * Captures a bounded snapshot of supported macOS system TrueType fonts.

@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.sfnt
 
 import org.graphiks.kalligraphie.api.FontDiagnostic
@@ -19,6 +21,7 @@ import org.graphiks.kalligraphie.api.toDiagnostic
  * result only after required tables, ranges, names, and TrueType limits have
  * been validated.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object SfntReader {
     private val requiredTables = setOf("head", "maxp", "name", "cmap", "hhea", "hmtx")
 
@@ -290,6 +293,7 @@ public object SfntReader {
  * buffer; a scaler or asset owner decides how long the corresponding bytes
  * and decoded tables remain retained.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class ParsedTrueTypeFont(
     /** Validated table locations keyed by their four-byte SFNT tags. */
     tableRecords: Map<String, TableRecord>,
@@ -344,6 +348,7 @@ public class ParsedTrueTypeFont(
  * and are validated against the source only when consumed by [slice] or the
  * metadata reader.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public data class TableRecord(
     /** Four-character table tag. */
     public val tag: String,
@@ -370,6 +375,7 @@ private data class ParsedNames(
  * @return an independent table copy, or `null` when the range overflows or is
  * outside [bytes].
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
     val end = checkedRangeEnd(record.offset, record.length, bytes.size) ?: return null
     return bytes.copyOfRange(record.offset.toInt(), end)
@@ -381,6 +387,7 @@ public fun slice(bytes: ByteArray, record: TableRecord): ByteArray? {
  * @return the exclusive end when the non-negative range fits [sourceSize], or
  * `null` on overflow or out-of-bounds input.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun checkedRangeEnd(offset: Int, length: Int, sourceSize: Int): Int? {
     return checkedRangeEnd(offset.toLong(), length.toLong(), sourceSize)
 }
@@ -393,6 +400,7 @@ public fun checkedRangeEnd(offset: Int, length: Int, sourceSize: Int): Int? {
  * @param sourceSize available source size.
  * @return the exclusive end, or `null` when the range is invalid.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun checkedRangeEnd(offset: Long, length: Long, sourceSize: Int): Int? {
     if (offset < 0L || length < 0L || offset > sourceSize.toLong()) {
         return null
@@ -413,12 +421,14 @@ public fun checkedRangeEnd(offset: Long, length: Long, sourceSize: Int): Int? {
  * @param bytes source buffer, which is not modified.
  * @param offset byte offset of the value.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun readUInt16(bytes: ByteArray, offset: Int): UInt? {
     checkedRangeEnd(offset.toLong(), 2L, bytes.size) ?: return null
     return (((bytes[offset].toInt() and 0xFF) shl 8) or (bytes[offset + 1].toInt() and 0xFF)).toUInt()
 }
 
 /** Reads one big-endian signed 16-bit value, or `null` if truncated. */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun readInt16(bytes: ByteArray, offset: Int): Int? = readUInt16(bytes, offset)?.toShort()?.toInt()
 
 /**
@@ -427,6 +437,7 @@ public fun readInt16(bytes: ByteArray, offset: Int): Int? = readUInt16(bytes, of
  * The result uses Kotlin's unsigned integer type and never throws for an
  * invalid offset.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
     checkedRangeEnd(offset.toLong(), 4L, bytes.size) ?: return null
     return (((bytes[offset].toUInt() and 0xFFu) shl 24) or
@@ -440,6 +451,7 @@ public fun readUInt32(bytes: ByteArray, offset: Int): UInt? {
  * truncated. The receiver is read-only; non-ASCII byte values are preserved
  * as one code unit rather than normalized.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public fun ByteArray.decodeAsciiTag(offset: Int): String {
     checkedRangeEnd(offset.toLong(), 4L, size) ?: return ""
     return CharArray(4) { index -> (this[offset + index].toInt() and 0xFF).toChar() }.concatToString()

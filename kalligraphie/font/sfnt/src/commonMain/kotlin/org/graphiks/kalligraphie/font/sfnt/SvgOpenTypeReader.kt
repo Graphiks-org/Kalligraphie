@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.font.sfnt
 
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -17,6 +19,7 @@ import org.graphiks.kalligraphie.api.PaintGraphProfile
  * A result contains only portable paint data. It never exposes the SVG document, an XML object,
  * a URI, or a renderer resource.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public sealed interface SvgGlyphPaint {
     /** The SVG document is present but has no paintable ink in the supported subset. */
     public data object Empty : SvgGlyphPaint
@@ -35,6 +38,7 @@ public sealed interface SvgGlyphPaint {
  * assets. [glyphPaint] returns `null` when no SVG document targets the requested glyph and an
  * explicit [SvgGlyphPaint.Empty] when that document has no ink.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class SvgOpenTypeData internal constructor(
     records: List<SvgOpenTypeDocumentRecord>,
 ) {
@@ -62,6 +66,7 @@ public class SvgOpenTypeData internal constructor(
  * declarations, gradients, clips, strokes, opacity, masks, and every unlisted element or
  * attribute are rejected before any [SvgOpenTypeData] is returned.
  */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object SvgOpenTypeReader {
     /**
      * Decodes and validates every document in an OpenType `SVG ` table.

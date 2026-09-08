@@ -13,10 +13,12 @@ independently.
 - `:kalligraphie:unicode` provides canonical text decoding and the JVM reference Unicode analysis.
 - `:kalligraphie:shaping` provides the reference JVM HarfBuzz adapter behind portable shaping contracts.
 - `:kalligraphie:layout` positions shaped runs and provides exact editable-line, editable-paragraph, flow-region, and incremental geometry.
-- `:kalligraphie:font:core` provides font sources, faces, and instances.
-- `:kalligraphie:font:sfnt` parses bounded SFNT and OpenType data.
-- `:kalligraphie:font:scaler` resolves metrics and TrueType outlines.
-- `:kalligraphie:font:glyph` materializes detached render assets.
+
+The `:kalligraphie:font:core`, `:kalligraphie:font:sfnt`,
+`:kalligraphie:font:scaler`, and `:kalligraphie:font:glyph` modules are
+internal implementation details. They are neither supported consumer artifacts
+nor extension APIs; applications load embedded catalogs through
+`Kalligraphie.embedded(...)` and use the public font contracts.
 
 ## Consumer guides
 
