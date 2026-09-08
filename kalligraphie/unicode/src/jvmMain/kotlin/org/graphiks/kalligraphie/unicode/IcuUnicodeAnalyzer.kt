@@ -381,12 +381,33 @@ private fun reorderBidiRuns(
             if (runIndex < visualRuns.size && visualRuns[runIndex].level >= level) {
                 if (sequenceStart == null) sequenceStart = runIndex
             } else if (sequenceStart != null) {
-                visualRuns.subList(sequenceStart, runIndex).reverse()
+                reverseBidiRunSequence(visualRuns, sequenceStart, runIndex, profile, cancellationToken)
                 sequenceStart = null
             }
         }
     }
     return visualRuns
+}
+
+private fun reverseBidiRunSequence(
+    runs: MutableList<BidiRun>,
+    start: Int,
+    endExclusive: Int,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+) {
+    var left = start
+    var right = endExclusive - 1
+    var swapIndex = 0
+    while (left < right) {
+        observeCancellation(swapIndex, profile, cancellationToken)
+        val run = runs[left]
+        runs[left] = runs[right]
+        runs[right] = run
+        left += 1
+        right -= 1
+        swapIndex += 1
+    }
 }
 
 private fun bidi(text: String, baseDirection: BaseDirection): Bidi = Bidi().apply {
