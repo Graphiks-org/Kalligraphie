@@ -62,11 +62,11 @@ internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
             val canonicalLanguage = locale.toLanguageTag()
             val canonicalText = CanonicalUtf16Text(snapshot, profile, cancellationToken)
             val bidi = bidi(canonicalText.value, request.baseDirection)
-            val resolvedBidiLevels = resolvedBidiLevels(snapshot, bidi, cancellationToken)
-            val logicalBidiRuns = bidiRuns(snapshot, resolvedBidiLevels, cancellationToken)
+            val resolvedBidiLevels = resolvedBidiLevels(snapshot, bidi, profile, cancellationToken)
+            val logicalBidiRuns = bidiRuns(snapshot, resolvedBidiLevels, profile, cancellationToken)
             val graphemes = graphemeClusters(snapshot, canonicalText, cancellationToken)
             val scripts = scriptLanguageRuns(snapshot, locale, canonicalLanguage, profile, cancellationToken)
-            val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, cancellationToken)
+            val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, profile, cancellationToken)
             UnicodeAnalysisOutcome.Success(
                 UnicodeAnalysis(
                     range = snapshot.range,
@@ -303,14 +303,21 @@ private fun scriptRun(
 private fun resolvedBidiLevels(
     snapshot: TextSnapshot,
     bidi: Bidi,
+    profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): IntArray {
     val levels = IntArray(snapshot.scalars.size)
     var utf16Offset = 0
     snapshot.scalars.forEachIndexed { scalarIndex, scalar ->
-        observeCancellation(cancellationToken)
+        observeCancellation(scalarIndex, profile, cancellationToken)
         val level = bidi.getLevelAt(utf16Offset).toInt()
-        levels[scalarIndex] = if (scalarIndex > 0 && isNonSpacingMark(scalar)) levels[scalarIndex - 1] else level
+        levels[scalarIndex] = if (
+            scalarIndex > 0 && isNonSpacingMark(scalar) && !isIsolateInitiator(snapshot.scalars[scalarIndex - 1])
+        ) {
+            levels[scalarIndex - 1]
+        } else {
+            level
+        }
         utf16Offset += Character.charCount(scalar)
     }
     return levels
@@ -319,9 +326,19 @@ private fun resolvedBidiLevels(
 private fun isNonSpacingMark(scalar: Int): Boolean =
     UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS) == UCharacterEnums.ECharacterDirection.DIR_NON_SPACING_MARK
 
+private fun isIsolateInitiator(scalar: Int): Boolean = when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS)) {
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt(),
+    -> true
+
+    else -> false
+}
+
 private fun bidiRuns(
     snapshot: TextSnapshot,
     levels: IntArray,
+    profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): List<BidiRun> {
     if (levels.isEmpty()) return emptyList()
@@ -329,7 +346,7 @@ private fun bidiRuns(
     var start = 0
     var level = levels.first()
     for (scalarIndex in 1 until levels.size) {
-        observeCancellation(cancellationToken)
+        observeCancellation(scalarIndex, profile, cancellationToken)
         if (levels[scalarIndex] != level) {
             runs += BidiRun(scalarRange(snapshot, start, scalarIndex), level)
             start = scalarIndex
@@ -342,14 +359,25 @@ private fun bidiRuns(
 
 private fun reorderBidiRuns(
     logicalRuns: List<BidiRun>,
+    profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): List<BidiRun> {
-    val minimumOddLevel = logicalRuns.map(BidiRun::level).filter { it.rem(2) == 1 }.minOrNull() ?: return logicalRuns
-    val visualRuns = logicalRuns.toMutableList()
-    for (level in visualRuns.maxOf(BidiRun::level) downTo minimumOddLevel) {
+    var minimumOddLevel: Int? = null
+    var maximumLevel = 0
+    val visualRuns = ArrayList<BidiRun>(logicalRuns.size)
+    logicalRuns.forEachIndexed { runIndex, run ->
+        observeCancellation(runIndex, profile, cancellationToken)
+        if (run.level.rem(2) == 1) {
+            minimumOddLevel = minOf(minimumOddLevel ?: run.level, run.level)
+        }
+        maximumLevel = maxOf(maximumLevel, run.level)
+        visualRuns += run
+    }
+    val firstReorderingLevel = minimumOddLevel ?: return logicalRuns
+    for (level in maximumLevel downTo firstReorderingLevel) {
         var sequenceStart: Int? = null
         for (runIndex in 0..visualRuns.size) {
-            observeCancellation(cancellationToken)
+            observeCancellation(runIndex, profile, cancellationToken)
             if (runIndex < visualRuns.size && visualRuns[runIndex].level >= level) {
                 if (sequenceStart == null) sequenceStart = runIndex
             } else if (sequenceStart != null) {

@@ -13,6 +13,26 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 class UnicodeBidiConformanceTest {
     @Test
+    fun nonspacing_marks_at_isolate_starts_keep_their_isolate_levels() {
+        val cases = listOf(
+            "\u2066\u0331\u05D0\u2069" to listOf(0, 2, 3, 0),
+            "\u2067\u0331a\u2069" to listOf(0, 1, 2, 0),
+            "\u2068\u0331\u05D0\u2069" to listOf(0, 1, 1, 0),
+        )
+
+        cases.forEach { (text, expectedLevels) ->
+            val snapshot = snapshotOf(text)
+            val analysis = analyzer.analyze(
+                snapshot,
+                UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+            )
+            val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+
+            assertEquals(expectedLevels, expandLevels(analysis.logicalBidiRuns, boundaries))
+        }
+    }
+
+    @Test
     fun astral_arabic_letters_keep_scalar_boundaries_and_visual_order() {
         val snapshot = snapshotOf(
             buildString {
