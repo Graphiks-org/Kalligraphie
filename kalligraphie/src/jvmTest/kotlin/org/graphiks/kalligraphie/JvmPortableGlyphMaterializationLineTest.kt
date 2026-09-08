@@ -8,7 +8,9 @@ import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapProfile
 import org.graphiks.kalligraphie.api.BitmapStrike
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
@@ -16,10 +18,12 @@ import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontFaceMetadata
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
@@ -55,6 +59,7 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 private const val SFNT_HEADER_BYTES: Int = 12
 private const val SFNT_TABLE_RECORD_BYTES: Int = 16
@@ -229,16 +234,158 @@ class JvmPortableGlyphMaterializationLineTest {
         }
     }
 
+    @Test
+    fun doesNotMaskABitmapAssetCloseFailureWithAnOutlineFallback() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(), outlineProfile()))
+        val fixture = openFixture(
+            bytes = liberationSansWithSkiaBitmapTables(),
+            provenance = "Liberation Sans outlines with Skia EBDT format 1 tables",
+            requirements = requirements,
+            layoutSize = 16f,
+        )
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf(' '.code.toByte()))),
+        ).snapshot
+
+        try {
+            val failure = assertIs<EditableLineResult.Failure>(
+                layoutResult(
+                    snapshot,
+                    fixture,
+                    FontRenderVariantSnapshot.default,
+                    requirements,
+                    CloseFailingBitmapFontInstance(fixture.font),
+                ),
+            )
+
+            assertEquals(
+                "font.test-asset-close-failure",
+                assertIs<EditableLineError.FontMaterializationFailure>(failure.error).fontError.code,
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun paragraphDoesNotMaskABitmapAssetCloseFailureWithAnOutlineFallback() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(), outlineProfile()))
+        val fixture = openFixture(
+            bytes = liberationSansWithSkiaBitmapTables(),
+            provenance = "Liberation Sans outlines with Skia EBDT format 1 tables",
+            requirements = requirements,
+            layoutSize = 16f,
+        )
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf(' '.code.toByte()))),
+        ).snapshot
+
+        try {
+            val failure = assertIs<ParagraphLayoutResult.Failure>(
+                paragraphResult(
+                    snapshot,
+                    fixture,
+                    FontRenderVariantSnapshot.default,
+                    requirements,
+                    CloseFailingBitmapFontCatalog(fixture.catalog),
+                ),
+            )
+
+            assertTrue(failure.diagnostics.any { diagnostic -> diagnostic.code == "font.test-asset-close-failure" })
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun keepsCancellationWhenClosingTheCancelledBitmapAssetFails() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(), outlineProfile()))
+        val fixture = openFixture(
+            bytes = liberationSansWithSkiaBitmapTables(),
+            provenance = "Liberation Sans outlines with Skia EBDT format 1 tables",
+            requirements = requirements,
+            layoutSize = 16f,
+        )
+        val cancellation = SwitchableCancellationToken()
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf(' '.code.toByte()))),
+        ).snapshot
+
+        try {
+            val cancelled = assertIs<EditableLineResult.Cancelled>(
+                layoutResult(
+                    snapshot,
+                    fixture,
+                    FontRenderVariantSnapshot.default,
+                    requirements,
+                    CloseFailingBitmapFontInstance(fixture.font, cancellation),
+                    cancellation,
+                ),
+            )
+
+            assertTrue(cancelled.diagnostics.any { diagnostic -> diagnostic.code == "font.test-asset-close-failure" })
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun paragraphKeepsCancellationWhenClosingTheCancelledBitmapAssetFails() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(), outlineProfile()))
+        val fixture = openFixture(
+            bytes = liberationSansWithSkiaBitmapTables(),
+            provenance = "Liberation Sans outlines with Skia EBDT format 1 tables",
+            requirements = requirements,
+            layoutSize = 16f,
+        )
+        val cancellation = SwitchableCancellationToken()
+        val snapshot = Kalligraphie.decodeUtf8(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf8(byteArrayOf(' '.code.toByte()))),
+        ).snapshot
+
+        try {
+            val cancelled = assertIs<ParagraphLayoutResult.Cancelled>(
+                paragraphResult(
+                    snapshot,
+                    fixture,
+                    FontRenderVariantSnapshot.default,
+                    requirements,
+                    CloseFailingBitmapFontCatalog(fixture.catalog, cancellation),
+                    cancellation,
+                ),
+            )
+
+            assertTrue(cancelled.diagnostics.any { diagnostic -> diagnostic.code == "font.test-asset-close-failure" })
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
     private fun layout(
         snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
         fixture: Fixture,
         renderVariant: FontRenderVariantSnapshot,
         requirements: FontAccessRequirementsSnapshot,
     ) = assertIs<EditableLineResult.Success>(
+        layoutResult(snapshot, fixture, renderVariant, requirements),
+    ).line
+
+    private fun layoutResult(
+        snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
+        fixture: Fixture,
+        renderVariant: FontRenderVariantSnapshot,
+        requirements: FontAccessRequirementsSnapshot,
+        font: FontInstance = fixture.font,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): EditableLineResult =
         JvmEditableLineFacade.layout(
             JvmEditableLineFacadeRequest(
                 snapshot = snapshot,
-                font = fixture.font,
+                font = font,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
                 language = "en",
                 featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
@@ -249,9 +396,9 @@ class JvmPortableGlyphMaterializationLineTest {
                     renderVariant = renderVariant,
                     requirements = requirements,
                 ),
+                cancellationToken = cancellationToken,
             ),
-        ),
-    ).line
+        )
 
     private fun paragraphLine(
         snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
@@ -260,9 +407,21 @@ class JvmPortableGlyphMaterializationLineTest {
         requirements: FontAccessRequirementsSnapshot,
         fontCatalog: FontCatalogSnapshot = fixture.catalog,
     ): LineLayout {
-        val face = fontCatalog.faces.single().id
         return assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
+            paragraphResult(snapshot, fixture, renderVariant, requirements, fontCatalog),
+        ).layout.lines.single()
+    }
+
+    private fun paragraphResult(
+        snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
+        fixture: Fixture,
+        renderVariant: FontRenderVariantSnapshot,
+        requirements: FontAccessRequirementsSnapshot,
+        fontCatalog: FontCatalogSnapshot = fixture.catalog,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): ParagraphLayoutResult {
+        val face = fontCatalog.faces.single().id
+        return JvmEditableParagraphFacade.layout(
                 JvmEditableParagraphFacadeRequest(
                     snapshot = snapshot,
                     constraints = HorizontalParagraphConstraints(
@@ -285,9 +444,9 @@ class JvmPortableGlyphMaterializationLineTest {
                         renderVariant = renderVariant,
                         requirements = requirements,
                     ),
+                    cancellationToken = cancellationToken,
                 ),
-            ),
-        ).layout.lines.single()
+            )
     }
 
     private fun paintColors(
@@ -629,5 +788,143 @@ class JvmPortableGlyphMaterializationLineTest {
         }
 
         override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
+
+    private class CloseFailingBitmapFontCatalog(
+        private val delegate: FontCatalogSnapshot,
+        private val cancellationToken: SwitchableCancellationToken? = null,
+    ) : FontCatalogSnapshot {
+        override val generation: FontCatalogGeneration
+            get() = delegate.generation
+
+        override val faces: List<org.graphiks.kalligraphie.api.FontFaceRecord>
+            get() = delegate.faces
+
+        override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> = delegate.openAssetResolver()
+
+        override fun resolveFace(
+            faceId: FontFaceId,
+            requirements: FontAccessRequirementsSnapshot,
+        ): FontOperationResult<FontFace> = when (val resolved = delegate.resolveFace(faceId, requirements)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(CloseFailingBitmapFontFace(resolved.value, cancellationToken))
+            is FontOperationResult.Failure -> resolved
+            is FontOperationResult.Cancelled -> resolved
+        }
+    }
+
+    private class CloseFailingBitmapFontFace(
+        private val delegate: FontFace,
+        private val cancellationToken: SwitchableCancellationToken?,
+    ) : FontFace {
+        override val id: FontFaceId
+            get() = delegate.id
+
+        override val metadata: FontFaceMetadata
+            get() = delegate.metadata
+
+        override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> =
+            when (val instantiated = delegate.instantiate(descriptor)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(CloseFailingBitmapFontInstance(instantiated.value, cancellationToken))
+                is FontOperationResult.Failure -> instantiated
+                is FontOperationResult.Cancelled -> instantiated
+            }
+    }
+
+    private class CloseFailingBitmapFontInstance(
+        private val delegate: FontInstance,
+        private val cancellationToken: SwitchableCancellationToken? = null,
+    ) : FontInstance {
+        override val key: org.graphiks.kalligraphie.api.FontInstanceKey
+            get() = delegate.key
+
+        override fun resolveGlyph(codePoint: Int) = delegate.resolveGlyph(codePoint)
+
+        override fun resolveGlyph(codePoint: Int, variationSelector: Int) =
+            delegate.resolveGlyph(codePoint, variationSelector)
+
+        override fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> = delegate.metrics(glyphId)
+
+        override fun verticalMetrics(glyphId: GlyphId): FontOperationResult<VerticalGlyphMetrics> =
+            delegate.verticalMetrics(glyphId)
+
+        override fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> = delegate.copyOpenTypeData()
+
+        override fun acquireRenderAsset(
+            resolver: FontAssetResolverHandle,
+            variant: FontRenderVariantKey,
+            requirements: FontAccessRequirementsSnapshot,
+        ): FontOperationResult<FontRenderAssetHandle> =
+            closeFailingBitmapAsset(delegate.acquireRenderAsset(resolver, variant, requirements), requirements)
+
+        override fun acquireRenderAsset(
+            resolver: FontAssetResolverHandle,
+            renderVariant: FontRenderVariantSnapshot,
+            requirements: FontAccessRequirementsSnapshot,
+        ): FontOperationResult<FontRenderAssetHandle> =
+            closeFailingBitmapAsset(delegate.acquireRenderAsset(resolver, renderVariant, requirements), requirements)
+
+        private fun closeFailingBitmapAsset(
+            result: FontOperationResult<FontRenderAssetHandle>,
+            requirements: FontAccessRequirementsSnapshot,
+        ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+            is FontOperationResult.Success -> if (requirements.acceptedProfiles.singleOrNull() is BitmapProfile) {
+                FontOperationResult.Success(CloseFailingRenderAsset(result.value, cancellationToken))
+            } else {
+                result
+            }
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
+    }
+
+    private class CloseFailingRenderAsset(
+        private val delegate: FontRenderAssetHandle,
+        private val cancellationToken: SwitchableCancellationToken? = null,
+    ) : FontRenderAssetHandle {
+        override val key: FontRenderAssetKey
+            get() = delegate.key
+
+        override val faceId: FontFaceId
+            get() = delegate.faceId
+
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> =
+            when (val detached = delegate.detach()) {
+                is FontOperationResult.Success -> FontOperationResult.Success(CloseFailingRenderAsset(detached.value, cancellationToken))
+                is FontOperationResult.Failure -> detached
+                is FontOperationResult.Cancelled -> detached
+            }
+
+        override fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation> =
+            delegate.resolveGlyph(request)
+
+        override fun resolveGlyph(
+            request: FontGlyphRequest,
+            cancellationToken: org.graphiks.kalligraphie.api.CancellationToken,
+        ): FontOperationResult<GlyphRepresentation> {
+            this.cancellationToken?.cancel()
+            return delegate.resolveGlyph(request, cancellationToken)
+        }
+
+        override fun close(): FontOperationResult<Unit> = when (val closed = delegate.close()) {
+            is FontOperationResult.Success -> FontOperationResult.Failure(
+                FontError.FontDataFailure(
+                    code = "font.test-asset-close-failure",
+                    message = "The test render asset could not close.",
+                    location = FontDiagnosticLocation.Source,
+                ),
+            )
+            is FontOperationResult.Failure -> closed
+            is FontOperationResult.Cancelled -> closed
+        }
+    }
+
+    private class SwitchableCancellationToken : CancellationToken {
+        private var cancelled: Boolean = false
+
+        fun cancel() {
+            cancelled = true
+        }
+
+        override fun isCancellationRequested(): Boolean = cancelled
     }
 }

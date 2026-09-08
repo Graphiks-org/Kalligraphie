@@ -46,6 +46,7 @@ import org.graphiks.kalligraphie.api.SoftHyphenLinePolicy
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
+import org.graphiks.kalligraphie.api.toDiagnostic
 
 /**
  * Pure portable implementation of [EditableLineLayouter] for one horizontal, non-wrapped line.
@@ -830,7 +831,11 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                                     break
                                 }
 
-                                is CertificationResult.Failure -> if (firstFailure == null) firstFailure = certified
+                                is CertificationResult.Failure -> if (certified.terminal) {
+                                    return certified
+                                } else if (firstFailure == null) {
+                                    firstFailure = certified
+                                }
                                 is CertificationResult.Cancelled -> return certified
                             }
 
@@ -1006,11 +1011,21 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             }
         } finally {
             when (val close = asset.close()) {
-                is FontOperationResult.Failure -> if (result is CertificationResult.Success) {
-                    result = CertificationResult.Failure(
-                        EditableLineError.FontMaterializationFailure(close.error),
-                        close.diagnostics.map(::fontDiagnostic),
-                    )
+                is FontOperationResult.Failure -> {
+                    val closeDiagnostics = close.diagnostics.map(::fontDiagnostic) + fontDiagnostic(close.error.toDiagnostic())
+                    val priorDiagnostics = when (val prior = result) {
+                        is CertificationResult.Success -> emptyList()
+                        is CertificationResult.Failure -> prior.diagnostics
+                        is CertificationResult.Cancelled -> prior.diagnostics
+                    }
+                    result = when (result) {
+                        is CertificationResult.Cancelled -> CertificationResult.Cancelled(priorDiagnostics + closeDiagnostics)
+                        else -> CertificationResult.Failure(
+                            EditableLineError.FontMaterializationFailure(close.error),
+                            priorDiagnostics + closeDiagnostics,
+                            terminal = true,
+                        )
+                    }
                 }
 
                 is FontOperationResult.Cancelled -> if (result is CertificationResult.Success) {
@@ -1110,7 +1125,11 @@ private sealed interface CertificationResult {
         val assetKeys: Map<Int, org.graphiks.kalligraphie.api.FontRenderAssetKey>,
         val certificates: Map<GlyphPosition, GlyphMaterializationCertificate>,
     ) : CertificationResult
-    data class Failure(val error: EditableLineError, val diagnostics: List<EditableLineDiagnostic>) : CertificationResult
+    data class Failure(
+        val error: EditableLineError,
+        val diagnostics: List<EditableLineDiagnostic>,
+        val terminal: Boolean = false,
+    ) : CertificationResult
     data class Cancelled(val diagnostics: List<EditableLineDiagnostic>) : CertificationResult
 }
 

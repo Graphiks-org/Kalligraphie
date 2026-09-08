@@ -153,6 +153,11 @@ internal object FontFallbackResolver {
                         rejected = group
                     }
 
+                    is Attempt.Failed -> return FontOperationResult.Failure(
+                        attempted.error,
+                        diagnostics + attempted.diagnostics,
+                    )
+
                     is Attempt.Cancelled -> return FontOperationResult.Cancelled(diagnostics + attempted.diagnostics)
                 }
             }
@@ -351,6 +356,7 @@ internal object FontFallbackResolver {
                 when (val validation = validateMaterialization(fragmentRun, first.instance, materialization, request, proofs)) {
                     Validation.Valid -> Unit
                     is Validation.Rejected -> return Attempt.Rejected(validation.diagnostics)
+                    is Validation.Failed -> return Attempt.Failed(validation.error, validation.diagnostics)
                     is Validation.Cancelled -> return Attempt.Cancelled(validation.diagnostics)
                 }
             }
@@ -461,6 +467,7 @@ internal object FontFallbackResolver {
                 when (val validation = validateMaterialization(shaped, instance, profileMaterialization, request, proofs)) {
                     Validation.Valid -> return Validation.Valid
                     is Validation.Rejected -> if (firstRejection == null) firstRejection = validation
+                    is Validation.Failed -> return validation
                     is Validation.Cancelled -> return validation
                 }
             }
@@ -528,8 +535,18 @@ internal object FontFallbackResolver {
             }
         } finally {
             when (val closed = asset.close()) {
-                is FontOperationResult.Failure -> if (validation == Validation.Valid) {
-                    validation = Validation.Rejected(closed.diagnostics + closed.error.toDiagnostic())
+                is FontOperationResult.Failure -> {
+                    val priorDiagnostics = when (val prior = validation) {
+                        Validation.Valid -> emptyList()
+                        is Validation.Rejected -> prior.diagnostics
+                        is Validation.Failed -> prior.diagnostics
+                        is Validation.Cancelled -> prior.diagnostics
+                    }
+                    val closeDiagnostics = closed.diagnostics + closed.error.toDiagnostic()
+                    validation = when (validation) {
+                        is Validation.Cancelled -> Validation.Cancelled(priorDiagnostics + closeDiagnostics)
+                        else -> Validation.Failed(closed.error, priorDiagnostics + closeDiagnostics)
+                    }
                 }
                 is FontOperationResult.Cancelled -> if (validation == Validation.Valid) {
                     validation = Validation.Cancelled(closed.diagnostics)
@@ -710,12 +727,14 @@ internal object FontFallbackResolver {
     private sealed interface Attempt {
         data class Success(val runs: List<ShapedGlyphRun>) : Attempt
         data class Rejected(val diagnostics: List<FontDiagnostic>) : Attempt
+        data class Failed(val error: FontError, val diagnostics: List<FontDiagnostic>) : Attempt
         data class Cancelled(val diagnostics: List<FontDiagnostic>) : Attempt
     }
 
     private sealed interface Validation {
         data object Valid : Validation
         data class Rejected(val diagnostics: List<FontDiagnostic>) : Validation
+        data class Failed(val error: FontError, val diagnostics: List<FontDiagnostic>) : Validation
         data class Cancelled(val diagnostics: List<FontDiagnostic>) : Validation
     }
 
