@@ -26,6 +26,8 @@ import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
+import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
@@ -61,8 +63,10 @@ public class JvmEditableLineFacadeRequest(
     public val materialization: EditableLineMaterialization,
     /** Explicit BiDi level required only when [snapshot] is empty. */
     public val emptyLineBidiLevel: Int? = null,
-    /** Cooperative cancellation signal used only while materializing glyph representations. */
+    /** Cooperative cancellation signal observed during analysis, shaping, and materialization. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
+    /** Resource profile enforced before Unicode analysis and any shaping work begins. */
+    public val unicodeAnalysisProfile: UnicodeAnalysisProfile = UnicodeAnalysisProfile.unbounded,
 ) {
     /** Immutable OpenType feature overrides applied in deterministic caller order. */
     public val features: List<OpenTypeFeature> = features.toList()
@@ -103,13 +107,9 @@ public object JvmEditableLineFacade {
      * every final glyph through the selected certified representation profile.
      */
     public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
-        val analysis = try {
-            JvmUnicodeAnalyzer.create().analyze(
-                snapshot = request.snapshot,
-                request = UnicodeAnalysisRequest(request.baseDirection, request.language),
-            )
-        } catch (error: IllegalArgumentException) {
-            return invalidInput(error)
+        val analysis = when (val analyzed = analyze(request)) {
+            is FacadeUnicodeAnalysis.Success -> analyzed.analysis
+            is FacadeUnicodeAnalysis.Result -> return analyzed.result
         }
         val backend = when (val opened = JvmHarfBuzzShapingBackend.open()) {
             is FontOperationResult.Success -> opened.value
@@ -123,15 +123,34 @@ public object JvmEditableLineFacade {
         request: JvmEditableLineFacadeRequest,
         backend: ShapingBackend,
     ): EditableLineResult {
-        val analysis = try {
-            JvmUnicodeAnalyzer.create().analyze(
-                snapshot = request.snapshot,
-                request = UnicodeAnalysisRequest(request.baseDirection, request.language),
-            )
-        } catch (error: IllegalArgumentException) {
-            return invalidInput(error)
+        val analysis = when (val analyzed = analyze(request)) {
+            is FacadeUnicodeAnalysis.Success -> analyzed.analysis
+            is FacadeUnicodeAnalysis.Result -> return includeBackendCloseResult(analyzed.result, backend.close())
         }
         return layout(request, analysis, backend)
+    }
+
+    private fun analyze(request: JvmEditableLineFacadeRequest): FacadeUnicodeAnalysis = try {
+        when (
+            val outcome = JvmUnicodeAnalyzer.create().analyze(
+                snapshot = request.snapshot,
+                request = UnicodeAnalysisRequest(request.baseDirection, request.language),
+                profile = request.unicodeAnalysisProfile,
+                cancellationToken = request.cancellationToken,
+            )
+        ) {
+            is UnicodeAnalysisOutcome.Success -> FacadeUnicodeAnalysis.Success(outcome.value)
+            is UnicodeAnalysisOutcome.LimitExceeded -> FacadeUnicodeAnalysis.Result(
+                EditableLineResult.Failure(
+                    error = EditableLineError.UnicodeAnalysisLimitExceeded(outcome.limit, outcome.observed),
+                    diagnostics = emptyList(),
+                ),
+            )
+
+            UnicodeAnalysisOutcome.Cancelled -> FacadeUnicodeAnalysis.Result(EditableLineResult.Cancelled())
+        }
+    } catch (error: IllegalArgumentException) {
+        FacadeUnicodeAnalysis.Result(invalidInput(error))
     }
 
     private fun layout(
@@ -295,6 +314,11 @@ private sealed interface ShapingRunsResult {
     public data class Success(val runs: List<ShapedGlyphRun>) : ShapingRunsResult
     public data class Failure(val result: FontOperationResult.Failure) : ShapingRunsResult
     public data class Cancelled(val result: FontOperationResult.Cancelled) : ShapingRunsResult
+}
+
+private sealed interface FacadeUnicodeAnalysis {
+    public class Success(val analysis: UnicodeAnalysis) : FacadeUnicodeAnalysis
+    public class Result(val result: EditableLineResult) : FacadeUnicodeAnalysis
 }
 
 private data class ShapingPlan(
