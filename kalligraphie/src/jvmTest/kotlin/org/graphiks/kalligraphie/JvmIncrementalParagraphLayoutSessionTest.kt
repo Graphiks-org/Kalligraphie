@@ -22,8 +22,13 @@ import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
+import org.graphiks.kalligraphie.api.IncrementalLayoutError
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
+import org.graphiks.kalligraphie.api.InlineObjectDefinition
+import org.graphiks.kalligraphie.api.InlineObjectEntry
+import org.graphiks.kalligraphie.api.InlineObjectId
+import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutInput
@@ -34,6 +39,7 @@ import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OpenTypeFeature
+import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -148,6 +154,56 @@ class JvmIncrementalParagraphLayoutSessionTest {
                 assertEquals(freshResult.layout.lines.map { it.glyphIds() }, retried.layout.lines.map { it.glyphIds() })
                 assertEquals(freshResult.layout.lines.map { it.glyphAdvances() }, retried.layout.lines.map { it.glyphAdvances() })
             }
+        }
+    }
+
+    @Test
+    fun inlineObjectOutsideContinuationSegmentReturnsTypedFailureAndPreservesPublication() {
+        val fixture = fixture("a\uFFFC\nfi")
+        val definition = InlineObjectDefinition(
+            id = InlineObjectId.create("lead-image"),
+            width = LayoutUnit(400f),
+            height = LayoutUnit(300f),
+            baselineOffset = LayoutUnit(250f),
+        )
+        val inlineObjects = InlineObjectSnapshot(
+            listOf(InlineObjectEntry(fixture.snapshot.textIndexAtScalarBoundary(1), definition)),
+        )
+        val session = openSession()
+
+        session.use { open ->
+            val published = assertIs<IncrementalLayoutResult.Success>(
+                open.layout(
+                    request(
+                        fixture = fixture,
+                        requestedRange = range(fixture.snapshot, 0, 2),
+                        language = "en",
+                        inlineObjects = inlineObjects,
+                    ),
+                ),
+            )
+            val placed = published.layout.lines.single().positionedInlineObjects.single()
+            assertEquals(definition.id, placed.definition.id)
+            assertEquals(range(fixture.snapshot, 1, 2), placed.sourceRange)
+            assertEquals(definition.width, LayoutUnit(placed.rect.right.value - placed.rect.left.value))
+
+            val failure = assertIs<IncrementalLayoutResult.Failure>(
+                open.layout(
+                    request(
+                        fixture = fixture,
+                        requestedRange = range(fixture.snapshot, 3, 5),
+                        previousState = published.layout.state,
+                        language = "en",
+                        inlineObjects = inlineObjects,
+                    ),
+                ),
+            )
+            val paragraph = assertIs<IncrementalLayoutError.ParagraphFailure>(failure.error).paragraphError
+            val invalid = assertIs<ParagraphLayoutError.InvalidInput>(paragraph)
+            assertTrue(invalid.message.contains("requested source range"))
+
+            assertEquals(published.layout.inputIdentity, open.currentLayout()?.layout?.inputIdentity)
+            assertEquals(published.layout.lines, open.currentLayout()?.layout?.lines)
         }
     }
 
@@ -677,11 +733,13 @@ class JvmIncrementalParagraphLayoutSessionTest {
         language: String = "ar",
         constraints: HorizontalParagraphConstraints = constraints(),
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
+        inlineObjects: InlineObjectSnapshot? = null,
     ): JvmIncrementalParagraphLayoutRequest = JvmIncrementalParagraphLayoutRequest(
         request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints, operationProfile),
         baseDirection = baseDirection,
         language = language,
         materialization = EditableLineMaterialization.LayoutOnly,
+        inlineObjects = inlineObjects,
     )
 
     private fun incrementalRequest(

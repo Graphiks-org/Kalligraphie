@@ -313,12 +313,12 @@ public object JvmEditableParagraphFacade {
         resumptionBlockCursor: org.graphiks.kalligraphie.api.LayoutUnit,
         context: EditorOperationContext,
     ): ParagraphContinuationPreparation {
-        val paragraphRequest = when (val prepared = prepareParagraphRequestBorrowing(request, backend, context)) {
-            is ParagraphPreparation.Success -> prepared.request
-            is ParagraphPreparation.Failure -> return ParagraphContinuationPreparation.Failure(prepared.result)
-            ParagraphPreparation.Cancelled -> return ParagraphContinuationPreparation.Cancelled
-        }
         return try {
+            val paragraphRequest = when (val prepared = prepareParagraphRequestBorrowing(request, backend, context)) {
+                is ParagraphPreparation.Success -> prepared.request
+                is ParagraphPreparation.Failure -> return ParagraphContinuationPreparation.Failure(prepared.result)
+                ParagraphPreparation.Cancelled -> return ParagraphContinuationPreparation.Cancelled
+            }
             ParagraphContinuationPreparation.Success(
                 LayoutContinuation.create(
                     request = paragraphRequest,
