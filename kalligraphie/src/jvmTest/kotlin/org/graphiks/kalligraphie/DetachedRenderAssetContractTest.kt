@@ -47,14 +47,18 @@ class DetachedRenderAssetContractTest {
                 assertIs<FontOperationResult.Success<Unit>>(close.get(10, TimeUnit.SECONDS))
                 when (val result = detach.get(10, TimeUnit.SECONDS)) {
                     is FontOperationResult.Success -> {
-                        val representation = success(
-                            result.value.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none),
-                        )
-                        val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
-                        assertEquals(36, outline.glyphId)
-                        assertEquals(4, outline.bounds.minX)
-                        assertEquals(1362, outline.bounds.maxX)
-                        assertIs<FontOperationResult.Success<Unit>>(result.value.close())
+                        val detached = result.value
+                        try {
+                            val representation = success(
+                                detached.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none),
+                            )
+                            val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
+                            assertEquals(36, outline.glyphId)
+                            assertEquals(4, outline.bounds.minX)
+                            assertEquals(1362, outline.bounds.maxX)
+                        } finally {
+                            assertIs<FontOperationResult.Success<Unit>>(detached.close())
+                        }
                     }
 
                     is FontOperationResult.Failure -> assertIs<FontError.ResourceClosed>(result.error)
