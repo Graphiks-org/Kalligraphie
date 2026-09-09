@@ -1593,7 +1593,7 @@ class FlowParagraphCompositionTest {
                 is FontOperationResult.Success -> {
                     val source = shaped.value
                     FontOperationResult.Success(
-                        ShapedGlyphRun(
+                        ShapedGlyphRun.withProvenanceSpans(
                             range = source.range,
                             fontInstanceKey = source.fontInstanceKey,
                             backendIdentity = identity,
@@ -1649,7 +1649,6 @@ class FlowParagraphCompositionTest {
                             graphemeClusters = source.graphemeClusters,
                             glyphs = source.glyphs,
                             clusters = source.clusters,
-                            provenanceSpans = listOf(ShapingProvenanceSpan(source.range, provenance)),
                             ligatureCaretFacts = source.ligatureCaretFacts,
                         ),
                         shaped.diagnostics,

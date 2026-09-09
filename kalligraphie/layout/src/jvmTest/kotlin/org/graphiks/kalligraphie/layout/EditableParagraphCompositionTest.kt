@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CoverageStatus
@@ -253,6 +254,63 @@ class EditableParagraphCompositionTest {
         )
         assertEquals(primary, sourceRun.backendIdentity.provenance)
         assertEquals(listOf(primary, secondary), sourceRun.distributionProvenances)
+    }
+
+    @Test
+    fun paragraphCompositionRetainsEveryLegacyIdentityValuePublishedWithRealGlyphs() {
+        val fixture = fixture("abc office-office", width = 5_300f, height = 2_000f)
+        val legacy = ShapingBackendIdentity(
+            backendId = "legacy-paragraph-backend",
+            nativeVersion = "legacy-native-version",
+            nativeSourceRevision = "legacy-source-revision",
+            nativeArtifactId = "legacy-artifact-id",
+            nativeArtifactSha256 = "2".repeat(64),
+            featurePolicy = fixture.request.featurePolicy,
+            configurationFingerprint = "legacy-configuration",
+        )
+        val backend = LegacyIdentityReportingBackend(fixture.request.shapingBackend, legacy)
+
+        val result = layout(copyRequest(fixture.request, shapingBackend = backend))
+        val sourceRun = result.layout.lines.first().positionedGlyphRuns.single().sourceRun
+        val (
+            backendId,
+            nativeVersion,
+            nativeSourceRevision,
+            nativeArtifactId,
+            nativeArtifactSha256,
+            featurePolicy,
+            configurationFingerprint,
+        ) = sourceRun.backendIdentity
+
+        assertEquals(
+            listOf(68, 69, 70, 3, 82, 5044, 70, 72, 16),
+            sourceRun.glyphs.map { glyph -> glyph.glyphId.value },
+        )
+        assertEquals(
+            listOf(612.79297f, 634.7656f, 549.8047f, 317.8711f, 611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+            sourceRun.glyphs.map { glyph -> glyph.xAdvance.value },
+        )
+        assertSame(legacy, sourceRun.backendIdentity)
+        assertEquals(
+            listOf(
+                "legacy-paragraph-backend",
+                "legacy-native-version",
+                "legacy-source-revision",
+                "legacy-artifact-id",
+                "2".repeat(64),
+                fixture.request.featurePolicy,
+                "legacy-configuration",
+            ),
+            listOf(
+                backendId,
+                nativeVersion,
+                nativeSourceRevision,
+                nativeArtifactId,
+                nativeArtifactSha256,
+                featurePolicy,
+                configurationFingerprint,
+            ),
+        )
     }
 
     @Test
@@ -969,22 +1027,59 @@ class EditableParagraphCompositionTest {
                 is FontOperationResult.Success -> {
                     val source = shaped.value
                     FontOperationResult.Success(
-                        LegacyShapedGlyphRunConsumer.create(
-                            source.range,
-                            source.fontInstanceKey,
-                            ShapingBackendIdentity(source.backendIdentity.semantic, provenanceFor(request)),
-                            source.direction,
-                            source.script,
-                            source.language,
-                            source.bidiLevel,
-                            source.bot,
-                            source.eot,
-                            source.featurePolicy,
-                            source.features,
-                            source.graphemeClusters,
-                            source.glyphs,
-                            source.clusters,
-                            source.ligatureCaretFacts,
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = ShapingBackendIdentity(source.backendIdentity.semantic, provenanceFor(request)),
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            ligatureCaretFacts = source.ligatureCaretFacts,
+                        ),
+                        shaped.diagnostics,
+                    )
+                }
+
+                is FontOperationResult.Failure -> shaped
+                is FontOperationResult.Cancelled -> shaped
+            }
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
+    }
+
+    private class LegacyIdentityReportingBackend(
+        private val delegate: ShapingBackend,
+        override val identity: ShapingBackendIdentity,
+    ) : ShapingBackend {
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val shaped = delegate.shape(request)) {
+                is FontOperationResult.Success -> {
+                    val source = shaped.value
+                    FontOperationResult.Success(
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = identity,
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            ligatureCaretFacts = source.ligatureCaretFacts,
                         ),
                         shaped.diagnostics,
                     )

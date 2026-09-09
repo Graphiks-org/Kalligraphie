@@ -355,9 +355,16 @@ public class ShapingBackendIdentity private constructor(
         provenance: ShapingDistributionProvenance = this.provenance,
     ): ShapingBackendIdentity = ShapingBackendIdentity(semantic, provenance)
 
-    /** Copies this identity with explicitly selected native distribution provenance. */
-    public fun copy(provenance: ShapingDistributionProvenance): ShapingBackendIdentity =
-        ShapingBackendIdentity(semantic, provenance)
+    /**
+     * Copies an explicitly structured identity with another native distribution provenance.
+     *
+     * Legacy seven-field identities cannot be rebased because doing so would rewrite their public
+     * provenance fields while retaining incompatible conservative semantics.
+     */
+    public fun copy(provenance: ShapingDistributionProvenance): ShapingBackendIdentity {
+        require(hasExplicitSemantics) { "A legacy shaping identity cannot be rebased to another provenance." }
+        return ShapingBackendIdentity(semantic, provenance)
+    }
 
     /** Returns [backendId] for legacy destructuring. */
     public operator fun component1(): String = backendId
@@ -691,14 +698,15 @@ public class ShapingMappings internal constructor(
 }
 
 /**
- * Immutable, relative result of one explicit shaping operation.
+ * Immutable, relative shaping result.
  *
- * The run has no final line coordinates and can therefore be positioned only by a later
- * layout layer. Its clusters partition [range], preserve source-to-cluster-to-glyph
- * relations, retain the request's true grapheme partition and explicit feature replay inputs,
- * and carry no native resource; it is safe to share across threads indefinitely.
+ * A run may come directly from one backend operation or be assembled from compatible source
+ * contributions. It has no final line coordinates and can therefore be positioned only by a later
+ * layout layer. Its clusters partition [range], preserve source-to-cluster-to-glyph relations,
+ * retain the request's true grapheme partition and explicit feature replay inputs, and carry no
+ * native resource; it is safe to share across threads indefinitely.
  */
-public class ShapedGlyphRun(
+public class ShapedGlyphRun private constructor(
     /** Source range shaped by this run. */
     public val range: TextRange,
     /** Exact font instance identity used for shaping. */
@@ -729,14 +737,30 @@ public class ShapedGlyphRun(
     graphemeClusters: List<TextRange>,
     glyphs: List<ShapedGlyph>,
     clusters: List<ShaperCluster>,
-    ligatureCaretFacts: List<GdefLigatureCaretFact> = emptyList(),
-    /** Ordered source spans and their exact contributing native distributions. */
-    provenanceSpans: List<ShapingProvenanceSpan> = listOf(ShapingProvenanceSpan(range, backendIdentity.provenance)),
+    ligatureCaretFacts: List<GdefLigatureCaretFact>,
+    provenanceSpans: List<ShapingProvenanceSpan>,
 ) {
     /**
-     * Creates a directly shaped run through the original constructor descriptor.
+     * Creates a directly shaped run through the historical public constructor.
      *
      * The supplied [backendIdentity] is the sole distribution contributor across [range].
+     * Omitting [ligatureCaretFacts] retains the original Kotlin default-constructor contract.
+     *
+     * @param range source range shaped by this run.
+     * @param fontInstanceKey exact font instance identity used for shaping.
+     * @param backendIdentity exact semantic and diagnostic identity published by the backend.
+     * @param direction explicit direction used by the backend.
+     * @param script explicit ISO 15924 script used by the backend.
+     * @param language explicit language tag passed to the backend.
+     * @param bidiLevel resolved UAX #9 level used by the backend.
+     * @param bot whether the shaped context began at the supplied text boundary.
+     * @param eot whether the shaped context ended at the supplied text boundary.
+     * @param featurePolicy explicit baseline feature policy used by the backend.
+     * @param features immutable feature overrides used after [featurePolicy].
+     * @param graphemeClusters logical grapheme partition of [range].
+     * @param glyphs glyphs in shaping-engine output order.
+     * @param clusters shaping clusters in logical source order.
+     * @param ligatureCaretFacts optional GDEF caret facts for ligature glyphs.
      */
     public constructor(
         range: TextRange,
@@ -753,7 +777,7 @@ public class ShapedGlyphRun(
         graphemeClusters: List<TextRange>,
         glyphs: List<ShapedGlyph>,
         clusters: List<ShaperCluster>,
-        ligatureCaretFacts: List<GdefLigatureCaretFact>,
+        ligatureCaretFacts: List<GdefLigatureCaretFact> = emptyList(),
     ) : this(
         range = range,
         fontInstanceKey = fontInstanceKey,
@@ -773,6 +797,70 @@ public class ShapedGlyphRun(
         provenanceSpans = listOf(ShapingProvenanceSpan(range, backendIdentity.provenance)),
     )
 
+    public companion object {
+        /**
+         * Creates a run assembled from exact native-distribution source contributions.
+         *
+         * [provenanceSpans] must form a complete ordered partition of [range]. Adjacent equal
+         * contributions are normalized. [backendIdentity] must already carry the provenance of the
+         * first normalized span. A caller that deliberately changes the primary provenance must
+         * explicitly rebase a structured identity before invoking this factory; legacy seven-field
+         * identities cannot be rebased without changing their public values.
+         *
+         * @param range complete logical source range represented by the assembled run.
+         * @param fontInstanceKey exact font instance identity shared by all contributions.
+         * @param backendIdentity portable semantics and initial primary diagnostic provenance.
+         * @param direction explicit direction shared by all contributions.
+         * @param script explicit ISO 15924 script shared by all contributions.
+         * @param language explicit language tag shared by all contributions.
+         * @param bidiLevel resolved UAX #9 level shared by all contributions.
+         * @param bot whether the assembled context begins at its supplied text boundary.
+         * @param eot whether the assembled context ends at its supplied text boundary.
+         * @param featurePolicy explicit baseline feature policy shared by all contributions.
+         * @param features immutable feature overrides shared by all contributions.
+         * @param graphemeClusters logical grapheme partition of [range].
+         * @param glyphs glyphs in shaping-engine output order.
+         * @param clusters shaping clusters in logical source order.
+         * @param ligatureCaretFacts GDEF caret facts for ligature glyphs.
+         * @param provenanceSpans exact ordered source contribution partition of [range].
+         */
+        public fun withProvenanceSpans(
+            range: TextRange,
+            fontInstanceKey: FontInstanceKey,
+            backendIdentity: ShapingBackendIdentity,
+            direction: ShapingDirection,
+            script: OpenTypeScript,
+            language: String,
+            bidiLevel: Int,
+            bot: Boolean,
+            eot: Boolean,
+            featurePolicy: ShapingFeaturePolicy,
+            features: List<OpenTypeFeature>,
+            graphemeClusters: List<TextRange>,
+            glyphs: List<ShapedGlyph>,
+            clusters: List<ShaperCluster>,
+            ligatureCaretFacts: List<GdefLigatureCaretFact>,
+            provenanceSpans: List<ShapingProvenanceSpan>,
+        ): ShapedGlyphRun = ShapedGlyphRun(
+            range = range,
+            fontInstanceKey = fontInstanceKey,
+            backendIdentity = backendIdentity,
+            direction = direction,
+            script = script,
+            language = language,
+            bidiLevel = bidiLevel,
+            bot = bot,
+            eot = eot,
+            featurePolicy = featurePolicy,
+            features = features,
+            graphemeClusters = graphemeClusters,
+            glyphs = glyphs,
+            clusters = clusters,
+            ligatureCaretFacts = ligatureCaretFacts,
+            provenanceSpans = provenanceSpans,
+        )
+    }
+
     /**
      * Immutable logical source partition identifying the exact distribution for each span.
      *
@@ -785,10 +873,10 @@ public class ShapedGlyphRun(
     /**
      * Portable shaping semantics and the primary native provenance for this run.
      *
-     * The primary provenance is always the provenance of the first item in [provenanceSpans].
+     * The exact supplied identity instance is retained, preserving every legacy property and
+     * component. Its provenance must match the first item in [provenanceSpans].
      */
-    public val backendIdentity: ShapingBackendIdentity =
-        backendIdentity.copy(provenance = this.provenanceSpans.first().provenance)
+    public val backendIdentity: ShapingBackendIdentity = backendIdentity
 
     /**
      * Immutable ordered set of every native distribution that contributed to this run.
@@ -823,6 +911,9 @@ public class ShapedGlyphRun(
     public val mappings: ShapingMappings = ShapingMappings(range, this.clusters, this.glyphs)
 
     init {
+        require(this.backendIdentity.provenance == this.provenanceSpans.first().provenance) {
+            "Run backend identity must carry the first provenance span's distribution."
+        }
         require(bidiLevel in 0..126) { "BiDi level must be between 0 and 126." }
         require(direction.matches(bidiLevel)) { "Shaped run direction must agree with its BiDi level." }
         require(language.hasBasicLanguageTagSyntax()) { "Shaped run language has invalid basic tag syntax." }

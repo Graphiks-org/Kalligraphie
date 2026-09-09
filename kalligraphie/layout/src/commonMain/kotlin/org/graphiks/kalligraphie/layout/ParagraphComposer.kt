@@ -1204,7 +1204,7 @@ public object ParagraphComposer : ParagraphLayouter {
             }
     }
 
-    private fun ShapedGlyphRun.replacingGlyphs(glyphs: List<ShapedGlyph>): ShapedGlyphRun = ShapedGlyphRun(
+    private fun ShapedGlyphRun.replacingGlyphs(glyphs: List<ShapedGlyph>): ShapedGlyphRun = ShapedGlyphRun.withProvenanceSpans(
         range = range,
         fontInstanceKey = fontInstanceKey,
         backendIdentity = backendIdentity,
@@ -2083,7 +2083,7 @@ private fun ShapedGlyphRun.coalescedWith(other: ShapedGlyphRun): ShapedGlyphRun 
     val rtl = direction == ShapingDirection.RIGHT_TO_LEFT
     val thisFacts = ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) other.glyphs.size else 0) }
     val otherFacts = other.ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) 0 else glyphs.size) }
-    return ShapedGlyphRun(
+    return ShapedGlyphRun.withProvenanceSpans(
         range = TextRange(range.start, other.range.endExclusive),
         fontInstanceKey = fontInstanceKey,
         backendIdentity = backendIdentity,

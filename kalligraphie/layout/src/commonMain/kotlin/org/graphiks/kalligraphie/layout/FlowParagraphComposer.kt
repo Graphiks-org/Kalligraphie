@@ -951,10 +951,17 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 )
             }
         }
-        return ShapedGlyphRun(
+        val provenanceSpans = sourceRun.provenanceSpans.mapNotNull { span -> span.intersection(range) }
+        val primaryProvenance = provenanceSpans.first().provenance
+        val backendIdentity = if (sourceRun.backendIdentity.provenance == primaryProvenance) {
+            sourceRun.backendIdentity
+        } else {
+            sourceRun.backendIdentity.copy(provenance = primaryProvenance)
+        }
+        return ShapedGlyphRun.withProvenanceSpans(
             range = range,
             fontInstanceKey = sourceRun.fontInstanceKey,
-            backendIdentity = sourceRun.backendIdentity,
+            backendIdentity = backendIdentity,
             direction = sourceRun.direction,
             script = sourceRun.script,
             language = sourceRun.language,
@@ -969,7 +976,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             glyphs = shaped,
             clusters = clusters,
             ligatureCaretFacts = facts,
-            provenanceSpans = sourceRun.provenanceSpans.mapNotNull { span -> span.intersection(range) },
+            provenanceSpans = provenanceSpans,
         )
     }
 
