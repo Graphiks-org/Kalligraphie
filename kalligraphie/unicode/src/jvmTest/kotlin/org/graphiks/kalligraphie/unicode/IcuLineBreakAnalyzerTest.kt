@@ -74,7 +74,7 @@ class IcuLineBreakAnalyzerTest {
     }
 
     @Test
-    fun opportunities_are_independent_of_utf16_slice_boundaries() {
+    fun opportunities_are_independent_of_valid_utf16_slice_boundaries() {
         val vectors = listOf(
             "\u23E9 \u23E9",
             "\r\n\u23E9",
@@ -86,12 +86,29 @@ class IcuLineBreakAnalyzerTest {
         vectors.forEach { text ->
             val version = TextVersion.create()
             val unsplit = snapshotOf(version, listOf(text.toCharArray()))
-            val splitAtEveryCodeUnit = snapshotOf(
+            val splitAtEveryCompleteUnit = snapshotOf(
                 version,
-                text.toCharArray().map { codeUnit -> charArrayOf(codeUnit) },
+                splitAtCompleteUtf16Units(text.toCharArray()),
             )
 
-            assertEquals(analyze(unsplit), analyze(splitAtEveryCodeUnit), text)
+            assertEquals(analyze(unsplit), analyze(splitAtEveryCompleteUnit), text)
+        }
+    }
+
+    private fun splitAtCompleteUtf16Units(codeUnits: CharArray): List<CharArray> = buildList {
+        var start = 0
+        while (start < codeUnits.size) {
+            val length = if (
+                codeUnits[start].isHighSurrogate() &&
+                start + 1 < codeUnits.size &&
+                codeUnits[start + 1].isLowSurrogate()
+            ) {
+                2
+            } else {
+                1
+            }
+            add(codeUnits.copyOfRange(start, start + length))
+            start += length
         }
     }
 

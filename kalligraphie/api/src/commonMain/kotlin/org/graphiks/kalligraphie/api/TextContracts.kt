@@ -137,66 +137,224 @@ public sealed interface SourceIndexResult {
     ) : SourceIndexResult
 }
 
-/** Owned source fragment accepted by the canonical text decoders. */
-public sealed interface TextSlice {
-    /** Immutable snapshot of one UTF-8 byte fragment. */
-    public class Utf8(bytes: ByteArray) : TextSlice {
-        private val capturedBytes: ByteArray = bytes.copyOf()
+/**
+ * Read-only UTF-8 code-unit storage that can be borrowed for one synchronous decode call.
+ *
+ * Implementations must keep [length] and indexed byte values immutable and safe to read from
+ * any thread for the complete call that borrows them. Kalligraphie never retains the storage
+ * after that call returns.
+ */
+public interface Utf8Storage {
+    /** Number of addressable UTF-8 bytes. */
+    public val length: Int
 
+    /** Returns the byte at [index], which must lie in `0 until length`. */
+    public operator fun get(index: Int): Byte
+}
+
+/**
+ * Read-only UTF-16 code-unit storage that can be borrowed for one synchronous decode call.
+ *
+ * Implementations must keep [length] and indexed code units immutable and safe to read from
+ * any thread for the complete call that borrows them. Kalligraphie never retains the storage
+ * after that call returns.
+ */
+public interface Utf16Storage {
+    /** Number of addressable UTF-16 code units. */
+    public val length: Int
+
+    /** Returns the UTF-16 code unit at [index], which must lie in `0 until length`. */
+    public operator fun get(index: Int): Char
+}
+
+/** Immutable source fragment accepted by the canonical text decoders. */
+public sealed interface TextSlice {
+    /**
+     * UTF-8 fragment that either owns a copied byte array or borrows a storage subrange.
+     *
+     * The array constructor captures [bytes] immediately. Use [borrow] when an immutable
+     * application-owned storage can remain readable for the complete synchronous decode call.
+     */
+    public class Utf8 private constructor(
+        private val storage: Utf8Storage,
+        private val startIndex: Int,
         /** Number of UTF-8 code units in this immutable fragment. */
-        public val size: Int
-            get() = capturedBytes.size
+        public val size: Int,
+    ) : TextSlice {
+        /** Creates an owned fragment by copying [bytes]. */
+        public constructor(bytes: ByteArray) : this(OwnedUtf8Storage(bytes), 0, bytes.size)
+
+        /** Returns the byte at the fragment-relative [index]. */
+        public operator fun get(index: Int): Byte {
+            require(index in 0 until size) { "UTF-8 slice index lies outside the borrowed subrange." }
+            return storage[startIndex + index]
+        }
 
         /** Returns a defensive copy of this fragment's bytes. */
-        public fun copyBytes(): ByteArray = capturedBytes.copyOf()
+        public fun copyBytes(): ByteArray = ByteArray(size) { index -> get(index) }
+
+        /** Factories for UTF-8 fragments. */
+        public companion object {
+            /**
+             * Borrows `[startIndex, endExclusive)` from [storage] without copying.
+             *
+             * The range is validated immediately. The storage must remain immutable, readable,
+             * and thread-safe until the synchronous decode call returns; it is not retained by a
+             * completed or failed decode result.
+             */
+            public fun borrow(
+                storage: Utf8Storage,
+                startIndex: Int = 0,
+                endExclusive: Int = storage.length,
+            ): Utf8 {
+                require(storage.length >= 0) { "UTF-8 storage length must be non-negative." }
+                require(startIndex in 0..endExclusive) { "UTF-8 slice start must not follow its end." }
+                require(endExclusive <= storage.length) { "UTF-8 slice range lies outside the storage." }
+                return Utf8(storage, startIndex, endExclusive - startIndex)
+            }
+        }
     }
 
-    /** Immutable snapshot of one UTF-16 code-unit fragment. */
-    public class Utf16(codeUnits: CharArray) : TextSlice {
-        private val capturedCodeUnits: CharArray = codeUnits.copyOf()
-
+    /**
+     * UTF-16 fragment that either owns a copied code-unit array or borrows a storage subrange.
+     *
+     * The array constructor captures [codeUnits] immediately. Use [borrow] when an immutable
+     * application-owned storage can remain readable for the complete synchronous decode call.
+     */
+    public class Utf16 private constructor(
+        private val storage: Utf16Storage,
+        private val startIndex: Int,
         /** Number of UTF-16 code units in this immutable fragment. */
-        public val size: Int
-            get() = capturedCodeUnits.size
+        public val size: Int,
+    ) : TextSlice {
+        /** Creates an owned fragment by copying [codeUnits]. */
+        public constructor(codeUnits: CharArray) : this(OwnedUtf16Storage(codeUnits), 0, codeUnits.size)
+
+        /** Returns the UTF-16 code unit at the fragment-relative [index]. */
+        public operator fun get(index: Int): Char {
+            require(index in 0 until size) { "UTF-16 slice index lies outside the borrowed subrange." }
+            return storage[startIndex + index]
+        }
 
         /** Returns a defensive copy of this fragment's UTF-16 code units. */
-        public fun copyCodeUnits(): CharArray = capturedCodeUnits.copyOf()
+        public fun copyCodeUnits(): CharArray = CharArray(size) { index -> get(index) }
+
+        /** Factories for UTF-16 fragments. */
+        public companion object {
+            /**
+             * Borrows `[startIndex, endExclusive)` from [storage] without copying.
+             *
+             * The range is validated immediately. The storage must remain immutable, readable,
+             * and thread-safe until the synchronous decode call returns; it is not retained by a
+             * completed or failed decode result.
+             */
+            public fun borrow(
+                storage: Utf16Storage,
+                startIndex: Int = 0,
+                endExclusive: Int = storage.length,
+            ): Utf16 {
+                require(storage.length >= 0) { "UTF-16 storage length must be non-negative." }
+                require(startIndex in 0..endExclusive) { "UTF-16 slice start must not follow its end." }
+                require(endExclusive <= storage.length) { "UTF-16 slice range lies outside the storage." }
+                return Utf16(storage, startIndex, endExclusive - startIndex)
+            }
+        }
     }
 }
 
-/** Immutable Unicode scalar snapshot with reversible source-boundary mapping. */
-public class TextSnapshot(
+private class OwnedUtf8Storage(bytes: ByteArray) : Utf8Storage {
+    private val bytes: ByteArray = bytes.copyOf()
+    override val length: Int = this.bytes.size
+    override fun get(index: Int): Byte = bytes[index]
+}
+
+private class OwnedUtf16Storage(codeUnits: CharArray) : Utf16Storage {
+    private val codeUnits: CharArray = codeUnits.copyOf()
+    override val length: Int = this.codeUnits.size
+    override fun get(index: Int): Char = codeUnits[index]
+}
+
+/**
+ * Immutable Unicode scalar snapshot with reversible source-boundary mapping.
+ *
+ * The snapshot owns compact primitive scalar and source-boundary tables. [scalars] and
+ * [sourceRanges] remain immutable list-shaped compatibility views; values are produced lazily
+ * from those tables and the snapshot retains no source storage borrowed during decoding.
+ */
+public class TextSnapshot private constructor(
     /** Version shared by every source offset associated with this snapshot. */
     public val version: TextVersion,
     /** Encoding used for every source offset and range associated with this snapshot. */
     public val sourceEncoding: SourceEncoding,
-    scalars: List<Int>,
-    sourceRanges: List<SourceRange>,
+    private val scalarData: IntArray,
+    private val sourceBoundaryData: IntArray,
 ) {
-    /** Unicode scalar values in logical order. */
-    public val scalars: List<Int> = scalars.immutableListSnapshot()
+    /**
+     * Creates a snapshot from list-shaped compatibility inputs and captures their values.
+     *
+     * Each [sourceRanges] entry must describe the corresponding scalar with contiguous ranges
+     * beginning at source offset zero.
+     */
+    public constructor(
+        version: TextVersion,
+        sourceEncoding: SourceEncoding,
+        scalars: List<Int>,
+        sourceRanges: List<SourceRange>,
+    ) : this(
+        version = version,
+        sourceEncoding = sourceEncoding,
+        scalarData = scalars.toIntArray(),
+        sourceBoundaryData = sourceBoundaryTable(version, sourceEncoding, sourceRanges),
+    )
 
-    /** Source range consumed by each scalar at the corresponding scalar boundary. */
-    public val sourceRanges: List<SourceRange> = sourceRanges.immutableListSnapshot()
+    /** Unicode scalar values in logical order through an immutable lazy view. */
+    public val scalars: List<Int> = ImmutableScalarList(scalarData)
+
+    /** Source range consumed by each scalar through an immutable lazy view. */
+    public val sourceRanges: List<SourceRange> = ImmutableSourceRangeList(
+        version,
+        sourceEncoding,
+        sourceBoundaryData,
+    )
 
     /** Complete half-open scalar range of this snapshot. */
     public val range: TextRange = TextRange(TextIndex(version, 0), TextIndex(version, this.scalars.size))
 
-    private val sourceLength: Int = this.sourceRanges.lastOrNull()?.endExclusive?.value ?: 0
+    private val sourceLength: Int = sourceBoundaryData.last()
 
     init {
-        require(this.scalars.size == this.sourceRanges.size) {
-            "Each text scalar must have exactly one source range."
+        require(sourceBoundaryData.size == scalarData.size + 1) {
+            "Each text scalar must have exactly two adjacent source boundaries."
         }
-        require(this.scalars.all(::isUnicodeScalar)) { "Text snapshots contain only Unicode scalar values." }
-        var expectedStart = 0
-        this.sourceRanges.forEach { sourceRange ->
-            require(sourceRange.start.version == version) { "Source ranges must use the snapshot version." }
-            require(sourceRange.start.encoding == sourceEncoding) { "Source ranges must use the snapshot encoding." }
-            require(sourceRange.start.value == expectedStart) { "Source ranges must be contiguous and ordered." }
-            require(sourceRange.endExclusive.value > sourceRange.start.value) { "Source ranges must not be empty." }
-            expectedStart = sourceRange.endExclusive.value
+        require(sourceBoundaryData.first() == 0) { "Source ranges must begin at source offset zero." }
+        scalarData.forEach(::requireUnicodeScalar)
+        for (index in scalarData.indices) {
+            require(sourceBoundaryData[index + 1] > sourceBoundaryData[index]) {
+                "Source ranges must be contiguous, ordered, and non-empty."
+            }
         }
+    }
+
+    /** Implementation factories for compact decoder output. */
+    public companion object {
+        /**
+         * @suppress
+         *
+         * Captures primitive scalar values and their `scalarCount + 1` contiguous source
+         * boundaries into an owning snapshot without requiring per-scalar [SourceRange] values.
+         */
+        @KalligraphieInternalApi
+        public fun fromPrimitiveTables(
+            version: TextVersion,
+            sourceEncoding: SourceEncoding,
+            scalars: IntArray,
+            sourceBoundaries: IntArray,
+        ): TextSnapshot = TextSnapshot(
+            version,
+            sourceEncoding,
+            scalars.copyOf(),
+            sourceBoundaries.copyOf(),
+        )
     }
 
     /**
@@ -218,12 +376,19 @@ public class TextSnapshot(
         if (offset.value == sourceLength) return SourceIndexResult.Exact(textIndexAtScalarBoundary(scalars.size))
 
         val scalarIndex = scalarIndexContaining(offset.value)
-        val sourceRange = sourceRanges[scalarIndex]
-        if (offset.value == sourceRange.start.value) {
+        val scalarStart = sourceBoundaryData[scalarIndex]
+        val scalarEnd = sourceBoundaryData[scalarIndex + 1]
+        if (offset.value == scalarStart) {
             return SourceIndexResult.Exact(textIndexAtScalarBoundary(scalarIndex))
         }
         val boundary = if (bias == SourceBias.BEFORE) scalarIndex else scalarIndex + 1
-        return SourceIndexResult.Biased(textIndexAtScalarBoundary(boundary), sourceRange)
+        return SourceIndexResult.Biased(
+            textIndexAtScalarBoundary(boundary),
+            SourceRange(
+                SourceOffset(version, sourceEncoding, scalarStart),
+                SourceOffset(version, sourceEncoding, scalarEnd),
+            ),
+        )
     }
 
     /** Maps a scalar boundary from this snapshot to its exact source boundary. */
@@ -233,7 +398,7 @@ public class TextSnapshot(
         return if (index.ordinal == scalars.size) {
             SourceOffset(version, sourceEncoding, sourceLength)
         } else {
-            sourceRanges[index.ordinal].start
+            SourceOffset(version, sourceEncoding, sourceBoundaryData[index.ordinal])
         }
     }
 
@@ -255,7 +420,10 @@ public class TextSnapshot(
     public fun sourceRange(index: TextIndex): SourceRange {
         require(index.belongsTo(this)) { "Text index must belong to the snapshot version." }
         require(index.ordinal < scalars.size) { "Text index does not identify a scalar in the snapshot." }
-        return sourceRanges[index.ordinal]
+        return SourceRange(
+            SourceOffset(version, sourceEncoding, sourceBoundaryData[index.ordinal]),
+            SourceOffset(version, sourceEncoding, sourceBoundaryData[index.ordinal + 1]),
+        )
     }
 
     /**
@@ -329,7 +497,7 @@ public class TextSnapshot(
         var upper = sourceRanges.size
         while (lower < upper) {
             val middle = (lower + upper) ushr 1
-            if (sourceRanges[middle].endExclusive.value <= sourceOffset) {
+            if (sourceBoundaryData[middle + 1] <= sourceOffset) {
                 lower = middle + 1
             } else {
                 upper = middle
@@ -338,6 +506,57 @@ public class TextSnapshot(
         return lower
     }
 }
+
+private fun sourceBoundaryTable(
+    version: TextVersion,
+    encoding: SourceEncoding,
+    ranges: List<SourceRange>,
+): IntArray {
+    val boundaries = IntArray(ranges.size + 1)
+    ranges.forEachIndexed { index, range ->
+        require(range.start.version == version) { "Source ranges must use the snapshot version." }
+        require(range.start.encoding == encoding) { "Source ranges must use the snapshot encoding." }
+        require(range.start.value == boundaries[index]) { "Source ranges must be contiguous and ordered." }
+        require(range.endExclusive.value > range.start.value) { "Source ranges must not be empty." }
+        boundaries[index + 1] = range.endExclusive.value
+    }
+    return boundaries
+}
+
+private fun requireUnicodeScalar(value: Int) {
+    require(isUnicodeScalar(value)) { "Text snapshots contain only Unicode scalar values." }
+}
+
+private class ImmutableScalarList(private val values: IntArray) : AbstractMutableList<Int>() {
+    override val size: Int
+        get() = values.size
+
+    override fun get(index: Int): Int = values[index]
+    override fun add(index: Int, element: Int): Unit = immutableTextViewMutation()
+    override fun removeAt(index: Int): Int = immutableTextViewMutation()
+    override fun set(index: Int, element: Int): Int = immutableTextViewMutation()
+}
+
+private class ImmutableSourceRangeList(
+    private val version: TextVersion,
+    private val encoding: SourceEncoding,
+    private val boundaries: IntArray,
+) : AbstractMutableList<SourceRange>() {
+    override val size: Int
+        get() = boundaries.size - 1
+
+    override fun get(index: Int): SourceRange = SourceRange(
+        SourceOffset(version, encoding, boundaries[index]),
+        SourceOffset(version, encoding, boundaries[index + 1]),
+    )
+
+    override fun add(index: Int, element: SourceRange): Unit = immutableTextViewMutation()
+    override fun removeAt(index: Int): SourceRange = immutableTextViewMutation()
+    override fun set(index: Int, element: SourceRange): SourceRange = immutableTextViewMutation()
+}
+
+private fun <Value> immutableTextViewMutation(): Value =
+    throw UnsupportedOperationException("Immutable text snapshot view.")
 
 /** Recoverable source-decoding issue retaining the complete malformed source span. */
 public data class TextDiagnostic(
@@ -361,6 +580,12 @@ public enum class TextDecodingLimit {
 
     /** Unicode scalars that would be published in the canonical snapshot. */
     SCALARS,
+}
+
+/** Typed source-contract failure that prevents publication of a decoded snapshot. */
+public enum class TextDecodingFailure {
+    /** A slice seam split one complete valid or malformed Unicode decoding unit. */
+    INVALID_SLICE_BOUNDARY,
 }
 
 /**
@@ -406,6 +631,12 @@ public sealed interface TextDecodingOutcome {
         public val limit: TextDecodingLimit,
         /** First source-unit or scalar count exceeding the configured limit. */
         public val observed: Long,
+    ) : TextDecodingOutcome
+
+    /** Source slices could not form one valid sequence of complete decoding units. */
+    public class Failure(
+        /** Typed reason that rejected the complete operation. */
+        public val reason: TextDecodingFailure,
     ) : TextDecodingOutcome
 
     /** Cooperative cancellation was observed before a complete snapshot could be published. */
