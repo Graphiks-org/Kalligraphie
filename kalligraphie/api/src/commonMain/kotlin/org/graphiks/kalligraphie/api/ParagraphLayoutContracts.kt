@@ -626,11 +626,13 @@ private fun paragraphRenderVariantSnapshot(variant: FontRenderVariantKey): FontR
  * exact suffix of [originalSourceRange]; it is empty only when a required terminal empty physical
  * line remains. A partial layout prefix plus this value partitions the complete source requested
  * by the call that created it. It stores no text
- * history, incremental-edit state, borrowed resolver, native handle, renderer, or platform
- * object. Collections are defensively captured, making this value safe for concurrent reads.
+ * history, incremental-edit state, borrowed resolver, native handle, native distribution
+ * provenance, renderer, or platform object. Portable [shapingSemanticIdentity] is retained because
+ * it affects replay; distribution provenance does not. Collections are defensively captured,
+ * making this value safe for concurrent reads.
  *
  * Create continuations only with [create]; a resumed [ParagraphLayoutRequest] rejects any
- * incompatible version, remaining range, geometry, Unicode data, font policy, shaping backend,
+ * incompatible version, remaining range, geometry, Unicode data, font policy, shaping semantics,
  * feature set, or materialization identity.
  */
 public class LayoutContinuation private constructor(
@@ -668,8 +670,8 @@ public class LayoutContinuation private constructor(
     public val resolutionPolicyVersion: String,
     /** Font instance geometry applied to selected faces. */
     public val fontInstanceDescriptor: FontInstanceDescriptor,
-    /** Pinned shaping backend and configuration identity. */
-    public val shapingBackendIdentity: ShapingBackendIdentity,
+    /** Portable shaping semantics required to resume this continuation. */
+    public val shapingSemanticIdentity: ShapingSemanticIdentity,
     /** Baseline OpenType feature policy used for shaping. */
     public val featurePolicy: ShapingFeaturePolicy,
     features: List<OpenTypeFeature>,
@@ -717,7 +719,7 @@ public class LayoutContinuation private constructor(
             request.resolutionPolicy.policyId == resolutionPolicyId &&
             request.resolutionPolicy.version == resolutionPolicyVersion &&
             request.fontInstanceDescriptor == fontInstanceDescriptor &&
-            request.shapingBackend.identity == shapingBackendIdentity &&
+            request.shapingBackend.identity.semantic == shapingSemanticIdentity &&
             request.featurePolicy == featurePolicy &&
             request.features == features &&
             request.materializationIdentity == materializationIdentity &&
@@ -758,7 +760,7 @@ public class LayoutContinuation private constructor(
         if (request.resolutionPolicy.policyId != resolutionPolicyId) add("resolution policy")
         if (request.resolutionPolicy.version != resolutionPolicyVersion) add("resolution-policy version")
         if (request.fontInstanceDescriptor != fontInstanceDescriptor) add("font instance")
-        if (request.shapingBackend.identity != shapingBackendIdentity) add("shaping backend")
+        if (request.shapingBackend.identity.semantic != shapingSemanticIdentity) add("shaping semantics")
         if (request.featurePolicy != featurePolicy) add("feature policy")
         if (request.features != features) add("features")
         if (request.materializationIdentity != materializationIdentity) add("materialization")
@@ -832,7 +834,7 @@ public class LayoutContinuation private constructor(
                 resolutionPolicyId = request.resolutionPolicy.policyId,
                 resolutionPolicyVersion = request.resolutionPolicy.version,
                 fontInstanceDescriptor = request.fontInstanceDescriptor,
-                shapingBackendIdentity = request.shapingBackend.identity,
+                shapingSemanticIdentity = request.shapingBackend.identity.semantic,
                 featurePolicy = request.featurePolicy,
                 features = request.features,
                 materializationIdentity = request.materializationIdentity,
@@ -920,7 +922,7 @@ public class ParagraphLayoutRequest(
         require(unicodeAnalysis.scriptLanguageRuns.all { run -> run.language == language }) {
             "Paragraph language must match every analyzed script-language run."
         }
-        require(featurePolicy == shapingBackend.identity.featurePolicy) {
+        require(featurePolicy == shapingBackend.identity.semantic.featurePolicy) {
             "Paragraph feature policy must be implemented by the selected shaping backend."
         }
         require(this.features.map(OpenTypeFeature::tag).distinct().size == this.features.size) {
@@ -1234,7 +1236,7 @@ private fun List<PositionedGlyphRun>.preserveGlyphSemanticsOf(
             actualRun.sourceRun.range.start >= expectedRun.sourceRun.range.start &&
             actualRun.sourceRun.range.endExclusive <= expectedRun.sourceRun.range.endExclusive &&
             actualRun.sourceRun.fontInstanceKey == expectedRun.sourceRun.fontInstanceKey &&
-            actualRun.sourceRun.backendIdentity == expectedRun.sourceRun.backendIdentity &&
+            actualRun.sourceRun.backendIdentity.semantic == expectedRun.sourceRun.backendIdentity.semantic &&
             actualRun.sourceRun.direction == expectedRun.sourceRun.direction &&
             actualRun.sourceRun.script == expectedRun.sourceRun.script &&
             actualRun.sourceRun.language == expectedRun.sourceRun.language &&

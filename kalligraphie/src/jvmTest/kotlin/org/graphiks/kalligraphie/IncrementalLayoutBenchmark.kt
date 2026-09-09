@@ -715,7 +715,7 @@ internal object IncrementalLayoutBenchmark {
 
     private fun openedHarfBuzzVersion(): String = when (val opened = JvmHarfBuzzShapingBackend.open()) {
         is FontOperationResult.Success -> try {
-            opened.value.identity.nativeVersion
+            opened.value.identity.semantic.engineVersion
         } finally {
             opened.value.close()
         }

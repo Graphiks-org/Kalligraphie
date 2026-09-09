@@ -132,7 +132,7 @@ class JvmEditableLineFacadeTest {
             val line = assertIs<EditableLineResult.Success>(result).line
             val glyph = line.positionedGlyphRuns.single().glyphs.single()
             assertEquals(snapshot.range, line.range)
-            assertEquals("14.3.0", line.positionedGlyphRuns.single().sourceRun.backendIdentity.nativeVersion)
+            assertEquals("14.3.0", line.positionedGlyphRuns.single().sourceRun.backendIdentity.semantic.engineVersion)
             assertEquals(GlyphId(36), glyph.shapedGlyph.glyphId)
             assertEquals(GlyphMaterializationRoute.OUTLINE, glyph.materializationCertificate?.route)
             assertEquals(glyph.renderAssetKey, glyph.materializationCertificate?.assetKey)

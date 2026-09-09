@@ -222,7 +222,7 @@ public object JvmEditableParagraphFacade {
             constraints = request.constraints,
             baseDirection = request.baseDirection,
             language = canonicalLanguage,
-            featurePolicy = backend.identity.featurePolicy,
+            featurePolicy = backend.identity.semantic.featurePolicy,
             features = request.features,
             fontCatalog = request.fontCatalog,
             resolutionPolicy = request.resolutionPolicy,

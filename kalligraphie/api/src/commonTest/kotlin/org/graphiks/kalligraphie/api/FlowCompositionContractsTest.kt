@@ -473,17 +473,27 @@ class FlowCompositionContractsTest {
         val firstRange = TextRange(snapshot.range.start, snapshot.textIndexAtScalarBoundary(1))
         val secondRange = TextRange(snapshot.textIndexAtScalarBoundary(1), snapshot.range.endExclusive)
         val backendIdentity = ShapingBackendIdentity(
-            backendId = "flow-test",
-            nativeVersion = "1",
-            nativeSourceRevision = "source",
-            nativeArtifactId = "artifact",
-            nativeArtifactSha256 = "0".repeat(64),
-            featurePolicy = ShapingFeaturePolicy(
-                policyId = "flow-test-features",
-                version = "1",
-                application = ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
+            semantic = ShapingSemanticIdentity(
+                backendId = "flow-test",
+                engineId = "flow-test-engine",
+                engineVersion = "1",
+                shaperId = "flow-test-shaper",
+                featurePolicy = ShapingFeaturePolicy(
+                    policyId = "flow-test-features",
+                    version = "1",
+                    application = ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
+                ),
+                configurationFingerprint = "flow-test-config",
             ),
-            configurationFingerprint = "flow-test-config",
+            provenance = ShapingDistributionProvenance(
+                operatingSystem = "test-os",
+                architecture = "test-architecture",
+                artifactId = "artifact",
+                artifactSha256 = "0".repeat(64),
+                sourceProject = "test-source",
+                sourceRevision = "source",
+                buildChainIdentity = "test-build-chain",
+            ),
         )
         val descriptor = FontInstanceDescriptor(LayoutUnit(12f))
         val fontKey = FontInstanceKey(
@@ -519,7 +529,7 @@ class FlowCompositionContractsTest {
                 bidiLevel = 0,
                 bot = index == 0,
                 eot = index == 1,
-                featurePolicy = backendIdentity.featurePolicy,
+                featurePolicy = backendIdentity.semantic.featurePolicy,
                 features = emptyList(),
                 graphemeClusters = listOf(range),
                 glyphs = listOf(glyph),

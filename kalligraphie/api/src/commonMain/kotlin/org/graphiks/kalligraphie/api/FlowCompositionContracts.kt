@@ -876,7 +876,7 @@ internal class FlowParagraphReplayIdentity private constructor(
             paragraph.resolutionPolicyId == other.paragraph.resolutionPolicyId &&
             paragraph.resolutionPolicyVersion == other.paragraph.resolutionPolicyVersion &&
             paragraph.fontInstanceDescriptor == other.paragraph.fontInstanceDescriptor &&
-            paragraph.shapingBackendIdentity == other.paragraph.shapingBackendIdentity &&
+            paragraph.shapingSemanticIdentity == other.paragraph.shapingSemanticIdentity &&
             paragraph.featurePolicy == other.paragraph.featurePolicy &&
             paragraph.features == other.paragraph.features &&
             paragraph.materializationIdentity == other.paragraph.materializationIdentity &&
@@ -907,7 +907,7 @@ internal class FlowParagraphReplayIdentity private constructor(
             request.resolutionPolicy.policyId == paragraph.resolutionPolicyId &&
             request.resolutionPolicy.version == paragraph.resolutionPolicyVersion &&
             request.fontInstanceDescriptor == paragraph.fontInstanceDescriptor &&
-            request.shapingBackend.identity == paragraph.shapingBackendIdentity &&
+            request.shapingBackend.identity.semantic == paragraph.shapingSemanticIdentity &&
             request.featurePolicy == paragraph.featurePolicy &&
             request.features == paragraph.features &&
             request.materializationIdentity == paragraph.materializationIdentity &&
@@ -956,8 +956,9 @@ internal class FlowParagraphReplayIdentity private constructor(
  * Complete resource-free signature of inputs that may affect flow breaking or geometry.
  *
  * The signature snapshots region revision identities, paragraph configuration, and the complete
- * structural Unicode and line-break analyses while retaining no [FlowRegion], text snapshot,
- * shaping backend, resolver, renderer, or platform resource.
+ * structural Unicode and line-break analyses plus portable shaping semantics. It retains no
+ * [FlowRegion], text snapshot, shaping backend, native distribution provenance, resolver,
+ * renderer, or platform resource.
  */
 public class FlowLayoutConfigurationSignature private constructor(
     private val value: FlowLayoutConfigurationValue,
@@ -1017,7 +1018,7 @@ public class FlowLayoutConfigurationSignature private constructor(
                 layout = LayoutConfigurationSignature.from(request.input, request.constraints),
                 baseDirection = paragraph.baseDirection,
                 language = paragraph.language,
-                backendIdentity = paragraph.shapingBackend.identity,
+                shapingSemantics = paragraph.shapingBackend.identity.semantic,
                 materialization = paragraph.materializationIdentity,
                 overflowPolicy = paragraph.overflowPolicy,
                 positioning = paragraph.positioning,
@@ -1050,7 +1051,7 @@ private data class FlowLayoutConfigurationValue(
     val layout: LayoutConfigurationSignature,
     val baseDirection: BaseDirection,
     val language: String,
-    val backendIdentity: ShapingBackendIdentity,
+    val shapingSemantics: ShapingSemanticIdentity,
     val materialization: ParagraphMaterializationIdentity,
     val overflowPolicy: OverflowPolicy,
     val positioning: ParagraphPositioningPolicy,

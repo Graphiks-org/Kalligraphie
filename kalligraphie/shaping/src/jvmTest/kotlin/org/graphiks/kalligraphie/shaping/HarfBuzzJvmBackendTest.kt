@@ -182,22 +182,15 @@ class HarfBuzzJvmBackendTest {
             featurePolicy = policy,
         )
 
-        assertEquals(policy, backend.identity.featurePolicy)
+        assertEquals(policy, backend.identity.semantic.featurePolicy)
         assertEquals(policy, shaped.featurePolicy)
         assertEquals(emptyList(), shaped.features)
         assertEquals(listOf(GlyphId(5042)), shaped.glyphs.map { it.glyphId })
     }
 
     @Test
-    fun directBackendReportsItsPinnedIdentityAndShapesAnAuditedLatinLigature() {
+    fun targetDistributionKeepsPortableSemanticsAndAuditedLatinShaping() {
         val backend = backend()
-
-        assertEquals("harfbuzz-jvm", backend.identity.backendId)
-        assertEquals("14.3.0", backend.identity.nativeVersion)
-        assertEquals(expectedNativeSourceRevision(), backend.identity.nativeSourceRevision)
-        assertEquals(expectedNativeArtifactId(), backend.identity.nativeArtifactId)
-        assertEquals(expectedNativeArtifactSha256(), backend.identity.nativeArtifactSha256)
-        assertTrue(backend.identity.configurationFingerprint.contains("monotone-characters"))
 
         val shaped = shape(
             backend = backend,
@@ -210,6 +203,19 @@ class HarfBuzzJvmBackendTest {
             features = listOf(OpenTypeFeature("liga", 1)),
         )
 
+        assertEquals("harfbuzz-jvm", shaped.backendIdentity.semantic.backendId)
+        assertEquals("harfbuzz", shaped.backendIdentity.semantic.engineId)
+        assertEquals("14.3.0", shaped.backendIdentity.semantic.engineVersion)
+        assertEquals("ot", shaped.backendIdentity.semantic.shaperId)
+        assertEquals(JvmHarfBuzzShapingBackend.pinnedFeaturePolicy, shaped.backendIdentity.semantic.featurePolicy)
+        assertTrue(shaped.backendIdentity.semantic.configurationFingerprint.contains("monotone-characters"))
+        assertEquals(expectedOperatingSystem(), shaped.backendIdentity.provenance.operatingSystem)
+        assertEquals(expectedArchitecture(), shaped.backendIdentity.provenance.architecture)
+        assertEquals(expectedNativeSourceRevision(), shaped.backendIdentity.provenance.sourceRevision)
+        assertEquals(expectedNativeArtifactId(), shaped.backendIdentity.provenance.artifactId)
+        assertEquals(expectedNativeArtifactSha256(), shaped.backendIdentity.provenance.artifactSha256)
+        assertEquals("harfbuzz", shaped.backendIdentity.provenance.sourceProject)
+        assertEquals(expectedBuildChainIdentity(), shaped.backendIdentity.provenance.buildChainIdentity)
         assertEquals(listOf(GlyphId(5042)), shaped.glyphs.map { it.glyphId })
         assertEquals(listOf(LayoutUnit(1290f)), shaped.glyphs.map { it.xAdvance })
         assertEquals(listOf(ShaperClusterToken(0)), shaped.glyphs.map { it.clusterToken })
@@ -219,10 +225,10 @@ class HarfBuzzJvmBackendTest {
     fun nativeIdentityBindsEachTargetToItsVerifiedArtifactAndOtShaper() {
         val identity = backend().identity
 
-        assertEquals(expectedNativeSourceRevision(), identity.nativeSourceRevision)
-        assertEquals(expectedNativeArtifactId(), identity.nativeArtifactId)
-        assertEquals(expectedNativeArtifactSha256(), identity.nativeArtifactSha256)
-        assertTrue(identity.configurationFingerprint.contains("shaper=ot"))
+        assertEquals(expectedNativeSourceRevision(), identity.provenance.sourceRevision)
+        assertEquals(expectedNativeArtifactId(), identity.provenance.artifactId)
+        assertEquals(expectedNativeArtifactSha256(), identity.provenance.artifactSha256)
+        assertEquals("ot", identity.semantic.shaperId)
     }
 
     @Test
@@ -740,6 +746,24 @@ class HarfBuzzJvmBackendTest {
         "Mac OS X" to "x86_64" -> "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-x64/libharfbuzz.dylib"
         "Linux" to "aarch64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux-arm64/libharfbuzz.so"
         "Linux" to "amd64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux/libharfbuzz.so"
+        else -> error("Unexpected shaping test platform.")
+    }
+
+    private fun expectedOperatingSystem(): String = when (System.getProperty("os.name")) {
+        "Mac OS X" -> "macos"
+        "Linux" -> "linux"
+        else -> error("Unexpected shaping test platform.")
+    }
+
+    private fun expectedArchitecture(): String = when (System.getProperty("os.arch")) {
+        "aarch64" -> "arm64"
+        "x86_64", "amd64" -> "x64"
+        else -> error("Unexpected shaping test architecture.")
+    }
+
+    private fun expectedBuildChainIdentity(): String = when (System.getProperty("os.name")) {
+        "Mac OS X" -> "cmake-4.4.3;appleclang-21.0.0;macos-sdk-26.5;deployment-target-11.0"
+        "Linux" -> "lwjgl-harfbuzz-3.4.3"
         else -> error("Unexpected shaping test platform.")
     }
 

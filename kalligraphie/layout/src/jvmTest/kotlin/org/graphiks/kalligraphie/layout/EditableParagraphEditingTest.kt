@@ -143,7 +143,7 @@ class EditableParagraphEditingTest {
             ),
             baseDirection = baseDirection,
             language = language,
-            featurePolicy = backend.identity.featurePolicy,
+            featurePolicy = backend.identity.semantic.featurePolicy,
             fontCatalog = catalog,
             resolutionPolicy = policy,
             fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),

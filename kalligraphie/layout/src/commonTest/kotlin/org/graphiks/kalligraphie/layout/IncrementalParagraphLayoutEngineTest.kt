@@ -51,6 +51,7 @@ import org.graphiks.kalligraphie.api.LayoutTailState
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LayoutVector
 import org.graphiks.kalligraphie.api.LineContentMetrics
+import org.graphiks.kalligraphie.api.LineCheckpointSignature
 import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
@@ -80,6 +81,70 @@ import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 
 class IncrementalParagraphLayoutEngineTest {
+    @Test
+    fun paragraphRunCoalescenceFollowsShapingSemanticsRatherThanDistribution() {
+        val snapshot = decode("ab")
+        val otherDistribution = backendIdentity.copy(
+            provenance = backendIdentity.provenance.copy(
+                artifactId = "other-artifact",
+                artifactSha256 = "1".repeat(64),
+            ),
+        )
+        val otherSemantics = backendIdentity.copy(
+            semantic = backendIdentity.semantic.copy(configurationFingerprint = "fixture-v2"),
+        )
+        val first = line(snapshot, 0, 1, baselineY = 8f, glyphId = 7, backendIdentity = backendIdentity)
+            .positionedGlyphRuns.single().sourceRun
+        val distributedElsewhere = line(snapshot, 1, 2, baselineY = 8f, glyphId = 8, backendIdentity = otherDistribution)
+            .positionedGlyphRuns.single().sourceRun
+        val configuredDifferently = line(snapshot, 1, 2, baselineY = 8f, glyphId = 8, backendIdentity = otherSemantics)
+            .positionedGlyphRuns.single().sourceRun
+
+        val coalesced = coalesceSemanticallyCompatibleRuns(listOf(first, distributedElsewhere))
+        val keptSeparate = coalesceSemanticallyCompatibleRuns(listOf(first, configuredDifferently))
+
+        assertEquals(1, coalesced.size)
+        assertEquals(listOf(7, 8), coalesced.single().glyphs.map { glyph -> glyph.glyphId.value })
+        assertEquals(listOf(10f, 10f), coalesced.single().glyphs.map { glyph -> glyph.xAdvance.value })
+        assertEquals(backendIdentity.provenance, coalesced.single().backendIdentity.provenance)
+        assertEquals(2, keptSeparate.size)
+    }
+
+    @Test
+    fun checkpointSignaturesFollowShapingSemanticsRatherThanDistribution() {
+        val snapshot = decode("ab")
+        val continuation = LayoutContinuationSignature(snapshot.range.endExclusive, "complete")
+        val otherDistribution = backendIdentity.copy(
+            provenance = backendIdentity.provenance.copy(
+                operatingSystem = "other-os",
+                architecture = "other-architecture",
+                artifactId = "other-artifact",
+                artifactSha256 = "1".repeat(64),
+                sourceRevision = "other-source-revision",
+                buildChainIdentity = "other-build-chain",
+            ),
+        )
+        val otherSemantics = backendIdentity.copy(
+            semantic = backendIdentity.semantic.copy(configurationFingerprint = "fixture-v2"),
+        )
+        val expected = LineCheckpointSignature.from(
+            line(snapshot, 0, 2, baselineY = 8f, glyphId = 7, backendIdentity = backendIdentity),
+            continuation,
+        )
+
+        val distributedElsewhere = LineCheckpointSignature.from(
+            line(snapshot, 0, 2, baselineY = 8f, glyphId = 7, backendIdentity = otherDistribution),
+            continuation,
+        )
+        val configuredDifferently = LineCheckpointSignature.from(
+            line(snapshot, 0, 2, baselineY = 8f, glyphId = 7, backendIdentity = otherSemantics),
+            continuation,
+        )
+
+        assertTrue(expected.hasSameObservableLayout(distributedElsewhere))
+        assertFalse(expected.hasSameObservableLayout(configuredDifferently))
+    }
+
     @Test
     fun emptyDocumentPublishesItsCanonicalEmptyLine() {
         val fixture = fixture("", listOf(0 to 0))
@@ -715,13 +780,23 @@ class IncrementalParagraphLayoutEngineTest {
             application = ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
         )
         val backendIdentity = ShapingBackendIdentity(
-            backendId = "fixture",
-            nativeVersion = "1",
-            nativeSourceRevision = "fixture",
-            nativeArtifactId = "fixture",
-            nativeArtifactSha256 = "0".repeat(64),
-            featurePolicy = featurePolicy,
-            configurationFingerprint = "fixture-v1",
+            semantic = org.graphiks.kalligraphie.api.ShapingSemanticIdentity(
+                backendId = "fixture",
+                engineId = "fixture-engine",
+                engineVersion = "1",
+                shaperId = "fixture-shaper",
+                featurePolicy = featurePolicy,
+                configurationFingerprint = "fixture-v1",
+            ),
+            provenance = org.graphiks.kalligraphie.api.ShapingDistributionProvenance(
+                operatingSystem = "test-os",
+                architecture = "test-architecture",
+                artifactId = "fixture",
+                artifactSha256 = "0".repeat(64),
+                sourceProject = "fixture-source",
+                sourceRevision = "fixture",
+                buildChainIdentity = "fixture-build-chain",
+            ),
         )
         val faceId = FontFaceId(FontSourceId.Opaque("tests", "fixture", "face"), 0)
         val fontKey = FontInstanceKey(
@@ -829,6 +904,7 @@ class IncrementalParagraphLayoutEngineTest {
             endExclusive: Int,
             baselineY: Float,
             glyphId: Int,
+            backendIdentity: ShapingBackendIdentity = this.backendIdentity,
         ): LineLayout {
             val sourceRange = range(snapshot, start, endExclusive)
             if (start == endExclusive) return emptyLine(sourceRange, baselineY)

@@ -1409,13 +1409,23 @@ class EditableLineTest {
             application = ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
         )
         val backendIdentity: ShapingBackendIdentity = ShapingBackendIdentity(
-            backendId = "manual-audited-scenario",
-            nativeVersion = "1",
-            nativeSourceRevision = "manual-audited-scenario",
-            nativeArtifactId = "manual-audited-scenario",
-            nativeArtifactSha256 = "0".repeat(64),
-            featurePolicy = featurePolicy,
-            configurationFingerprint = "manual-audited-scenario",
+            semantic = org.graphiks.kalligraphie.api.ShapingSemanticIdentity(
+                backendId = "manual-audited-scenario",
+                engineId = "manual-audited-engine",
+                engineVersion = "1",
+                shaperId = "manual-audited-shaper",
+                featurePolicy = featurePolicy,
+                configurationFingerprint = "manual-audited-scenario",
+            ),
+            provenance = org.graphiks.kalligraphie.api.ShapingDistributionProvenance(
+                operatingSystem = "test-os",
+                architecture = "test-architecture",
+                artifactId = "manual-audited-scenario",
+                artifactSha256 = "0".repeat(64),
+                sourceProject = "manual-audited-source",
+                sourceRevision = "manual-audited-scenario",
+                buildChainIdentity = "manual-audited-build-chain",
+            ),
         )
     }
 }

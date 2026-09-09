@@ -31,11 +31,13 @@ import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingBackendIdentity
+import org.graphiks.kalligraphie.api.ShapingDistributionProvenance
 import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicyApplication
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapingResourceLimit
+import org.graphiks.kalligraphie.api.ShapingSemanticIdentity
 import org.graphiks.kalligraphie.api.ShapingSafetyFlags
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
@@ -95,7 +97,7 @@ private class HarfBuzzJvmBackend(
             if (scalarCount > request.resourceProfile.maxScalars) {
                 return shapingResourceLimitFailure(ShapingResourceLimit.SCALARS, scalarCount)
             }
-            if (request.featurePolicy != identity.featurePolicy) {
+            if (request.featurePolicy != identity.semantic.featurePolicy) {
                 return shapingFailure(
                     code = "font.shaping-feature-policy-unsupported",
                     message = "The requested OpenType feature policy is not implemented by this pinned HarfBuzz backend.",
@@ -441,11 +443,14 @@ internal object HarfBuzzNativeLoader {
 }
 
 internal data class HarfBuzzNativeTarget(
+    val operatingSystem: String,
+    val architecture: String,
     val resourcePath: String,
     val fileName: String,
     val nativeSourceRevision: String,
     val nativeArtifactId: String,
     val librarySha256: String,
+    val buildChainIdentity: String,
 )
 
 private fun nativeTargetFor(platform: HarfBuzzPlatform): HarfBuzzNativeTarget? = when (
@@ -454,41 +459,53 @@ private fun nativeTargetFor(platform: HarfBuzzPlatform): HarfBuzzNativeTarget? =
     "linux" to "amd64",
     "linux" to "x86_64",
     -> HarfBuzzNativeTarget(
+        operatingSystem = "linux",
+        architecture = "x64",
         resourcePath = "/kalligraphie/harfbuzz/linux/x64/libharfbuzz.so",
         fileName = "libharfbuzz.so",
         nativeSourceRevision = LWJGL_HARFBUZZ_SOURCE_REVISION,
         nativeArtifactId = "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux/libharfbuzz.so",
         librarySha256 = "9a5e3576912c2f8c8b2533d4a264fec1eac9667adfd64f7e71e80179ba118614",
+        buildChainIdentity = "lwjgl-harfbuzz-3.4.3",
     )
 
     "linux" to "aarch64",
     "linux" to "arm64",
     -> HarfBuzzNativeTarget(
+        operatingSystem = "linux",
+        architecture = "arm64",
         resourcePath = "/kalligraphie/harfbuzz/linux/arm64/libharfbuzz.so",
         fileName = "libharfbuzz.so",
         nativeSourceRevision = LWJGL_HARFBUZZ_SOURCE_REVISION,
         nativeArtifactId = "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux-arm64/libharfbuzz.so",
         librarySha256 = "b1c7c67034297763e0ce46f3749c4da33a4bb4064929868446cb5a3d81dc26bc",
+        buildChainIdentity = "lwjgl-harfbuzz-3.4.3",
     )
 
     "mac os x" to "x86_64",
     "mac os x" to "amd64",
     -> HarfBuzzNativeTarget(
+        operatingSystem = "macos",
+        architecture = "x64",
         resourcePath = "/kalligraphie/harfbuzz/macos/x64/libharfbuzz.dylib",
         fileName = "libharfbuzz.dylib",
         nativeSourceRevision = HARFBUZZ_RELEASE_SOURCE_REVISION,
         nativeArtifactId = "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-x64/libharfbuzz.dylib",
         librarySha256 = "9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c",
+        buildChainIdentity = MACOS_BUILD_CHAIN_IDENTITY,
     )
 
     "mac os x" to "aarch64",
     "mac os x" to "arm64",
     -> HarfBuzzNativeTarget(
+        operatingSystem = "macos",
+        architecture = "arm64",
         resourcePath = "/kalligraphie/harfbuzz/macos/arm64/libharfbuzz.dylib",
         fileName = "libharfbuzz.dylib",
         nativeSourceRevision = HARFBUZZ_RELEASE_SOURCE_REVISION,
         nativeArtifactId = "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-arm64/libharfbuzz.dylib",
         librarySha256 = "504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22",
+        buildChainIdentity = MACOS_BUILD_CHAIN_IDENTITY,
     )
 
     else -> null
@@ -499,13 +516,16 @@ internal class HarfBuzzNativeLibrary(
     target: HarfBuzzNativeTarget,
 ) {
     val identity: ShapingBackendIdentity = ShapingBackendIdentity(
-        backendId = "harfbuzz-jvm",
-        nativeVersion = HARFBUZZ_VERSION,
-        nativeSourceRevision = target.nativeSourceRevision,
-        nativeArtifactId = target.nativeArtifactId,
-        nativeArtifactSha256 = target.librarySha256,
-        featurePolicy = PINNED_FEATURE_POLICY,
-        configurationFingerprint = CONFIGURATION_FINGERPRINT,
+        semantic = HARFBUZZ_SEMANTIC_IDENTITY,
+        provenance = ShapingDistributionProvenance(
+            operatingSystem = target.operatingSystem,
+            architecture = target.architecture,
+            artifactId = target.nativeArtifactId,
+            artifactSha256 = target.librarySha256,
+            sourceProject = "harfbuzz",
+            sourceRevision = target.nativeSourceRevision,
+            buildChainIdentity = target.buildChainIdentity,
+        ),
     )
 
     private val linker: Linker = Linker.nativeLinker()
@@ -1119,6 +1139,8 @@ private class ShapingLimitExceeded(
 private const val HARFBUZZ_VERSION: String = "14.3.0"
 private const val LWJGL_HARFBUZZ_SOURCE_REVISION: String = "9f2f03173b7fee860cc00d999857d09fa4a362e2"
 private const val HARFBUZZ_RELEASE_SOURCE_REVISION: String = "4c2aa804671d7276e8a0eb95da07202ead05c843"
+private const val MACOS_BUILD_CHAIN_IDENTITY: String =
+    "cmake-4.4.3;appleclang-21.0.0;macos-sdk-26.5;deployment-target-11.0"
 private val PINNED_FEATURE_POLICY: ShapingFeaturePolicy = ShapingFeaturePolicy(
     policyId = "harfbuzz-defaults",
     version = HARFBUZZ_VERSION,
@@ -1127,6 +1149,14 @@ private val PINNED_FEATURE_POLICY: ShapingFeaturePolicy = ShapingFeaturePolicy(
 private const val CONFIGURATION_FINGERPRINT: String =
     "harfbuzz-14.3.0;shaper=ot;ot-font-funcs;scale=face-upem;layout-conversion=layout-size-over-upem;explicit-direction-script-language-bot-eot;" +
         "cluster-level=monotone-characters;flags=produce-unsafe-to-concat;feature-policy=harfbuzz-defaults@14.3.0;feature-overrides=explicit"
+private val HARFBUZZ_SEMANTIC_IDENTITY: ShapingSemanticIdentity = ShapingSemanticIdentity(
+    backendId = "harfbuzz-jvm",
+    engineId = "harfbuzz",
+    engineVersion = HARFBUZZ_VERSION,
+    shaperId = "ot",
+    featurePolicy = PINNED_FEATURE_POLICY,
+    configurationFingerprint = CONFIGURATION_FINGERPRINT,
+)
 private val NON_DETERMINISTIC_FEATURES: Set<String> = setOf("rand")
 private const val HB_MEMORY_MODE_READONLY: Int = 1
 private const val HB_DIRECTION_LTR: Int = 4

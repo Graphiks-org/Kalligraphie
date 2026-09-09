@@ -121,36 +121,146 @@ public class ShapingFeaturePolicy(
     override fun toString(): String = "ShapingFeaturePolicy($policyId@$version, $application)"
 }
 
-/** Immutable identity of a shaping implementation and its pinned native dependency. */
-public data class ShapingBackendIdentity(
-    /** Stable backend implementation identifier. */
+/**
+ * Portable semantic identity of one deterministic shaping configuration.
+ *
+ * Equality means that two backends implement the same shaping semantics independently of the
+ * operating system, processor architecture, or native artifact that distributes the engine.
+ * This value is suitable for continuations, replay signatures, run coalescence, and result-cache
+ * keys. It never authorizes sharing a native resource between backend instances.
+ */
+public data class ShapingSemanticIdentity(
+    /** Stable shaping-backend implementation identifier. */
     public val backendId: String,
-    /** Native shaping-engine version reported by the loaded library. */
-    public val nativeVersion: String,
-    /** Immutable source revision embedded in the selected native artifact. */
-    public val nativeSourceRevision: String,
-    /**
-     * Pinned Maven coordinate, classifier, and embedded-library path selected at runtime.
-     *
-     * This identifies the exact checked-in library resource, rather than a library found
-     * through a platform search path.
-     */
-    public val nativeArtifactId: String,
-    /** Lowercase SHA-256 digest of the library resource identified by [nativeArtifactId]. */
-    public val nativeArtifactSha256: String,
-    /** Explicit, versioned baseline feature policy implemented by this backend. */
+    /** Stable identifier of the shaping engine used by the backend. */
+    public val engineId: String,
+    /** Version of [engineId] whose shaping behavior is represented. */
+    public val engineVersion: String,
+    /** Explicit shaping-engine shaper selected by the backend. */
+    public val shaperId: String,
+    /** Explicit, versioned baseline feature policy implemented by the backend. */
     public val featurePolicy: ShapingFeaturePolicy,
-    /** Versioned fingerprint of the backend's fixed shaping configuration. */
+    /** Versioned fingerprint of every remaining fixed shaping configuration input. */
     public val configurationFingerprint: String,
 ) {
     init {
         require(backendId.isNotBlank()) { "Backend identifier must not be blank." }
-        require(nativeVersion.isNotBlank()) { "Native version must not be blank." }
-        require(nativeSourceRevision.isNotBlank()) { "Native source revision must not be blank." }
-        require(nativeArtifactId.isNotBlank()) { "Native artifact identifier must not be blank." }
-        require(nativeArtifactSha256.matches(SHA256_HEX)) { "Native artifact SHA-256 must be a lowercase hexadecimal digest." }
+        require(engineId.isNotBlank()) { "Shaping engine identifier must not be blank." }
+        require(engineVersion.isNotBlank()) { "Shaping engine version must not be blank." }
+        require(shaperId.isNotBlank()) { "Shaper identifier must not be blank." }
         require(configurationFingerprint.isNotBlank()) { "Configuration fingerprint must not be blank." }
     }
+}
+
+/**
+ * Diagnostic provenance of the native distribution used by a shaping backend.
+ *
+ * Provenance distinguishes platform artifacts and build chains without changing portable shaping
+ * equivalence. It is retained in shaped results for audits and diagnostics, but must not be used
+ * for continuation compatibility, replay, coalescence, or result-cache decisions.
+ */
+public data class ShapingDistributionProvenance(
+    /** Normalized operating-system identifier of the distributed artifact. */
+    public val operatingSystem: String,
+    /** Normalized processor-architecture identifier of the distributed artifact. */
+    public val architecture: String,
+    /** Coordinate and embedded-library path identifying the distributed artifact. */
+    public val artifactId: String,
+    /** Lowercase SHA-256 digest of the library identified by [artifactId]. */
+    public val artifactSha256: String,
+    /** Stable upstream project identifier for the native shaping engine source. */
+    public val sourceProject: String,
+    /** Immutable upstream source revision used by the distributed artifact. */
+    public val sourceRevision: String,
+    /** Stable identity of the toolchain and build route that produced the artifact. */
+    public val buildChainIdentity: String,
+) {
+    init {
+        require(operatingSystem.isNotBlank()) { "Distribution operating system must not be blank." }
+        require(architecture.isNotBlank()) { "Distribution architecture must not be blank." }
+        require(artifactId.isNotBlank()) { "Native artifact identifier must not be blank." }
+        require(artifactSha256.matches(SHA256_HEX)) { "Native artifact SHA-256 must be a lowercase hexadecimal digest." }
+        require(sourceProject.isNotBlank()) { "Native source project must not be blank." }
+        require(sourceRevision.isNotBlank()) { "Native source revision must not be blank." }
+        require(buildChainIdentity.isNotBlank()) { "Native build-chain identity must not be blank." }
+    }
+}
+
+/**
+ * Complete identity reported by a shaping backend and retained by shaped results.
+ *
+ * [semantic] is the only component suitable for portable equivalence decisions. [provenance]
+ * records which native distribution executed the operation for diagnostics and audits.
+ */
+public data class ShapingBackendIdentity(
+    /** Portable shaping semantics implemented by this backend. */
+    public val semantic: ShapingSemanticIdentity,
+    /** Native distribution provenance observed for this backend instance. */
+    public val provenance: ShapingDistributionProvenance,
+) {
+    /** Stable backend identifier retained for source compatibility; prefer [semantic]. */
+    public val backendId: String get() = semantic.backendId
+
+    /** Shaping-engine version retained for source compatibility; prefer [semantic]. */
+    public val nativeVersion: String get() = semantic.engineVersion
+
+    /** Native source revision retained for source compatibility; prefer [provenance]. */
+    public val nativeSourceRevision: String get() = provenance.sourceRevision
+
+    /** Native artifact identifier retained for source compatibility; prefer [provenance]. */
+    public val nativeArtifactId: String get() = provenance.artifactId
+
+    /** Native artifact digest retained for source compatibility; prefer [provenance]. */
+    public val nativeArtifactSha256: String get() = provenance.artifactSha256
+
+    /** Baseline feature policy retained for source compatibility; prefer [semantic]. */
+    public val featurePolicy: ShapingFeaturePolicy get() = semantic.featurePolicy
+
+    /** Fixed shaping configuration retained for source compatibility; prefer [semantic]. */
+    public val configurationFingerprint: String get() = semantic.configurationFingerprint
+
+    /**
+     * Creates a legacy aggregate from the identity fields published before semantics and native
+     * provenance were separated.
+     *
+     * Fields that the legacy representation could not express use the stable value `unspecified`.
+     * New backends should use the primary constructor and publish complete values.
+     *
+     * @param backendId stable shaping-backend implementation identifier.
+     * @param nativeVersion shaping-engine version represented by the legacy identity.
+     * @param nativeSourceRevision immutable source revision of the native artifact.
+     * @param nativeArtifactId coordinate and embedded path of the native artifact.
+     * @param nativeArtifactSha256 lowercase SHA-256 digest of the native artifact.
+     * @param featurePolicy explicit baseline feature policy implemented by the backend.
+     * @param configurationFingerprint versioned fixed shaping configuration fingerprint.
+     */
+    public constructor(
+        backendId: String,
+        nativeVersion: String,
+        nativeSourceRevision: String,
+        nativeArtifactId: String,
+        nativeArtifactSha256: String,
+        featurePolicy: ShapingFeaturePolicy,
+        configurationFingerprint: String,
+    ) : this(
+        semantic = ShapingSemanticIdentity(
+            backendId = backendId,
+            engineId = backendId,
+            engineVersion = nativeVersion,
+            shaperId = "unspecified",
+            featurePolicy = featurePolicy,
+            configurationFingerprint = configurationFingerprint,
+        ),
+        provenance = ShapingDistributionProvenance(
+            operatingSystem = "unspecified",
+            architecture = "unspecified",
+            artifactId = nativeArtifactId,
+            artifactSha256 = nativeArtifactSha256,
+            sourceProject = "unspecified",
+            sourceRevision = nativeSourceRevision,
+            buildChainIdentity = "unspecified",
+        ),
+    )
 }
 
 /** Resource dimension enforced for one explicit shaping operation. */
@@ -453,7 +563,7 @@ public class ShapedGlyphRun(
     public val range: TextRange,
     /** Exact font instance identity used for shaping. */
     public val fontInstanceKey: FontInstanceKey,
-    /** Pinned backend identity that produced this immutable run. */
+    /** Portable shaping semantics and diagnostic native provenance that produced this run. */
     public val backendIdentity: ShapingBackendIdentity,
     /** Explicit direction used by the backend. */
     public val direction: ShapingDirection,
@@ -551,7 +661,7 @@ public class ShapedGlyphRun(
 
 /** Portable backend boundary for explicit OpenType shaping. */
 public interface ShapingBackend {
-    /** Pinned identity and configuration of this backend. */
+    /** Portable shaping semantics and diagnostic native provenance of this backend. */
     public val identity: ShapingBackendIdentity
 
     /**

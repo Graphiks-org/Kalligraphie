@@ -495,7 +495,7 @@ public class LineCheckpointSignature private constructor(
 
     /** Factories for complete line signatures. */
     public companion object {
-        /** Captures range-relative glyph, cluster, font, metric, geometry, caret, and continuation facts. */
+        /** Captures range-relative glyph, cluster, font, shaping, geometry, caret, and continuation facts. */
         public fun from(
             line: LineLayout,
             continuation: LayoutContinuationSignature,
@@ -1035,7 +1035,7 @@ private data class LigatureCaretSignature(
 private data class ShapedRunSignature(
     val range: RelativeRange,
     val fontInstanceKey: FontInstanceKey,
-    val backendIdentity: ShapingBackendIdentity,
+    val shapingSemantics: ShapingSemanticIdentity,
     val direction: ShapingDirection,
     val script: OpenTypeScript,
     val language: String,
@@ -1167,7 +1167,7 @@ private fun PositionedGlyphRun.toSignature(base: Int): PositionedRunSignature = 
 private fun ShapedGlyphRun.toSignature(base: Int): ShapedRunSignature = ShapedRunSignature(
     range = range.relativeTo(base),
     fontInstanceKey = fontInstanceKey,
-    backendIdentity = backendIdentity,
+    shapingSemantics = backendIdentity.semantic,
     direction = direction,
     script = script,
     language = language,

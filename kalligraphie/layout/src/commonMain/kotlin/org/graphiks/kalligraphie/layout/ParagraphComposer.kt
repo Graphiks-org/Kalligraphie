@@ -1239,81 +1239,8 @@ public object ParagraphComposer : ParagraphLayouter {
             safetyFlags == physical.safetyFlags &&
             clusterTokens == physical.clusterTokens
 
-    private fun coalesceRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> {
-        val result = mutableListOf<ShapedGlyphRun>()
-        runs.forEach { run ->
-            val previous = result.lastOrNull()
-            if (previous != null && canCoalesce(previous, run)) {
-                result[result.lastIndex] = coalesce(previous, run)
-            } else {
-                result += run
-            }
-        }
-        return result
-    }
-
-    private fun canCoalesce(left: ShapedGlyphRun, right: ShapedGlyphRun): Boolean =
-        left.range.endExclusive == right.range.start &&
-            left.fontInstanceKey == right.fontInstanceKey &&
-            left.backendIdentity == right.backendIdentity &&
-            left.direction == right.direction &&
-            left.script == right.script &&
-            left.language == right.language &&
-            left.bidiLevel == right.bidiLevel &&
-            left.featurePolicy == right.featurePolicy &&
-            left.features == right.features
-
-    private fun coalesce(left: ShapedGlyphRun, right: ShapedGlyphRun): ShapedGlyphRun {
-        val nextToken = (left.clusters.maxOfOrNull { cluster -> cluster.token.value } ?: -1) + 1
-        val rightTokens = right.clusters.mapIndexed { index, cluster -> cluster.token to ShaperClusterToken(nextToken + index) }.toMap()
-        val remappedRightGlyphs = right.glyphs.map { glyph ->
-            ShapedGlyph(
-                glyphId = glyph.glyphId,
-                xAdvance = glyph.xAdvance,
-                yAdvance = glyph.yAdvance,
-                xOffset = glyph.xOffset,
-                yOffset = glyph.yOffset,
-                safetyFlags = glyph.safetyFlags,
-                clusterTokens = glyph.clusterTokens.map(rightTokens::getValue),
-            )
-        }
-        val remappedRightClusters = right.clusters.map { cluster ->
-            ShaperCluster(
-                token = rightTokens.getValue(cluster.token),
-                sourceRange = cluster.sourceRange,
-                scalarRanges = cluster.scalarRanges,
-                admissibleGraphemeBoundaries = cluster.admissibleGraphemeBoundaries,
-            )
-        }
-        val rtl = left.direction == ShapingDirection.RIGHT_TO_LEFT
-        val leftFacts = left.ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) right.glyphs.size else 0) }
-        val rightFacts = right.ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) 0 else left.glyphs.size) }
-        return ShapedGlyphRun(
-            range = TextRange(left.range.start, right.range.endExclusive),
-            fontInstanceKey = left.fontInstanceKey,
-            backendIdentity = left.backendIdentity,
-            direction = left.direction,
-            script = left.script,
-            language = left.language,
-            bidiLevel = left.bidiLevel,
-            bot = left.bot,
-            eot = right.eot,
-            featurePolicy = left.featurePolicy,
-            features = left.features,
-            graphemeClusters = left.graphemeClusters + right.graphemeClusters,
-            glyphs = if (rtl) remappedRightGlyphs + left.glyphs else left.glyphs + remappedRightGlyphs,
-            clusters = left.clusters + remappedRightClusters,
-            ligatureCaretFacts = leftFacts + rightFacts,
-        )
-    }
-
-    private fun GdefLigatureCaretFact.shifted(glyphOffset: Int): GdefLigatureCaretFact =
-        GdefLigatureCaretFact(
-            glyphIndex = glyphOffset + glyphIndex,
-            state = state,
-            logicalSourceBoundaries = logicalSourceBoundaries,
-            positions = positions,
-        )
+    private fun coalesceRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> =
+        coalesceSemanticallyCompatibleRuns(runs)
 
     /** Splits at provisionally certified safe boundaries and expands only unsafe edge contexts. */
     private fun finalShapingRanges(
@@ -2103,6 +2030,84 @@ private class FinalParagraphLayout(
 
     private fun allCandidates(): List<CaretCandidate> = lines.flatMap(LineLayout::allCaretCandidates)
 }
+
+internal fun coalesceSemanticallyCompatibleRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> {
+    val result = mutableListOf<ShapedGlyphRun>()
+    runs.forEach { run ->
+        val previous = result.lastOrNull()
+        if (previous != null && previous.canCoalesceSemanticallyWith(run)) {
+            result[result.lastIndex] = previous.coalescedWith(run)
+        } else {
+            result += run
+        }
+    }
+    return result
+}
+
+private fun ShapedGlyphRun.canCoalesceSemanticallyWith(other: ShapedGlyphRun): Boolean =
+    range.endExclusive == other.range.start &&
+        fontInstanceKey == other.fontInstanceKey &&
+        backendIdentity.semantic == other.backendIdentity.semantic &&
+        direction == other.direction &&
+        script == other.script &&
+        language == other.language &&
+        bidiLevel == other.bidiLevel &&
+        featurePolicy == other.featurePolicy &&
+        features == other.features
+
+private fun ShapedGlyphRun.coalescedWith(other: ShapedGlyphRun): ShapedGlyphRun {
+    val nextToken = (clusters.maxOfOrNull { cluster -> cluster.token.value } ?: -1) + 1
+    val otherTokens = other.clusters.mapIndexed { index, cluster ->
+        cluster.token to ShaperClusterToken(nextToken + index)
+    }.toMap()
+    val remappedOtherGlyphs = other.glyphs.map { glyph ->
+        ShapedGlyph(
+            glyphId = glyph.glyphId,
+            xAdvance = glyph.xAdvance,
+            yAdvance = glyph.yAdvance,
+            xOffset = glyph.xOffset,
+            yOffset = glyph.yOffset,
+            safetyFlags = glyph.safetyFlags,
+            clusterTokens = glyph.clusterTokens.map(otherTokens::getValue),
+        )
+    }
+    val remappedOtherClusters = other.clusters.map { cluster ->
+        ShaperCluster(
+            token = otherTokens.getValue(cluster.token),
+            sourceRange = cluster.sourceRange,
+            scalarRanges = cluster.scalarRanges,
+            admissibleGraphemeBoundaries = cluster.admissibleGraphemeBoundaries,
+        )
+    }
+    val rtl = direction == ShapingDirection.RIGHT_TO_LEFT
+    val thisFacts = ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) other.glyphs.size else 0) }
+    val otherFacts = other.ligatureCaretFacts.map { fact -> fact.shifted(if (rtl) 0 else glyphs.size) }
+    return ShapedGlyphRun(
+        range = TextRange(range.start, other.range.endExclusive),
+        fontInstanceKey = fontInstanceKey,
+        backendIdentity = backendIdentity,
+        direction = direction,
+        script = script,
+        language = language,
+        bidiLevel = bidiLevel,
+        bot = bot,
+        eot = other.eot,
+        featurePolicy = featurePolicy,
+        features = features,
+        graphemeClusters = graphemeClusters + other.graphemeClusters,
+        glyphs = if (rtl) remappedOtherGlyphs + glyphs else glyphs + remappedOtherGlyphs,
+        clusters = clusters + remappedOtherClusters,
+        ligatureCaretFacts = thisFacts + otherFacts,
+    )
+}
+
+private fun GdefLigatureCaretFact.shifted(glyphOffset: Int): GdefLigatureCaretFact =
+    GdefLigatureCaretFact(
+        glyphIndex = glyphOffset + glyphIndex,
+        state = state,
+        logicalSourceBoundaries = logicalSourceBoundaries,
+        positions = positions,
+    )
 
 internal fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
     is EditableLineError.InvalidInput -> ParagraphLayoutError.InvalidInput(message)
