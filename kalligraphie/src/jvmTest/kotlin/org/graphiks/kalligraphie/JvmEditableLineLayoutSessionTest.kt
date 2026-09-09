@@ -186,6 +186,34 @@ class JvmEditableLineLayoutSessionTest {
         }
     }
 
+    @Test
+    fun reentrantCloseFromARealLayoutCallbackIsRejectedWithoutClosingTheSession() {
+        val font = liberationSans()
+        val text = snapshot("office שלום")
+        val session = openSession()
+        var callbackCloseResult: FontOperationResult<Unit>? = null
+        try {
+            val first = session.layout(
+                request(
+                    text,
+                    font,
+                    cancellationToken = CancellationToken {
+                        if (callbackCloseResult == null) callbackCloseResult = session.close()
+                        false
+                    },
+                ),
+            )
+
+            val closeFailure = assertIs<FontOperationResult.Failure>(callbackCloseResult)
+            val closeError = assertIs<FontError.FontDataFailure>(closeFailure.error)
+            assertEquals("font.editable-line-session-close-reentrant", closeError.code)
+            assertEquals(firstOracle(), observe(text, first))
+            assertEquals(firstOracle(), observe(text, session.layout(request(text, font))))
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(session.close())
+        }
+    }
+
     private fun openSession(): JvmEditableLineLayoutSession =
         assertIs<FontOperationResult.Success<JvmEditableLineLayoutSession>>(
             JvmEditableLineLayoutSession.open(),

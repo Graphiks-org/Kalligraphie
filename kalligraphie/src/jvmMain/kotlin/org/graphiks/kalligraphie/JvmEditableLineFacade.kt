@@ -157,13 +157,16 @@ public object JvmEditableLineFacade {
      * Produces one editable line through the complete JVM reference route.
      *
      * Unsupported hard separators and tabs without a positioning policy return an exact typed
-     * failure before ICU or HarfBuzz work. All shaping requests explicitly receive resolved
+     * failure before the short-lived session or HarfBuzz backend is opened. The session repeats
+     * that preflight after admitting the operation so its complete validation-through-publication
+     * work stays under the lifecycle lease. All shaping requests explicitly receive resolved
      * script, direction, language, UAX #9 level, BOT/EOT flags, baseline policy, and feature
      * overrides. A successful line preserves shaped runs and their backend identities;
      * `RENDERABLE` publication additionally certifies every final glyph through the selected
      * certified representation profile.
      */
     public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
+        preflight(request)?.let { return it }
         val session = when (val opened = JvmEditableLineLayoutSession.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return shapingFailure(opened)
@@ -212,7 +215,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun analyze(request: JvmEditableLineFacadeRequest): FacadeUnicodeAnalysis = try {
-        unsupportedLineControl(request)?.let { return FacadeUnicodeAnalysis.Result(it) }
+        preflight(request)?.let { return FacadeUnicodeAnalysis.Result(it) }
         when (
             val outcome = JvmUnicodeAnalyzer.create().analyze(
                 snapshot = request.snapshot,
@@ -233,6 +236,12 @@ public object JvmEditableLineFacade {
         }
     } catch (error: IllegalArgumentException) {
         FacadeUnicodeAnalysis.Result(invalidInput(error))
+    }
+
+    private fun preflight(request: JvmEditableLineFacadeRequest): EditableLineResult.Failure? = try {
+        unsupportedLineControl(request)
+    } catch (error: IllegalArgumentException) {
+        invalidInput(error)
     }
 
     private fun unsupportedLineControl(request: JvmEditableLineFacadeRequest): EditableLineResult.Failure? {

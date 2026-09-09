@@ -154,7 +154,7 @@ private class HarfBuzzJvmBackend(
         try {
             if (closed) return FontOperationResult.Success(Unit)
             closed = true
-            return preparedFonts.close().firstOrNull()?.let { error ->
+            return aggregateFailures(preparedFonts.close())?.let { error ->
                 FontOperationResult.Failure(
                     FontError.FontDataFailure(
                         code = "font.shaping-native-release-failed",
@@ -940,11 +940,22 @@ internal class HarfBuzzNativeLibrary(
         linker.downcallHandle(lookup.findOrThrow(name), descriptor)
 
     fun release(preparedFont: PreparedHarfBuzzFont) {
-        callVoid(fontDestroy, preparedFont.font)
-        callVoid(faceDestroy, preparedFont.face)
-        callVoid(blobDestroy, preparedFont.blob)
-        preparedFont.arena.close()
+        val failures = buildList {
+            runCatching { callVoid(fontDestroy, preparedFont.font) }.exceptionOrNull()?.let(::add)
+            runCatching { callVoid(faceDestroy, preparedFont.face) }.exceptionOrNull()?.let(::add)
+            runCatching { callVoid(blobDestroy, preparedFont.blob) }.exceptionOrNull()?.let(::add)
+            runCatching { preparedFont.arena.close() }.exceptionOrNull()?.let(::add)
+        }
+        aggregateFailures(failures)?.let { throw it }
     }
+}
+
+private fun aggregateFailures(failures: List<Throwable>): Throwable? {
+    val primary = failures.firstOrNull() ?: return null
+    failures.drop(1).forEach { failure ->
+        if (failure !== primary) primary.addSuppressed(failure)
+    }
+    return primary
 }
 
 internal class PreparedHarfBuzzFont(

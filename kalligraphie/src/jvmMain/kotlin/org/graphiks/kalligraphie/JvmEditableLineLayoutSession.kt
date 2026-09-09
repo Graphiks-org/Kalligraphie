@@ -17,18 +17,23 @@ import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
  * across [layout] calls. Requests admitted while the session is open may run concurrently: each
  * call keeps its Unicode analysis, HarfBuzz buffer, and final materialization local. The session
  * borrows caller-owned font instances and materialization resolvers only for the duration of the
- * corresponding synchronous call.
+ * corresponding synchronous call. This concurrency contract guarantees complete independent
+ * results, not a throughput ratio; parallel performance is evaluated separately by opt-in editor
+ * journey measurements.
  *
  * [close] is idempotent and linearizable. It first prevents new admissions, then waits for every
  * admitted layout to finish before releasing the backend exactly once. A layout admitted before
  * that transition returns its complete normal outcome; a later layout returns
- * [FontError.ResourceClosed]. The owner must close every successfully opened session.
+ * [FontError.ResourceClosed]. A reentrant close from the same thread's admitted layout is rejected
+ * before changing an otherwise open session. The owner must close every successfully opened
+ * session.
  */
 public class JvmEditableLineLayoutSession private constructor(
     private val backend: ShapingBackend,
 ) {
     private val lifecycle = ReentrantLock(true)
     private val lifecycleChanged = lifecycle.newCondition()
+    private val currentThreadOperations = ThreadLocal.withInitial { 0 }
     private var state: LifecycleState = LifecycleState.OPEN
     private var activeOperations: Int = 0
     private var publishedCloseResult: FontOperationResult<Unit>? = null
@@ -56,10 +61,14 @@ public class JvmEditableLineLayoutSession private constructor(
      * The first caller transitions the session away from open admission and performs the single
      * backend close. Concurrent and later callers wait for, then receive, the same published
      * typed close result. Caller-owned fonts, catalogs, and materialization resolvers are never
-     * closed by this operation.
+     * closed by this operation. Calling `close` reentrantly from a synchronous callback of an
+     * admitted [layout] on the same thread returns a `font.editable-line-session-close-reentrant`
+     * [FontOperationResult.Failure] before changing an open session's state; the layout may finish
+     * normally and the session remains usable and ordinarily closable afterward.
      */
     public fun close(): FontOperationResult<Unit> {
         lifecycle.withLock {
+            if (currentThreadOperations.get() > 0) return reentrantCloseFailure()
             when (state) {
                 LifecycleState.OPEN -> {
                     state = LifecycleState.CLOSING
@@ -97,12 +106,20 @@ public class JvmEditableLineLayoutSession private constructor(
     private fun acquireOperation(): Boolean = lifecycle.withLock {
         if (state != LifecycleState.OPEN) return false
         activeOperations += 1
+        currentThreadOperations.set(currentThreadOperations.get() + 1)
         true
     }
 
     private fun releaseOperation() {
         lifecycle.withLock {
             check(activeOperations > 0) { "An editable-line session operation was released more than once." }
+            val threadOperationCount = currentThreadOperations.get()
+            check(threadOperationCount > 0) { "The current thread does not own an editable-line session operation." }
+            if (threadOperationCount == 1) {
+                currentThreadOperations.remove()
+            } else {
+                currentThreadOperations.set(threadOperationCount - 1)
+            }
             activeOperations -= 1
             if (activeOperations == 0) lifecycleChanged.signalAll()
         }
@@ -113,6 +130,14 @@ public class JvmEditableLineLayoutSession private constructor(
             FontError.ResourceClosed("The JVM editable-line layout session is closed."),
         ),
         diagnostics = emptyList(),
+    )
+
+    private fun reentrantCloseFailure(): FontOperationResult.Failure = FontOperationResult.Failure(
+        FontError.FontDataFailure(
+            code = "font.editable-line-session-close-reentrant",
+            message = "The JVM editable-line layout session cannot close from its own admitted layout callback.",
+            location = FontDiagnosticLocation.Source,
+        ),
     )
 
     /** Opens reusable editable-line sessions with the pinned JVM HarfBuzz backend. */
