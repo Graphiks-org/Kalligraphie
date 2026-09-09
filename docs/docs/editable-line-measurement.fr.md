@@ -50,14 +50,14 @@ Le rapport enregistre ces profils dans l’ordre suivant :
    de curseur), des diagnostics, de la provenance et des avances ; la préparation
    et la fermeture sont exclues.
 
-Les profils de décodage sont sans état : leurs stockages et fragments empruntés
-sont préparés hors chronométrage, et aucun cache (mémoire de réutilisation)
-conservé n’est revendiqué. Le
+Les profils de décodage sont chauds et sans état : leurs stockages et fragments
+empruntés sont préparés hors chronométrage, leur échauffement configuré précède
+les mesures, et aucun cache (mémoire de réutilisation) conservé n’est revendiqué. Le
 programme n’accepte que des décodages et des mises en page complets et réussis.
 Ses oracles fixes couvrent les valeurs scalaires, les frontières source,
 l’absence attendue de diagnostic, la partition complète des runs, les deux
 directions LTR et RTL, les identifiants et avances de glyphes DejaVu contrôlés
-indépendamment avec `hb-shape`, la provenance directe des glyphes et tous les
+indépendamment avec `hb-shape` 14.4.0, la provenance directe des glyphes et tous les
 carets aux frontières de scalaires.
 
 ## Invocation légère reproductible

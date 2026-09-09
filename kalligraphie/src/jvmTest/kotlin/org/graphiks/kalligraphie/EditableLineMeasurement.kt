@@ -83,6 +83,7 @@ class EditableLineMeasurementTest {
         check(validity.runDirections.containsAll(
             listOf(ShapingDirection.LEFT_TO_RIGHT, ShapingDirection.RIGHT_TO_LEFT),
         )) { "The mixed-script editable line did not publish both LTR and RTL runs." }
+        // Frozen external oracle from hb-shape 14.4.0 over the checked-in DejaVu fixture at 2048 units.
         check(validity.glyphIds == listOf(
             40, 71, 76, 87, 3,
             1390, 5366, 5293,
@@ -404,7 +405,7 @@ internal object EditableLineMeasurement {
         name = "BorrowedFragmentedUtf8Decode",
         corpusId = "borrowed-fragmented-utf8",
         timedBoundary = "starts immediately before public decodeUtf8 and ends after scalars, source ranges, and diagnostics are consumed and checked against literal independent oracles",
-        state = "stateless: borrowed storage and slices are prepared outside timing; configured warmup precedes measured samples",
+        state = "warm/stateless: borrowed storage and slices are prepared outside timing; configured warmup precedes measured samples",
         warmupIterations = warmupIterations,
         iterations = iterations,
     ) { record ->
@@ -433,7 +434,7 @@ internal object EditableLineMeasurement {
         name = "BorrowedFragmentedUtf16Decode",
         corpusId = "borrowed-fragmented-utf16",
         timedBoundary = "starts immediately before public decodeUtf16 and ends after scalars, source ranges, and diagnostics are consumed and checked against literal independent oracles",
-        state = "stateless: borrowed storage and slices are prepared outside timing; configured warmup precedes measured samples",
+        state = "warm/stateless: borrowed storage and slices are prepared outside timing; configured warmup precedes measured samples",
         warmupIterations = warmupIterations,
         iterations = iterations,
     ) { record ->
@@ -629,6 +630,7 @@ internal object EditableLineMeasurement {
         check(runs.map { it.sourceRun.direction }.containsAll(
             listOf(ShapingDirection.LEFT_TO_RIGHT, ShapingDirection.RIGHT_TO_LEFT),
         )) { "Editable-line output did not retain both LTR and RTL run directions." }
+        // Frozen external oracle from hb-shape 14.4.0 over the checked-in DejaVu fixture at 2048 units.
         check(runs.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } } == listOf(
             40, 71, 76, 87, 3,
             1390, 5366, 5293,

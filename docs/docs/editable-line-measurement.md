@@ -41,12 +41,13 @@ The report records these profiles in order:
    ranges, glyphs, carets, diagnostics, provenance, and advances; preparation
    and closure are excluded.
 
-The decode profiles are stateless: their borrowed storage and slice objects are
-prepared outside timing, and no retained engine cache is claimed. The runner
+The decode profiles are warm/stateless: their borrowed storage and slice
+objects are prepared outside timing, their configured warmup precedes measured
+samples, and no retained engine cache is claimed. The runner
 accepts only complete successful decodes and layouts. Its fixed validity
 oracles cover scalar values, source boundaries, clean diagnostics, complete run
 partitioning, both LTR and RTL directions, checked-in DejaVu glyph identifiers
-and advances independently audited with `hb-shape`, direct glyph provenance,
+and advances independently audited with `hb-shape` 14.4.0, direct glyph provenance,
 and all scalar-boundary carets.
 
 ## Reproducible smoke invocation
