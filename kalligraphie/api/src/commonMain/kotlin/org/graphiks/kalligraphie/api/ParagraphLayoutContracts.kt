@@ -626,10 +626,10 @@ private fun paragraphRenderVariantSnapshot(variant: FontRenderVariantKey): FontR
  * exact suffix of [originalSourceRange]; it is empty only when a required terminal empty physical
  * line remains. A partial layout prefix plus this value partitions the complete source requested
  * by the call that created it. It stores no text
- * history, incremental-edit state, borrowed resolver, native handle, native distribution
- * provenance, renderer, or platform object. Portable [shapingSemanticIdentity] is retained because
- * it affects replay; distribution provenance does not. Collections are defensively captured,
- * making this value safe for concurrent reads.
+ * history, incremental-edit state, borrowed resolver, native handle, renderer, or platform
+ * object. [shapingBackendIdentity] retains the captured diagnostic distribution for source
+ * compatibility, while only [shapingSemanticIdentity] participates in replay compatibility.
+ * Collections are defensively captured, making this value safe for concurrent reads.
  *
  * Create continuations only with [create]; a resumed [ParagraphLayoutRequest] rejects any
  * incompatible version, remaining range, geometry, Unicode data, font policy, shaping semantics,
@@ -670,8 +670,12 @@ public class LayoutContinuation private constructor(
     public val resolutionPolicyVersion: String,
     /** Font instance geometry applied to selected faces. */
     public val fontInstanceDescriptor: FontInstanceDescriptor,
-    /** Portable shaping semantics required to resume this continuation. */
-    public val shapingSemanticIdentity: ShapingSemanticIdentity,
+    /**
+     * Complete shaping identity captured when this continuation was created.
+     *
+     * Its provenance is diagnostic only; compatibility uses [shapingSemanticIdentity].
+     */
+    public val shapingBackendIdentity: ShapingBackendIdentity,
     /** Baseline OpenType feature policy used for shaping. */
     public val featurePolicy: ShapingFeaturePolicy,
     features: List<OpenTypeFeature>,
@@ -692,6 +696,9 @@ public class LayoutContinuation private constructor(
     /** Policy used when selected faces lack OpenType vertical metrics. */
     public val verticalMetricsPolicy: VerticalMetricsPolicy,
 ) {
+    /** Portable shaping semantics required to resume this continuation. */
+    public val shapingSemanticIdentity: ShapingSemanticIdentity = shapingBackendIdentity.semantic
+
     /** Immutable deterministic OpenType feature overrides required for replay. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
@@ -834,7 +841,7 @@ public class LayoutContinuation private constructor(
                 resolutionPolicyId = request.resolutionPolicy.policyId,
                 resolutionPolicyVersion = request.resolutionPolicy.version,
                 fontInstanceDescriptor = request.fontInstanceDescriptor,
-                shapingSemanticIdentity = request.shapingBackend.identity.semantic,
+                shapingBackendIdentity = request.shapingBackend.identity,
                 featurePolicy = request.featurePolicy,
                 features = request.features,
                 materializationIdentity = request.materializationIdentity,

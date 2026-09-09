@@ -968,6 +968,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             glyphs = shaped,
             clusters = clusters,
             ligatureCaretFacts = facts,
+            distributionProvenances = sourceRun.distributionProvenances,
         )
     }
 

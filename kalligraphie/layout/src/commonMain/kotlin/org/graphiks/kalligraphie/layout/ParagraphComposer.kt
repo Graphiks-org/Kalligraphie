@@ -1220,6 +1220,7 @@ public object ParagraphComposer : ParagraphLayouter {
         glyphs = glyphs,
         clusters = clusters,
         ligatureCaretFacts = ligatureCaretFacts,
+        distributionProvenances = distributionProvenances,
     )
 
     private fun ShapedGlyphRun.verticalSignature(): Pair<TextRange, org.graphiks.kalligraphie.api.FontInstanceKey> =
@@ -2031,7 +2032,7 @@ private class FinalParagraphLayout(
     private fun allCandidates(): List<CaretCandidate> = lines.flatMap(LineLayout::allCaretCandidates)
 }
 
-internal fun coalesceSemanticallyCompatibleRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> {
+private fun coalesceSemanticallyCompatibleRuns(runs: List<ShapedGlyphRun>): List<ShapedGlyphRun> {
     val result = mutableListOf<ShapedGlyphRun>()
     runs.forEach { run ->
         val previous = result.lastOrNull()
@@ -2098,6 +2099,7 @@ private fun ShapedGlyphRun.coalescedWith(other: ShapedGlyphRun): ShapedGlyphRun 
         glyphs = if (rtl) remappedOtherGlyphs + glyphs else glyphs + remappedOtherGlyphs,
         clusters = clusters + remappedOtherClusters,
         ligatureCaretFacts = thisFacts + otherFacts,
+        distributionProvenances = distributionProvenances + other.distributionProvenances,
     )
 }
 

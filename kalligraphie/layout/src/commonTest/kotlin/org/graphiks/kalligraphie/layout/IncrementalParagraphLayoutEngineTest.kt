@@ -82,35 +82,6 @@ import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 
 class IncrementalParagraphLayoutEngineTest {
     @Test
-    fun paragraphRunCoalescenceFollowsShapingSemanticsRatherThanDistribution() {
-        val snapshot = decode("ab")
-        val otherDistribution = backendIdentity.copy(
-            provenance = backendIdentity.provenance.copy(
-                artifactId = "other-artifact",
-                artifactSha256 = "1".repeat(64),
-            ),
-        )
-        val otherSemantics = backendIdentity.copy(
-            semantic = backendIdentity.semantic.copy(configurationFingerprint = "fixture-v2"),
-        )
-        val first = line(snapshot, 0, 1, baselineY = 8f, glyphId = 7, backendIdentity = backendIdentity)
-            .positionedGlyphRuns.single().sourceRun
-        val distributedElsewhere = line(snapshot, 1, 2, baselineY = 8f, glyphId = 8, backendIdentity = otherDistribution)
-            .positionedGlyphRuns.single().sourceRun
-        val configuredDifferently = line(snapshot, 1, 2, baselineY = 8f, glyphId = 8, backendIdentity = otherSemantics)
-            .positionedGlyphRuns.single().sourceRun
-
-        val coalesced = coalesceSemanticallyCompatibleRuns(listOf(first, distributedElsewhere))
-        val keptSeparate = coalesceSemanticallyCompatibleRuns(listOf(first, configuredDifferently))
-
-        assertEquals(1, coalesced.size)
-        assertEquals(listOf(7, 8), coalesced.single().glyphs.map { glyph -> glyph.glyphId.value })
-        assertEquals(listOf(10f, 10f), coalesced.single().glyphs.map { glyph -> glyph.xAdvance.value })
-        assertEquals(backendIdentity.provenance, coalesced.single().backendIdentity.provenance)
-        assertEquals(2, keptSeparate.size)
-    }
-
-    @Test
     fun checkpointSignaturesFollowShapingSemanticsRatherThanDistribution() {
         val snapshot = decode("ab")
         val continuation = LayoutContinuationSignature(snapshot.range.endExclusive, "complete")
@@ -143,6 +114,62 @@ class IncrementalParagraphLayoutEngineTest {
 
         assertTrue(expected.hasSameObservableLayout(distributedElsewhere))
         assertFalse(expected.hasSameObservableLayout(configuredDifferently))
+    }
+
+    @Test
+    fun legacyIdentityCopyAndComponentsKeepReplayConservativeAcrossNativeDistributions() {
+        val snapshot = decode("ab")
+        val legacy = ShapingBackendIdentity(
+            backendId = "legacy-fixture",
+            nativeVersion = "1",
+            nativeSourceRevision = "source-a",
+            nativeArtifactId = "artifact-a",
+            nativeArtifactSha256 = "0".repeat(64),
+            featurePolicy = featurePolicy,
+            configurationFingerprint = "legacy-v1",
+        )
+        val (
+            backendId,
+            nativeVersion,
+            nativeSourceRevision,
+            nativeArtifactId,
+            nativeArtifactSha256,
+            capturedFeaturePolicy,
+            configurationFingerprint,
+        ) = legacy
+        val reconstructed = ShapingBackendIdentity(
+            backendId,
+            nativeVersion,
+            nativeSourceRevision,
+            nativeArtifactId,
+            nativeArtifactSha256,
+            capturedFeaturePolicy,
+            configurationFingerprint,
+        )
+        val changedDistributions = listOf(
+            legacy.copy(nativeSourceRevision = "source-b"),
+            legacy.copy(nativeArtifactId = "artifact-b"),
+            legacy.copy(nativeArtifactSha256 = "2".repeat(64)),
+        )
+        val continuation = LayoutContinuationSignature(snapshot.range.endExclusive, "complete")
+        val expected = LineCheckpointSignature.from(
+            line(snapshot, 0, 2, baselineY = 8f, glyphId = 7, backendIdentity = legacy),
+            continuation,
+        )
+
+        val reconstructedSignature = LineCheckpointSignature.from(
+            line(snapshot, 0, 2, baselineY = 8f, glyphId = 7, backendIdentity = reconstructed),
+            continuation,
+        )
+        val changedSignatures = changedDistributions.map { identity ->
+            LineCheckpointSignature.from(
+                line(snapshot, 0, 2, baselineY = 8f, glyphId = 7, backendIdentity = identity),
+                continuation,
+            )
+        }
+
+        assertTrue(expected.hasSameObservableLayout(reconstructedSignature))
+        assertTrue(changedSignatures.all { signature -> !expected.hasSameObservableLayout(signature) })
     }
 
     @Test

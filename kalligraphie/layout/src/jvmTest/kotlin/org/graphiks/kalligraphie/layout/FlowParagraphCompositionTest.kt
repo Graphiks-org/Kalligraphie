@@ -40,6 +40,7 @@ import org.graphiks.kalligraphie.api.InlineObjectId
 import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
+import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBand
 import org.graphiks.kalligraphie.api.LineBreakAnalysis
@@ -50,6 +51,9 @@ import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingBackendIdentity
+import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
@@ -668,6 +672,77 @@ class FlowParagraphCompositionTest {
         assertEquals(null, second.continuation)
         assertEquals(1, continuation.regionIndex)
         assertEquals(0f, continuation.nextBlockOffset)
+    }
+
+    @Test
+    fun flowReplayAcceptsAnotherDistributionButRejectsDifferentShapingSemantics() {
+        val fixture = fixture("ab ab")
+        val regions = List(2) {
+            FixedRegion(
+                LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(1_600f), LayoutUnit(1_000f)),
+                listOf(InlineInterval(0f, 1_600f)),
+            )
+        }
+        val chain = FlowChain(regions)
+        val inputIdentity = flowIdentity(fixture)
+        val first = success(
+            FlowParagraphComposer.layoutFragment(
+                fixture.request,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                inputIdentity,
+            ),
+        )
+        val continuation = checkNotNull(first.continuation)
+        val paragraphContinuation = LayoutContinuation.create(fixture.request, continuation.remainingSourceRange)
+        val primaryIdentity = fixture.request.shapingBackend.identity
+        val otherDistribution = primaryIdentity.copy(
+            provenance = primaryIdentity.provenance.copy(
+                operatingSystem = "portable-test-os",
+                architecture = "portable-test-architecture",
+                artifactId = "portable-test-artifact",
+                artifactSha256 = "1".repeat(64),
+                buildChainIdentity = "portable-test-build-chain",
+            ),
+        )
+        val otherSemantics = primaryIdentity.copy(
+            semantic = primaryIdentity.semantic.copy(configurationFingerprint = "paragraph-flow-test-v2"),
+        )
+        val distributedBackend = IdentityReportingBackend(fixture.request.shapingBackend, otherDistribution)
+        val changedBackend = IdentityReportingBackend(fixture.request.shapingBackend, otherSemantics)
+        val distributedRequest = fixture.request.withFlowSourceRange(
+            continuation.remainingSourceRange,
+            shapingBackend = distributedBackend,
+        )
+        val changedRequest = fixture.request.withFlowSourceRange(
+            continuation.remainingSourceRange,
+            shapingBackend = changedBackend,
+        )
+
+        val resumed = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.ParagraphFragment>>(
+            FlowParagraphComposer.layoutFragment(
+                distributedRequest,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                inputIdentity,
+                continuation,
+            ),
+        ).value
+        val rejected = assertIs<FlowCompositionResult.Failure>(
+            FlowParagraphComposer.layoutFragment(
+                changedRequest,
+                EditableLineMaterialization.LayoutOnly,
+                chain,
+                inputIdentity,
+                continuation,
+            ),
+        )
+
+        assertEquals(primaryIdentity, paragraphContinuation.shapingBackendIdentity)
+        assertTrue(paragraphContinuation.isCompatibleWith(distributedRequest))
+        assertTrue(!paragraphContinuation.isCompatibleWith(changedRequest))
+        assertEquals(listOf(68, 69), resumed.lines.single().positionedGlyphRuns.single().glyphs.map { it.shapedGlyph.glyphId.value })
+        assertIs<FlowCompositionError.IncompatibleContinuation>(rejected.error)
     }
 
     @Test
@@ -1328,6 +1403,7 @@ class FlowParagraphCompositionTest {
         unicodeAnalysis: UnicodeAnalysis = this.unicodeAnalysis,
         lineBreakAnalysis: LineBreakAnalysis = this.lineBreakAnalysis,
         overflowPolicy: OverflowPolicy = this.overflowPolicy,
+        shapingBackend: ShapingBackend = this.shapingBackend,
     ): ParagraphLayoutRequest =
         ParagraphLayoutRequest(
             snapshot = snapshot,
@@ -1431,6 +1507,44 @@ class FlowParagraphCompositionTest {
         TextRange(snapshot.textIndexAtScalarBoundary(start), snapshot.textIndexAtScalarBoundary(endExclusive))
 
     private fun <T> FontOperationResult<T>.successValue(): T = assertIs<FontOperationResult.Success<T>>(this).value
+
+    private class IdentityReportingBackend(
+        private val delegate: ShapingBackend,
+        override val identity: ShapingBackendIdentity,
+    ) : ShapingBackend {
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val shaped = delegate.shape(request)) {
+                is FontOperationResult.Success -> {
+                    val source = shaped.value
+                    FontOperationResult.Success(
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = identity,
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            ligatureCaretFacts = source.ligatureCaretFacts,
+                            distributionProvenances = source.distributionProvenances + identity.provenance,
+                        ),
+                        shaped.diagnostics,
+                    )
+                }
+
+                is FontOperationResult.Failure -> shaped
+                is FontOperationResult.Cancelled -> shaped
+            }
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
+    }
 
     private data class Fixture(val snapshot: TextSnapshot, val request: ParagraphLayoutRequest)
 
