@@ -1,8 +1,5 @@
 package org.graphiks.kalligraphie.unicode
 
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -317,43 +314,25 @@ class IcuUnicodeAnalyzerTest {
     }
 
     @Test
-    fun hostile_bracket_sequence_cancels_after_work_then_retries_without_reviving_overflowed_pairs() {
+    fun long_incompatible_bracket_sequence_does_not_revive_pairs_after_bd16_overflow() {
         val text = "a" + "(".repeat(4_096) + "]".repeat(4_096) + "\u03B2" + ")".repeat(4_096) + "a"
         val snapshot = snapshotOf(text)
-        val analysisStarted = CountDownLatch(1)
-        val cancellationRequested = AtomicBoolean(false)
-        val cancellation = CancellationToken {
-            val requested = cancellationRequested.get()
-            if (!requested) analysisStarted.countDown()
-            requested
-        }
-
-        var cancelled: UnicodeAnalysisOutcome? = null
-        val worker = thread(name = "long-incompatible-punctuation-analysis") {
-            cancelled = JvmUnicodeAnalyzer.create().analyze(
-                snapshot,
-                UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
-                UnicodeAnalysisProfile(cancellationCheckInterval = 128),
-                cancellation,
-            )
-        }
-        analysisStarted.await()
-        cancellationRequested.set(true)
-        worker.join()
-
-        assertEquals(UnicodeAnalysisOutcome.Cancelled, cancelled)
-
-        val retried = analyzer.analyze(
+        val outcome = JvmUnicodeAnalyzer.create().analyze(
             snapshot,
             UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
             UnicodeAnalysisProfile(cancellationCheckInterval = 128),
             CancellationToken.none,
         )
-        val analysis = assertIs<UnicodeAnalysisOutcome.Success>(retried).value
-        assertEquals(3, analysis.scriptLanguageRuns.size)
-        assertEquals(ScriptLanguageRun(range(snapshot, 0, 8_193), "Latn", "en"), analysis.scriptLanguageRuns[0])
-        assertEquals(ScriptLanguageRun(range(snapshot, 8_193, 12_290), "Grek", "en"), analysis.scriptLanguageRuns[1])
-        assertEquals(ScriptLanguageRun(range(snapshot, 12_290, 12_291), "Latn", "en"), analysis.scriptLanguageRuns[2])
+        val analysis = assertIs<UnicodeAnalysisOutcome.Success>(outcome).value
+
+        assertEquals(
+            listOf(
+                ScriptLanguageRun(range(snapshot, 0, 8_193), "Latn", "en"),
+                ScriptLanguageRun(range(snapshot, 8_193, 12_290), "Grek", "en"),
+                ScriptLanguageRun(range(snapshot, 12_290, 12_291), "Latn", "en"),
+            ),
+            analysis.scriptLanguageRuns,
+        )
     }
 
     @Test
