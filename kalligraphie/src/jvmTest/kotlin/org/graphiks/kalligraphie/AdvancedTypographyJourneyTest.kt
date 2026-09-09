@@ -11,6 +11,8 @@ import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EllipsisSide
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -411,6 +413,48 @@ class AdvancedTypographyJourneyTest {
         assertEquals(7, first.allCaretCandidates.size)
         // The second line starts immediately after the break.
         assertEquals("ation", fixture.textOf(layout.layout.lines[1].range))
+    }
+
+    @Test
+    fun automaticHyphenationRejectsSyntheticGlyphBeyondTheOperationBudgetAndRetriesExactly() {
+        val fixture = dejavuFixture("hyphenation")
+        val geometry = constraints(width = 4_300f, top = 50f, height = 2_400f)
+        val service = JvmPatternHyphenationService.english()
+
+        val limited = assertIs<ParagraphLayoutResult.Failure>(
+            layout(
+                fixture = fixture,
+                constraints = geometry,
+                language = "en",
+                hyphenationMode = HyphenationMode.AUTO,
+                hyphenationService = service,
+                operationProfile = EditorOperationProfile(maxTotalGlyphs = 28),
+            ),
+        )
+        val exceeded = assertIs<ParagraphLayoutError.OperationLimitExceeded>(limited.error).limit
+        assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+        assertEquals(28L, exceeded.maximum)
+        assertEquals(29L, exceeded.observed)
+
+        val retry = assertIs<ParagraphLayoutResult.Success>(
+            layout(
+                fixture = fixture,
+                constraints = geometry,
+                language = "en",
+                hyphenationMode = HyphenationMode.AUTO,
+                hyphenationService = service,
+                operationProfile = EditorOperationProfile(maxTotalGlyphs = 64),
+            ),
+        ).layout
+
+        assertEquals(listOf("hyphen", "ation"), retry.lines.map { line -> fixture.textOf(line.range) })
+        val hyphen = retry.lines.first().glyphs().single { glyph ->
+            (glyph.provenance as? GlyphProvenance.Synthetic)?.role == GlyphProvenanceRole.AUTOMATIC_HYPHEN
+        }
+        assertEquals(fixture.textIndex(6), assertIs<GlyphProvenance.Synthetic>(hyphen.provenance).anchor)
+        assertEquals(16, hyphen.shapedGlyph.glyphId.value)
+        assertEquals(360.83984f, hyphen.advance.x.value)
+        assertEquals(3843.164f, hyphen.origin.x.value)
     }
 
     @Test
@@ -1375,6 +1419,7 @@ class AdvancedTypographyJourneyTest {
         materialization: org.graphiks.kalligraphie.api.EditableLineMaterialization =
             org.graphiks.kalligraphie.api.EditableLineMaterialization.LayoutOnly,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): ParagraphLayoutResult = JvmEditableParagraphFacade.layout(
         JvmEditableParagraphFacadeRequest(
             snapshot = fixture.snapshot,
@@ -1394,6 +1439,7 @@ class AdvancedTypographyJourneyTest {
             textOrientation = textOrientation,
             verticalMetricsPolicy = verticalMetricsPolicy,
             continuation = continuation,
+            operationProfile = operationProfile,
         ),
     )
 

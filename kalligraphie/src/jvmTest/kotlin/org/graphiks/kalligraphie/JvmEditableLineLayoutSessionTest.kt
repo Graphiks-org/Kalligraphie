@@ -1,7 +1,9 @@
 package org.graphiks.kalligraphie
 
+import java.security.MessageDigest
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.concurrent.thread
 import kotlin.test.Test
@@ -271,6 +273,42 @@ class JvmEditableLineLayoutSessionTest {
     }
 
     @Test
+    fun longMultilingualCancellationIsAtomicAndRetryMatchesTheAuditedLayoutDigest() {
+        val font = liberationSans()
+        val text = snapshot("👩‍🚀 مرحبا שלום ".repeat(64))
+        val cancelled = AtomicBoolean(true)
+        val session = openSession()
+        try {
+            assertIs<EditableLineResult.Cancelled>(
+                session.layout(
+                    request(
+                        text,
+                        font,
+                        cancellationToken = CancellationToken(cancelled::get),
+                        operationProfile = EditorOperationProfile(cancellationCheckInterval = 17),
+                    ),
+                ),
+            )
+
+            cancelled.set(false)
+            val retry = observe(
+                text,
+                session.layout(
+                    request(
+                        text,
+                        font,
+                        cancellationToken = CancellationToken(cancelled::get),
+                        operationProfile = EditorOperationProfile(cancellationCheckInterval = 17),
+                    ),
+                ),
+            )
+            assertEquals("e0ee806bf13cacfad46c8a8ab1df299764b77bc6d18c22d4f8ec3d7f545064c5", sha256(retry.toString()))
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(session.close())
+        }
+    }
+
+    @Test
     fun reentrantCloseFromARealLayoutCallbackIsRejectedWithoutClosingTheSession() {
         val font = liberationSans()
         val text = snapshot("office שלום")
@@ -386,6 +424,10 @@ class JvmEditableLineLayoutSessionTest {
 
     private fun scalarBoundary(snapshot: TextSnapshot, index: org.graphiks.kalligraphie.api.TextIndex): Int =
         (0..snapshot.scalars.size).single { ordinal -> snapshot.textIndexAtScalarBoundary(ordinal) == index }
+
+    private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256")
+        .digest(value.encodeToByteArray())
+        .joinToString("") { byte -> "%02x".format(byte) }
 
     private fun firstOracle(): LineOracle = LineOracle(
         runs = listOf(

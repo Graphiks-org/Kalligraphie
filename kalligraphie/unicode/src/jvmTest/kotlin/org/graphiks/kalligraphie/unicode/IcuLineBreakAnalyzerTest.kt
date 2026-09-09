@@ -56,7 +56,8 @@ class IcuLineBreakAnalyzerTest {
 
     @Test
     fun cancelled_bounded_analysis_publishes_nothing_and_exact_retry_succeeds() {
-        val snapshot = snapshotOf("👩‍🚀 مرحبا שלום")
+        val repetitions = 512
+        val snapshot = snapshotOf("👩‍🚀 مرحبا שלום ".repeat(repetitions))
         val unicodeAnalysis = unicodeAnalyzer.analyze(
             snapshot,
             UnicodeAnalysisRequest(BaseDirection.RIGHT_TO_LEFT, language = "ar"),
@@ -81,13 +82,23 @@ class IcuLineBreakAnalyzerTest {
                 CancellationToken.none,
             ),
         ).value
-        assertEquals(
-            listOf(
-                opportunity(snapshot, 4, LineBreakKind.ALLOWED),
-                opportunity(snapshot, 10, LineBreakKind.ALLOWED),
-            ),
-            retry.opportunities,
-        )
+        val expectedOpportunities = buildList {
+            repeat(repetitions) { unit ->
+                val start = unit * 15
+                add(opportunity(snapshot, start + 4, LineBreakKind.ALLOWED))
+                add(opportunity(snapshot, start + 10, LineBreakKind.ALLOWED))
+                if (unit + 1 < repetitions) add(opportunity(snapshot, start + 15, LineBreakKind.ALLOWED))
+            }
+        }
+        val expectedClusters = buildList {
+            repeat(repetitions) { unit ->
+                val start = unit * 15
+                add(range(snapshot, start, start + 3))
+                for (scalar in start + 3 until start + 15) add(range(snapshot, scalar, scalar + 1))
+            }
+        }
+        assertEquals(expectedOpportunities, retry.opportunities)
+        assertEquals(expectedClusters, retry.graphemeClusters)
     }
 
     @Test

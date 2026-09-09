@@ -722,7 +722,26 @@ public class IncrementalLayoutRequest internal constructor(
     public val cancellationToken: CancellationToken,
     /** Shared finite resource policy for this complete incremental operation. */
     public val operationProfile: EditorOperationProfile,
-)
+) {
+    internal constructor(
+        input: LayoutInput,
+        requestedRange: TextRange,
+        constraints: ParagraphConstraints,
+        overscan: LineOverscan,
+        previousState: LayoutStateHandle?,
+        delta: LayoutDelta?,
+        cancellationToken: CancellationToken,
+    ) : this(
+        input,
+        requestedRange,
+        constraints,
+        overscan,
+        previousState,
+        delta,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+}
 
 /**
  * Validates an incremental layout request without retaining mutable document or renderer state.
@@ -994,6 +1013,15 @@ public sealed interface IncrementalLayoutError {
         override val code: String = "layout.incremental-operation-limit-exceeded"
         override val message: String =
             "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
+    }
+
+    /** Typed paragraph failure that prevented a complete incremental line from being published. */
+    public data class ParagraphFailure(
+        /** Exact paragraph error returned by the complete JVM paragraph operation. */
+        public val paragraphError: ParagraphLayoutError,
+    ) : IncrementalLayoutError {
+        override val code: String = "layout.incremental-paragraph-failure"
+        override val message: String = paragraphError.message
     }
 }
 

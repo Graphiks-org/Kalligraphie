@@ -1114,7 +1114,28 @@ public class IncrementalFlowLayoutRequest internal constructor(
     public val cancellationToken: CancellationToken,
     /** Shared finite resource policy for this complete flow operation. */
     public val operationProfile: EditorOperationProfile,
-)
+) {
+    internal constructor(
+        input: LayoutInput,
+        requestedRange: TextRange,
+        constraints: ParagraphConstraints,
+        flowChain: FlowChain,
+        overscan: LineOverscan,
+        previousState: FlowLayoutState?,
+        delta: LayoutDelta?,
+        cancellationToken: CancellationToken,
+    ) : this(
+        input,
+        requestedRange,
+        constraints,
+        flowChain,
+        overscan,
+        previousState,
+        delta,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+}
 
 /**
  * Validates and creates one bounded incremental flow-composition operation.

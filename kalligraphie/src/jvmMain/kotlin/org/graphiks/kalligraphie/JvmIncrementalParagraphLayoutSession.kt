@@ -23,6 +23,7 @@ import org.graphiks.kalligraphie.api.HyphenationMode
 import org.graphiks.kalligraphie.api.HyphenationService
 import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
@@ -312,19 +313,15 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             val segmentEnd = mandatoryBoundaries.firstOrNull { boundary -> boundary > lineStart }
                 ?: documentEnd
             val sourceRange = TextRange(lineStart, segmentEnd)
-            val continuation = continuationForWindow(sessionRequest, request, sourceRange, blockCursor, context)
-            if (lineStart != snapshot.range.start && continuation == null) {
-                return if (request.cancellationToken.isCancellationRequested()) {
-                    ComputerWork(IncrementalParagraphComputation.Cancelled)
-                } else {
-                    ComputerWork(
-                        IncrementalParagraphComputation.Failure(
-                            IncrementalLayoutError.InvalidRange(
-                                "The JVM route could not create a continuation for the proven reflow checkpoint.",
-                            ),
-                        ),
-                    )
-                }
+            val continuation = when (
+                val prepared = continuationForWindow(sessionRequest, request, sourceRange, blockCursor, context)
+            ) {
+                WindowContinuation.NotRequired -> null
+                is WindowContinuation.Success -> prepared.continuation
+                is WindowContinuation.Failure -> return ComputerWork(
+                    IncrementalParagraphComputation.Failure(prepared.error),
+                )
+                WindowContinuation.Cancelled -> return ComputerWork(IncrementalParagraphComputation.Cancelled)
             }
             val paragraphResult = JvmEditableParagraphFacade.layoutBorrowing(
                 request = JvmEditableParagraphFacadeRequest(
@@ -359,13 +356,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                 is ParagraphLayoutResult.Success -> paragraphResult
                 is ParagraphLayoutResult.Failure -> return ComputerWork(
                     IncrementalParagraphComputation.Failure(
-                        when (val error = paragraphResult.error) {
-                            is org.graphiks.kalligraphie.api.ParagraphLayoutError.OperationLimitExceeded ->
-                                IncrementalLayoutError.OperationLimitExceeded(error.limit)
-                            else -> IncrementalLayoutError.InvalidRange(
-                                "JVM paragraph layout failed: ${error.message}",
-                            )
-                        },
+                        paragraphError(paragraphResult.error),
                     ),
                 )
                 is ParagraphLayoutResult.Cancelled -> return ComputerWork(IncrementalParagraphComputation.Cancelled)
@@ -470,10 +461,10 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         sourceRange: TextRange,
         blockCursor: LayoutUnit,
         context: EditorOperationContext,
-    ): LayoutContinuation? {
-        if (sourceRange.start == request.input.text.range.start) return null
-        return try {
-            JvmEditableParagraphFacade.continuationBorrowing(
+    ): WindowContinuation {
+        if (sourceRange.start == request.input.text.range.start) return WindowContinuation.NotRequired
+        return when (
+            val prepared = JvmEditableParagraphFacade.continuationBorrowing(
                 request = JvmEditableParagraphFacadeRequest(
                     snapshot = request.input.text,
                     sourceRange = sourceRange,
@@ -509,9 +500,18 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                 resumptionBlockCursor = blockCursor,
                 context = context,
             )
-        } catch (_: IllegalArgumentException) {
-            null
+        ) {
+            is ParagraphContinuationPreparation.Success -> WindowContinuation.Success(prepared.continuation)
+            is ParagraphContinuationPreparation.Failure -> WindowContinuation.Failure(
+                paragraphError(prepared.result.error),
+            )
+            ParagraphContinuationPreparation.Cancelled -> WindowContinuation.Cancelled
         }
+    }
+
+    private fun paragraphError(error: ParagraphLayoutError): IncrementalLayoutError = when (error) {
+        is ParagraphLayoutError.OperationLimitExceeded -> IncrementalLayoutError.OperationLimitExceeded(error.limit)
+        else -> IncrementalLayoutError.ParagraphFailure(error)
     }
 
     private fun lineCompletesTarget(
@@ -659,6 +659,13 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         )
 
         private const val DEFAULT_CACHE_BUDGET_BYTES: Long = 4L * 1024L * 1024L
+    }
+
+    private sealed interface WindowContinuation {
+        data object NotRequired : WindowContinuation
+        class Success(val continuation: LayoutContinuation) : WindowContinuation
+        class Failure(val error: IncrementalLayoutError) : WindowContinuation
+        data object Cancelled : WindowContinuation
     }
 
     private data class LineTop(

@@ -380,7 +380,13 @@ internal object LineContentPlan {
                 val materialized = mapped.endExclusive in softHyphens.materializedBoundaries
                 val suppressed = suppressSoftHyphen(instance, glyph, diagnostics)
                 val replacement = if (materialized) {
-                    substituteHyphen(instance, glyph, diagnostics) ?: suppressed
+                    val hyphenId = resolveHyphenId(instance, diagnostics)
+                    val advance = hyphenId?.let { resolved -> hyphenAdvance(instance, resolved, diagnostics) }
+                    if (hyphenId != null && advance != null) {
+                        materializeHyphen(hyphenId, advance, glyph)
+                    } else {
+                        suppressed
+                    }
                 } else {
                     suppressed
                 }
@@ -399,10 +405,12 @@ internal object LineContentPlan {
                 val remaining = automaticGlyphsRemaining.getValue(mapped.endExclusive) - 1
                 automaticGlyphsRemaining[mapped.endExclusive] = remaining
                 if (remaining == 0) {
-                    substituteHyphen(instance, glyph, diagnostics)?.let { hyphen ->
+                    val hyphenId = resolveHyphenId(instance, diagnostics)
+                    val advance = hyphenId?.let { resolved -> hyphenAdvance(instance, resolved, diagnostics) }
+                    if (hyphenId != null && advance != null) {
                         context.reserveSyntheticGlyphs(1L)
                         stream += RefinedGlyph(
-                            hyphen,
+                            materializeHyphen(hyphenId, advance, glyph),
                             GlyphProvenance.Synthetic(mapped.endExclusive, GlyphProvenanceRole.AUTOMATIC_HYPHEN),
                         )
                     }
@@ -608,31 +616,50 @@ internal object LineContentPlan {
             .map(run.sourceRun::clusterFor)
             .flatMap { cluster -> snapshot.scalarValues(cluster.sourceRange) }
 
-    private fun substituteHyphen(
+    private fun resolveHyphenId(
         instance: FontInstance,
-        glyph: ShapedGlyph,
         diagnostics: MutableList<EditableLineDiagnostic>,
-    ): ShapedGlyph? {
-        val resolved = when (val result = instance.resolveGlyph(HYPHEN_MINUS)) {
-            is FontOperationResult.Success -> result.value.glyphId
-            is FontOperationResult.Failure -> return substitutionUnavailable(diagnostics, result)
-            is FontOperationResult.Cancelled -> return substitutionUnavailable(diagnostics, result)
+    ): GlyphId? = when (val result = instance.resolveGlyph(HYPHEN_MINUS)) {
+        is FontOperationResult.Success -> result.value.glyphId
+        is FontOperationResult.Failure -> {
+            substitutionUnavailable(diagnostics, result)
+            null
         }
-        val advance = when (val metrics = instance.metrics(resolved)) {
-            is FontOperationResult.Success -> metrics.value.advanceWidth
-            is FontOperationResult.Failure -> return substitutionUnavailable(diagnostics, metrics)
-            is FontOperationResult.Cancelled -> return substitutionUnavailable(diagnostics, metrics)
+        is FontOperationResult.Cancelled -> {
+            substitutionUnavailable(diagnostics, result)
+            null
         }
-        return ShapedGlyph(
-            glyphId = resolved,
-            xAdvance = advance,
-            yAdvance = LayoutUnit(0f),
-            xOffset = LayoutUnit(0f),
-            yOffset = LayoutUnit(0f),
-            safetyFlags = glyph.safetyFlags,
-            clusterTokens = glyph.clusterTokens,
-        )
     }
+
+    private fun hyphenAdvance(
+        instance: FontInstance,
+        hyphenId: GlyphId,
+        diagnostics: MutableList<EditableLineDiagnostic>,
+    ): LayoutUnit? = when (val metrics = instance.metrics(hyphenId)) {
+        is FontOperationResult.Success -> metrics.value.advanceWidth
+        is FontOperationResult.Failure -> {
+            substitutionUnavailable(diagnostics, metrics)
+            null
+        }
+        is FontOperationResult.Cancelled -> {
+            substitutionUnavailable(diagnostics, metrics)
+            null
+        }
+    }
+
+    private fun materializeHyphen(
+        hyphenId: GlyphId,
+        advance: LayoutUnit,
+        reference: ShapedGlyph,
+    ): ShapedGlyph = ShapedGlyph(
+        glyphId = hyphenId,
+        xAdvance = advance,
+        yAdvance = LayoutUnit(0f),
+        xOffset = LayoutUnit(0f),
+        yOffset = LayoutUnit(0f),
+        safetyFlags = reference.safetyFlags,
+        clusterTokens = reference.clusterTokens,
+    )
 
     private fun suppressSoftHyphen(
         instance: FontInstance,

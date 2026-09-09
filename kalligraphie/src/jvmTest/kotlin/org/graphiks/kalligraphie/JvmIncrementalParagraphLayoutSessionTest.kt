@@ -80,6 +80,78 @@ class JvmIncrementalParagraphLayoutSessionTest {
     }
 
     @Test
+    fun continuationPreparationLimitPreservesPublicationAndRetryMatchesFreshSession() {
+        val source = fixture("fi\nfi")
+        val target = source.withText("fi\nff")
+        val changeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 4, 5), range(target.snapshot, 4, 5))),
+            ),
+        ).value
+        val session = openSession()
+        val fresh = openSession()
+
+        session.use { open ->
+            fresh.use { clean ->
+                val published = assertIs<IncrementalLayoutResult.Success>(
+                    open.layout(request(source, language = "en")),
+                )
+                val limited = assertIs<IncrementalLayoutResult.Failure>(
+                    open.layout(
+                        request(
+                            fixture = target,
+                            requestedRange = range(target.snapshot, 3, 5),
+                            previousState = published.layout.state,
+                            delta = LayoutDelta(text = changeSet),
+                            language = "en",
+                            operationProfile = EditorOperationProfile(maxLineBreakWork = 8),
+                        ),
+                    ),
+                )
+                val exceeded = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutError.OperationLimitExceeded>(
+                    limited.error,
+                ).limit
+
+                assertEquals(EditorOperationLimitKind.LINE_BREAK_WORK, exceeded.kind)
+                assertEquals(8L, exceeded.maximum)
+                assertEquals(13L, exceeded.observed)
+                assertEquals(published.layout.inputIdentity, open.currentLayout()?.layout?.inputIdentity)
+                assertEquals(published.layout.lines, open.currentLayout()?.layout?.lines)
+
+                val retryRequest = request(
+                    fixture = target,
+                    requestedRange = range(target.snapshot, 3, 5),
+                    previousState = published.layout.state,
+                    delta = LayoutDelta(text = changeSet),
+                    language = "en",
+                    operationProfile = EditorOperationProfile(maxLineBreakWork = 40),
+                )
+                val retried = assertIs<IncrementalLayoutResult.Success>(open.layout(retryRequest))
+                val freshResult = assertIs<IncrementalLayoutResult.Success>(
+                    clean.layout(
+                        request(
+                            fixture = target,
+                            requestedRange = range(target.snapshot, 3, 5),
+                            language = "en",
+                            operationProfile = EditorOperationProfile(maxLineBreakWork = 40),
+                        ),
+                    ),
+                )
+
+                assertEquals(freshResult.layout.coverage.range, retried.layout.coverage.range)
+                assertEquals(freshResult.layout.coverage.isComplete, retried.layout.coverage.isComplete)
+                assertEquals(freshResult.layout.coverage.tailState, retried.layout.coverage.tailState)
+                assertEquals(freshResult.layout.lines.map(LineLayout::range), retried.layout.lines.map(LineLayout::range))
+                assertEquals(freshResult.layout.lines.map(LineLayout::lineBox), retried.layout.lines.map(LineLayout::lineBox))
+                assertEquals(freshResult.layout.lines.map { it.glyphIds() }, retried.layout.lines.map { it.glyphIds() })
+                assertEquals(freshResult.layout.lines.map { it.glyphAdvances() }, retried.layout.lines.map { it.glyphAdvances() })
+            }
+        }
+    }
+
+    @Test
     fun realFontLayoutPublishesLiteralGlyphsAdvancesRangesAndCoverage() {
         val fixture = fixture("fi \u0633\u0644\u0627\u0645")
         val session = openSession()

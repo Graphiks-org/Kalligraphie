@@ -314,6 +314,35 @@ class IcuUnicodeAnalyzerTest {
     }
 
     @Test
+    fun long_multilingual_analysis_cancels_atomically_and_retries_to_exact_graphemes() {
+        val repetitions = 512
+        val snapshot = snapshotOf("👩‍🚀 مرحبا שלום ".repeat(repetitions))
+        val request = UnicodeAnalysisRequest(BaseDirection.RIGHT_TO_LEFT, language = "ar")
+        val profile = UnicodeAnalysisProfile(cancellationCheckInterval = 17)
+
+        assertEquals(
+            UnicodeAnalysisOutcome.Cancelled,
+            analyzer.analyze(snapshot, request, profile, CancellationToken.cancelled),
+        )
+        val retry = assertIs<UnicodeAnalysisOutcome.Success>(
+            analyzer.analyze(snapshot, request, profile, CancellationToken.none),
+        ).value
+        val expectedGraphemes = buildList {
+            repeat(repetitions) { unit ->
+                val start = unit * 15
+                add(range(snapshot, start, start + 3))
+                for (scalar in start + 3 until start + 15) add(range(snapshot, scalar, scalar + 1))
+            }
+        }
+
+        assertEquals(expectedGraphemes, retry.graphemeClusters)
+        assertEquals(snapshot.range.start, retry.scriptLanguageRuns.first().range.start)
+        assertEquals(snapshot.range.endExclusive, retry.scriptLanguageRuns.last().range.endExclusive)
+        assertEquals(snapshot.range.start, retry.logicalBidiRuns.first().range.start)
+        assertEquals(snapshot.range.endExclusive, retry.logicalBidiRuns.last().range.endExclusive)
+    }
+
+    @Test
     fun long_incompatible_bracket_sequence_does_not_revive_pairs_after_bd16_overflow() {
         val text = "a" + "(".repeat(4_096) + "]".repeat(4_096) + "\u03B2" + ")".repeat(4_096) + "a"
         val snapshot = snapshotOf(text)

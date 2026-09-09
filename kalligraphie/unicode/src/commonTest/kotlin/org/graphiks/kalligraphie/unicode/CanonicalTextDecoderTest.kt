@@ -408,6 +408,103 @@ class CanonicalTextDecoderTest {
     }
 
     @Test
+    fun long_fragmented_malformed_utf8_and_utf16_cancel_atomically_then_retry_exactly() {
+        val repetitions = 2_048
+        val utf8Unit = byteArrayOf(0xE2.toByte(), 0x82.toByte(), 0x41, 0x80.toByte())
+        val utf8Storage = ImmutableUtf8RopeStorage(List(repetitions) { utf8Unit })
+        val utf8Slices = (0 until utf8Storage.length step utf8Unit.size).map { start ->
+            TextSlice.Utf8.borrow(utf8Storage, start, start + utf8Unit.size)
+        }
+        val utf8Version = TextVersion.create()
+
+        assertIs<TextDecodingOutcome.Cancelled>(
+            TextSnapshots.decodeUtf8(
+                utf8Version,
+                utf8Slices,
+                TextDecodingProfile(cancellationCheckInterval = 17),
+                CancellationToken.cancelled,
+            ),
+        )
+        val utf8 = assertIs<TextDecodingOutcome.Success>(
+            TextSnapshots.decodeUtf8(
+                utf8Version,
+                utf8Slices,
+                TextDecodingProfile(cancellationCheckInterval = 17),
+                CancellationToken.none,
+            ),
+        ).value
+        assertEquals(List(repetitions) { listOf(0xFFFD, 0x41, 0xFFFD) }.flatten(), utf8.snapshot.scalars)
+        assertEquals(
+            List(repetitions) { unit ->
+                listOf(
+                    sourceRange(utf8Version, SourceEncoding.UTF8, unit * 4, unit * 4 + 2),
+                    sourceRange(utf8Version, SourceEncoding.UTF8, unit * 4 + 2, unit * 4 + 3),
+                    sourceRange(utf8Version, SourceEncoding.UTF8, unit * 4 + 3, unit * 4 + 4),
+                )
+            }.flatten(),
+            utf8.snapshot.sourceRanges,
+        )
+        assertEquals(List(repetitions * 2) { "text.malformed-utf8" }, utf8.diagnostics.map { it.code })
+        assertEquals(
+            List(repetitions) { unit ->
+                listOf(
+                    sourceRange(utf8Version, SourceEncoding.UTF8, unit * 4, unit * 4 + 2),
+                    sourceRange(utf8Version, SourceEncoding.UTF8, unit * 4 + 3, unit * 4 + 4),
+                )
+            }.flatten(),
+            utf8.diagnostics.map { it.sourceRange },
+        )
+
+        val utf16Unit = charArrayOf('\uD83D', 'A', '\uDE00')
+        val utf16Storage = ImmutableUtf16PieceTableStorage(
+            buffers = List(repetitions) { utf16Unit },
+            pieces = List(repetitions) { buffer -> Piece(buffer, 0, utf16Unit.size) },
+        )
+        val utf16Slices = (0 until utf16Storage.length step utf16Unit.size).map { start ->
+            TextSlice.Utf16.borrow(utf16Storage, start, start + utf16Unit.size)
+        }
+        val utf16Version = TextVersion.create()
+
+        assertIs<TextDecodingOutcome.Cancelled>(
+            TextSnapshots.decodeUtf16(
+                utf16Version,
+                utf16Slices,
+                TextDecodingProfile(cancellationCheckInterval = 17),
+                CancellationToken.cancelled,
+            ),
+        )
+        val utf16 = assertIs<TextDecodingOutcome.Success>(
+            TextSnapshots.decodeUtf16(
+                utf16Version,
+                utf16Slices,
+                TextDecodingProfile(cancellationCheckInterval = 17),
+                CancellationToken.none,
+            ),
+        ).value
+        assertEquals(List(repetitions) { listOf(0xFFFD, 0x41, 0xFFFD) }.flatten(), utf16.snapshot.scalars)
+        assertEquals(
+            List(repetitions) { unit ->
+                listOf(
+                    sourceRange(utf16Version, SourceEncoding.UTF16, unit * 3, unit * 3 + 1),
+                    sourceRange(utf16Version, SourceEncoding.UTF16, unit * 3 + 1, unit * 3 + 2),
+                    sourceRange(utf16Version, SourceEncoding.UTF16, unit * 3 + 2, unit * 3 + 3),
+                )
+            }.flatten(),
+            utf16.snapshot.sourceRanges,
+        )
+        assertEquals(List(repetitions * 2) { "text.malformed-utf16" }, utf16.diagnostics.map { it.code })
+        assertEquals(
+            List(repetitions) { unit ->
+                listOf(
+                    sourceRange(utf16Version, SourceEncoding.UTF16, unit * 3, unit * 3 + 1),
+                    sourceRange(utf16Version, SourceEncoding.UTF16, unit * 3 + 2, unit * 3 + 3),
+                )
+            }.flatten(),
+            utf16.diagnostics.map { it.sourceRange },
+        )
+    }
+
+    @Test
     fun malformed_utf8_and_utf16_emit_one_replacement_per_maximal_subpart() {
         val version = TextVersion.create()
         val utf8Unsplit = TextSnapshots.decodeUtf8(

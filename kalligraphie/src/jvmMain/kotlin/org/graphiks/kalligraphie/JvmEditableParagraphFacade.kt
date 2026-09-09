@@ -287,8 +287,8 @@ public object JvmEditableParagraphFacade {
      * Creates a resource-free continuation for a proven line boundary without shaping its prefix.
      *
      * Unicode and line-break context are analyzed through the same pinned JVM route. [backend] and
-     * any materialization resolver are borrowed and never closed or retained. `null` reports
-     * cooperative cancellation; invalid boundaries throw [IllegalArgumentException].
+     * any materialization resolver are borrowed and never closed or retained. Cancellation and
+     * every preparation failure remain distinct typed outcomes.
      */
     internal fun continuationBorrowing(
         request: JvmEditableParagraphFacadeRequest,
@@ -296,7 +296,7 @@ public object JvmEditableParagraphFacade {
         remainingSourceRange: TextRange,
         resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
         resumptionBlockCursor: org.graphiks.kalligraphie.api.LayoutUnit,
-    ): LayoutContinuation? = continuationBorrowing(
+    ): ParagraphContinuationPreparation = continuationBorrowing(
         request,
         backend,
         remainingSourceRange,
@@ -312,17 +312,28 @@ public object JvmEditableParagraphFacade {
         resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
         resumptionBlockCursor: org.graphiks.kalligraphie.api.LayoutUnit,
         context: EditorOperationContext,
-    ): LayoutContinuation? {
+    ): ParagraphContinuationPreparation {
         val paragraphRequest = when (val prepared = prepareParagraphRequestBorrowing(request, backend, context)) {
             is ParagraphPreparation.Success -> prepared.request
-            is ParagraphPreparation.Failure, ParagraphPreparation.Cancelled -> return null
+            is ParagraphPreparation.Failure -> return ParagraphContinuationPreparation.Failure(prepared.result)
+            ParagraphPreparation.Cancelled -> return ParagraphContinuationPreparation.Cancelled
         }
-        return LayoutContinuation.create(
-            request = paragraphRequest,
-            remainingSourceRange = remainingSourceRange,
-            resumptionRegionTop = resumptionRegionTop,
-            resumptionBlockCursor = resumptionBlockCursor,
-        )
+        return try {
+            ParagraphContinuationPreparation.Success(
+                LayoutContinuation.create(
+                    request = paragraphRequest,
+                    remainingSourceRange = remainingSourceRange,
+                    resumptionRegionTop = resumptionRegionTop,
+                    resumptionBlockCursor = resumptionBlockCursor,
+                ),
+            )
+        } catch (error: IllegalArgumentException) {
+            ParagraphContinuationPreparation.Failure(
+                ParagraphLayoutResult.Failure(
+                    ParagraphLayoutError.InvalidInput(error.message ?: "Paragraph continuation input is invalid."),
+                ),
+            )
+        }
     }
 
     internal fun prepareParagraphRequestBorrowing(
@@ -471,6 +482,12 @@ internal sealed interface ParagraphPreparation {
     class Success(val request: ParagraphLayoutRequest) : ParagraphPreparation
     class Failure(val result: ParagraphLayoutResult.Failure) : ParagraphPreparation
     data object Cancelled : ParagraphPreparation
+}
+
+internal sealed interface ParagraphContinuationPreparation {
+    class Success(val continuation: LayoutContinuation) : ParagraphContinuationPreparation
+    class Failure(val result: ParagraphLayoutResult.Failure) : ParagraphContinuationPreparation
+    data object Cancelled : ParagraphContinuationPreparation
 }
 
 private fun List<FontDiagnostic>.toParagraphDiagnostics(): List<EditableLineDiagnostic> = map { diagnostic ->

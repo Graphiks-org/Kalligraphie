@@ -703,11 +703,21 @@ internal class HarfBuzzNativeLibrary(
                 callVoid(bufferAdd, buffer, scalar, tokenValue)
             }
             observeCancellation(request)
-            val features = featureArray(arena, request.features)
-            check(shapeWithExplicitOpenTypeShaper(arena, preparedFont.font, buffer, features, request.features.size)) {
+            val features = featureArray(arena, request)
+            val shapers = explicitOpenTypeShapers(arena)
+            observeCancellation(request)
+            val accepted = int(
+                shapeFull,
+                preparedFont.font,
+                buffer,
+                features,
+                request.features.size,
+                shapers,
+            ) != 0
+            observeCancellation(request)
+            check(accepted) {
                 "HarfBuzz did not accept the explicit OpenType shaper configuration."
             }
-            observeCancellation(request)
             shapedRun(arena, request, preparedFont.font, buffer, scalarRanges, preparedFont.designToLayout)
         } finally {
             callVoid(bufferDestroy, buffer)
@@ -727,10 +737,12 @@ internal class HarfBuzzNativeLibrary(
         callVoid(bufferSetFlags, buffer, flags)
     }
 
-    private fun featureArray(arena: Arena, features: List<OpenTypeFeature>): MemorySegment {
+    private fun featureArray(arena: Arena, request: ShapingRequest): MemorySegment {
+        val features = request.features
         if (features.isEmpty()) return MemorySegment.NULL
         val result = arena.allocate(FEATURE_BYTES * features.size, ValueLayout.JAVA_INT.byteAlignment())
         features.forEachIndexed { index, feature ->
+            observeCancellation(request, index)
             val offset = index.toLong() * FEATURE_BYTES
             result.set(ValueLayout.JAVA_INT, offset, openTypeTag(feature.tag))
             result.set(ValueLayout.JAVA_INT, offset + 4, feature.value)
@@ -740,17 +752,11 @@ internal class HarfBuzzNativeLibrary(
         return result
     }
 
-    private fun shapeWithExplicitOpenTypeShaper(
-        arena: Arena,
-        font: MemorySegment,
-        buffer: MemorySegment,
-        features: MemorySegment,
-        featureCount: Int,
-    ): Boolean {
+    private fun explicitOpenTypeShapers(arena: Arena): MemorySegment {
         val shapers = arena.allocate(ValueLayout.ADDRESS, 2)
         shapers.setAtIndex(ValueLayout.ADDRESS, 0, arena.allocateFrom("ot"))
         shapers.setAtIndex(ValueLayout.ADDRESS, 1, MemorySegment.NULL)
-        return int(shapeFull, font, buffer, features, featureCount, shapers) != 0
+        return shapers
     }
 
     private fun shapedRun(
