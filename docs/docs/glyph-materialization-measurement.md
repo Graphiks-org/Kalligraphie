@@ -22,16 +22,17 @@ The runner records twenty-three profiles, in this order:
 - cold and warm portable TrueType preparation, text mapping, metrics, outlines,
   and detachment stages over one stable Liberation Sans editor paragraph.
 
-Cold samples start before embedded-catalog creation and end after the returned
-immutable representation is consumed. Warm samples create and seed their
-catalog, resolver, instance, and asset before the clock starts, then time only
-`resolveGlyph(...)` and consumption of its result. Asset and resolver closure
-are intentionally excluded from both intervals. The palette profile starts
-before palette-1 asset acquisition after a palette-0 seed. The pressure profile
-includes seeding, five distinct certified SVG profile keys, and the final
-re-resolution. The cancellation profile measures call entry through typed
-cancellation, and separately measures the first in-operation cancellation
-signal through that return.
+For the six historical direct-glyph profiles, cold samples start before
+embedded-catalog creation and end after the returned immutable representation
+is consumed. Their warm samples create and seed the catalog, resolver, instance,
+and asset before the clock starts, then time only `resolveGlyph(...)` and
+consumption of its result. Asset and resolver closure are intentionally excluded
+from both direct-profile intervals. The palette profile starts before palette-1
+asset acquisition after a palette-0 seed. The pressure profile includes seeding,
+five distinct certified SVG profile keys, and the final re-resolution. The
+cancellation profile measures call entry through typed cancellation, and
+separately measures the first in-operation cancellation signal through that
+return.
 
 The consumer-cold profiles include catalog and resolver creation, then end once
 the public paragraph facade has produced and consumed a layout whose final

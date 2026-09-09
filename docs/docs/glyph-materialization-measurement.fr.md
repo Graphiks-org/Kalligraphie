@@ -26,25 +26,26 @@ Le runner enregistre vingt-trois profils, dans cet ordre :
   texte-glyphe, métriques, contours et détachement sur un paragraphe d’éditeur
   Liberation Sans stable.
 
-Un échantillon froid commence avant la création du catalogue embarqué et se
-termine après consommation de la représentation immuable retournée. Un
-échantillon chaud crée et alimente son catalogue, resolver, instance et asset
-avant le chronomètre ; il mesure seulement `resolveGlyph(...)` et la
-consommation du résultat. La fermeture de l’asset et du resolver est exclue des
-deux intervalles. Le profil de palette commence avant l’acquisition de l’asset
-palette 1 après une amorce palette 0. Le profil de pression comprend l’amorce,
-cinq clés SVG certifiées distinctes et la résolution finale. Le profil
-d’annulation mesure l’entrée de l’appel jusqu’au retour d’annulation typé et,
-séparément, le premier signal d’annulation intervenant pendant l’opération.
+Pour les six profils directs historiques, un échantillon froid commence avant
+la création du catalogue embarqué et se termine après consommation de la
+représentation immuable retournée. Leur échantillon chaud crée et alimente le
+catalogue, le resolver, l’instance et l’asset avant le chronomètre ; il mesure
+seulement `resolveGlyph(...)` et la consommation du résultat. La fermeture de
+l’asset et du resolver est exclue uniquement de ces deux intervalles directs.
+Le profil de palette commence avant l’acquisition de l’asset palette 1 après une
+amorce palette 0. Le profil de pression comprend l’amorce, cinq clés SVG
+certifiées distinctes et la résolution finale. Le profil d’annulation mesure
+l’entrée de l’appel jusqu’au retour d’annulation typé et, séparément, le premier
+signal d’annulation intervenant pendant l’opération.
 
 Les profils consommateur froids incluent la création du catalogue et du
 resolver, puis s’arrêtent lorsque la façade publique de paragraphe a produit et
-consommé un layout dont tous les glyphes finaux portent un certificat de
-matérialisation. Les profils consommateur chauds gardent catalogue et resolver
-ouverts, amorcent le cache (mémoire interne de réutilisation) de représentations
-portables par un premier layout
-hors mesure, puis chronomètrent la même frontière de façade publique. La façade
-JVM ouvre et ferme volontairement son backend (moteur interne) de shaping
+consommé un layout (mise en page) dont tous les glyphes finaux portent un
+certificat de matérialisation. Les profils consommateur chauds gardent catalogue
+et resolver ouverts, amorcent le cache (mémoire interne de réutilisation) de
+représentations portables par un premier layout hors mesure, puis chronomètrent
+la même frontière de façade publique. La façade JVM ouvre et ferme
+volontairement son backend (moteur interne) de shaping
 (façonnage) documenté à chaque appel : ces profils chauds mesurent donc la
 réutilisation du cache d’assets, jamais une réutilisation cachée du backend.
 
@@ -83,7 +84,8 @@ Chaque resolver, asset attaché et asset détaché possédé est fermé dans un
 chemin `finally` (garanti même en cas d’échec). Les profils froids incluent la
 préparation nommée par leur frontière ; les profils chauds préparent ou amorcent
 cet état hors chronomètre. Chaque étape rapporte des observations de latence
-p50, p95 et p99 positives, l’état des allocations du thread mesuré, une
+p50, p95 et p99 positives, l’état des allocations du thread (fil d’exécution)
+mesuré, une
 observation de la mémoire JVM retenue, les octets source et l’empreinte SHA-256
 de Liberation Sans avec celles des autres fixtures. La mémoire native retenue
 et les allocations natives restent explicitement `unavailable` (indisponibles),
@@ -115,7 +117,7 @@ Chaque rapport consigne le commit (révision) mesuré, la machine, l’OS,
 l’architecture, la JVM, les empreintes SHA-256 des fixtures, le corpus, la
 route exacte, la frontière chronométrée, l’état du cache (mémoire interne de
 réutilisation), le warmup, le nombre d’itérations, les percentiles nearest-rank
-(rang supérieur), les allocations du thread (fil d’exécution) de mesure et une
+(rang supérieur), les allocations du thread de mesure et une
 variation signée du tas JVM relevée après les demandes de GC (ramasse-miettes)
 documentées. Il inclut aussi les octets source fournis au catalogue pendant
 l’intervalle, les octets et pixels bitmap décodés, ainsi que le nombre de
