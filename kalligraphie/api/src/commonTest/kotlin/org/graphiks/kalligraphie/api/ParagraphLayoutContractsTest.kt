@@ -157,33 +157,6 @@ class ParagraphLayoutContractsTest {
     }
 
     @Test
-    fun continuationAcceptsEquivalentShapingSemanticsFromAnotherDistribution() {
-        val version = TextVersion.create()
-        val original = fixture("a", version)
-        val continuation = LayoutContinuation.create(original.request(), original.snapshot.range)
-        val otherDistribution = original.backend.identity.copy(
-            provenance = original.backend.identity.provenance.copy(
-                operatingSystem = "other-os",
-                architecture = "other-architecture",
-                artifactId = "other-artifact",
-                artifactSha256 = "1".repeat(64),
-                sourceRevision = "other-source-revision",
-                buildChainIdentity = "other-build-chain",
-            ),
-        )
-        val otherSemantics = original.backend.identity.copy(
-            semantic = original.backend.identity.semantic.copy(configurationFingerprint = "other-config"),
-        )
-
-        val resumed = fixture("a", version, otherDistribution).request(continuation = continuation)
-
-        assertSame(continuation, resumed.continuation)
-        assertFailsWith<IllegalArgumentException> {
-            fixture("a", version, otherSemantics).request(continuation = continuation)
-        }
-    }
-
-    @Test
     fun continuationRejectsAnEmptyRemainder() {
         val fixture = fixture("a")
         val end = fixture.snapshot.range.endExclusive

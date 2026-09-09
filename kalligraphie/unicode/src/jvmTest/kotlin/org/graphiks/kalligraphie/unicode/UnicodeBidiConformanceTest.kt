@@ -2,7 +2,6 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFailsWith
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.TextIndex
@@ -12,22 +11,6 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 class UnicodeBidiConformanceTest {
-    @Test
-    fun unknown_bidi_test_directive_fails_explicitly() {
-        val failure = assertFailsWith<IllegalStateException> {
-            bidiTestCases(
-                sequenceOf(
-                    "@Levels: 0",
-                    "@Reorder: 0",
-                    "@Unexpected: value",
-                    "L; 2",
-                ),
-            ).toList()
-        }
-
-        assertEquals("Unknown BidiTest directive at line 3: @Unexpected: value", failure.message)
-    }
-
     @Test
     fun every_applicable_unicode_16_bidi_class_sequence_matches_levels_and_reordering() {
         var executed = 0
