@@ -73,7 +73,14 @@ internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
             )
             val logicalBidiRuns = bidiRuns(snapshot, resolvedBidiLevels, profile, cancellationToken)
             val graphemes = graphemeClusters(snapshot, canonicalText, cancellationToken)
-            val scripts = scriptLanguageRuns(snapshot, locale, canonicalLanguage, profile, cancellationToken)
+            val scripts = scriptLanguageRuns(
+                snapshot,
+                locale,
+                canonicalLanguage,
+                bidiPreparation.bracketPairs,
+                profile,
+                cancellationToken,
+            )
             val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, profile, cancellationToken)
             UnicodeAnalysisOutcome.Success(
                 UnicodeAnalysis(
@@ -127,6 +134,7 @@ private fun scriptLanguageRuns(
     snapshot: TextSnapshot,
     locale: ULocale,
     language: String,
+    bracketPairs: List<BracketPair>,
     profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): List<ScriptLanguageRun> {
@@ -136,7 +144,7 @@ private fun scriptLanguageRuns(
         observeCancellation(index, profile, cancellationToken)
         scriptProperties(scalar)
     }
-    val pairedScripts = pairedPunctuationScripts(snapshot.scalars, scriptProperties, profile, cancellationToken)
+    val pairedScripts = pairedPunctuationScripts(bracketPairs, scriptProperties, profile, cancellationToken)
     val resolvedScripts = IntArray(snapshot.scalars.size)
     var previousScript: Int? = null
     snapshot.scalars.indices.forEach { scalarIndex ->
@@ -231,30 +239,17 @@ private fun nextContextScript(
 }
 
 private fun pairedPunctuationScripts(
-    scalars: List<Int>,
+    bracketPairs: List<BracketPair>,
     scriptProperties: List<ScriptProperties>,
     profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): Map<Int, Int> {
-    val openingIndexes = mutableListOf<Int>()
     val resolvedScripts = mutableMapOf<Int, Int>()
-    scalars.forEachIndexed { scalarIndex, scalar ->
-        observeCancellation(scalarIndex, profile, cancellationToken)
-        when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)) {
-            UCharacter.BidiPairedBracketType.OPEN -> openingIndexes += scalarIndex
-            UCharacter.BidiPairedBracketType.CLOSE -> {
-                val matchingStackIndex = openingIndexes.indexOfLast { openingIndex ->
-                    canonicalBracket(UCharacter.getBidiPairedBracket(scalars[openingIndex])) == canonicalBracket(scalar)
-                }
-                if (matchingStackIndex >= 0) {
-                    val openingIndex = openingIndexes[matchingStackIndex]
-                    openingIndexes.subList(matchingStackIndex, openingIndexes.size).clear()
-                    enclosingScript(scriptProperties, openingIndex, scalarIndex, profile, cancellationToken)?.let { script ->
-                        resolvedScripts[openingIndex] = script
-                        resolvedScripts[scalarIndex] = script
-                    }
-                }
-            }
+    bracketPairs.forEachIndexed { pairIndex, pair ->
+        observeCancellation(pairIndex, profile, cancellationToken)
+        enclosingScript(scriptProperties, pair.opening, pair.closing, profile, cancellationToken)?.let { script ->
+            resolvedScripts[pair.opening] = script
+            resolvedScripts[pair.closing] = script
         }
     }
     return resolvedScripts
@@ -544,14 +539,15 @@ private fun prepareBidi(
 ): BidiPreparation {
     val fsiDirections = fsiDirections(scalars, baseDirection, profile, cancellationToken)
     val explicit = explicitBidiStructure(scalars, baseDirection, fsiDirections, profile, cancellationToken)
-    val overflowedSequences = bracketOverflowedSequences(scalars, explicit, profile, cancellationToken)
+    val bracketResolution = resolveBd16BracketPairs(scalars, explicit, profile, cancellationToken)
     val text = buildString {
         scalars.forEachIndexed { index, scalar ->
             observeCancellation(index, profile, cancellationToken)
             val bracketType = UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)
             appendCodePoint(
                 when {
-                    explicit.sequenceAt[index] in overflowedSequences && bracketType != UCharacter.BidiPairedBracketType.NONE ->
+                    explicit.sequenceAt[index] in bracketResolution.overflowedSequences &&
+                        bracketType != UCharacter.BidiPairedBracketType.NONE ->
                         NON_BRACKET_OTHER_NEUTRAL
                     scalar == CANONICAL_LEFT_ANGLE_BRACKET -> CANONICAL_LEFT_ANGLE_BRACKET_REPRESENTATIVE
                     scalar == CANONICAL_RIGHT_ANGLE_BRACKET -> CANONICAL_RIGHT_ANGLE_BRACKET_REPRESENTATIVE
@@ -560,7 +556,7 @@ private fun prepareBidi(
             )
         }
     }
-    return BidiPreparation(text, fsiDirections)
+    return BidiPreparation(text, fsiDirections, bracketResolution.pairs)
 }
 
 private fun explicitBidiStructure(
@@ -717,15 +713,17 @@ private fun isolatingRunSequences(
     return sequenceAt
 }
 
-private fun bracketOverflowedSequences(
+private fun resolveBd16BracketPairs(
     scalars: List<Int>,
     explicit: ExplicitBidiStructure,
     profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
-): Set<Int> {
+): BracketResolution {
     // BD16 owns one fixed 63-entry bracket stack per isolating run sequence.
-    val stacks = mutableMapOf<Int, MutableList<Int>>()
+    val stacks = mutableMapOf<Int, MutableList<BracketStackEntry>>()
+    val pairs = mutableListOf<BracketPair>()
     val overflowed = mutableSetOf<Int>()
+    var stackWork = 0
     scalars.forEachIndexed { index, scalar ->
         observeCancellation(index, profile, cancellationToken)
         val sequence = explicit.sequenceAt[index]
@@ -736,15 +734,38 @@ private fun bracketOverflowedSequences(
                 overflowed += sequence
                 stack.clear()
             } else {
-                stack += canonicalBracket(UCharacter.getBidiPairedBracket(scalar))
+                stack += BracketStackEntry(
+                    expectedClosing = canonicalBracket(UCharacter.getBidiPairedBracket(scalar)),
+                    position = index,
+                )
             }
             UCharacter.BidiPairedBracketType.CLOSE -> {
-                val match = stack.indexOfLast { it == canonicalBracket(scalar) }
-                if (match >= 0) stack.subList(match, stack.size).clear()
+                val closing = canonicalBracket(scalar)
+                var match = stack.lastIndex
+                while (match >= 0) {
+                    observeCancellation(stackWork++, profile, cancellationToken)
+                    if (stack[match].expectedClosing == closing) break
+                    match -= 1
+                }
+                if (match >= 0) {
+                    pairs += BracketPair(stack[match].position, index)
+                    while (stack.lastIndex >= match) {
+                        observeCancellation(stackWork++, profile, cancellationToken)
+                        stack.removeAt(stack.lastIndex)
+                    }
+                }
             }
         }
     }
-    return overflowed
+    val validPairs = mutableListOf<BracketPair>()
+    pairs.forEachIndexed { pairIndex, pair ->
+        observeCancellation(pairIndex, profile, cancellationToken)
+        if (explicit.sequenceAt[pair.opening] !in overflowed) validPairs += pair
+    }
+    return BracketResolution(
+        pairs = validPairs,
+        overflowedSequences = overflowed,
+    )
 }
 
 private fun canonicalBracket(scalar: Int): Int = when (scalar) {
@@ -753,7 +774,19 @@ private fun canonicalBracket(scalar: Int): Int = when (scalar) {
     else -> scalar
 }
 
-private data class BidiPreparation(val text: String, val fsiDirections: BooleanArray)
+private data class BidiPreparation(
+    val text: String,
+    val fsiDirections: BooleanArray,
+    val bracketPairs: List<BracketPair>,
+)
+
+private data class BracketResolution(
+    val pairs: List<BracketPair>,
+    val overflowedSequences: Set<Int>,
+)
+
+private data class BracketStackEntry(val expectedClosing: Int, val position: Int)
+private data class BracketPair(val opening: Int, val closing: Int)
 private data class ExplicitBidiStructure(
     val levels: IntArray,
     val overrides: IntArray,
