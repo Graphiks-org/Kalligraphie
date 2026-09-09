@@ -232,6 +232,76 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun flowFragmentRebasesLegacyCompositeToItsSecondRealDistribution() {
+        val fixture = fixture(
+            "abc office-office",
+            bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(6_600f), LayoutUnit(3_050f)),
+        )
+        val legacy = ShapingBackendIdentity(
+            backendId = "legacy-flow-backend",
+            nativeVersion = "legacy-native-version",
+            nativeSourceRevision = "legacy-source-revision",
+            nativeArtifactId = "legacy-artifact-id",
+            nativeArtifactSha256 = "2".repeat(64),
+            featurePolicy = fixture.request.featurePolicy,
+            configurationFingerprint = "legacy-flow-configuration",
+        )
+        val secondary = legacy.provenance.copy(
+            operatingSystem = "portable-test-os",
+            architecture = "portable-test-architecture",
+            artifactId = "portable-test-artifact",
+            artifactSha256 = "3".repeat(64),
+            sourceProject = "portable-test-source",
+            sourceRevision = "portable-test-revision",
+            buildChainIdentity = "portable-test-build-chain",
+        )
+        val boundary = fixture.snapshot.textIndexAtScalarBoundary(3)
+        val backend = IdentityRoutingBackend(fixture.request.shapingBackend, legacy) { request ->
+            if (request.range.start == boundary) ShapingBackendIdentity(legacy.semantic, secondary) else legacy
+        }
+        val request = fixture.request.withFlowSourceRange(fixture.snapshot.range, shapingBackend = backend)
+        val region = FixedRegion(
+            request.constraints.region,
+            listOf(InlineInterval(0f, 1_800f), InlineInterval(2_500f, 6_000f)),
+        )
+
+        val paragraph = assertIs<ParagraphLayoutResult.Success>(
+            ParagraphComposer.layout(request, EditableLineMaterialization.LayoutOnly),
+        )
+        val composite = paragraph.layout.lines.first().positionedGlyphRuns.single().sourceRun
+        val line = success(
+            FlowParagraphComposer.layoutFragment(
+                request,
+                EditableLineMaterialization.LayoutOnly,
+                FlowChain(listOf(region)),
+                flowIdentity(fixture),
+                maximumLines = 1,
+            ),
+        ).lines.single()
+        val second = line.fragments.flatMap { fragment -> fragment.positionedGlyphRuns }[1].sourceRun
+
+        assertSame(legacy, composite.backendIdentity)
+        assertEquals("legacy-flow-configuration", composite.backendIdentity.configurationFingerprint)
+        assertEquals(
+            listOf(
+                ShapingProvenanceSpan(range(fixture.snapshot, 0, 3), legacy.provenance),
+                ShapingProvenanceSpan(range(fixture.snapshot, 3, 11), secondary),
+            ),
+            composite.provenanceSpans,
+        )
+        assertEquals(range(fixture.snapshot, 3, 11), second.range)
+        assertEquals(listOf(3, 82, 5044, 70, 72, 16), second.glyphs.map { glyph -> glyph.glyphId.value })
+        assertEquals(
+            listOf(317.8711f, 611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+            second.glyphs.map { glyph -> glyph.xAdvance.value },
+        )
+        assertSame(legacy.semantic, second.backendIdentity.semantic)
+        assertEquals(secondary, second.backendIdentity.provenance)
+        assertEquals(legacy.semantic.configurationFingerprint, second.backendIdentity.configurationFingerprint)
+        assertEquals(secondary.artifactId, second.backendIdentity.nativeArtifactId)
+    }
+
+    @Test
     fun oneRtlVisualRunCrossesTheFragmentBoundaryWithoutRestartingBidi() {
         val fixture = fixture(
             "ab \u05D0\u05D1",
@@ -1638,6 +1708,44 @@ class FlowParagraphCompositionTest {
                             range = source.range,
                             fontInstanceKey = source.fontInstanceKey,
                             backendIdentity = ShapingBackendIdentity(source.backendIdentity.semantic, provenance),
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            ligatureCaretFacts = source.ligatureCaretFacts,
+                        ),
+                        shaped.diagnostics,
+                    )
+                }
+
+                is FontOperationResult.Failure -> shaped
+                is FontOperationResult.Cancelled -> shaped
+            }
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
+    }
+
+    private class IdentityRoutingBackend(
+        private val delegate: ShapingBackend,
+        override val identity: ShapingBackendIdentity,
+        private val identityFor: (ShapingRequest) -> ShapingBackendIdentity,
+    ) : ShapingBackend {
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val shaped = delegate.shape(request)) {
+                is FontOperationResult.Success -> {
+                    val source = shaped.value
+                    FontOperationResult.Success(
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = identityFor(request),
                             direction = source.direction,
                             script = source.script,
                             language = source.language,

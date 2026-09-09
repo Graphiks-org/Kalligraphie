@@ -356,15 +356,15 @@ public class ShapingBackendIdentity private constructor(
     ): ShapingBackendIdentity = ShapingBackendIdentity(semantic, provenance)
 
     /**
-     * Copies an explicitly structured identity with another native distribution provenance.
+     * Creates a structured identity with the same portable semantics and another provenance.
      *
-     * Legacy seven-field identities cannot be rebased because doing so would rewrite their public
-     * provenance fields while retaining incompatible conservative semantics.
+     * This operation also supports a legacy receiver: the returned identity retains the same
+     * conservative [semantic] instance, adopts [provenance], and exposes seven-field getters
+     * derived from those structured components. The receiver and its original legacy getters
+     * remain unchanged.
      */
-    public fun copy(provenance: ShapingDistributionProvenance): ShapingBackendIdentity {
-        require(hasExplicitSemantics) { "A legacy shaping identity cannot be rebased to another provenance." }
-        return ShapingBackendIdentity(semantic, provenance)
-    }
+    public fun copy(provenance: ShapingDistributionProvenance): ShapingBackendIdentity =
+        ShapingBackendIdentity(semantic, provenance)
 
     /** Returns [backendId] for legacy destructuring. */
     public operator fun component1(): String = backendId
@@ -804,8 +804,9 @@ public class ShapedGlyphRun private constructor(
          * [provenanceSpans] must form a complete ordered partition of [range]. Adjacent equal
          * contributions are normalized. [backendIdentity] must already carry the provenance of the
          * first normalized span. A caller that deliberately changes the primary provenance must
-         * explicitly rebase a structured identity before invoking this factory; legacy seven-field
-         * identities cannot be rebased without changing their public values.
+         * explicitly create that identity with `copy(provenance = ...)` before invoking this
+         * factory. Rebasing a legacy identity produces a structured identity that preserves its
+         * conservative semantics; it never mutates the original legacy value.
          *
          * @param range complete logical source range represented by the assembled run.
          * @param fontInstanceKey exact font instance identity shared by all contributions.
