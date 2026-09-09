@@ -694,46 +694,38 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         var fragmentIndex = 0
         var cursor = intervals.first().start.toDouble()
         var precedingEnd = 0.0
-        line.positionedGlyphRuns.forEach { run ->
-            run.atomicGlyphGroups().forEach { group ->
-                val originalStart = group.first().penStart(writingMode)
-                val width = group.sumOf { glyph -> glyph.inlineAdvance(writingMode) }
-                val leading = (originalStart - precedingEnd).coerceAtLeast(0.0)
-                if (leading > 0.0) {
-                    val advanced = advanceWhitespace(intervals, fragmentIndex, cursor, leading)
-                    fragmentIndex = advanced.first
-                    cursor = advanced.second
-                }
-                val groupRange = group.sourceRange()
-                val objectItem = line.positionedInlineObjects.firstOrNull { item ->
-                    group.any { glyph -> rangesOverlap(glyph.mappedSourceRange, item.sourceRange) }
-                }
-                val maximum = intervals.maxOf { interval ->
-                    interval.endExclusive.toDouble() - interval.start.toDouble()
-                }
-                if (width <= maximum) {
-                    while (
-                        fragmentIndex < intervals.size &&
-                        cursor + width > intervals[fragmentIndex].endExclusive.toDouble()
-                    ) {
-                        fragmentIndex += 1
-                        if (fragmentIndex < intervals.size) cursor = intervals[fragmentIndex].start.toDouble()
-                    }
-                } else {
-                    fragmentIndex = intervals.size
-                }
-                if (fragmentIndex >= intervals.size) {
-                    return PackingProbe.Failure(
-                        FlowCompositionError.NoProgress(
-                            objectItem?.sourceRange ?: groupRange,
-                            if (objectItem == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
-                            else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
-                        ),
-                    )
-                }
-                cursor += width
-                precedingEnd = originalStart + width
+        line.atomicFlowUnits(writingMode).forEach { unit ->
+            val leading = (unit.originalStart - precedingEnd).coerceAtLeast(0.0)
+            if (leading > 0.0) {
+                val advanced = advanceWhitespace(intervals, fragmentIndex, cursor, leading)
+                fragmentIndex = advanced.first
+                cursor = advanced.second
             }
+            val maximum = intervals.maxOf { interval ->
+                interval.endExclusive.toDouble() - interval.start.toDouble()
+            }
+            if (unit.width <= maximum) {
+                while (
+                    fragmentIndex < intervals.size &&
+                    cursor + unit.width > intervals[fragmentIndex].endExclusive.toDouble()
+                ) {
+                    fragmentIndex += 1
+                    if (fragmentIndex < intervals.size) cursor = intervals[fragmentIndex].start.toDouble()
+                }
+            } else {
+                fragmentIndex = intervals.size
+            }
+            if (fragmentIndex >= intervals.size) {
+                return PackingProbe.Failure(
+                    FlowCompositionError.NoProgress(
+                        unit.objectRange ?: unit.sourceRange,
+                        if (unit.objectRange == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
+                        else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
+                    ),
+                )
+            }
+            cursor += unit.width
+            precedingEnd = unit.originalEnd
         }
         return PackingProbe.Complete
     }
@@ -831,81 +823,63 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         var cursor = intervals.first().start.toDouble()
         var precedingEnd = 0.0
 
-        line.positionedGlyphRuns.forEach { run ->
-            run.atomicGlyphGroups().forEach { group ->
-                val originalStart = group.first().penStart(writingMode)
-                val width = group.sumOf { glyph -> glyph.inlineAdvance(writingMode) }
-                val leading = (originalStart - precedingEnd).coerceAtLeast(0.0)
-                if (leading > 0.0) {
-                    val advanced = advanceWhitespace(intervals, fragmentIndex, cursor, leading)
-                    fragmentIndex = advanced.first
-                    cursor = advanced.second
-                }
-                val objectItem = line.positionedInlineObjects.firstOrNull { item ->
-                    group.any { glyph -> rangesOverlap(glyph.mappedSourceRange, item.sourceRange) }
-                }
-                val maximum = intervals.maxOf { interval -> interval.endExclusive.toDouble() - interval.start.toDouble() }
-                if (width > maximum) {
-                    val range = objectItem?.sourceRange ?: group.sourceRange()
-                    return FragmentProjection.Failure(
-                        FlowCompositionError.NoProgress(
-                            range,
-                            if (objectItem == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
-                            else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
-                        ),
-                    )
-                }
-                while (fragmentIndex < intervals.size && cursor + width > intervals[fragmentIndex].endExclusive.toDouble()) {
-                    fragmentIndex += 1
-                    if (fragmentIndex < intervals.size) cursor = intervals[fragmentIndex].start.toDouble()
-                }
-                if (fragmentIndex >= intervals.size) {
-                    val range = objectItem?.sourceRange ?: group.sourceRange()
-                    return FragmentProjection.Failure(
-                        FlowCompositionError.NoProgress(
-                            range,
-                            if (objectItem == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
-                            else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
-                        ),
-                    )
-                }
-                val translation = cursor - originalStart
-                group.forEach { glyph ->
-                    glyphsByFragment[fragmentIndex] += AllocatedGlyph(run, glyph.translatedInline(translation, baseline, writingMode))
-                }
-                allocations += Allocation(
-                    fragmentIndex = fragmentIndex,
-                    originalStart = originalStart,
-                    originalEnd = originalStart + width,
-                    translation = translation,
-                    objectRange = objectItem?.sourceRange,
-                    sourceRange = group.sourceRange(),
-                    sourceRun = run,
-                )
-                cursor += width
-                precedingEnd = originalStart + width
+        line.atomicFlowUnits(writingMode).forEach { unit ->
+            val leading = (unit.originalStart - precedingEnd).coerceAtLeast(0.0)
+            if (leading > 0.0) {
+                val advanced = advanceWhitespace(intervals, fragmentIndex, cursor, leading)
+                fragmentIndex = advanced.first
+                cursor = advanced.second
             }
+            val maximum = intervals.maxOf { interval -> interval.endExclusive.toDouble() - interval.start.toDouble() }
+            if (unit.width > maximum) {
+                return FragmentProjection.Failure(
+                    FlowCompositionError.NoProgress(
+                        unit.objectRange ?: unit.sourceRange,
+                        if (unit.objectRange == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
+                        else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
+                    ),
+                )
+            }
+            while (fragmentIndex < intervals.size && cursor + unit.width > intervals[fragmentIndex].endExclusive.toDouble()) {
+                fragmentIndex += 1
+                if (fragmentIndex < intervals.size) cursor = intervals[fragmentIndex].start.toDouble()
+            }
+            if (fragmentIndex >= intervals.size) {
+                return FragmentProjection.Failure(
+                    FlowCompositionError.NoProgress(
+                        unit.objectRange ?: unit.sourceRange,
+                        if (unit.objectRange == null) NoProgressReason.CLUSTER_DOES_NOT_FIT
+                        else NoProgressReason.INLINE_OBJECT_DOES_NOT_FIT,
+                    ),
+                )
+            }
+            val translation = cursor - unit.originalStart
+            unit.glyphs.forEach { glyph ->
+                glyphsByFragment[fragmentIndex] += AllocatedGlyph(
+                    unit.sourceRun,
+                    glyph.translatedInline(translation, baseline, writingMode),
+                )
+            }
+            unit.controls.forEach { control ->
+                controlsByFragment[fragmentIndex] += AllocatedControl(
+                    unit.sourceRun,
+                    control.translatedInline(translation, baseline, writingMode),
+                )
+            }
+            allocations += Allocation(
+                fragmentIndex = fragmentIndex,
+                originalStart = unit.originalStart,
+                originalEnd = unit.originalEnd,
+                translation = translation,
+                objectRange = unit.objectRange,
+                sourceRange = unit.sourceRange,
+            )
+            cursor += unit.width
+            precedingEnd = unit.originalEnd
         }
 
         if (allocations.isEmpty()) {
-            allocations += Allocation(0, 0.0, 0.0, intervals.first().start.toDouble(), null, null, null)
-        }
-        line.positionedGlyphRuns.forEach { run ->
-            run.lineControls.forEach { control ->
-                val sameRun = allocations.filter { allocation -> allocation.sourceRun === run }
-                val candidates = sameRun.ifEmpty { allocations }
-                val adjacent = candidates.filter { allocation ->
-                    allocation.sourceRange?.start == control.sourceRange.endExclusive ||
-                        allocation.sourceRange?.endExclusive == control.sourceRange.start
-                }
-                val inline = control.inlineCoordinate(writingMode)
-                val allocation = (adjacent.ifEmpty { candidates })
-                    .minWith(compareBy<Allocation>({ it.distanceFrom(inline) }, { it.fragmentIndex }))
-                controlsByFragment[allocation.fragmentIndex] += AllocatedControl(
-                    run,
-                    control.translatedInline(allocation.translation, baseline, writingMode),
-                )
-            }
+            allocations += Allocation(0, 0.0, 0.0, intervals.first().start.toDouble(), null, null)
         }
         val runs = intervals.indices.map { index ->
             projectedRuns(glyphsByFragment[index], controlsByFragment[index])
@@ -1086,6 +1060,55 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
         return groups
     }
+
+    private fun EditableLine.atomicFlowUnits(writingMode: WritingMode): List<AtomicFlowUnit> = positionedGlyphRuns
+        .flatMap { run ->
+            val glyphGroups = run.atomicGlyphGroups().toMutableList()
+            val controlUnits = run.lineControls.map { control ->
+                val controlStart = control.inlineStart(writingMode)
+                val controlEnd = controlStart + control.inlineAdvance(writingMode)
+                val coveredGroups = glyphGroups.filter { group ->
+                    group.sourceRange() == control.sourceRange && group.all { glyph ->
+                        val glyphStart = glyph.penStart(writingMode)
+                        val glyphEnd = glyphStart + glyph.inlineAdvance(writingMode)
+                        glyphStart >= controlStart && glyphEnd <= controlEnd
+                    }
+                }
+                coveredGroups.forEach(glyphGroups::remove)
+                AtomicFlowUnit(
+                    sourceRun = run,
+                    glyphs = coveredGroups.flatten(),
+                    controls = listOf(control),
+                    originalStart = controlStart,
+                    originalEnd = maxOf(
+                        controlEnd,
+                        coveredGroups.flatten().maxOfOrNull { glyph ->
+                            glyph.penStart(writingMode) + glyph.inlineAdvance(writingMode)
+                        } ?: controlEnd,
+                    ),
+                    sourceRange = control.sourceRange,
+                    objectRange = null,
+                )
+            }
+            val glyphUnits = glyphGroups.map { group ->
+                val originalStart = group.first().penStart(writingMode)
+                val originalEnd = originalStart + group.sumOf { glyph -> glyph.inlineAdvance(writingMode) }
+                val objectItem = positionedInlineObjects.firstOrNull { item ->
+                    group.any { glyph -> rangesOverlap(glyph.mappedSourceRange, item.sourceRange) }
+                }
+                AtomicFlowUnit(
+                    sourceRun = run,
+                    glyphs = group,
+                    controls = emptyList(),
+                    originalStart = originalStart,
+                    originalEnd = originalEnd,
+                    sourceRange = group.sourceRange(),
+                    objectRange = objectItem?.sourceRange,
+                )
+            }
+            controlUnits + glyphUnits
+        }
+        .sortedWith(compareBy<AtomicFlowUnit>({ unit -> unit.originalStart }, { unit -> unit.sourceRun.visualOrder }))
 
     private fun requiredBlockMetrics(
         line: EditableLine,
@@ -1427,11 +1450,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         -> geometry.start.y.value.toDouble()
     }
 
-    private fun PositionedLineControl.inlineCoordinate(writingMode: WritingMode): Double = when (writingMode) {
+    private fun PositionedLineControl.inlineStart(writingMode: WritingMode): Double = when (writingMode) {
         WritingMode.HORIZONTAL_TB -> origin.x.value.toDouble()
         WritingMode.VERTICAL_RL,
         WritingMode.VERTICAL_LR,
         -> origin.y.value.toDouble()
+    }
+
+    private fun PositionedLineControl.inlineAdvance(writingMode: WritingMode): Double = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> advance.x.value.toDouble()
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> advance.y.value.toDouble()
     }
 
     private fun List<PositionedGlyph>.sourceRange(): TextRange {
@@ -1608,6 +1638,18 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val control: PositionedLineControl,
     )
 
+    private data class AtomicFlowUnit(
+        val sourceRun: PositionedGlyphRun,
+        val glyphs: List<PositionedGlyph>,
+        val controls: List<PositionedLineControl>,
+        val originalStart: Double,
+        val originalEnd: Double,
+        val sourceRange: TextRange,
+        val objectRange: TextRange?,
+    ) {
+        val width: Double get() = originalEnd - originalStart
+    }
+
     private data class Allocation(
         val fragmentIndex: Int,
         val originalStart: Double,
@@ -1615,7 +1657,6 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val translation: Double,
         val objectRange: TextRange?,
         val sourceRange: TextRange?,
-        val sourceRun: PositionedGlyphRun?,
     ) {
         fun distanceFrom(position: Double): Double = when {
             position < originalStart -> originalStart - position

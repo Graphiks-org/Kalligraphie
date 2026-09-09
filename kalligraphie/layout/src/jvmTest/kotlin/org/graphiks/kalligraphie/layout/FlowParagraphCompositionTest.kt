@@ -789,6 +789,49 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun fragmentedTabOnlyLineMovesItsControlAndTerminalCaretIntoAContiguousInterval() {
+        val fixture = fixture("\t")
+        val region = FixedRegion(
+            fixture.request.constraints.region,
+            listOf(InlineInterval(0f, 50f), InlineInterval(1_050f, 1_250f)),
+        )
+
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+
+        assertTrue(line.fragments.first().positionedGlyphRuns.flatMap { run -> run.lineControls }.isEmpty())
+        val control = line.fragments.last().positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LayoutUnit(line.baseline.x.value + 1_050f), control.origin.x)
+        val terminalCaret = line.allCaretCandidates.single { candidate ->
+            candidate.position.index == fixture.snapshot.range.endExclusive
+        }
+        assertEquals(LayoutUnit(control.origin.x.value + control.advance.x.value), terminalCaret.geometry.start.x)
+        assertTrue(terminalCaret.geometry.start.x < LayoutUnit(line.baseline.x.value + 1_250f))
+    }
+
+    @Test
+    fun fragmentedMixedTabKeepsItsControlEndAttachedToTheFollowingField() {
+        val fixture = fixture("A\tB", fontSize = 100f)
+        val region = FixedRegion(
+            fixture.request.constraints.region,
+            listOf(InlineInterval(0f, 80f), InlineInterval(1_050f, 1_250f)),
+        )
+
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+
+        assertTrue(line.fragments.first().positionedGlyphRuns.flatMap { run -> run.lineControls }.isEmpty())
+        val followingFragment = line.fragments.last()
+        val control = followingFragment.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        val followingGlyph = followingFragment.positionedGlyphRuns
+            .flatMap { run -> run.glyphs }
+            .single { glyph -> glyph.mappedSourceRange == range(fixture.snapshot, 2, 3) }
+        assertEquals(LayoutUnit(control.origin.x.value + control.advance.x.value), followingGlyph.origin.x)
+    }
+
+    @Test
     fun chainEmptyAdvancesStrictlyAndLaterRegionRestartsAtItsLocalOrigin() {
         val fixture = fixture("ab ab")
         val firstQueries = mutableListOf<LineBand>()
