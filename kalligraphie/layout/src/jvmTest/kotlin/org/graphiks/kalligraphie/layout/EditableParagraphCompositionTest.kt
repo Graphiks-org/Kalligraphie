@@ -41,6 +41,7 @@ import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ParagraphConstraints
+import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingBackendIdentity
 import org.graphiks.kalligraphie.api.ShapingDistributionProvenance
@@ -51,6 +52,7 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.TabStop
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
@@ -670,6 +672,33 @@ class EditableParagraphCompositionTest {
     }
 
     @Test
+    fun verticalTabLeaderUsesItsCoveredExtentForInlineAdvance() {
+        val fixture = fixture(
+            "\t",
+            width = 1_000f,
+            height = 3_000f,
+            writingMode = WritingMode.VERTICAL_RL,
+            positioning = ParagraphPositioningPolicy(
+                tabStops = listOf(TabStop(LayoutUnit(3_000f), leader = '.'.code)),
+            ),
+        )
+
+        val result = layout(fixture.request)
+        val line = result.layout.lines.single()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        val leaders = line.positionedGlyphRuns.flatMap { run -> run.glyphs }
+
+        assertTrue(leaders.isNotEmpty())
+        assertTrue(leaders.all { glyph ->
+            glyph.origin.y.value + glyph.advance.y.value <= control.origin.y.value + control.advance.y.value
+        })
+        assertEquals(LayoutUnit(3_000f), control.advance.y)
+        assertEquals(LayoutUnit(3_000f), line.contentMetrics.inlineAdvance)
+        assertEquals(CoverageStatus.COMPLETE, result.coverageStatus)
+        assertNull(result.continuation)
+    }
+
+    @Test
     fun trailingSpacesDoNotExpandPublishedInkBounds() {
         val fixture = fixture("Ag   ", width = 5_000f, height = 1_000f)
 
@@ -961,6 +990,7 @@ class EditableParagraphCompositionTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "en",
         writingMode: WritingMode = WritingMode.HORIZONTAL_TB,
+        positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
         fontResources: List<FontFixture> = listOf(FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")),
         sourceStartOrdinal: Int = 0,
         recordShapingRequests: Boolean = false,
@@ -1014,6 +1044,7 @@ class EditableParagraphCompositionTest {
             fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
             shapingBackend = backend,
             materializationIdentity = ParagraphMaterializationIdentity.LayoutOnly,
+            positioning = positioning,
         )
         return Fixture(snapshot, request, recordingBackend)
     }

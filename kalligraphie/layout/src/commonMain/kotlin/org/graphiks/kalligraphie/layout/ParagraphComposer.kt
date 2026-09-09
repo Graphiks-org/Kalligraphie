@@ -1945,13 +1945,18 @@ public object ParagraphComposer : ParagraphLayouter {
         WritingMode.HORIZONTAL_TB -> ExactEditableLineLayouter.inlineAdvance(line)
         WritingMode.VERTICAL_RL,
         WritingMode.VERTICAL_LR,
-        -> finiteUnit(
-            line.positionedGlyphRuns.sumOf { run ->
-                run.glyphs.sumOf { glyph -> glyph.advance.y.value.toDouble() } +
-                    run.lineControls.sumOf { control -> control.advance.y.value.toDouble() }
-            },
-            "vertical line inline advance",
-        )
+        -> {
+            val glyphExtent = line.positionedGlyphRuns
+                .flatMap(PositionedGlyphRun::glyphs)
+                .maxOfOrNull { glyph ->
+                    glyph.origin.y.value.toDouble() - glyph.shapedGlyph.yOffset.value.toDouble() +
+                        glyph.advance.y.value.toDouble()
+                } ?: 0.0
+            val controlExtent = line.positionedLineControls.maxOfOrNull { control ->
+                control.origin.y.value.toDouble() + control.advance.y.value.toDouble()
+            } ?: 0.0
+            finiteUnit(maxOf(0.0, glyphExtent, controlExtent), "vertical line inline advance")
+        }
     }
 
     private fun finiteUnit(value: Double, label: String): LayoutUnit {
