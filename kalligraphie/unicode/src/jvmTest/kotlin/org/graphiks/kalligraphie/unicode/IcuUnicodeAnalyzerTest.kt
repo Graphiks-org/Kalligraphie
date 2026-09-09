@@ -3,8 +3,10 @@ package org.graphiks.kalligraphie.unicode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
@@ -12,6 +14,8 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
+import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 
@@ -114,6 +118,36 @@ class IcuUnicodeAnalyzerTest {
     }
 
     @Test
+    fun crossed_punctuation_finds_a_matching_opening_below_the_stack_top() {
+        val snapshot = snapshotOf("a([\u03B2)c")
+
+        val analysis = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+
+        assertEquals(
+            listOf("Latn", "Latn", "Latn", "Grek", "Latn", "Latn"),
+            expandScripts(snapshot, analysis.scriptLanguageRuns),
+        )
+    }
+
+    @Test
+    fun canonically_equivalent_punctuation_forms_one_public_script_pair() {
+        val snapshot = snapshotOf("a\u3008\u03B2\u232Ac")
+
+        val analysis = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+
+        assertEquals(
+            listOf("Latn", "Latn", "Grek", "Latn", "Latn"),
+            expandScripts(snapshot, analysis.scriptLanguageRuns),
+        )
+    }
+
+    @Test
     fun multi_value_script_extensions_use_matching_context() {
         val snapshot = snapshotOf("\u3042\u30FC\u3044")
 
@@ -204,6 +238,78 @@ class IcuUnicodeAnalyzerTest {
         assertEquals(
             listOf(0, 1, 2, 3, 4, 6, 5, 7, 8, 9, 11, 10, 12),
             visualScalarOrder(analysis.visualBidiRuns, boundaries),
+        )
+    }
+
+    @Test
+    fun sixty_fourth_opening_discards_all_bracket_pairs_in_its_isolating_run_sequence() {
+        val snapshot = snapshotOf("a(\u05D0)\u05D0" + "(".repeat(64))
+        val analysis = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+
+        assertEquals(
+            listOf(0, 0, 1, 1, 1) + List(64) { 0 },
+            expandLevels(analysis.logicalBidiRuns, boundaries),
+        )
+    }
+
+    @Test
+    fun sixty_four_crossed_canonical_pairs_do_not_cause_false_bracket_overflow() {
+        val text = buildString {
+            append('a')
+            repeat(32) {
+                append("\u3008\u05D0\u232A")
+                append("\u2329\u05D0\u3009")
+            }
+            append('\u05D0')
+        }
+        val snapshot = snapshotOf(text)
+        val analysis = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+
+        assertEquals(
+            listOf(0) + List(64) { listOf(0, 1, 0) }.flatten() + listOf(1),
+            expandLevels(analysis.logicalBidiRuns, boundaries),
+        )
+    }
+
+    @Test
+    fun nested_fsi_analysis_cancels_after_partial_work_and_retries_to_an_exact_result() {
+        val neutralCount = 8_192
+        val text = "\u2068".repeat(60) + " ".repeat(neutralCount) + "a" + "\u2069".repeat(60)
+        val snapshot = snapshotOf(text)
+        var observationsRemaining = 70
+        val cancellation = CancellationToken {
+            observationsRemaining -= 1
+            observationsRemaining < 0
+        }
+
+        val cancelled = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+            UnicodeAnalysisProfile(cancellationCheckInterval = 128),
+            cancellation,
+        )
+
+        assertEquals(UnicodeAnalysisOutcome.Cancelled, cancelled)
+
+        val retried = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+            UnicodeAnalysisProfile(cancellationCheckInterval = 128),
+            CancellationToken.none,
+        )
+        val analysis = assertIs<UnicodeAnalysisOutcome.Success>(retried).value
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+        assertEquals(
+            List(60) { it * 2 } + List(neutralCount + 1) { 120 } + List(60) { 0 },
+            expandLevels(analysis.logicalBidiRuns, boundaries),
         )
     }
 
@@ -337,10 +443,21 @@ class IcuUnicodeAnalyzerTest {
         }
     }
 
+    private fun expandScripts(snapshot: TextSnapshot, runs: List<ScriptLanguageRun>): List<String> {
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+        return buildList {
+            runs.forEach { run ->
+                repeat(boundaries.getValue(run.range.endExclusive) - boundaries.getValue(run.range.start)) {
+                    add(run.script)
+                }
+            }
+        }
+    }
+
     private fun unicodeData(): UnicodeDataIdentity =
         UnicodeDataIdentity(unicodeVersion = "16.0", implementation = "ICU4J", implementationVersion = "77.1")
 
     private companion object {
-        val analyzer: UnicodeAnalyzer = JvmUnicodeAnalyzer.create()
+        val analyzer: BoundedUnicodeAnalyzer = JvmUnicodeAnalyzer.create()
     }
 }

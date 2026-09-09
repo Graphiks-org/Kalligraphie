@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.TextIndex
@@ -11,6 +12,22 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 class UnicodeBidiConformanceTest {
+    @Test
+    fun unknown_bidi_test_directive_fails_explicitly() {
+        val failure = assertFailsWith<IllegalStateException> {
+            bidiTestCases(
+                sequenceOf(
+                    "@Levels: 0",
+                    "@Reorder: 0",
+                    "@Unexpected: value",
+                    "L; 2",
+                ),
+            ).toList()
+        }
+
+        assertEquals("Unknown BidiTest directive at line 3: @Unexpected: value", failure.message)
+    }
+
     @Test
     fun every_applicable_unicode_16_bidi_class_sequence_matches_levels_and_reordering() {
         var executed = 0
@@ -37,23 +54,6 @@ class UnicodeBidiConformanceTest {
 
         println("Unicode 16.0 BidiCharacterTest explicit-direction cases executed: $executed")
         println("Unicode 16.0 BidiCharacterTest auto-direction cases excluded: $excludedAutoDirection")
-    }
-
-    @Test
-    fun source_positions_removed_by_x9_remain_present_in_editor_results() {
-        val scalars = ("\u202E" + "a" + "\u202A" + "b" + "\u202C" + "\u2066" + "c" + "\u2069" +
-            "\u202A" + "d" + "\u202C" + "e" + "\u202C").codePoints().toArray().toList()
-        val snapshot = snapshotOf(scalars)
-        val analysis = analyzer.analyze(
-            snapshot,
-            UnicodeAnalysisRequest(BaseDirection.RIGHT_TO_LEFT, language = "en"),
-        )
-
-        val expectedPositions = snapshot.scalarRanges(snapshot.range)
-        assertEquals(expectedPositions, analysis.logicalBidiRuns.flatMap { snapshot.scalarRanges(it.range) })
-        val visualPositions = analysis.visualBidiRuns.flatMap { snapshot.scalarRanges(it.range) }
-        assertEquals(expectedPositions.size, visualPositions.size)
-        assertEquals(expectedPositions.toSet(), visualPositions.toSet())
     }
 
     private fun verify(case: BidiCase) {
@@ -83,33 +83,40 @@ class UnicodeBidiConformanceTest {
 
     private fun unicode16BidiTestCases(onAutoDirection: () -> Unit): Sequence<BidiCase> = sequence {
         val corpus = resource("BidiTest.txt")
+        corpus.bufferedReader().useLines { lines ->
+            yieldAll(bidiTestCases(lines, onAutoDirection))
+        }
+    }
+
+    private fun bidiTestCases(
+        lines: Sequence<String>,
+        onAutoDirection: () -> Unit = {},
+    ): Sequence<BidiCase> = sequence {
         var levels: List<Int?>? = null
         var visualOrder: List<Int>? = null
-        corpus.bufferedReader().useLines { lines ->
-            lines.forEachIndexed { index, rawLine ->
-                val source = rawLine.substringBefore('#').trim()
-                when {
-                    source.isEmpty() -> Unit
-                    source.startsWith("@Levels:") -> levels = parseLevels(source.substringAfter(':'))
-                    source.startsWith("@Reorder:") -> visualOrder = parseIntegers(source.substringAfter(':'))
-                    source.startsWith('@') -> Unit
-                    else -> {
-                        val fields = source.split(';').map(String::trim)
-                        check(fields.size == 2) { "Malformed BidiTest line ${index + 1}: $source" }
-                        val scalars = fields[0].split(WHITESPACE).map(BIDI_CLASS_SCALARS::getValue)
-                        val bitset = fields[1].toInt(radix = 16)
-                        if (bitset and AUTO_LTR_BIT != 0) onAutoDirection()
-                        val expectedLevels = checkNotNull(levels) { "Missing @Levels before BidiTest line ${index + 1}." }
-                        val expectedOrder = checkNotNull(visualOrder) { "Missing @Reorder before BidiTest line ${index + 1}." }
-                        check(expectedLevels.size == scalars.size) {
-                            "@Levels length differs from BidiTest line ${index + 1}."
-                        }
-                        if (bitset and EXPLICIT_LTR_BIT != 0) {
-                            yield(BidiCase("BidiTest", index + 1, source, scalars, BaseDirection.LEFT_TO_RIGHT, expectedLevels, expectedOrder))
-                        }
-                        if (bitset and EXPLICIT_RTL_BIT != 0) {
-                            yield(BidiCase("BidiTest", index + 1, source, scalars, BaseDirection.RIGHT_TO_LEFT, expectedLevels, expectedOrder))
-                        }
+        lines.forEachIndexed { index, rawLine ->
+            val source = rawLine.substringBefore('#').trim()
+            when {
+                source.isEmpty() -> Unit
+                source.startsWith("@Levels:") -> levels = parseLevels(source.substringAfter(':'))
+                source.startsWith("@Reorder:") -> visualOrder = parseIntegers(source.substringAfter(':'))
+                source.startsWith('@') -> error("Unknown BidiTest directive at line ${index + 1}: $source")
+                else -> {
+                    val fields = source.split(';').map(String::trim)
+                    check(fields.size == 2) { "Malformed BidiTest line ${index + 1}: $source" }
+                    val scalars = fields[0].split(WHITESPACE).map(BIDI_CLASS_SCALARS::getValue)
+                    val bitset = fields[1].toInt(radix = 16)
+                    if (bitset and AUTO_LTR_BIT != 0) onAutoDirection()
+                    val expectedLevels = checkNotNull(levels) { "Missing @Levels before BidiTest line ${index + 1}." }
+                    val expectedOrder = checkNotNull(visualOrder) { "Missing @Reorder before BidiTest line ${index + 1}." }
+                    check(expectedLevels.size == scalars.size) {
+                        "@Levels length differs from BidiTest line ${index + 1}."
+                    }
+                    if (bitset and EXPLICIT_LTR_BIT != 0) {
+                        yield(BidiCase("BidiTest", index + 1, source, scalars, BaseDirection.LEFT_TO_RIGHT, expectedLevels, expectedOrder))
+                    }
+                    if (bitset and EXPLICIT_RTL_BIT != 0) {
+                        yield(BidiCase("BidiTest", index + 1, source, scalars, BaseDirection.RIGHT_TO_LEFT, expectedLevels, expectedOrder))
                     }
                 }
             }

@@ -37,6 +37,60 @@ import kotlin.test.assertTrue
 
 class JvmEditableLineFacadeTest {
     @Test
+    fun x9_controls_keep_literal_text_cluster_glyph_and_caret_mappings_through_the_public_facade() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("a\u202Eb\u202Cc".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val result = JvmEditableLineFacade.layout(
+                JvmEditableLineFacadeRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    features = emptyList(),
+                    verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                ),
+            )
+
+            val line = assertIs<EditableLineResult.Success>(result).line
+            val scalarRanges = List(5) { scalar ->
+                org.graphiks.kalligraphie.api.TextRange(
+                    snapshot.textIndexAtScalarBoundary(scalar),
+                    snapshot.textIndexAtScalarBoundary(scalar + 1),
+                )
+            }
+            val clusters = line.positionedGlyphRuns
+                .flatMap { it.sourceRun.clusters }
+                .sortedBy { scalarRanges.indexOf(it.sourceRange) }
+            assertEquals(scalarRanges, clusters.map { it.sourceRange })
+            clusters.forEachIndexed { index, cluster ->
+                val scalarRange = scalarRanges[index]
+                val run = line.positionedGlyphRuns.single {
+                    it.sourceRun.range.start <= scalarRange.start && it.sourceRun.range.endExclusive >= scalarRange.endExclusive
+                }.sourceRun
+                assertEquals(listOf(cluster.token), run.mappings.clustersForSource(scalarRanges[index]))
+                assertEquals(listOf(scalarRanges[index]), run.mappings.sourcesForCluster(cluster.token))
+                assertEquals(1, run.mappings.glyphsForCluster(cluster.token).size)
+            }
+            assertEquals(
+                listOf(scalarRanges[0], scalarRanges[2], scalarRanges[1], scalarRanges[3], scalarRanges[4]),
+                line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.mappedSourceRange } },
+            )
+            assertEquals(
+                listOf(1, 2, 1, 2, 1, 1),
+                (0..5).map { line.caretCandidates(snapshot.textIndexAtScalarBoundary(it)).size },
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
     fun acceptsAGraphemeClusterThatSpansAnalyzedBidiLevels() {
         val snapshot = Kalligraphie.decodeUtf16(
             version = TextVersion.create(),
