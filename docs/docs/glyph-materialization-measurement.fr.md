@@ -4,11 +4,11 @@ Kalligraphie fournit un runner (programme de mesure) JVM opt-in (activé
 explicitement) pour la matérialisation portable des glyphes. Il vit dans les
 sources de test : ce n’est ni un test fonctionnel de latence, ni un résultat de
 benchmark (mesure comparative) publié. Il exécute les fixtures (données de test
-fixes) COLR/CPAL, SVG-in-OpenType et EBDT format 1 auditées et versionnées, à
-travers le parcours public catalogue, resolver (résolveur), instance, asset
-(ressource de rendu) et `resolveGlyph(...)`.
+fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1 et Liberation Sans TrueType
+auditées et versionnées, à travers les parcours publics catalogue, resolver
+(résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`.
 
-Le runner enregistre treize profils, dans cet ordre :
+Le runner enregistre vingt-trois profils, dans cet ordre :
 
 - normalisation COLR v0 / CPAL v0 froide et chaude ;
 - normalisation SVG-in-OpenType froide et chaude ;
@@ -22,6 +22,9 @@ Le runner enregistre treize profils, dans cet ordre :
 - parcours consommateur public `RENDERABLE` froid et chaud avec un paragraphe
   BiDi (bidirectionnel) mêlant Bungee Color latin et le fallback (police de
   repli) hébreu Liberation Sans.
+- étapes portables TrueType froides et chaudes de préparation, correspondance
+  texte-glyphe, métriques, contours et détachement sur un paragraphe d’éditeur
+  Liberation Sans stable.
 
 Un échantillon froid commence avant la création du catalogue embarqué et se
 termine après consommation de la représentation immuable retournée. Un
@@ -38,11 +41,54 @@ Les profils consommateur froids incluent la création du catalogue et du
 resolver, puis s’arrêtent lorsque la façade publique de paragraphe a produit et
 consommé un layout dont tous les glyphes finaux portent un certificat de
 matérialisation. Les profils consommateur chauds gardent catalogue et resolver
-ouverts, amorcent le cache de représentations portables par un premier layout
+ouverts, amorcent le cache (mémoire interne de réutilisation) de représentations
+portables par un premier layout
 hors mesure, puis chronomètrent la même frontière de façade publique. La façade
 JVM ouvre et ferme volontairement son backend (moteur interne) de shaping
 (façonnage) documenté à chaque appel : ces profils chauds mesurent donc la
 réutilisation du cache d’assets, jamais une réutilisation cachée du backend.
+
+## Étapes portables TrueType
+
+Les dix profils TrueType portables supplémentaires utilisent Liberation Sans
+Regular et ce paragraphe exact : « Readable typography keeps words,
+punctuation, carets, and 0123456789 responsive while an editor changes text. »
+Ses scalaires Unicode sont calculés une fois avant les opérations warm (chaudes)
+chronométrées. Une mesure cold (froide) repart au contraire de l’état neuf
+précisé par sa frontière. Les cinq paires mesurent :
+
+- la préparation : la mesure froide couvre la capture du catalogue embarqué,
+  la résolution de la face et la création d’instance depuis un nouveau
+  catalogue ; la mesure chaude répète résolution et création depuis un unique
+  catalogue déjà capturé ;
+- le mapping (correspondance) texte-glyphe : la mesure froide crée une nouvelle
+  instance avant de résoudre tout le paragraphe ; la mesure chaude résout la
+  même séquence sur une instance préparée et consomme chaque identifiant de
+  glyphe retourné ;
+- les métriques : la mesure froide crée l’instance, effectue le mapping, puis
+  lit l’avance et les limites de chaque glyphe ; la mesure chaude lit les mêmes
+  champs sur une séquence de glyphes déjà résolue ;
+- les contours : la mesure froide crée un resolver et un asset attaché avant de
+  résoudre chaque glyphe non nul distinct ; la mesure chaude réutilise un asset
+  amorcé hors chronomètre et consomme l’identifiant, les unités par cadratin, les
+  limites, le nombre de contours et le nombre de commandes de chaque contour
+  produit ;
+- le détachement : la mesure froide crée puis détache un asset, ferme son
+  propriétaire attaché et résout ensuite le glyphe 36 au moyen du handle
+  (poignée de ressource) détaché ; la mesure chaude conserve un propriétaire
+  attaché amorcé, répète des cycles indépendants de détachement, résolution et
+  fermeture du handle détaché, puis ferme le propriétaire après les échantillons.
+
+Chaque resolver, asset attaché et asset détaché possédé est fermé dans un
+chemin `finally` (garanti même en cas d’échec). Les profils froids incluent la
+préparation nommée par leur frontière ; les profils chauds préparent ou amorcent
+cet état hors chronomètre. Chaque étape rapporte des observations de latence
+p50, p95 et p99 positives, l’état des allocations du thread mesuré, une
+observation de la mémoire JVM retenue, les octets source et l’empreinte SHA-256
+de Liberation Sans avec celles des autres fixtures. La mémoire native retenue
+et les allocations natives restent explicitement `unavailable` (indisponibles),
+car l’API portable n’expose aucune frontière de comptabilité fiable pour ces
+valeurs.
 
 ## Exécution reproductible
 

@@ -3,10 +3,11 @@
 Kalligraphie provides an opt-in JVM measurement runner for portable glyph
 materialization. It is test-source tooling, not a functional latency test and
 not a published benchmark result. It exercises the checked-in, audited COLR/
-CPAL, SVG-in-OpenType, and EBDT format 1 fixtures through the public catalog,
-resolver, instance, asset, and `resolveGlyph(...)` path.
+CPAL, SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures
+through the public catalog, resolver, instance, asset, and `resolveGlyph(...)`
+paths.
 
-The runner records thirteen profiles, in this order:
+The runner records twenty-three profiles, in this order:
 
 - cold and warm COLR v0 / CPAL v0 normalization;
 - cold and warm SVG-in-OpenType normalization;
@@ -18,6 +19,8 @@ The runner records thirteen profiles, in this order:
   Latin glyph;
 - cold and warm public `RENDERABLE` consumer journeys with Bungee Color Latin
   plus Liberation Sans Hebrew fallback in one BiDi paragraph.
+- cold and warm portable TrueType preparation, text mapping, metrics, outlines,
+  and detachment stages over one stable Liberation Sans editor paragraph.
 
 Cold samples start before embedded-catalog creation and end after the returned
 immutable representation is consumed. Warm samples create and seed their
@@ -38,6 +41,40 @@ untimed first layout, then measure the same public facade boundary. The JVM
 facade deliberately opens and closes its documented shaping backend for every
 call, so these warm profiles report asset-cache reuse rather than hidden
 backend reuse.
+
+## Portable TrueType stages
+
+The ten additional portable TrueType profiles use Liberation Sans Regular and
+this exact paragraph: “Readable typography keeps words, punctuation, carets,
+and 0123456789 responsive while an editor changes text.” Its Unicode scalars
+are enumerated once before warm timed operations. The five paired boundaries are:
+
+- preparation: cold timing covers embedded-catalog capture, face resolution,
+  and instance creation from a new catalog; warm timing repeats face resolution
+  and instance creation from one captured catalog;
+- text mapping: cold timing creates a new instance before resolving the full
+  paragraph; warm timing resolves the same scalar sequence on one prepared
+  instance, consuming every returned glyph identifier;
+- metrics: cold timing creates an instance, maps the paragraph, and reads every
+  glyph's advance and bounds; warm timing reads the same fields for one
+  pre-mapped glyph sequence on one prepared instance;
+- outlines: cold timing creates a resolver and attached asset before resolving
+  every distinct nonzero paragraph glyph; warm timing repeatedly resolves the
+  same glyphs from one asset seeded before the clock, consuming each outline's
+  glyph id, units-per-em, bounds, contour count, and command count;
+- detachment: cold timing creates and detaches an asset, closes its attached
+  owner, then resolves glyph 36 through the detached handle; warm timing uses
+  one seeded attached owner for independent detach, resolve, and detached-close
+  cycles, then closes that owner after all samples.
+
+Every owned resolver, attached asset, and detached asset is closed in a
+`finally` path. Cold profiles include the preparation named by their boundary;
+warm profiles keep that state prepared or seeded outside the clock. Each stage
+reports positive p50, p95, and p99 latency observations, measured-thread
+allocation status, retained JVM-memory observation, source bytes, and the
+Liberation Sans SHA-256 alongside the other fixture hashes. Native retained
+memory and native allocations remain explicitly `unavailable`: the portable
+API exposes no trustworthy accounting boundary for either value.
 
 ## Reproducible invocation
 
