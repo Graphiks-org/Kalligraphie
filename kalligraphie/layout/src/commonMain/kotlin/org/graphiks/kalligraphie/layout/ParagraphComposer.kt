@@ -1220,7 +1220,7 @@ public object ParagraphComposer : ParagraphLayouter {
         glyphs = glyphs,
         clusters = clusters,
         ligatureCaretFacts = ligatureCaretFacts,
-        distributionProvenances = distributionProvenances,
+        provenanceSpans = provenanceSpans,
     )
 
     private fun ShapedGlyphRun.verticalSignature(): Pair<TextRange, org.graphiks.kalligraphie.api.FontInstanceKey> =
@@ -2099,7 +2099,7 @@ private fun ShapedGlyphRun.coalescedWith(other: ShapedGlyphRun): ShapedGlyphRun 
         glyphs = if (rtl) remappedOtherGlyphs + glyphs else glyphs + remappedOtherGlyphs,
         clusters = clusters + remappedOtherClusters,
         ligatureCaretFacts = thisFacts + otherFacts,
-        distributionProvenances = distributionProvenances + other.distributionProvenances,
+        provenanceSpans = provenanceSpans + other.provenanceSpans,
     )
 }
 

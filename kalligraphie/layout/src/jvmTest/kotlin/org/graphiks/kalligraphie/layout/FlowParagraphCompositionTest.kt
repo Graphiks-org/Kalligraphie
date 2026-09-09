@@ -49,9 +49,12 @@ import org.graphiks.kalligraphie.api.NoProgressReason
 import org.graphiks.kalligraphie.api.OverflowPolicy
 import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingBackendIdentity
+import org.graphiks.kalligraphie.api.ShapingDistributionProvenance
+import org.graphiks.kalligraphie.api.ShapingProvenanceSpan
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.TextRange
@@ -153,6 +156,79 @@ class FlowParagraphCompositionTest {
         )
         // Frozen HarfBuzz 14.3.0 DejaVu Sans advances at size 1000. The first two glyphs
         // occupy 1247.5586 units; the third begins at the second logical interval, not in the gap.
+    }
+
+    @Test
+    fun flowFragmentsRetainOnlyIntersectingProvenanceSpansFromACoalescedRealRun() {
+        val fixture = fixture(
+            "abc office-office",
+            bounds = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(6_600f), LayoutUnit(3_050f)),
+        )
+        val primary = fixture.request.shapingBackend.identity.provenance
+        val secondary = primary.copy(
+            operatingSystem = "portable-test-os",
+            architecture = "portable-test-architecture",
+            artifactId = "portable-test-artifact",
+            artifactSha256 = "1".repeat(64),
+            buildChainIdentity = "portable-test-build-chain",
+        )
+        val boundary = fixture.snapshot.textIndexAtScalarBoundary(3)
+        val backend = DistributionRoutingBackend(fixture.request.shapingBackend) { request ->
+            if (request.range.start == boundary) secondary else primary
+        }
+        val request = fixture.request.withFlowSourceRange(fixture.snapshot.range, shapingBackend = backend)
+        val region = FixedRegion(
+            request.constraints.region,
+            listOf(InlineInterval(0f, 1_800f), InlineInterval(2_500f, 6_000f)),
+        )
+
+        val paragraph = assertIs<ParagraphLayoutResult.Success>(
+            ParagraphComposer.layout(request, EditableLineMaterialization.LayoutOnly),
+        )
+        val coalesced = paragraph.layout.lines.first().positionedGlyphRuns.single().sourceRun
+        val line = success(
+            FlowParagraphComposer.layoutFragment(
+                request,
+                EditableLineMaterialization.LayoutOnly,
+                FlowChain(listOf(region)),
+                flowIdentity(fixture),
+                maximumLines = 1,
+            ),
+        ).lines.single()
+        val runs = line.fragments.flatMap { fragment -> fragment.positionedGlyphRuns }.map { it.sourceRun }
+
+        assertEquals(
+            listOf(
+                ShapingProvenanceSpan(range(fixture.snapshot, 0, 3), primary),
+                ShapingProvenanceSpan(range(fixture.snapshot, 3, 11), secondary),
+            ),
+            coalesced.provenanceSpans,
+        )
+        assertEquals(listOf(primary, secondary), coalesced.distributionProvenances)
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 3), range(fixture.snapshot, 3, 11)),
+            runs.map { run -> run.range },
+        )
+        assertEquals(
+            listOf(listOf(68, 69, 70), listOf(3, 82, 5044, 70, 72, 16)),
+            runs.map { run -> run.glyphs.map { glyph -> glyph.glyphId.value } },
+        )
+        assertEquals(
+            listOf(
+                listOf(612.79297f, 634.7656f, 549.8047f),
+                listOf(317.8711f, 611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+            ),
+            runs.map { run -> run.glyphs.map { glyph -> glyph.xAdvance.value } },
+        )
+        assertEquals(
+            listOf(
+                listOf(ShapingProvenanceSpan(range(fixture.snapshot, 0, 3), primary)),
+                listOf(ShapingProvenanceSpan(range(fixture.snapshot, 3, 11), secondary)),
+            ),
+            runs.map { run -> run.provenanceSpans },
+        )
+        assertEquals(listOf(listOf(primary), listOf(secondary)), runs.map { run -> run.distributionProvenances })
+        assertEquals(listOf(primary, secondary), runs.map { run -> run.backendIdentity.provenance })
     }
 
     @Test
@@ -1533,7 +1609,48 @@ class FlowParagraphCompositionTest {
                             glyphs = source.glyphs,
                             clusters = source.clusters,
                             ligatureCaretFacts = source.ligatureCaretFacts,
-                            distributionProvenances = source.distributionProvenances + identity.provenance,
+                            provenanceSpans = listOf(ShapingProvenanceSpan(source.range, identity.provenance)),
+                        ),
+                        shaped.diagnostics,
+                    )
+                }
+
+                is FontOperationResult.Failure -> shaped
+                is FontOperationResult.Cancelled -> shaped
+            }
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
+    }
+
+    private class DistributionRoutingBackend(
+        private val delegate: ShapingBackend,
+        private val provenanceFor: (ShapingRequest) -> ShapingDistributionProvenance,
+    ) : ShapingBackend {
+        override val identity: ShapingBackendIdentity = delegate.identity
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val shaped = delegate.shape(request)) {
+                is FontOperationResult.Success -> {
+                    val source = shaped.value
+                    val provenance = provenanceFor(request)
+                    FontOperationResult.Success(
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = ShapingBackendIdentity(source.backendIdentity.semantic, provenance),
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            provenanceSpans = listOf(ShapingProvenanceSpan(source.range, provenance)),
+                            ligatureCaretFacts = source.ligatureCaretFacts,
                         ),
                         shaped.diagnostics,
                     )

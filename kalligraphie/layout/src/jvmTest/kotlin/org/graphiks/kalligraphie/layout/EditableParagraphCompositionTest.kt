@@ -42,6 +42,7 @@ import org.graphiks.kalligraphie.api.ParagraphConstraints
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingBackendIdentity
 import org.graphiks.kalligraphie.api.ShapingDistributionProvenance
+import org.graphiks.kalligraphie.api.ShapingProvenanceSpan
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.TextRange
@@ -209,6 +210,16 @@ class EditableParagraphCompositionTest {
         assertTrue(fixture.recordingBackend.requests.none { request ->
             request.range == TextRange(fixture.snapshot.range.start, finalEnd) && request.eot
         })
+        val finalRun = result.lines.first().line.positionedGlyphRuns.single().sourceRun
+        assertEquals(
+            listOf(
+                ShapingProvenanceSpan(
+                    range(fixture.snapshot, 0, 11),
+                    fixture.request.shapingBackend.identity.provenance,
+                ),
+            ),
+            finalRun.provenanceSpans,
+        )
         // The provisional real-font flags are safe on `abc`, while the space-to-ligature
         // suffix is unsafe-to-concat and the selected hyphen boundary is unsafe-to-break.
     }
@@ -958,26 +969,22 @@ class EditableParagraphCompositionTest {
                 is FontOperationResult.Success -> {
                     val source = shaped.value
                     FontOperationResult.Success(
-                        ShapedGlyphRun(
-                            range = source.range,
-                            fontInstanceKey = source.fontInstanceKey,
-                            backendIdentity = ShapingBackendIdentity(source.backendIdentity.semantic, provenanceFor(request)),
-                            direction = source.direction,
-                            script = source.script,
-                            language = source.language,
-                            bidiLevel = source.bidiLevel,
-                            bot = source.bot,
-                            eot = source.eot,
-                            featurePolicy = source.featurePolicy,
-                            features = source.features,
-                            graphemeClusters = source.graphemeClusters,
-                            glyphs = source.glyphs,
-                            clusters = source.clusters,
-                            ligatureCaretFacts = source.ligatureCaretFacts,
-                            distributionProvenances = listOf(
-                                provenanceFor(request),
-                                source.backendIdentity.provenance,
-                            ),
+                        LegacyShapedGlyphRunConsumer.create(
+                            source.range,
+                            source.fontInstanceKey,
+                            ShapingBackendIdentity(source.backendIdentity.semantic, provenanceFor(request)),
+                            source.direction,
+                            source.script,
+                            source.language,
+                            source.bidiLevel,
+                            source.bot,
+                            source.eot,
+                            source.featurePolicy,
+                            source.features,
+                            source.graphemeClusters,
+                            source.glyphs,
+                            source.clusters,
+                            source.ligatureCaretFacts,
                         ),
                         shaped.diagnostics,
                     )

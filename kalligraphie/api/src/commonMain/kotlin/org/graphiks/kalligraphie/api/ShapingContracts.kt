@@ -187,6 +187,20 @@ public data class ShapingDistributionProvenance(
 }
 
 /**
+ * Exact source span attributed to one native shaping distribution.
+ *
+ * A run's spans remain in logical source order. Adjacent spans with equal [provenance] are
+ * normalized into one span, allowing derived fragments to retain only distributions whose
+ * original source ranges intersect the fragment.
+ */
+public data class ShapingProvenanceSpan(
+    /** Half-open original source range shaped by [provenance]. */
+    public val range: TextRange,
+    /** Native distribution that shaped [range]. */
+    public val provenance: ShapingDistributionProvenance,
+)
+
+/**
  * Complete identity reported by a shaping backend and retained by shaped results.
  *
  * [semantic] is the only component suitable for portable equivalence decisions. [provenance]
@@ -696,7 +710,7 @@ public class ShapedGlyphRun(
      * source-compatible singular diagnostic route. It does not imply that every glyph was
      * produced by that distribution; [distributionProvenances] is the complete provenance set.
      */
-    public val backendIdentity: ShapingBackendIdentity,
+    backendIdentity: ShapingBackendIdentity,
     /** Explicit direction used by the backend. */
     public val direction: ShapingDirection,
     /** Explicit ISO 15924 script used by the backend. */
@@ -716,17 +730,74 @@ public class ShapedGlyphRun(
     glyphs: List<ShapedGlyph>,
     clusters: List<ShaperCluster>,
     ligatureCaretFacts: List<GdefLigatureCaretFact> = emptyList(),
-    /** Ordered native distributions known to have contributed to this run. */
-    distributionProvenances: List<ShapingDistributionProvenance> = listOf(backendIdentity.provenance),
+    /** Ordered source spans and their exact contributing native distributions. */
+    provenanceSpans: List<ShapingProvenanceSpan> = listOf(ShapingProvenanceSpan(range, backendIdentity.provenance)),
 ) {
+    /**
+     * Creates a directly shaped run through the original constructor descriptor.
+     *
+     * The supplied [backendIdentity] is the sole distribution contributor across [range].
+     */
+    public constructor(
+        range: TextRange,
+        fontInstanceKey: FontInstanceKey,
+        backendIdentity: ShapingBackendIdentity,
+        direction: ShapingDirection,
+        script: OpenTypeScript,
+        language: String,
+        bidiLevel: Int,
+        bot: Boolean,
+        eot: Boolean,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature>,
+        graphemeClusters: List<TextRange>,
+        glyphs: List<ShapedGlyph>,
+        clusters: List<ShaperCluster>,
+        ligatureCaretFacts: List<GdefLigatureCaretFact>,
+    ) : this(
+        range = range,
+        fontInstanceKey = fontInstanceKey,
+        backendIdentity = backendIdentity,
+        direction = direction,
+        script = script,
+        language = language,
+        bidiLevel = bidiLevel,
+        bot = bot,
+        eot = eot,
+        featurePolicy = featurePolicy,
+        features = features,
+        graphemeClusters = graphemeClusters,
+        glyphs = glyphs,
+        clusters = clusters,
+        ligatureCaretFacts = ligatureCaretFacts,
+        provenanceSpans = listOf(ShapingProvenanceSpan(range, backendIdentity.provenance)),
+    )
+
+    /**
+     * Immutable logical source partition identifying the exact distribution for each span.
+     *
+     * Adjacent spans with equal provenance are normalized. A non-empty run is covered without
+     * gaps or overlap; an empty run retains one empty span carrying its direct provenance.
+     */
+    public val provenanceSpans: List<ShapingProvenanceSpan> =
+        normalizedProvenanceSpans(range, provenanceSpans)
+
+    /**
+     * Portable shaping semantics and the primary native provenance for this run.
+     *
+     * The primary provenance is always the provenance of the first item in [provenanceSpans].
+     */
+    public val backendIdentity: ShapingBackendIdentity =
+        backendIdentity.copy(provenance = this.provenanceSpans.first().provenance)
+
     /**
      * Immutable ordered set of every native distribution that contributed to this run.
      *
-     * The first item is [backendIdentity]'s primary provenance. Later items retain first
-     * contribution order, and duplicates are removed.
+     * This is a derived view of [provenanceSpans]: first source contribution order is retained and
+     * duplicate provenances are removed.
      */
     public val distributionProvenances: List<ShapingDistributionProvenance> =
-        (listOf(backendIdentity.provenance) + distributionProvenances).distinct().immutableListSnapshot()
+        this.provenanceSpans.map(ShapingProvenanceSpan::provenance).distinct().immutableListSnapshot()
 
     /** Immutable feature overrides used by the backend after [featurePolicy]. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
@@ -858,6 +929,37 @@ private fun ShapingDirection.matches(level: Int): Boolean =
         ShapingDirection.RIGHT_TO_LEFT -> level % 2 != 0
         ShapingDirection.TOP_TO_BOTTOM -> true
     }
+
+private fun normalizedProvenanceSpans(
+    owner: TextRange,
+    spans: List<ShapingProvenanceSpan>,
+): List<ShapingProvenanceSpan> {
+    require(spans.isNotEmpty()) { "Run provenance spans must identify at least one distribution." }
+    val normalized = mutableListOf<ShapingProvenanceSpan>()
+    spans.forEach { span ->
+        val previous = normalized.lastOrNull()
+        if (
+            previous != null &&
+            previous.provenance == span.provenance &&
+            previous.range.endExclusive == span.range.start
+        ) {
+            normalized[normalized.lastIndex] = ShapingProvenanceSpan(
+                TextRange(previous.range.start, span.range.endExclusive),
+                span.provenance,
+            )
+        } else {
+            normalized += span
+        }
+    }
+    if (owner.start == owner.endExclusive) {
+        require(normalized.size == 1 && normalized.single().range == owner) {
+            "An empty run must retain one empty provenance span."
+        }
+    } else {
+        requireTextPartition(owner, normalized.map(ShapingProvenanceSpan::range), "Run provenance spans")
+    }
+    return normalized.immutableListSnapshot()
+}
 
 private fun requireTextPartition(owner: TextRange, ranges: List<TextRange>, label: String) {
     if (owner.start == owner.endExclusive) {

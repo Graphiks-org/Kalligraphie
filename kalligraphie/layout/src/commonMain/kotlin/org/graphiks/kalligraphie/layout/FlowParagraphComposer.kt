@@ -40,6 +40,7 @@ import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
 import org.graphiks.kalligraphie.api.PositionedInlineObject
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShapingProvenanceSpan
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.WritingMode
@@ -968,8 +969,19 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             glyphs = shaped,
             clusters = clusters,
             ligatureCaretFacts = facts,
-            distributionProvenances = sourceRun.distributionProvenances,
+            provenanceSpans = sourceRun.provenanceSpans.mapNotNull { span -> span.intersection(range) },
         )
+    }
+
+    private fun ShapingProvenanceSpan.intersection(fragmentRange: TextRange): ShapingProvenanceSpan? {
+        if (!rangesOverlap(range, fragmentRange)) return null
+        val intersectionStart = if (range.start >= fragmentRange.start) range.start else fragmentRange.start
+        val intersectionEnd = if (range.endExclusive <= fragmentRange.endExclusive) {
+            range.endExclusive
+        } else {
+            fragmentRange.endExclusive
+        }
+        return ShapingProvenanceSpan(TextRange(intersectionStart, intersectionEnd), provenance)
     }
 
     private fun PositionedGlyphRun.atomicGlyphGroups(): List<List<PositionedGlyph>> {
