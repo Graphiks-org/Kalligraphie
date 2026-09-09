@@ -194,22 +194,27 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                         provenance = glyph.provenance,
                     )
                 },
-                lineControls = placement.lineControlGlyphs.map { control ->
-                    PositionedLineControl(
-                        kind = checkNotNull(control.lineControlKind),
-                        sourceRange = TextRange(
-                            control.sourceClusters.first().sourceRange.start,
-                            control.sourceClusters.last().sourceRange.endExclusive,
-                        ),
-                        origin = control.origin,
-                        advance = control.advance,
-                        materializationRoute = if (request.materialization is EditableLineMaterialization.Renderable) {
-                            GlyphMaterializationRoute.EMPTY
-                        } else {
-                            null
-                        },
-                    )
-                },
+                lineControls = placement.lineControlGlyphs
+                    .map { control ->
+                        val logicalClusters = control.sourceClusters.sortedWith { left, right ->
+                            left.sourceRange.start.compareTo(right.sourceRange.start)
+                        }
+                        PositionedLineControl(
+                            kind = checkNotNull(control.lineControlKind),
+                            sourceRange = TextRange(
+                                logicalClusters.first().sourceRange.start,
+                                logicalClusters.last().sourceRange.endExclusive,
+                            ),
+                            origin = control.origin,
+                            advance = control.advance,
+                            materializationRoute = if (request.materialization is EditableLineMaterialization.Renderable) {
+                                GlyphMaterializationRoute.EMPTY
+                            } else {
+                                null
+                            },
+                        )
+                    }
+                    .sortedWith { left, right -> left.sourceRange.start.compareTo(right.sourceRange.start) },
             )
         }
         val candidates = candidates(request, placements)
@@ -422,17 +427,37 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 val fieldAfter = tabs.fields.getValue(key)
                 val fieldIndex = tabs.indexes.getValue(key)
                 val penAtTab = pen
-                val stop = tabs.forcedStop(key) ?: resolveStop(
-                    stops,
-                    positioning?.defaultTabInterval ?: DEFAULT_TAB_INTERVAL,
-                    penAtTab,
-                    fieldIndex,
-                )
+                val prepositioningStop = tabs.forcedStop(key)
+                val directionalRtlStart = request.baseDirection == org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT &&
+                    prepositioningStop?.alignment == org.graphiks.kalligraphie.api.TabAlignment.START
+                val stop = if (directionalRtlStart) {
+                    resolveStop(
+                        stops,
+                        positioning?.defaultTabInterval ?: DEFAULT_TAB_INTERVAL,
+                        penAtTab,
+                        fieldIndex + 1,
+                    )
+                } else {
+                    prepositioningStop ?: resolveStop(
+                        stops,
+                        positioning?.defaultTabInterval ?: DEFAULT_TAB_INTERVAL,
+                        penAtTab,
+                        fieldIndex,
+                    )
+                }
                 val naturalField = fieldAfter.sumOf { it.glyph.shapedGlyph.xAdvance.value.toDouble() }
                 val fieldStart = alignedFieldStart(request, stop, fieldAfter, naturalField, penAtTab)
+                val tabEnd = if (
+                    request.baseDirection == org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT &&
+                    stop.alignment == org.graphiks.kalligraphie.api.TabAlignment.START
+                ) {
+                    stop.position.value.toDouble()
+                } else {
+                    fieldStart
+                }
                 val leader = stop.leader.takeIf { _ -> positioning != null }
                 val leaders = buildList {
-                    if (leader != null && penAtTab < fieldStart) {
+                    if (leader != null && penAtTab < tabEnd) {
                         val instance = request.fontInstances.firstOrNull { it.key == refined.sourceRun.fontInstanceKey }
                         if (instance != null) {
                             val leaderGlyph = (instance.resolveGlyph(leader) as? FontOperationResult.Success)?.value
@@ -440,7 +465,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                                 (instance.metrics(glyph.glyphId) as? FontOperationResult.Success)?.value?.advanceWidth
                             }
                             if (leaderGlyph != null && leaderAdvance != null && leaderAdvance.value > 0f) {
-                                val count = ((fieldStart - penAtTab) / leaderAdvance.value).toInt()
+                                val count = ((tabEnd - penAtTab) / leaderAdvance.value).toInt()
                                 repeat(count) {
                                     add(
                                         RefinedGlyph(
@@ -477,7 +502,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     )
                     penAtField += leaderEntry.shapedGlyph.xAdvance.value.toDouble()
                 }
-                val jumpEnd = max(penAtField, fieldStart)
+                val jumpEnd = max(penAtField, tabEnd)
                 val tabAdvance = jumpEnd - penAtField
                 val jumpShaped = ShapedGlyph(
                     glyphId = entry.shapedGlyph.glyphId,
@@ -644,7 +669,13 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     ): Double {
         if (field.isEmpty()) return max(penAtTab, stop.position.value.toDouble())
         val aligned = when (stop.alignment) {
-            org.graphiks.kalligraphie.api.TabAlignment.START -> stop.position.value.toDouble()
+            org.graphiks.kalligraphie.api.TabAlignment.START -> {
+                if (request.baseDirection == org.graphiks.kalligraphie.api.ShapingDirection.RIGHT_TO_LEFT) {
+                    stop.position.value - naturalField
+                } else {
+                    stop.position.value.toDouble()
+                }
+            }
             org.graphiks.kalligraphie.api.TabAlignment.END -> stop.position.value - naturalField
             org.graphiks.kalligraphie.api.TabAlignment.CENTER -> stop.position.value - naturalField / 2.0
             org.graphiks.kalligraphie.api.TabAlignment.DECIMAL -> {

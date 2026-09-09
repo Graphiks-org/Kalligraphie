@@ -311,22 +311,29 @@ class JvmEditableLineFacadeTest {
             ).line
 
             assertEquals(listOf(
-                Triple(GlyphId(1280), 2_000f, 1_286f),
-                Triple(GlyphId(1280), 3_286f, 1_286f),
+                Triple(GlyphId(1280), 714f, 1_286f),
+                Triple(GlyphId(1280), 4_000f, 1_286f),
             ), line.positionedGlyphRuns.flatMap { it.glyphs }.map {
                 Triple(it.shapedGlyph.glyphId, it.origin.x.value, it.advance.x.value)
             })
-            assertEquals(listOf(Triple(3_286f, 0f, GlyphMaterializationRoute.EMPTY)), line.positionedLineControls.map {
+            assertEquals(listOf(Triple(2_000f, 2_000f, GlyphMaterializationRoute.EMPTY)), line.positionedLineControls.map {
                 Triple(it.origin.x.value, it.advance.x.value, it.materializationRoute)
             })
             assertEquals(
+                listOf(2_000f to 4_000f),
+                line.selectionGeometry(
+                    CaretPosition(snapshot.textIndexAtScalarBoundary(1), CaretAffinity.DOWNSTREAM),
+                    CaretPosition(snapshot.textIndexAtScalarBoundary(2), CaretAffinity.UPSTREAM),
+                ).map { fragment -> fragment.left.value to fragment.right.value },
+            )
+            assertEquals(
                 listOf(
-                    CaretOracle(3, CaretAffinity.UPSTREAM, 2_000f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
-                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 3_286f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
-                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 3_286f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
-                    CaretOracle(2, CaretAffinity.UPSTREAM, 3_286f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
-                    CaretOracle(1, CaretAffinity.UPSTREAM, 3_286f, 4, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
-                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 4_572f, 5, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 714f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 2_000f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(2, CaretAffinity.UPSTREAM, 2_000f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 4_000f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(1, CaretAffinity.UPSTREAM, 4_000f, 4, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 5_286f, 5, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
                 ),
                 caretOracles(snapshot, line.allCaretCandidates),
             )
@@ -530,6 +537,71 @@ class JvmEditableLineFacadeTest {
                 ),
                 caretOracles(snapshot, line.allCaretCandidates),
             )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun every_bidi_control_family_has_literal_left_to_right_and_right_to_left_editor_geometry() {
+        val inputs = listOf(
+            Triple("ltr-lre", "A\u202AB\u202CC", BaseDirection.LEFT_TO_RIGHT),
+            Triple("ltr-rle", "A\u202BB\u202CC", BaseDirection.LEFT_TO_RIGHT),
+            Triple("ltr-lri", "A\u2066B\u2069C", BaseDirection.LEFT_TO_RIGHT),
+            Triple("ltr-rli", "A\u2067\u05D0\u2069C", BaseDirection.LEFT_TO_RIGHT),
+            Triple("ltr-fsi", "A\u2068\u05D0\u2069C", BaseDirection.LEFT_TO_RIGHT),
+            Triple("rtl-lre", "\u05D0\u202AA\u202C\u05D1", BaseDirection.RIGHT_TO_LEFT),
+            Triple("rtl-rle", "\u05D0\u202B\u05D1\u202C\u05D2", BaseDirection.RIGHT_TO_LEFT),
+            Triple("rtl-lri", "\u05D0\u2066A\u2069\u05D1", BaseDirection.RIGHT_TO_LEFT),
+            Triple("rtl-rli", "\u05D0\u2067\u05D1\u2069\u05D2", BaseDirection.RIGHT_TO_LEFT),
+            Triple("rtl-fsi", "\u05D0\u2068A\u2069\u05D1", BaseDirection.RIGHT_TO_LEFT),
+        )
+        val fixture = renderableFixture()
+        try {
+            val observed = inputs.map { (name, text, baseDirection) ->
+                val snapshot = Kalligraphie.decodeUtf16(
+                    version = TextVersion.create(),
+                    slices = listOf(TextSlice.Utf16(text.toCharArray())),
+                ).snapshot
+                val line = assertIs<EditableLineResult.Success>(
+                    JvmEditableLineFacade.layout(
+                        lineRequest(
+                            snapshot = snapshot,
+                            font = fixture.font,
+                            baseDirection = baseDirection,
+                            materialization = EditableLineMaterialization.Renderable(
+                                resolver = fixture.resolver,
+                                variant = FontRenderVariantKey.default,
+                                outlineProfile = OUTLINE_PROFILE,
+                            ),
+                        ),
+                    ),
+                ).line
+                val scalarRanges = List(5) { ordinal ->
+                    org.graphiks.kalligraphie.api.TextRange(
+                        snapshot.textIndexAtScalarBoundary(ordinal),
+                        snapshot.textIndexAtScalarBoundary(ordinal + 1),
+                    )
+                }
+                BidiObservation(
+                    name = name,
+                    glyphs = line.positionedGlyphRuns.flatMap { run ->
+                        run.glyphs.map { glyph ->
+                            BidiGlyphOracle(
+                                scalar = scalarRanges.indexOf(glyph.mappedSourceRange),
+                                visualRunOrder = run.visualOrder,
+                                glyphId = glyph.shapedGlyph.glyphId.value,
+                                x = glyph.origin.x.value,
+                                advance = glyph.advance.x.value,
+                                route = glyph.materializationCertificate?.route,
+                            )
+                        }
+                    },
+                    carets = caretOracles(snapshot, line.allCaretCandidates),
+                )
+            }
+
+            assertEquals(bidiControlOracles(), observed)
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
         }
@@ -831,7 +903,168 @@ class JvmEditableLineFacadeTest {
         val direction: ShapingDirection,
         val strength: CaretStrength,
         val edge: CaretBoundaryEdge,
+        val endX: Float = x,
+        val top: Float = -18f,
+        val bottom: Float = 6f,
     )
+
+    private data class BidiGlyphOracle(
+        val scalar: Int,
+        val visualRunOrder: Int,
+        val glyphId: Int,
+        val x: Float,
+        val advance: Float,
+        val route: GlyphMaterializationRoute?,
+    )
+
+    private data class BidiObservation(
+        val name: String,
+        val glyphs: List<BidiGlyphOracle>,
+        val carets: List<CaretOracle>,
+    )
+
+    /**
+     * Hand-audited UAX #9 run levels and retained-control order combined with the fixed
+     * Liberation Sans glyph IDs and advances used by this fixture.
+     */
+    private fun bidiControlOracles(): List<BidiObservation> {
+        val leftToRightEmbeddingGlyphs = listOf(
+            BidiGlyphOracle(0, 0, 36, 0f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(1, 1, 3, 1_366f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 1, 37, 1_366f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 2, 3, 2_732f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(4, 2, 38, 2_732f, 1_479f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val leftToRightEmbeddingCarets = listOf(
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 0f, 0, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(1, CaretAffinity.UPSTREAM, 1_366f, 1, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 1_366f, 2, 1, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 1_366f, 3, 1, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 2_732f, 4, 1, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 2_732f, 5, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 2_732f, 6, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(5, CaretAffinity.UPSTREAM, 4_211f, 7, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+        )
+        val leftToRightLriGlyphs = listOf(
+            BidiGlyphOracle(0, 0, 36, 0f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(1, 0, 3, 1_366f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 1, 37, 1_366f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 2, 3, 2_732f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(4, 2, 38, 2_732f, 1_479f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val leftToRightLriCarets = listOf(
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 0f, 0, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 1_366f, 1, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(2, CaretAffinity.UPSTREAM, 1_366f, 2, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 1_366f, 3, 1, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 2_732f, 4, 1, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 2_732f, 5, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 2_732f, 6, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(5, CaretAffinity.UPSTREAM, 4_211f, 7, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+        )
+        val leftToRightRliGlyphs = listOf(
+            BidiGlyphOracle(0, 0, 36, 0f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(1, 0, 3, 1_366f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 1, 1280, 1_366f, 1_286f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 2, 3, 2_652f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(4, 3, 38, 2_652f, 1_479f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val leftToRightRliCarets = listOf(
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 0f, 0, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 1_366f, 1, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(2, CaretAffinity.UPSTREAM, 1_366f, 2, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 1_366f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 2_652f, 4, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 2_652f, 5, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.UPSTREAM, 2_652f, 6, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 2_652f, 7, 3, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(5, CaretAffinity.UPSTREAM, 4_131f, 8, 3, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+        )
+        val rightToLeftLreGlyphs = listOf(
+            BidiGlyphOracle(4, 0, 1281, 0f, 1_225f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 1, 3, 1_225f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(1, 2, 3, 1_225f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 3, 36, 1_225f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(0, 4, 1280, 2_591f, 1_286f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val rightToLeftLreCarets = listOf(
+            CaretOracle(5, CaretAffinity.UPSTREAM, 0f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 1_225f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 1_225f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.UPSTREAM, 1_225f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 1_225f, 4, 2, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(2, CaretAffinity.UPSTREAM, 1_225f, 5, 2, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 1_225f, 6, 3, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 2_591f, 7, 3, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(1, CaretAffinity.UPSTREAM, 2_591f, 8, 4, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 3_877f, 9, 4, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+        )
+        val rightToLeftRleGlyphs = listOf(
+            BidiGlyphOracle(4, 0, 1282, 0f, 866f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 0, 3, 866f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 1, 1281, 866f, 1_225f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(1, 1, 3, 2_091f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(0, 2, 1280, 2_091f, 1_286f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val rightToLeftRleCarets = listOf(
+            CaretOracle(5, CaretAffinity.UPSTREAM, 0f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 866f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 866f, 2, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 866f, 3, 1, 3, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 2_091f, 4, 1, 3, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 2_091f, 5, 1, 3, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(1, CaretAffinity.UPSTREAM, 2_091f, 6, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 3_377f, 7, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+        )
+        val rightToLeftLriGlyphs = listOf(
+            BidiGlyphOracle(4, 0, 1281, 0f, 1_225f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 1, 3, 1_225f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 2, 36, 1_225f, 1_366f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(1, 3, 3, 2_591f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(0, 3, 1280, 2_591f, 1_286f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val rightToLeftLriCarets = listOf(
+            CaretOracle(5, CaretAffinity.UPSTREAM, 0f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 1_225f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 1_225f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.UPSTREAM, 1_225f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 1_225f, 4, 2, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 2_591f, 5, 2, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 2_591f, 6, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(2, CaretAffinity.UPSTREAM, 2_591f, 7, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 3_877f, 8, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+        )
+        val rightToLeftRliGlyphs = listOf(
+            BidiGlyphOracle(4, 0, 1282, 0f, 866f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(3, 0, 3, 866f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(2, 1, 1281, 866f, 1_225f, GlyphMaterializationRoute.OUTLINE),
+            BidiGlyphOracle(1, 2, 3, 2_091f, 0f, GlyphMaterializationRoute.EMPTY),
+            BidiGlyphOracle(0, 2, 1280, 2_091f, 1_286f, GlyphMaterializationRoute.OUTLINE),
+        )
+        val rightToLeftRliCarets = listOf(
+            CaretOracle(5, CaretAffinity.UPSTREAM, 0f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(3, CaretAffinity.DOWNSTREAM, 866f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(4, CaretAffinity.DOWNSTREAM, 866f, 2, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(3, CaretAffinity.UPSTREAM, 866f, 3, 1, 3, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(2, CaretAffinity.DOWNSTREAM, 2_091f, 4, 1, 3, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+            CaretOracle(1, CaretAffinity.DOWNSTREAM, 2_091f, 5, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+            CaretOracle(2, CaretAffinity.UPSTREAM, 2_091f, 6, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+            CaretOracle(0, CaretAffinity.DOWNSTREAM, 3_377f, 7, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+        )
+
+        return listOf(
+            BidiObservation("ltr-lre", leftToRightEmbeddingGlyphs, leftToRightEmbeddingCarets),
+            BidiObservation("ltr-rle", leftToRightEmbeddingGlyphs, leftToRightEmbeddingCarets),
+            BidiObservation("ltr-lri", leftToRightLriGlyphs, leftToRightLriCarets),
+            BidiObservation("ltr-rli", leftToRightRliGlyphs, leftToRightRliCarets),
+            BidiObservation("ltr-fsi", leftToRightRliGlyphs, leftToRightRliCarets),
+            BidiObservation("rtl-lre", rightToLeftLreGlyphs, rightToLeftLreCarets),
+            BidiObservation("rtl-rle", rightToLeftRleGlyphs, rightToLeftRleCarets),
+            BidiObservation("rtl-lri", rightToLeftLriGlyphs, rightToLeftLriCarets),
+            BidiObservation("rtl-rli", rightToLeftRliGlyphs, rightToLeftRliCarets),
+            BidiObservation("rtl-fsi", rightToLeftLriGlyphs, rightToLeftLriCarets),
+        )
+    }
 
     private fun caretOracles(
         snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
@@ -849,6 +1082,9 @@ class JvmEditableLineFacadeTest {
             direction = candidate.direction,
             strength = candidate.strength,
             edge = candidate.edge,
+            endX = candidate.geometry.end.x.value,
+            top = candidate.geometry.start.y.value,
+            bottom = candidate.geometry.end.y.value,
         )
     }
 

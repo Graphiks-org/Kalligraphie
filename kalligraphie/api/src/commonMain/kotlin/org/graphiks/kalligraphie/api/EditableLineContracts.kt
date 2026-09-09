@@ -472,10 +472,17 @@ public class PositionedGlyphRun(
 
     init {
         require(visualOrder >= 0) { "Positioned run visual order must be non-negative." }
-        require(this.glyphs.size >= sourceRun.glyphs.size) {
-            "Positioned runs must contain one final placement per shaped glyph."
-        }
-        val sourceTokenSequence = sourceRun.glyphs.map { glyph -> glyph.clusterTokens }
+        val controlRanges = this.lineControls.map(PositionedLineControl::sourceRange)
+        val sourceTokenSequence = sourceRun.glyphs
+            .filterNot { glyph ->
+                val clusters = glyph.clusterTokens.map { token ->
+                    sourceRun.clusters.single { cluster -> cluster.token == token }
+                }
+                controlRanges.any { controlRange ->
+                    clusters.all { cluster -> containsRange(controlRange, cluster.sourceRange) }
+                }
+            }
+            .map { glyph -> glyph.clusterTokens }
         var sourceCursor = 0
         this.sourceGlyphs.forEach { glyph ->
             val tokens = glyph.shapedGlyph.clusterTokens
@@ -502,6 +509,11 @@ public class PositionedGlyphRun(
         }
         require(this.lineControls.all { control -> containsRange(sourceRun.range, control.sourceRange) }) {
             "Every positioned line control must stay inside its source run."
+        }
+        require(this.lineControls.all { control ->
+            sourceRun.clusters.any { cluster -> containsRange(control.sourceRange, cluster.sourceRange) }
+        }) {
+            "Every positioned line control must carry at least one source-cluster relation from its shaped run."
         }
         require(this.lineControls.zipWithNext().all { (left, right) -> left.sourceRange.start < right.sourceRange.start }) {
             "Positioned line controls must use strict logical source order within a run."

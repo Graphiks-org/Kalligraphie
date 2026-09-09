@@ -37,9 +37,11 @@ import org.graphiks.kalligraphie.api.LayoutSegment
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LayoutVector
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
@@ -56,6 +58,7 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.TabStop
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
@@ -68,6 +71,46 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class EditableLineTest {
+    @Test
+    fun preShapedTabIsReplacedBySourceMappedControlWithoutLosingItsRunRelation() {
+        val prepared = text("A\tB")
+        val font = fontFixture().instance
+        val sourceRun = shapedRun(
+            prepared = prepared,
+            font = font,
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            level = 0,
+            glyphs = listOf(glyph(10, 10f, 0), glyph(9, 5f, 1), glyph(11, 20f, 2)),
+        )
+
+        val line = assertIs<EditableLineResult.Success>(
+            ExactEditableLineLayouter.layout(
+                EditableLineRequest(
+                    unicodeAnalysis = analysis(prepared, listOf(0), listOf(0)),
+                    shapedGlyphRuns = listOf(sourceRun),
+                    baseDirection = ShapingDirection.LEFT_TO_RIGHT,
+                    font = font,
+                    verticalMetrics = LineVerticalMetrics(ascent = LayoutUnit(8f), descent = LayoutUnit(2f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                    snapshot = prepared,
+                    positioning = ParagraphPositioningPolicy(tabStops = listOf(TabStop(LayoutUnit(50f)))),
+                ),
+            ),
+        ).line
+
+        val positioned = line.positionedGlyphRuns.single()
+        assertEquals(listOf(GlyphId(10), GlyphId(11)), positioned.glyphs.map { it.shapedGlyph.glyphId })
+        assertEquals(listOf(0f, 50f), positioned.glyphs.map { it.origin.x.value })
+        val control = positioned.lineControls.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(range(prepared, 1, 2), control.sourceRange)
+        assertEquals(10f, control.origin.x.value)
+        assertEquals(40f, control.advance.x.value)
+        assertEquals(listOf(0f, 10f, 50f, 70f), (0..3).map { ordinal ->
+            line.caretCandidates(index(prepared, ordinal)).single().geometry.start.x.value
+        })
+    }
+
     @Test
     fun requestRejectsAShapingGraphemePartitionThatContradictsUnicodeAnalysis() {
         val prepared = text("x\u0301")

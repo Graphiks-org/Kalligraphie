@@ -761,6 +761,26 @@ class AdvancedTypographyJourneyTest {
     }
 
     @Test
+    fun consecutiveRtlTabsPublishTheirControlsInLogicalSourceOrder() {
+        val fixture = dejavuFixture("\u05D1\u0009\u0009A")
+
+        val line = layoutParagraph(
+            fixture = fixture,
+            constraints = constraints(width = 8_000f, top = 50f, height = 1_200f),
+            language = "en",
+            baseDirection = BaseDirection.RIGHT_TO_LEFT,
+            positioning = ParagraphPositioningPolicy(defaultTabInterval = LayoutUnit(2_000f)),
+        ).lines.single()
+
+        val controls = line.positionedGlyphRuns.flatMap { run -> run.lineControls }
+        assertEquals(listOf(fixture.range(1, 2), fixture.range(2, 3)), controls.map { it.sourceRange })
+        assertTrue(controls.all { it.kind == org.graphiks.kalligraphie.api.LineControlKind.HORIZONTAL_TAB })
+        assertTrue(line.glyphs().none { glyph ->
+            glyph.sourceClusters.any { cluster -> cluster.sourceRange in listOf(fixture.range(1, 2), fixture.range(2, 3)) }
+        })
+    }
+
+    @Test
     fun tabLeaderIsSyntheticContentWithoutFakeDocumentCharacters() {
         val fixture = dejavuFixture("a\u0009b")
 
