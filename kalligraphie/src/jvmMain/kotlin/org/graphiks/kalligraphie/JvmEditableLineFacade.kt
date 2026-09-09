@@ -36,7 +36,6 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 
 /**
@@ -148,8 +147,10 @@ public class JvmEditableLineFacadeRequest(
  * ICU4J Unicode analysis, the embedded
  * hash-verified HarfBuzz JVM backend, and portable final-line layout. It returns a typed failure
  * when Unicode inputs are invalid or HarfBuzz cannot open or shape. Android and Apple adapters
- * are deliberately not selected by this JVM-only entry point. It owns no native handle after a
- * call returns; renderable mode borrows the resolver supplied in [JvmEditableLineFacadeRequest].
+ * are deliberately not selected by this JVM-only entry point. Each call delegates to a
+ * short-lived [JvmEditableLineLayoutSession], so it owns no native handle after returning;
+ * renderable mode borrows the resolver supplied in [JvmEditableLineFacadeRequest]. Consumers
+ * laying out successive edits should instead open and reuse an explicit session.
  */
 public object JvmEditableLineFacade {
     /**
@@ -163,27 +164,51 @@ public object JvmEditableLineFacade {
      * certified representation profile.
      */
     public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
-        val analysis = when (val analyzed = analyze(request)) {
-            is FacadeUnicodeAnalysis.Success -> analyzed.analysis
-            is FacadeUnicodeAnalysis.Result -> return analyzed.result
-        }
-        val backend = when (val opened = JvmHarfBuzzShapingBackend.open()) {
+        val session = when (val opened = JvmEditableLineLayoutSession.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return shapingFailure(opened)
             is FontOperationResult.Cancelled -> return EditableLineResult.Cancelled(opened.diagnostics.toEditableDiagnostics())
         }
-        return layout(request, analysis, backend)
+        return layoutWithOwnedSession(request, session)
     }
 
     internal fun layout(
         request: JvmEditableLineFacadeRequest,
         backend: ShapingBackend,
     ): EditableLineResult {
+        var result: EditableLineResult? = null
+        var closeResult: FontOperationResult<Unit>? = null
+        try {
+            result = layoutBorrowing(request, backend)
+        } finally {
+            closeResult = backend.close()
+        }
+        return includeBackendCloseResult(checkNotNull(result), checkNotNull(closeResult))
+    }
+
+    internal fun layoutBorrowing(
+        request: JvmEditableLineFacadeRequest,
+        backend: ShapingBackend,
+    ): EditableLineResult {
         val analysis = when (val analyzed = analyze(request)) {
             is FacadeUnicodeAnalysis.Success -> analyzed.analysis
-            is FacadeUnicodeAnalysis.Result -> return includeBackendCloseResult(analyzed.result, backend.close())
+            is FacadeUnicodeAnalysis.Result -> return analyzed.result
         }
-        return layout(request, analysis, backend)
+        return layoutAnalyzed(request, analysis, backend)
+    }
+
+    private fun layoutWithOwnedSession(
+        request: JvmEditableLineFacadeRequest,
+        session: JvmEditableLineLayoutSession,
+    ): EditableLineResult {
+        var result: EditableLineResult? = null
+        var closeResult: FontOperationResult<Unit>? = null
+        try {
+            result = session.layout(request)
+        } finally {
+            closeResult = session.close()
+        }
+        return includeBackendCloseResult(checkNotNull(result), checkNotNull(closeResult))
     }
 
     private fun analyze(request: JvmEditableLineFacadeRequest): FacadeUnicodeAnalysis = try {
@@ -246,41 +271,34 @@ public object JvmEditableLineFacade {
         return null
     }
 
-    private fun layout(
+    private fun layoutAnalyzed(
         request: JvmEditableLineFacadeRequest,
         analysis: UnicodeAnalysis,
         backend: ShapingBackend,
     ): EditableLineResult {
-        var layoutResult: EditableLineResult? = null
-        var closeResult: FontOperationResult<Unit>? = null
-        try {
-            layoutResult = when (val shaped = shapeRuns(request, analysis, backend)) {
-                is ShapingRunsResult.Success -> try {
-                    ExactEditableLineLayouter.layout(
-                        EditableLineRequest(
-                            unicodeAnalysis = analysis,
-                            shapedGlyphRuns = shaped.runs,
-                            baseDirection = request.baseDirection.toShapingDirection(),
-                            emptyLineBidiLevel = request.emptyLineBidiLevel,
-                            font = request.font,
-                            verticalMetrics = request.verticalMetrics,
-                            materialization = request.materialization,
-                            snapshot = request.snapshot,
-                            positioning = request.positioning,
-                            cancellationToken = request.cancellationToken,
-                        ),
-                    )
-                } catch (error: IllegalArgumentException) {
-                    invalidInput(error)
-                }
-
-                is ShapingRunsResult.Failure -> shapingFailure(shaped.result)
-                is ShapingRunsResult.Cancelled -> EditableLineResult.Cancelled(shaped.result.diagnostics.toEditableDiagnostics())
+        return when (val shaped = shapeRuns(request, analysis, backend)) {
+            is ShapingRunsResult.Success -> try {
+                ExactEditableLineLayouter.layout(
+                    EditableLineRequest(
+                        unicodeAnalysis = analysis,
+                        shapedGlyphRuns = shaped.runs,
+                        baseDirection = request.baseDirection.toShapingDirection(),
+                        emptyLineBidiLevel = request.emptyLineBidiLevel,
+                        font = request.font,
+                        verticalMetrics = request.verticalMetrics,
+                        materialization = request.materialization,
+                        snapshot = request.snapshot,
+                        positioning = request.positioning,
+                        cancellationToken = request.cancellationToken,
+                    ),
+                )
+            } catch (error: IllegalArgumentException) {
+                invalidInput(error)
             }
-        } finally {
-            closeResult = backend.close()
+
+            is ShapingRunsResult.Failure -> shapingFailure(shaped.result)
+            is ShapingRunsResult.Cancelled -> EditableLineResult.Cancelled(shaped.result.diagnostics.toEditableDiagnostics())
         }
-        return includeBackendCloseResult(checkNotNull(layoutResult), checkNotNull(closeResult))
     }
 
     private fun shapeRuns(

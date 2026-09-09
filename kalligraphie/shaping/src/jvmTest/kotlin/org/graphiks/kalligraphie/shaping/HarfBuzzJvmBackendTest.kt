@@ -27,9 +27,11 @@ import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.unicode.TextSnapshots
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -365,6 +367,61 @@ class HarfBuzzJvmBackendTest {
         assertEquals(listOf(range(prepared, 3, 4)), shaped.mappings.sourcesForCluster(ShaperClusterToken(3)))
         assertEquals(listOf(ShaperClusterToken(0)), shaped.mappings.clustersForSource(range(prepared, 0, 1)))
         assertEquals(listOf(ShaperClusterToken(3)), shaped.mappings.clustersForSource(range(prepared, 3, 4)))
+    }
+
+    @Test
+    fun realBackendShapesConcurrentHebrewCallsToTheSameCompleteAuditedRun() {
+        val backend = backend()
+        val font = fontInstance("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans")
+        val prepared = text("שלום")
+        val ready = CountDownLatch(8)
+        val start = CountDownLatch(1)
+        val observations = Collections.synchronizedList(mutableListOf<ConcurrentShapingObservation>())
+        val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+
+        val workers = List(8) {
+            thread(name = "harfbuzz-real-shaping-$it") {
+                try {
+                    ready.countDown()
+                    start.await()
+                    val shaped = backend.shape(
+                        request(
+                            prepared = prepared,
+                            font = font,
+                            direction = ShapingDirection.RIGHT_TO_LEFT,
+                            script = OpenTypeScript("Hebr"),
+                            language = "he",
+                            bidiLevel = 1,
+                        ),
+                    ).successValue()
+                    observations += ConcurrentShapingObservation(
+                        glyphIds = shaped.glyphs.map { glyph -> glyph.glyphId.value },
+                        advances = shaped.glyphs.map { glyph -> glyph.xAdvance.value },
+                        clusterTokens = shaped.glyphs.map { glyph -> glyph.clusterToken.value },
+                    )
+                } catch (error: Throwable) {
+                    failures += error
+                }
+            }
+        }
+        assertTrue(ready.await(10, TimeUnit.SECONDS))
+        start.countDown()
+        workers.forEach { worker ->
+            worker.join(10_000)
+            assertTrue(!worker.isAlive, "A real concurrent shaping call did not complete.")
+        }
+
+        assertEquals(emptyList(), failures)
+        assertEquals(
+            List(8) {
+                ConcurrentShapingObservation(
+                    glyphIds = listOf(1293, 1285, 1292, 1305),
+                    advances = listOf(1389f, 532f, 1085f, 1495f),
+                    clusterTokens = listOf(3, 2, 1, 0),
+                )
+            },
+            observations,
+        )
     }
 
     @Test
@@ -796,6 +853,12 @@ class HarfBuzzJvmBackendTest {
     private data class CachedResource(
         val name: String,
         val weight: Long,
+    )
+
+    private data class ConcurrentShapingObservation(
+        val glyphIds: List<Int>,
+        val advances: List<Float>,
+        val clusterTokens: List<Int>,
     )
 
     private fun org.graphiks.kalligraphie.api.ShapingSafetyFlags.mask(): Int =

@@ -543,8 +543,10 @@ internal class HarfBuzzNativeLibrary(
     )
     private val faceDestroy: MethodHandle = handle(lookup, "hb_face_destroy", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS))
     private val faceGetUpem: MethodHandle = handle(lookup, "hb_face_get_upem", FunctionDescriptor.of(ValueLayout.JAVA_INT, ValueLayout.ADDRESS))
+    private val faceMakeImmutable: MethodHandle = handle(lookup, "hb_face_make_immutable", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS))
     private val fontCreate: MethodHandle = handle(lookup, "hb_font_create", FunctionDescriptor.of(ValueLayout.ADDRESS, ValueLayout.ADDRESS))
     private val fontDestroy: MethodHandle = handle(lookup, "hb_font_destroy", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS))
+    private val fontMakeImmutable: MethodHandle = handle(lookup, "hb_font_make_immutable", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS))
     private val otFontSetFuncs: MethodHandle = handle(lookup, "hb_ot_font_set_funcs", FunctionDescriptor.ofVoid(ValueLayout.ADDRESS))
     private val fontSetScale: MethodHandle = handle(
         lookup,
@@ -660,6 +662,8 @@ internal class HarfBuzzNativeLibrary(
             font = requireNativeHandle(address(fontCreate, face), "font")
             callVoid(otFontSetFuncs, font)
             callVoid(fontSetScale, font, designToLayout.unitsPerEm, designToLayout.unitsPerEm)
+            callVoid(faceMakeImmutable, face)
+            callVoid(fontMakeImmutable, font)
             return PreparedHarfBuzzFont(
                 nativeLibrary = this,
                 arena = arena,
