@@ -326,9 +326,12 @@ internal object LineContentPlan {
             val mapped = mappedRange(snapshot, run, glyph)
             val scalars = snapshot.scalarValues(mapped)
             if (scalars.any { it == TAB } && instance != null) {
-                val marker = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
-                val tabGlyph = neutralTabGlyph(glyph, marker)
-                stream += RefinedGlyph(tabGlyph, GlyphProvenance.Direct(mapped), tabMarker = true)
+                val tabGlyph = neutralTabGlyph(glyph)
+                stream += RefinedGlyph(
+                    tabGlyph,
+                    GlyphProvenance.Synthetic(mapped.start, GlyphProvenanceRole.TAB_STOP),
+                    tabMarker = true,
+                )
                 return@forEach
             }
             if (scalars.any { it == SOFT_HYPHEN } && instance != null && softHyphens != null) {
@@ -369,7 +372,6 @@ internal object LineContentPlan {
                 snapshot.scalarValues(cluster.sourceRange).any { it == TAB }
             }
         ) {
-            val space = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
             val glyphTokens = stream.flatMap { glyph -> glyph.shapedGlyph.clusterTokens }.toSet()
             val markersNeeded = run.clusters.filter { cluster ->
                 snapshot.scalarValues(cluster.sourceRange).any { it == TAB } &&
@@ -378,8 +380,11 @@ internal object LineContentPlan {
             if (markersNeeded.isNotEmpty()) {
                 val markersByToken = markersNeeded.associate { cluster ->
                     cluster.token to RefinedGlyph(
-                        shapedGlyph = zeroAdvanceTab(space, cluster.token),
-                        provenance = GlyphProvenance.Direct(cluster.sourceRange),
+                        shapedGlyph = zeroAdvanceTab(cluster.token),
+                        provenance = GlyphProvenance.Synthetic(
+                            cluster.sourceRange.start,
+                            GlyphProvenanceRole.TAB_STOP,
+                        ),
                         tabMarker = true,
                     )
                 }
@@ -456,8 +461,8 @@ internal object LineContentPlan {
         message = reason,
     )
 
-    private fun zeroAdvanceTab(glyphId: GlyphId, token: ShaperClusterToken): ShapedGlyph = ShapedGlyph(
-        glyphId = glyphId,
+    private fun zeroAdvanceTab(token: ShaperClusterToken): ShapedGlyph = ShapedGlyph(
+        glyphId = NO_INK_LINE_CONTROL_MARKER,
         xAdvance = LayoutUnit(0f),
         yAdvance = LayoutUnit(0f),
         xOffset = LayoutUnit(0f),
@@ -466,8 +471,8 @@ internal object LineContentPlan {
         clusterTokens = listOf(token),
     )
 
-    private fun neutralTabGlyph(glyph: ShapedGlyph, marker: GlyphId): ShapedGlyph = ShapedGlyph(
-        glyphId = marker,
+    private fun neutralTabGlyph(glyph: ShapedGlyph): ShapedGlyph = ShapedGlyph(
+        glyphId = NO_INK_LINE_CONTROL_MARKER,
         xAdvance = LayoutUnit(0f),
         yAdvance = LayoutUnit(0f),
         xOffset = LayoutUnit(0f),
@@ -737,6 +742,7 @@ private const val SOFT_HYPHEN: Int = 0x00AD
 private const val HYPHEN_MINUS: Int = 0x002D
 private const val SPACE: Int = 0x0020
 private const val TAB: Int = 0x0009
+private val NO_INK_LINE_CONTROL_MARKER: GlyphId = GlyphId(0x10000)
 private const val KASHIDA_SCALAR: Int = 0x0640
 private const val ARABIC_SCRIPT: String = "Arab"
 internal const val ELLIPSIS_SCALAR: Int = 0x2026

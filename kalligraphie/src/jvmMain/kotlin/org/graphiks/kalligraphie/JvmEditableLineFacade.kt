@@ -20,6 +20,8 @@ import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
+import org.graphiks.kalligraphie.api.ShaperCluster
+import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingFeaturePolicy
@@ -81,8 +83,44 @@ public class JvmEditableLineFacadeRequest(
      * A snapshot containing `U+0009 CHARACTER TABULATION` is rejected unless this policy is
      * present. Explicit and implicit stops are then resolved by [ParagraphPositioningPolicy].
      */
-    public val positioning: ParagraphPositioningPolicy? = null,
+    public val positioning: ParagraphPositioningPolicy?,
 ) {
+    /**
+     * Creates a request through the original source- and binary-compatible constructor.
+     *
+     * This form has no positioning policy. It therefore remains suitable for lines without a
+     * horizontal tab, while a line containing `U+0009 CHARACTER TABULATION` is rejected with
+     * [EditableLineError.UnsupportedLineControl].
+     */
+    public constructor(
+        snapshot: TextSnapshot,
+        font: FontInstance,
+        baseDirection: BaseDirection,
+        language: String,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature>,
+        verticalMetrics: LineVerticalMetrics,
+        materialization: EditableLineMaterialization,
+        emptyLineBidiLevel: Int? = null,
+        cancellationToken: CancellationToken = CancellationToken.none,
+        unicodeAnalysisProfile: UnicodeAnalysisProfile = UnicodeAnalysisProfile.unbounded,
+        shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+    ) : this(
+        snapshot = snapshot,
+        font = font,
+        baseDirection = baseDirection,
+        language = language,
+        featurePolicy = featurePolicy,
+        features = features,
+        verticalMetrics = verticalMetrics,
+        materialization = materialization,
+        emptyLineBidiLevel = emptyLineBidiLevel,
+        cancellationToken = cancellationToken,
+        unicodeAnalysisProfile = unicodeAnalysisProfile,
+        shapingResourceProfile = shapingResourceProfile,
+        positioning = null,
+    )
+
     /** Immutable OpenType feature overrides applied in deterministic caller order. */
     public val features: List<OpenTypeFeature> = features.toList()
 
@@ -252,30 +290,95 @@ public object JvmEditableLineFacade {
     ): ShapingRunsResult {
         val runs = mutableListOf<ShapedGlyphRun>()
         for (plan in shapingPlans(analysis)) {
-            when (val shaped = backend.shape(
-                ShapingRequest(
-                    snapshot = request.snapshot,
-                    range = plan.range,
-                    font = request.font,
-                    direction = plan.direction,
-                    script = OpenTypeScript(plan.script),
-                    language = plan.language,
-                    bidiLevel = plan.bidiLevel,
-                    bot = plan.range.start == analysis.range.start,
-                    eot = plan.range.endExclusive == analysis.range.endExclusive,
-                    featurePolicy = request.featurePolicy,
-                    features = request.features,
-                    graphemeClusters = plan.graphemeClusters,
-                    resourceProfile = request.shapingResourceProfile,
-                    cancellationToken = request.cancellationToken,
-                ),
-            )) {
-                is FontOperationResult.Success -> runs += shaped.value
-                is FontOperationResult.Failure -> return ShapingRunsResult.Failure(shaped)
-                is FontOperationResult.Cancelled -> return ShapingRunsResult.Cancelled(shaped)
+            for (segment in splitAtTabs(request.snapshot, plan)) {
+                if (segment.isTab) {
+                    runs += tabControlRun(request, analysis, backend, segment)
+                    continue
+                }
+                val shaped = backend.shape(
+                    ShapingRequest(
+                        snapshot = request.snapshot,
+                        range = segment.range,
+                        font = request.font,
+                        direction = segment.direction,
+                        script = OpenTypeScript(segment.script),
+                        language = segment.language,
+                        bidiLevel = segment.bidiLevel,
+                        bot = segment.range.start == analysis.range.start,
+                        eot = segment.range.endExclusive == analysis.range.endExclusive,
+                        featurePolicy = request.featurePolicy,
+                        features = request.features,
+                        graphemeClusters = segment.graphemeClusters,
+                        resourceProfile = request.shapingResourceProfile,
+                        cancellationToken = request.cancellationToken,
+                    ),
+                )
+                when (shaped) {
+                    is FontOperationResult.Success -> runs += shaped.value
+                    is FontOperationResult.Failure -> return ShapingRunsResult.Failure(shaped)
+                    is FontOperationResult.Cancelled -> return ShapingRunsResult.Cancelled(shaped)
+                }
             }
         }
         return ShapingRunsResult.Success(runs)
+    }
+
+    private fun splitAtTabs(snapshot: TextSnapshot, plan: ShapingPlan): List<ShapingPlan> {
+        val scalars = snapshot.scalarValues(plan.range)
+        if (TAB_SCALAR !in scalars) return listOf(plan)
+        val scalarRanges = snapshot.scalarRanges(plan.range)
+        val segments = mutableListOf<ShapingPlan>()
+        var next = plan.range.start
+        scalarRanges.zip(scalars).forEach { (scalarRange, scalar) ->
+            if (scalar != TAB_SCALAR) return@forEach
+            if (next < scalarRange.start) {
+                val range = TextRange(next, scalarRange.start)
+                segments += plan.copy(range = range, graphemeClusters = graphemeFragments(range, plan.graphemeClusters))
+            }
+            segments += plan.copy(
+                range = scalarRange,
+                graphemeClusters = listOf(scalarRange),
+                isTab = true,
+            )
+            next = scalarRange.endExclusive
+        }
+        if (next < plan.range.endExclusive) {
+            val range = TextRange(next, plan.range.endExclusive)
+            segments += plan.copy(range = range, graphemeClusters = graphemeFragments(range, plan.graphemeClusters))
+        }
+        return segments
+    }
+
+    private fun tabControlRun(
+        request: JvmEditableLineFacadeRequest,
+        analysis: UnicodeAnalysis,
+        backend: ShapingBackend,
+        plan: ShapingPlan,
+    ): ShapedGlyphRun {
+        val token = ShaperClusterToken(0)
+        return ShapedGlyphRun(
+            range = plan.range,
+            fontInstanceKey = request.font.key,
+            backendIdentity = backend.identity,
+            direction = plan.direction,
+            script = OpenTypeScript(plan.script),
+            language = plan.language,
+            bidiLevel = plan.bidiLevel,
+            bot = plan.range.start == analysis.range.start,
+            eot = plan.range.endExclusive == analysis.range.endExclusive,
+            featurePolicy = request.featurePolicy,
+            features = request.features,
+            graphemeClusters = listOf(plan.range),
+            glyphs = emptyList(),
+            clusters = listOf(
+                ShaperCluster(
+                    token = token,
+                    sourceRange = plan.range,
+                    scalarRanges = listOf(plan.range),
+                    admissibleGraphemeBoundaries = listOf(plan.range.start, plan.range.endExclusive),
+                ),
+            ),
+        )
     }
 
     private fun shapingPlans(analysis: UnicodeAnalysis): List<ShapingPlan> {
@@ -387,7 +490,10 @@ private data class ShapingPlan(
     val bidiLevel: Int,
     val direction: ShapingDirection,
     val graphemeClusters: List<TextRange>,
+    val isTab: Boolean = false,
 )
+
+private const val TAB_SCALAR: Int = 0x0009
 
 private fun BaseDirection.toShapingDirection(): ShapingDirection = when (this) {
     BaseDirection.LEFT_TO_RIGHT -> ShapingDirection.LEFT_TO_RIGHT

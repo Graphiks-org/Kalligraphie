@@ -114,9 +114,12 @@ request supplies an explicit `ParagraphPositioningPolicy`.
 
 With a positioning policy, TAB advances to the next explicit `TabStop`, or to
 the next interval selected by `defaultTabInterval` when no explicit stop
-applies. It is replaced by a glyphless marker rather than publishing the
-font's ordinary TAB/.notdef glyph; the following content, caret boundaries,
-and source mappings reflect the resulting tab-stop geometry. The BiDi
+applies. Shaping is split around each TAB: the scalar is never submitted as
+U+0009, U+0020, or `.notdef`, and no font glyph is resolved or certified for
+it. The result instead publishes a source-mapped `PositionedLineControl` with
+the tab-stop geometry and, in renderable mode, the `EMPTY` materialization
+route. The following content and every caret boundary retain the exact source
+coverage. The BiDi
 formatting controls LRE, RLE, PDF, LRI, RLI, FSI, and PDI remain accepted,
 glyphless, and exactly source-mapped.
 

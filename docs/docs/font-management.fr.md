@@ -148,9 +148,13 @@ si la demande ne fournit pas de `ParagraphPositioningPolicy` explicite.
 
 Avec cette politique de positionnement, TAB avance jusqu’au prochain `TabStop`
 (taquet de tabulation) explicite ou jusqu’au prochain intervalle défini par
-`defaultTabInterval`. Un marqueur sans encre remplace le glyphe TAB/.notdef
-ordinaire de la fonte ; le contenu suivant, les frontières du caret et les
-relations source reflètent la géométrie du taquet. Les contrôles de formatage
+`defaultTabInterval`. La composition glyphique est découpée autour de chaque
+TAB : la valeur n’est jamais soumise comme U+0009, U+0020 ou `.notdef`, et
+aucun glyphe de fonte n’est résolu ni certifié pour elle. Le résultat publie à
+la place un `PositionedLineControl` associé exactement à la source, avec la
+géométrie du taquet et, en mode rendu, la route de matérialisation `EMPTY`
+(sans encre). Le contenu suivant et toutes les frontières du caret conservent
+leur couverture source exacte. Les contrôles de formatage
 BiDi LRE, RLE, PDF, LRI, RLI, FSI et PDI restent acceptés, sans encre et associés
 exactement à leur source.
 

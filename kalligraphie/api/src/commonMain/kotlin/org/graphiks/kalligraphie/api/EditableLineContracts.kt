@@ -398,6 +398,36 @@ public class PositionedGlyph(
 }
 
 /**
+ * Final geometry of one glyphless source control in an editable line.
+ *
+ * The control maps directly to [sourceRange] but has no font glyph identifier, render asset, or
+ * representation payload. [origin] and [advance] express its layout effect. In renderable mode
+ * [materializationRoute] is [GlyphMaterializationRoute.EMPTY], recording that the marker requires
+ * no ink without resolving a substitute font glyph; layout-only mode leaves the route `null`.
+ */
+public class PositionedLineControl(
+    /** Exact kind of glyphless source control. */
+    public val kind: LineControlKind,
+    /** Exact snapshot-bound scalar range occupied by the control. */
+    public val sourceRange: TextRange,
+    /** Final control origin relative to the line baseline. */
+    public val origin: LayoutPoint,
+    /** Final geometric advance contributed by the control. */
+    public val advance: LayoutVector,
+    /** No-ink route in renderable mode, or `null` in layout-only mode. */
+    public val materializationRoute: GlyphMaterializationRoute?,
+) {
+    init {
+        require(kind == LineControlKind.HORIZONTAL_TAB) {
+            "Only explicitly positioned horizontal tabs publish glyphless line-control geometry."
+        }
+        require(materializationRoute == null || materializationRoute == GlyphMaterializationRoute.EMPTY) {
+            "A glyphless line control can use only the EMPTY materialization route."
+        }
+    }
+}
+
+/**
  * One shaped run after final placement in physical visual order.
  *
  * The run retains its relative [sourceRun] and does not reinterpret source indexes. Its glyphs
@@ -411,13 +441,30 @@ public class PositionedGlyphRun(
     /** Exact render asset key shared by every glyph in renderable mode, otherwise `null`. */
     public val renderAssetKey: FontRenderAssetKey?,
     glyphs: List<PositionedGlyph>,
+    lineControls: List<PositionedLineControl>,
 ) {
+    /**
+     * Compatibility constructor for a positioned run containing only font glyphs.
+     *
+     * Existing consumers retain their original four-argument JVM constructor. New layout code
+     * uses the primary constructor when a run also publishes glyphless line controls.
+     */
+    public constructor(
+        sourceRun: ShapedGlyphRun,
+        visualOrder: Int,
+        renderAssetKey: FontRenderAssetKey?,
+        glyphs: List<PositionedGlyph>,
+    ) : this(sourceRun, visualOrder, renderAssetKey, glyphs, emptyList())
+
     /** Exact font instance that shaped every glyph in this positioned run. */
     public val fontInstanceKey: FontInstanceKey
         get() = sourceRun.fontInstanceKey
 
     /** Immutable final glyphs in this run's produced visual glyph order. */
     public val glyphs: List<PositionedGlyph> = glyphs.immutableListSnapshot()
+
+    /** Immutable glyphless source controls positioned inside this run. */
+    public val lineControls: List<PositionedLineControl> = lineControls.immutableListSnapshot()
 
     /** Final glyphs whose provenance is [GlyphProvenance.Direct] or [GlyphProvenance.Derived]. */
     private val sourceGlyphs: List<PositionedGlyph>
@@ -452,6 +499,12 @@ public class PositionedGlyphRun(
         }
         require(this.glyphs.all { it.renderAssetKey == renderAssetKey }) {
             "Every positioned glyph must use exactly its positioned run render asset key."
+        }
+        require(this.lineControls.all { control -> containsRange(sourceRun.range, control.sourceRange) }) {
+            "Every positioned line control must stay inside its source run."
+        }
+        require(this.lineControls.zipWithNext().all { (left, right) -> left.sourceRange.start < right.sourceRange.start }) {
+            "Positioned line controls must use strict logical source order within a run."
         }
     }
 }
@@ -1000,6 +1053,10 @@ public class EditableLine(
 ) {
     /** Positioned shaped runs in physical visual order. */
     public val positionedGlyphRuns: List<PositionedGlyphRun> = positionedGlyphRuns.immutableListSnapshot()
+
+    /** Glyphless source controls flattened from positioned runs in physical visual-run order. */
+    public val positionedLineControls: List<PositionedLineControl> =
+        this.positionedGlyphRuns.flatMap(PositionedGlyphRun::lineControls).immutableListSnapshot()
 
     /** Concrete caret geometries in physical visual traversal order. */
     public val allCaretCandidates: List<CaretCandidate> = caretCandidates.immutableListSnapshot()

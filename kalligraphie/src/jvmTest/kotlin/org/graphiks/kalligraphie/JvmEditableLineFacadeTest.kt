@@ -3,7 +3,9 @@ package org.graphiks.kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.CaretAffinity
+import org.graphiks.kalligraphie.api.CaretBoundaryEdge
 import org.graphiks.kalligraphie.api.CaretPosition
+import org.graphiks.kalligraphie.api.CaretStrength
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineResult
@@ -30,8 +32,11 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapingResourceProfile
+import org.graphiks.kalligraphie.api.SourceEncoding
+import org.graphiks.kalligraphie.api.SourceOffset
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,44 +45,103 @@ import kotlin.test.assertTrue
 
 class JvmEditableLineFacadeTest {
     @Test
+    fun java_consumer_using_the_original_constructor_still_lays_out_real_liberation_text() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val request = LegacyJvmEditableLineFacadeRequestFactory.create(
+                snapshot,
+                fixture.font,
+                BaseDirection.LEFT_TO_RIGHT,
+                "en",
+                JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                emptyList(),
+                LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                EditableLineMaterialization.LayoutOnly,
+                null,
+                CancellationToken.none,
+                UnicodeAnalysisProfile.unbounded,
+                ShapingResourceProfile.unbounded,
+            )
+
+            val glyph = assertIs<EditableLineResult.Success>(JvmEditableLineFacade.layout(request))
+                .line.positionedGlyphRuns.single().glyphs.single()
+            assertEquals(GlyphId(36), glyph.shapedGlyph.glyphId)
+            assertEquals(0f, glyph.origin.x.value)
+            assertEquals(1_366f, glyph.advance.x.value)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
     fun hard_line_controls_are_rejected_with_their_exact_scalar_range_before_cancellation() {
         val cases = listOf(
-            Triple("A\rB", LineControlKind.CARRIAGE_RETURN, 1 to 2),
-            Triple("A\nB", LineControlKind.LINE_FEED, 1 to 2),
-            Triple("A\r\nB", LineControlKind.CARRIAGE_RETURN_LINE_FEED, 1 to 3),
-            Triple("A\u000BB", LineControlKind.VERTICAL_TAB, 1 to 2),
-            Triple("A\u000CB", LineControlKind.FORM_FEED, 1 to 2),
-            Triple("A\u0085B", LineControlKind.NEXT_LINE, 1 to 2),
-            Triple("A\u2028B", LineControlKind.LINE_SEPARATOR, 1 to 2),
-            Triple("A\u2029B", LineControlKind.PARAGRAPH_SEPARATOR, 1 to 2),
+            HardSeparatorOracle("\r", LineControlKind.CARRIAGE_RETURN, scalarEnd = 2, utf8SourceRange = 4 to 5, utf16SourceRange = 2 to 3),
+            HardSeparatorOracle("\n", LineControlKind.LINE_FEED, scalarEnd = 2, utf8SourceRange = 4 to 5, utf16SourceRange = 2 to 3),
+            HardSeparatorOracle(
+                "\r\n",
+                LineControlKind.CARRIAGE_RETURN_LINE_FEED,
+                scalarEnd = 3,
+                utf8SourceRange = 4 to 6,
+                utf16SourceRange = 2 to 4,
+            ),
+            HardSeparatorOracle("\u000B", LineControlKind.VERTICAL_TAB, scalarEnd = 2, utf8SourceRange = 4 to 5, utf16SourceRange = 2 to 3),
+            HardSeparatorOracle("\u000C", LineControlKind.FORM_FEED, scalarEnd = 2, utf8SourceRange = 4 to 5, utf16SourceRange = 2 to 3),
+            HardSeparatorOracle("\u0085", LineControlKind.NEXT_LINE, scalarEnd = 2, utf8SourceRange = 4 to 6, utf16SourceRange = 2 to 3),
+            HardSeparatorOracle("\u2028", LineControlKind.LINE_SEPARATOR, scalarEnd = 2, utf8SourceRange = 4 to 7, utf16SourceRange = 2 to 3),
+            HardSeparatorOracle("\u2029", LineControlKind.PARAGRAPH_SEPARATOR, scalarEnd = 2, utf8SourceRange = 4 to 7, utf16SourceRange = 2 to 3),
         )
         val fixture = renderableFixture()
         try {
-            cases.forEach { (text, expectedKind, expectedBoundaries) ->
-                val snapshot = Kalligraphie.decodeUtf16(
-                    version = TextVersion.create(),
-                    slices = listOf(TextSlice.Utf16(text.toCharArray())),
-                ).snapshot
+            cases.forEach { case ->
+                val text = "\uD83D\uDE00${case.text}B"
+                listOf(SourceEncoding.UTF8, SourceEncoding.UTF16).forEach { encoding ->
+                    val version = TextVersion.create()
+                    val snapshot = when (encoding) {
+                        SourceEncoding.UTF8 -> Kalligraphie.decodeUtf8(
+                            version = version,
+                            slices = listOf(TextSlice.Utf8(text.encodeToByteArray())),
+                        ).snapshot
 
-                val result = JvmEditableLineFacade.layout(
-                    lineRequest(
-                        snapshot = snapshot,
-                        font = fixture.font,
-                        cancellationToken = CancellationToken.cancelled,
-                    ),
-                )
+                        SourceEncoding.UTF16 -> Kalligraphie.decodeUtf16(
+                            version = version,
+                            slices = listOf(TextSlice.Utf16(text.toCharArray())),
+                        ).snapshot
+                    }
 
-                val control = assertIs<EditableLineError.UnsupportedLineControl>(
-                    assertIs<EditableLineResult.Failure>(result).error,
-                )
-                assertEquals(expectedKind, control.kind)
-                assertEquals(
-                    org.graphiks.kalligraphie.api.TextRange(
-                        snapshot.textIndexAtScalarBoundary(expectedBoundaries.first),
-                        snapshot.textIndexAtScalarBoundary(expectedBoundaries.second),
-                    ),
-                    control.range,
-                )
+                    val result = JvmEditableLineFacade.layout(
+                        lineRequest(
+                            snapshot = snapshot,
+                            font = fixture.font,
+                            cancellationToken = CancellationToken.cancelled,
+                        ),
+                    )
+
+                    val control = assertIs<EditableLineError.UnsupportedLineControl>(
+                        assertIs<EditableLineResult.Failure>(result).error,
+                    )
+                    assertEquals(case.kind, control.kind)
+                    assertEquals(
+                        org.graphiks.kalligraphie.api.TextRange(
+                            snapshot.textIndexAtScalarBoundary(1),
+                            snapshot.textIndexAtScalarBoundary(case.scalarEnd),
+                        ),
+                        control.range,
+                    )
+                    val sourceRange = if (encoding == SourceEncoding.UTF8) case.utf8SourceRange else case.utf16SourceRange
+                    assertEquals(
+                        SourceOffset(version, encoding, sourceRange.first),
+                        snapshot.textIndexToSource(control.range.start),
+                    )
+                    assertEquals(
+                        SourceOffset(version, encoding, sourceRange.second),
+                        snapshot.textIndexToSource(control.range.endExclusive),
+                    )
+                }
             }
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
@@ -117,7 +181,7 @@ class JvmEditableLineFacadeTest {
     }
 
     @Test
-    fun explicit_tab_stop_positions_the_following_liberation_glyph_and_uses_a_glyphless_marker() {
+    fun explicit_tab_stop_publishes_a_source_mapped_no_ink_control_instead_of_a_font_glyph() {
         val snapshot = Kalligraphie.decodeUtf16(
             version = TextVersion.create(),
             slices = listOf(TextSlice.Utf16("A\tB".toCharArray())),
@@ -131,24 +195,140 @@ class JvmEditableLineFacadeTest {
                     positioning = ParagraphPositioningPolicy(
                         tabStops = listOf(TabStop(LayoutUnit(3_000f))),
                     ),
+                    materialization = EditableLineMaterialization.Renderable(
+                        resolver = fixture.resolver,
+                        variant = FontRenderVariantKey.default,
+                        outlineProfile = OUTLINE_PROFILE,
+                    ),
+                    shapingResourceProfile = ShapingResourceProfile(maxScalars = 1),
                 ),
             )
 
             val line = assertIs<EditableLineResult.Success>(result).line
             val glyphs = line.positionedGlyphRuns.flatMap { it.glyphs }
-            assertEquals(listOf(GlyphId(36), GlyphId(3), GlyphId(37)), glyphs.map { it.shapedGlyph.glyphId })
-            assertEquals(listOf(0f, 1_366f, 3_000f), glyphs.map { it.origin.x.value })
-            assertEquals(listOf(1_366f, 1_634f, 1_366f), glyphs.map { it.advance.x.value })
+            assertEquals(listOf(GlyphId(36), GlyphId(37)), glyphs.map { it.shapedGlyph.glyphId })
+            assertEquals(listOf(0f, 3_000f), glyphs.map { it.origin.x.value })
+            assertEquals(listOf(1_366f, 1_366f), glyphs.map { it.advance.x.value })
+            assertTrue(glyphs.all { it.materializationCertificate?.route == GlyphMaterializationRoute.OUTLINE })
+            val tab = line.positionedLineControls.single()
+            assertEquals(LineControlKind.HORIZONTAL_TAB, tab.kind)
             assertEquals(
                 org.graphiks.kalligraphie.api.TextRange(
                     snapshot.textIndexAtScalarBoundary(1),
                     snapshot.textIndexAtScalarBoundary(2),
                 ),
-                glyphs[1].mappedSourceRange,
+                tab.sourceRange,
             )
+            assertEquals(1_366f, tab.origin.x.value)
+            assertEquals(1_634f, tab.advance.x.value)
+            assertEquals(GlyphMaterializationRoute.EMPTY, tab.materializationRoute)
             assertEquals(
                 (0..3).map(snapshot::textIndexAtScalarBoundary).toSet(),
                 line.allCaretCandidates.map { it.position.index }.toSet(),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun repeated_tabs_use_the_literal_default_interval_without_publishing_font_glyphs() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A\tA\tA".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val line = assertIs<EditableLineResult.Success>(
+                JvmEditableLineFacade.layout(
+                    lineRequest(
+                        snapshot = snapshot,
+                        font = fixture.font,
+                        positioning = ParagraphPositioningPolicy(defaultTabInterval = LayoutUnit(2_000f)),
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = fixture.resolver,
+                            variant = FontRenderVariantKey.default,
+                            outlineProfile = OUTLINE_PROFILE,
+                        ),
+                        shapingResourceProfile = ShapingResourceProfile(maxScalars = 1),
+                    ),
+                ),
+            ).line
+
+            val glyphs = line.positionedGlyphRuns.flatMap { it.glyphs }
+            assertEquals(listOf(GlyphId(36), GlyphId(36), GlyphId(36)), glyphs.map { it.shapedGlyph.glyphId })
+            assertEquals(listOf(0f, 2_000f, 4_000f), glyphs.map { it.origin.x.value })
+            assertEquals(listOf(1_366f, 1_366f, 1_366f), glyphs.map { it.advance.x.value })
+            assertTrue(glyphs.all { it.materializationCertificate?.route == GlyphMaterializationRoute.OUTLINE })
+            assertEquals(
+                listOf(1_366f to 634f, 3_366f to 634f),
+                line.positionedLineControls.map { it.origin.x.value to it.advance.x.value },
+            )
+            assertTrue(line.positionedLineControls.all { it.materializationRoute == GlyphMaterializationRoute.EMPTY })
+            assertEquals(
+                listOf(
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 0f, 0, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(1, CaretAffinity.UPSTREAM, 1_366f, 1, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 1_366f, 2, 1, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(2, CaretAffinity.UPSTREAM, 2_000f, 3, 1, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 2_000f, 4, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 3_366f, 5, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(3, CaretAffinity.DOWNSTREAM, 3_366f, 6, 3, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(4, CaretAffinity.UPSTREAM, 4_000f, 7, 3, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(4, CaretAffinity.DOWNSTREAM, 4_000f, 8, 4, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(5, CaretAffinity.UPSTREAM, 5_366f, 9, 4, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                ),
+                caretOracles(snapshot, line.allCaretCandidates),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun right_to_left_tab_uses_the_literal_default_interval_and_keeps_exact_carets() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("\u05D0\t\u05D0".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val line = assertIs<EditableLineResult.Success>(
+                JvmEditableLineFacade.layout(
+                    lineRequest(
+                        snapshot = snapshot,
+                        font = fixture.font,
+                        baseDirection = BaseDirection.RIGHT_TO_LEFT,
+                        positioning = ParagraphPositioningPolicy(defaultTabInterval = LayoutUnit(2_000f)),
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = fixture.resolver,
+                            variant = FontRenderVariantKey.default,
+                            outlineProfile = OUTLINE_PROFILE,
+                        ),
+                        shapingResourceProfile = ShapingResourceProfile(maxScalars = 1),
+                    ),
+                ),
+            ).line
+
+            assertEquals(listOf(
+                Triple(GlyphId(1280), 2_000f, 1_286f),
+                Triple(GlyphId(1280), 3_286f, 1_286f),
+            ), line.positionedGlyphRuns.flatMap { it.glyphs }.map {
+                Triple(it.shapedGlyph.glyphId, it.origin.x.value, it.advance.x.value)
+            })
+            assertEquals(listOf(Triple(3_286f, 0f, GlyphMaterializationRoute.EMPTY)), line.positionedLineControls.map {
+                Triple(it.origin.x.value, it.advance.x.value, it.materializationRoute)
+            })
+            assertEquals(
+                listOf(
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 2_000f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 3_286f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 3_286f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(2, CaretAffinity.UPSTREAM, 3_286f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.UPSTREAM, 3_286f, 4, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 4_572f, 5, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                ),
+                caretOracles(snapshot, line.allCaretCandidates),
             )
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
@@ -173,7 +353,17 @@ class JvmEditableLineFacadeTest {
                 ).snapshot
 
                 val line = assertIs<EditableLineResult.Success>(
-                    JvmEditableLineFacade.layout(lineRequest(snapshot, fixture.font)),
+                    JvmEditableLineFacade.layout(
+                        lineRequest(
+                            snapshot = snapshot,
+                            font = fixture.font,
+                            materialization = EditableLineMaterialization.Renderable(
+                                resolver = fixture.resolver,
+                                variant = FontRenderVariantKey.default,
+                                outlineProfile = OUTLINE_PROFILE,
+                            ),
+                        ),
+                    ),
                 ).line
                 val glyphs = line.positionedGlyphRuns.flatMap { it.glyphs }
                 controlOrdinals.forEach { ordinal ->
@@ -184,6 +374,7 @@ class JvmEditableLineFacadeTest {
                     val controlGlyph = glyphs.single { it.mappedSourceRange == range }
                     assertEquals(GlyphId(3), controlGlyph.shapedGlyph.glyphId)
                     assertEquals(0f, controlGlyph.advance.x.value)
+                    assertEquals(GlyphMaterializationRoute.EMPTY, controlGlyph.materializationCertificate?.route)
                     val sourceRun = line.positionedGlyphRuns.single {
                         range.start >= it.sourceRun.range.start &&
                             range.endExclusive <= it.sourceRun.range.endExclusive
@@ -219,7 +410,11 @@ class JvmEditableLineFacadeTest {
                     featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
-                    materialization = EditableLineMaterialization.LayoutOnly,
+                    materialization = EditableLineMaterialization.Renderable(
+                        resolver = fixture.resolver,
+                        variant = FontRenderVariantKey.default,
+                        outlineProfile = OUTLINE_PROFILE,
+                    ),
                 ),
             )
 
@@ -248,8 +443,92 @@ class JvmEditableLineFacadeTest {
                 line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.mappedSourceRange } },
             )
             assertEquals(
-                listOf(1, 2, 1, 2, 1, 1),
-                (0..5).map { line.caretCandidates(snapshot.textIndexAtScalarBoundary(it)).size },
+                listOf(GlyphMaterializationRoute.EMPTY, GlyphMaterializationRoute.EMPTY),
+                listOf(1, 3).map { ordinal ->
+                    line.positionedGlyphRuns.flatMap { it.glyphs }.single {
+                        it.mappedSourceRange == scalarRanges[ordinal]
+                    }.materializationCertificate?.route
+                },
+            )
+            assertEquals(
+                listOf(
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 0f, 0, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(1, CaretAffinity.UPSTREAM, 1_139f, 1, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 1_139f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 2_278f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 2_278f, 4, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.WEAK, CaretBoundaryEdge.INTERNAL),
+                    CaretOracle(3, CaretAffinity.DOWNSTREAM, 2_278f, 5, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(4, CaretAffinity.DOWNSTREAM, 2_278f, 6, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+                    CaretOracle(5, CaretAffinity.UPSTREAM, 3_302f, 7, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                ),
+                caretOracles(snapshot, line.allCaretCandidates),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun right_to_left_isolate_controls_keep_empty_materialization_and_literal_caret_order() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("\u05D0\u2066A\u2069\u05D1".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val line = assertIs<EditableLineResult.Success>(
+                JvmEditableLineFacade.layout(
+                    lineRequest(
+                        snapshot = snapshot,
+                        font = fixture.font,
+                        baseDirection = BaseDirection.RIGHT_TO_LEFT,
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = fixture.resolver,
+                            variant = FontRenderVariantKey.default,
+                            outlineProfile = OUTLINE_PROFILE,
+                        ),
+                    ),
+                ),
+            ).line
+            val scalarRanges = List(5) { scalar ->
+                org.graphiks.kalligraphie.api.TextRange(
+                    snapshot.textIndexAtScalarBoundary(scalar),
+                    snapshot.textIndexAtScalarBoundary(scalar + 1),
+                )
+            }
+            assertEquals(
+                listOf(GlyphMaterializationRoute.EMPTY, GlyphMaterializationRoute.EMPTY),
+                listOf(1, 3).map { ordinal ->
+                    line.positionedGlyphRuns.flatMap { it.glyphs }.single {
+                        it.mappedSourceRange == scalarRanges[ordinal]
+                    }.materializationCertificate?.route
+                },
+            )
+            assertEquals(
+                listOf(
+                    Triple(GlyphId(1281), 0f, 1_225f),
+                    Triple(GlyphId(3), 1_225f, 0f),
+                    Triple(GlyphId(36), 1_225f, 1_366f),
+                    Triple(GlyphId(3), 2_591f, 0f),
+                    Triple(GlyphId(1280), 2_591f, 1_286f),
+                ),
+                line.positionedGlyphRuns.flatMap { it.glyphs }.map {
+                    Triple(it.shapedGlyph.glyphId, it.origin.x.value, it.advance.x.value)
+                },
+            )
+            assertEquals(
+                listOf(
+                    CaretOracle(5, CaretAffinity.UPSTREAM, 0f, 0, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(4, CaretAffinity.DOWNSTREAM, 1_225f, 1, 0, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(3, CaretAffinity.DOWNSTREAM, 1_225f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(4, CaretAffinity.UPSTREAM, 1_225f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 1_225f, 4, 2, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 2_591f, 5, 2, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 2_591f, 6, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.INTERNAL),
+                    CaretOracle(2, CaretAffinity.UPSTREAM, 2_591f, 7, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 3_877f, 8, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                ),
+                caretOracles(snapshot, line.allCaretCandidates),
             )
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
@@ -505,19 +784,23 @@ class JvmEditableLineFacadeTest {
     private fun lineRequest(
         snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
         font: FontInstance,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         cancellationToken: CancellationToken = CancellationToken.none,
         positioning: ParagraphPositioningPolicy? = null,
+        materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
+        shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
     ): JvmEditableLineFacadeRequest = JvmEditableLineFacadeRequest(
         snapshot = snapshot,
         font = font,
-        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        baseDirection = baseDirection,
         language = "en",
         featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
         features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
-        materialization = EditableLineMaterialization.LayoutOnly,
+        materialization = materialization,
         positioning = positioning,
         cancellationToken = cancellationToken,
+        shapingResourceProfile = shapingResourceProfile,
     )
 
     private fun fixtureBytes(): ByteArray =
@@ -529,6 +812,45 @@ class JvmEditableLineFacadeTest {
         val font: FontInstance,
         val resolver: FontAssetResolverHandle,
     )
+
+    private data class HardSeparatorOracle(
+        val text: String,
+        val kind: LineControlKind,
+        val scalarEnd: Int,
+        val utf8SourceRange: Pair<Int, Int>,
+        val utf16SourceRange: Pair<Int, Int>,
+    )
+
+    private data class CaretOracle(
+        val scalarBoundary: Int,
+        val affinity: CaretAffinity,
+        val x: Float,
+        val visualOrder: Int,
+        val visualRunOrder: Int,
+        val bidiLevel: Int,
+        val direction: ShapingDirection,
+        val strength: CaretStrength,
+        val edge: CaretBoundaryEdge,
+    )
+
+    private fun caretOracles(
+        snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
+        candidates: List<org.graphiks.kalligraphie.api.CaretCandidate>,
+    ): List<CaretOracle> = candidates.map { candidate ->
+        CaretOracle(
+            scalarBoundary = (0..snapshot.scalars.size).single {
+                snapshot.textIndexAtScalarBoundary(it) == candidate.position.index
+            },
+            affinity = candidate.position.affinity,
+            x = candidate.geometry.start.x.value,
+            visualOrder = candidate.visualOrder,
+            visualRunOrder = candidate.visualRunOrder,
+            bidiLevel = candidate.bidiLevel,
+            direction = candidate.direction,
+            strength = candidate.strength,
+            edge = candidate.edge,
+        )
+    }
 
     private class CloseFailingBackend(
         private val delegate: ShapingBackend,

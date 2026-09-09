@@ -34,10 +34,12 @@ import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutSegment
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LayoutVector
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
 import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
+import org.graphiks.kalligraphie.api.PositionedLineControl
 import org.graphiks.kalligraphie.api.PositionedInlineObject
 import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -60,16 +62,21 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     /** Returns the deterministic physical advance of an already finalized line. */
     internal fun inlineAdvance(line: EditableLine): LayoutUnit {
         val glyphs = line.positionedGlyphRuns.flatMap(PositionedGlyphRun::glyphs)
+        val controls = line.positionedLineControls
         if (glyphs.any { glyph -> glyph.advance.x.value < 0f }) {
             return finiteUnit(
-                glyphs.sumOf { glyph -> glyph.advance.x.value.toDouble() },
+                glyphs.sumOf { glyph -> glyph.advance.x.value.toDouble() } +
+                    controls.sumOf { control -> control.advance.x.value.toDouble() },
                 "line inline advance",
             )
         }
-        val extent = glyphs.maxOfOrNull { glyph ->
+        val glyphExtent = glyphs.maxOfOrNull { glyph ->
             glyph.origin.x.value.toDouble() - glyph.shapedGlyph.xOffset.value.toDouble() + glyph.advance.x.value.toDouble()
         } ?: 0.0
-        return finiteUnit(max(0.0, extent), "line inline advance")
+        val controlExtent = controls.maxOfOrNull { control ->
+            control.origin.x.value.toDouble() + control.advance.x.value.toDouble()
+        } ?: 0.0
+        return finiteUnit(max(0.0, max(glyphExtent, controlExtent)), "line inline advance")
     }
 
     /**
@@ -176,7 +183,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 sourceRun = placement.sourceRun,
                 visualOrder = placement.visualOrder,
                 renderAssetKey = certification.assetKeys[placement.visualOrder],
-                glyphs = placement.glyphs.mapIndexed { glyphIndex, glyph ->
+                glyphs = placement.fontGlyphs.mapIndexed { glyphIndex, glyph ->
                     PositionedGlyph(
                         shapedGlyph = glyph.shapedGlyph,
                         sourceClusters = glyph.sourceClusters,
@@ -185,6 +192,22 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                         renderAssetKey = certification.assetKeys[placement.visualOrder],
                         materializationCertificate = certification.certificates[GlyphPosition(placement.visualOrder, glyphIndex)],
                         provenance = glyph.provenance,
+                    )
+                },
+                lineControls = placement.lineControlGlyphs.map { control ->
+                    PositionedLineControl(
+                        kind = checkNotNull(control.lineControlKind),
+                        sourceRange = TextRange(
+                            control.sourceClusters.first().sourceRange.start,
+                            control.sourceClusters.last().sourceRange.endExclusive,
+                        ),
+                        origin = control.origin,
+                        advance = control.advance,
+                        materializationRoute = if (request.materialization is EditableLineMaterialization.Renderable) {
+                            GlyphMaterializationRoute.EMPTY
+                        } else {
+                            null
+                        },
                     )
                 },
             )
@@ -473,6 +496,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     penStart = finiteUnit(penAtTab, "tab pen start"),
                     penEnd = finiteUnit(penAtField + tabAdvance, "tab pen end"),
                     provenance = entry.provenance,
+                    lineControlKind = LineControlKind.HORIZONTAL_TAB,
                 )
                 out += tabPlacement
                 pen = jumpEnd
@@ -793,10 +817,11 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 val certificates = mutableMapOf<GlyphPosition, GlyphMaterializationCertificate>()
                 placements.forEach { placement ->
                     val instance = request.fontInstances.single { it.key == placement.sourceRun.fontInstanceKey }
+                    if (placement.fontGlyphs.isEmpty()) return@forEach
                     val proof = proofs.find(
                         instance,
                         materialization,
-                        placement.glyphs.map { glyph -> glyph.shapedGlyph.glyphId },
+                        placement.fontGlyphs.map { glyph -> glyph.shapedGlyph.glyphId },
                     )
                     if (proof != null) {
                         val certified = certifyWithProof(placement, proof)
@@ -869,7 +894,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         placement: RunPlacement,
         proof: GlyphMaterializationProof,
     ): CertificationResult.Success {
-        val certificates = placement.glyphs.mapIndexed { glyphIndex, glyph ->
+        val certificates = placement.fontGlyphs.mapIndexed { glyphIndex, glyph ->
             GlyphPosition(placement.visualOrder, glyphIndex) to GlyphMaterializationCertificate(
                 assetKey = proof.assetKey,
                 glyphId = glyph.shapedGlyph.glyphId,
@@ -914,7 +939,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             val certificates = mutableMapOf<GlyphPosition, GlyphMaterializationCertificate>()
             certification@ for (placement in placements) {
                 if (result !is CertificationResult.Success) break
-                for ((glyphIndex, glyph) in placement.glyphs.withIndex()) {
+                for ((glyphIndex, glyph) in placement.fontGlyphs.withIndex()) {
                     val existingRoute = routes[glyph.shapedGlyph.glyphId]
                     if (existingRoute != null) {
                         certificates[GlyphPosition(placement.visualOrder, glyphIndex)] = GlyphMaterializationCertificate(
@@ -1146,7 +1171,10 @@ private class RunPlacement(
     val xEnd: LayoutUnit,
     val caretPositions: MutableMap<TextIndex, CaretLocation>,
     val objects: List<PositionedInlineObject> = emptyList(),
-)
+) {
+    val fontGlyphs: List<GlyphPlacement> get() = glyphs.filter { it.lineControlKind == null }
+    val lineControlGlyphs: List<GlyphPlacement> get() = glyphs.filter { it.lineControlKind != null }
+}
 
 private data class GlyphPlacement(
     val shapedGlyph: ShapedGlyph,
@@ -1156,6 +1184,7 @@ private data class GlyphPlacement(
     val penStart: LayoutUnit,
     val penEnd: LayoutUnit,
     val provenance: GlyphProvenance,
+    val lineControlKind: LineControlKind? = null,
 )
 
 /** One refined final glyph with the provenance attributed by its transform. */

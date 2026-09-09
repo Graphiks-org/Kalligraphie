@@ -1162,6 +1162,15 @@ private fun PositionedGlyphRun.translatedBy(baseline: LayoutPoint): PositionedGl
                 provenance = glyph.provenance,
             )
         },
+        lineControls = lineControls.map { control ->
+            PositionedLineControl(
+                kind = control.kind,
+                sourceRange = control.sourceRange,
+                origin = control.origin.translatedBy(baseline),
+                advance = control.advance,
+                materializationRoute = control.materializationRoute,
+            )
+        },
     )
 
 private fun PositionedInlineObject.translatedBy(baseline: LayoutPoint): PositionedInlineObject = PositionedInlineObject(

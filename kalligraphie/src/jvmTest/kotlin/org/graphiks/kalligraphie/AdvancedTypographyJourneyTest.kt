@@ -712,8 +712,10 @@ class AdvancedTypographyJourneyTest {
 
         val fieldGlyph = firstGlyphOfRange(fixture, line, fixture.range(2, 3))
         assertEquals(100f + stop.value, fieldGlyph.origin.x.value + fieldGlyph.advance.x.value)
-        val tabGlyph = firstGlyphOfRange(fixture, line, fixture.range(1, 2))
-        assertEquals(GlyphProvenance.Direct(fixture.range(1, 2)), tabGlyph.provenance)
+        val tabControl = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single { control ->
+            control.sourceRange == fixture.range(1, 2)
+        }
+        assertEquals(org.graphiks.kalligraphie.api.LineControlKind.HORIZONTAL_TAB, tabControl.kind)
         assertEquals(
             (0..3).map(fixture::textIndex).toSet(),
             line.allCaretCandidates.map { candidate -> candidate.position.index }.toSet(),
@@ -751,7 +753,10 @@ class AdvancedTypographyJourneyTest {
         assertEquals(100f + secondStop.value, c.origin.x.value + c.advance.x.value)
         val physicalEnd = line.glyphs().maxOf { glyph -> glyph.origin.x.value + glyph.advance.x.value }
         assertEquals(physicalEnd - 100f, line.contentMetrics.inlineAdvance.value)
-        val runStarts = line.positionedGlyphRuns.map { run -> run.glyphs.minOf { glyph -> glyph.origin.x.value } }
+        val runStarts = line.positionedGlyphRuns.map { run ->
+            (run.glyphs.map { glyph -> glyph.origin.x.value } +
+                run.lineControls.map { control -> control.origin.x.value }).min()
+        }
         assertEquals(runStarts.sorted(), runStarts)
     }
 

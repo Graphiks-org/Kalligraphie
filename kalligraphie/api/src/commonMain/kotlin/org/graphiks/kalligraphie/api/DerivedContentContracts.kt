@@ -38,6 +38,14 @@ public enum class GlyphProvenanceRole {
     TAB_LEADER,
 
     /**
+     * The glyph-shaped compatibility carrier is a glyphless tab-stop marker.
+     *
+     * The marker maps the source TAB to its final geometric advance but never identifies,
+     * resolves, or certifies a font glyph. Public layout exposes it as [PositionedLineControl].
+     */
+    TAB_STOP,
+
+    /**
      * The glyph is the ellipsis marker published by a truncation policy.
      */
     ELLIPSIS,
