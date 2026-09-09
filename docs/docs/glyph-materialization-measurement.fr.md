@@ -12,7 +12,7 @@ Le runner enregistre vingt-trois profils, dans cet ordre :
 
 - normalisation COLR v0 / CPAL v0 froide et chaude ;
 - normalisation SVG-in-OpenType froide et chaude ;
-- décodage bitmap EBLC v2 / EBDT v2 format 1 froid et chaud ;
+- décodage bitmap (image matricielle) EBLC v2 / EBDT v2 format 1 froid et chaud ;
 - sélection de palette CPAL 0 vers palette 1 ;
 - pression par clé de profil SVG, éviction LRU (least recently used, moins
   récemment utilisé) puis nouvelle résolution ;
@@ -123,7 +123,7 @@ documentées. Il inclut aussi les octets source fournis au catalogue pendant
 l’intervalle, les octets et pixels bitmap décodés, ainsi que le nombre de
 nœuds de peinture normalisés.
 
-Les octets source sont la taille du buffer de fixture donné au catalogue
+Les octets source sont la taille du buffer (tampon mémoire) de fixture donné au catalogue
 portable ; ce ne sont pas des compteurs d’entrées/sorties fichier. Un profil
 chaud rapporte zéro octet source car son catalogue est volontairement ouvert
 avant la frontière chronométrée. Les routes portables de ce runner n’exposent

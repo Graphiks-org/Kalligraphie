@@ -962,10 +962,19 @@ internal object GlyphMaterializationBenchmark {
     ): OpenAsset {
         val catalog = success(Kalligraphie.embedded(fixture.bytes, FontSourceProvenance(fixture.provenance), cachePolicy))
         val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
-        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
-        val asset = success(instance.acquireRenderAsset(resolver, variant, requirements))
-        return OpenAsset(resolver, instance, asset)
+        return try {
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val asset = success(instance.acquireRenderAsset(resolver, variant, requirements))
+            OpenAsset(resolver, instance, asset)
+        } catch (failure: Throwable) {
+            try {
+                resolver.close()
+            } catch (closeFailure: Throwable) {
+                failure.addSuppressed(closeFailure)
+            }
+            throw failure
+        }
     }
 
     private fun measuredProfile(
