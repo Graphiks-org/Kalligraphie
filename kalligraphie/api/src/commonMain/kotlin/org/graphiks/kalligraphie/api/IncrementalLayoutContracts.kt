@@ -495,7 +495,7 @@ public class LineCheckpointSignature private constructor(
 
     /** Factories for complete line signatures. */
     public companion object {
-        /** Captures range-relative glyph, cluster, font, metric, geometry, caret, and continuation facts. */
+        /** Captures range-relative glyph, cluster, font, shaping, geometry, caret, and continuation facts. */
         public fun from(
             line: LineLayout,
             continuation: LayoutContinuationSignature,
@@ -720,7 +720,28 @@ public class IncrementalLayoutRequest internal constructor(
     public val delta: LayoutDelta?,
     /** Cooperative cancellation signal observed by layout work. */
     public val cancellationToken: CancellationToken,
-)
+    /** Shared finite resource policy for this complete incremental operation. */
+    public val operationProfile: EditorOperationProfile,
+) {
+    internal constructor(
+        input: LayoutInput,
+        requestedRange: TextRange,
+        constraints: ParagraphConstraints,
+        overscan: LineOverscan,
+        previousState: LayoutStateHandle?,
+        delta: LayoutDelta?,
+        cancellationToken: CancellationToken,
+    ) : this(
+        input,
+        requestedRange,
+        constraints,
+        overscan,
+        previousState,
+        delta,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+}
 
 /**
  * Validates an incremental layout request without retaining mutable document or renderer state.
@@ -733,6 +754,32 @@ public fun createIncrementalLayoutRequest(
     previousState: LayoutStateHandle?,
     delta: LayoutDelta?,
     cancellationToken: CancellationToken,
+): LayoutContractResult<IncrementalLayoutRequest> = createIncrementalLayoutRequest(
+    input,
+    requestedRange,
+    constraints,
+    overscan,
+    previousState,
+    delta,
+    cancellationToken,
+    EditorOperationProfile.unbounded,
+)
+
+/**
+ * Validates an incremental request with one explicit complete-operation resource policy.
+ *
+ * The policy controls admission and work only; it is deliberately absent from semantic
+ * configuration, continuation, and cache identity.
+ */
+public fun createIncrementalLayoutRequest(
+    input: LayoutInput,
+    requestedRange: TextRange,
+    constraints: ParagraphConstraints,
+    overscan: LineOverscan,
+    previousState: LayoutStateHandle?,
+    delta: LayoutDelta?,
+    cancellationToken: CancellationToken,
+    operationProfile: EditorOperationProfile,
 ): LayoutContractResult<IncrementalLayoutRequest> {
     val rangeError = validateRangeDomain(input.text, requestedRange, "Requested layout range")
     if (rangeError != null) return LayoutContractResult.Failure(rangeError)
@@ -809,6 +856,7 @@ public fun createIncrementalLayoutRequest(
             previousState,
             delta,
             cancellationToken,
+            operationProfile,
         ),
     )
 }
@@ -956,6 +1004,25 @@ public sealed interface IncrementalLayoutError {
     ) : IncrementalLayoutError {
         override val code: String = "layout.incremental-invalid-text-change"
     }
+
+    /** Complete-operation resource limit that rejected the candidate publication. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and rejecting observation. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : IncrementalLayoutError {
+        override val code: String = "layout.incremental-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
+    }
+
+    /** Typed paragraph failure that prevented a complete incremental line from being published. */
+    public data class ParagraphFailure(
+        /** Exact paragraph error returned by the complete JVM paragraph operation. */
+        public val paragraphError: ParagraphLayoutError,
+    ) : IncrementalLayoutError {
+        override val code: String = "layout.incremental-paragraph-failure"
+        override val message: String = paragraphError.message
+    }
 }
 
 /** Typed outcome of incremental layout without partial output on failure or cancellation. */
@@ -1035,7 +1102,7 @@ private data class LigatureCaretSignature(
 private data class ShapedRunSignature(
     val range: RelativeRange,
     val fontInstanceKey: FontInstanceKey,
-    val backendIdentity: ShapingBackendIdentity,
+    val shapingSemantics: ShapingSemanticIdentity,
     val direction: ShapingDirection,
     val script: OpenTypeScript,
     val language: String,
@@ -1167,7 +1234,7 @@ private fun PositionedGlyphRun.toSignature(base: Int): PositionedRunSignature = 
 private fun ShapedGlyphRun.toSignature(base: Int): ShapedRunSignature = ShapedRunSignature(
     range = range.relativeTo(base),
     fontInstanceKey = fontInstanceKey,
-    backendIdentity = backendIdentity,
+    shapingSemantics = backendIdentity.semantic,
     direction = direction,
     script = script,
     language = language,

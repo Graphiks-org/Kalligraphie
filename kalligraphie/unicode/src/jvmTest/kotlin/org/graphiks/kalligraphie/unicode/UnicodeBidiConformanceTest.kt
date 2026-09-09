@@ -2,7 +2,6 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.TextIndex
@@ -13,107 +12,143 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 class UnicodeBidiConformanceTest {
     @Test
-    fun nonspacing_marks_at_isolate_starts_keep_their_isolate_levels() {
-        val cases = listOf(
-            "\u2066\u0331\u05D0\u2069" to listOf(0, 2, 3, 0),
-            "\u2067\u0331a\u2069" to listOf(0, 1, 2, 0),
-            "\u2068\u0331\u05D0\u2069" to listOf(0, 1, 1, 0),
-        )
-
-        cases.forEach { (text, expectedLevels) ->
-            val snapshot = snapshotOf(text)
-            val analysis = analyzer.analyze(
-                snapshot,
-                UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
-            )
-            val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
-
-            assertEquals(expectedLevels, expandLevels(analysis.logicalBidiRuns, boundaries))
+    fun every_applicable_unicode_16_bidi_class_sequence_matches_levels_and_reordering() {
+        var executed = 0
+        var excludedAutoDirection = 0
+        unicode16BidiTestCases(onAutoDirection = { excludedAutoDirection += 1 }).forEach { case ->
+            verify(case)
+            executed += 1
         }
+
+        println("Unicode 16.0 BidiTest explicit-direction cases executed: $executed")
+        println("Unicode 16.0 BidiTest auto-direction cases excluded: $excludedAutoDirection")
     }
 
     @Test
-    fun astral_arabic_letters_keep_scalar_boundaries_and_visual_order() {
-        val snapshot = snapshotOf(
-            buildString {
-                append('a')
-                appendCodePoint(0x1EE00)
-                appendCodePoint(0x1EE01)
-                append('b')
-            },
-        )
+    fun every_applicable_unicode_16_bidi_character_sequence_matches_levels_and_reordering() {
+        var executed = 0
+        var excludedAutoDirection = 0
+        unicode16BidiCharacterTestCases(
+            onAutoDirection = { excludedAutoDirection += 1 },
+        ).forEach { case ->
+            verify(case)
+            executed += 1
+        }
+
+        println("Unicode 16.0 BidiCharacterTest explicit-direction cases executed: $executed")
+        println("Unicode 16.0 BidiCharacterTest auto-direction cases excluded: $excludedAutoDirection")
+    }
+
+    private fun verify(case: BidiCase) {
+        val snapshot = snapshotOf(case.scalars)
         val analysis = analyzer.analyze(
             snapshot,
-            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+            UnicodeAnalysisRequest(case.baseDirection, language = "en"),
         )
         val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+        val actualLevels = expandLevels(analysis.logicalBidiRuns, boundaries)
 
-        assertEquals(listOf(0, 1, 1, 0), expandLevels(analysis.logicalBidiRuns, boundaries))
-        assertEquals(listOf(0, 2, 1, 3), visualScalarOrder(analysis.visualBidiRuns, boundaries))
+        case.levels.forEachIndexed { index, expected ->
+            if (expected != null) {
+                assertEquals(
+                    expected,
+                    actualLevels[index],
+                    "Unicode 16.0 ${case.corpus} line ${case.lineNumber}, scalar $index: ${case.source}",
+                )
+            }
+        }
+        assertEquals(
+            case.visualOrder,
+            visualScalarOrder(analysis.visualBidiRuns, boundaries).filter { case.levels[it] != null },
+            "Unicode 16.0 ${case.corpus} line ${case.lineNumber}: ${case.source}",
+        )
     }
 
-    @Test
-    fun unicode_16_bidi_vectors_match_the_public_analysis_contract() {
-        val cases = unicode16BidiCases().toList()
-        assertEquals(512, cases.size, "The vendored Unicode 16 BiDi vector set must remain complete.")
-        assertEquals(256, cases.count { it.baseDirection == BaseDirection.LEFT_TO_RIGHT })
-        assertEquals(256, cases.count { it.baseDirection == BaseDirection.RIGHT_TO_LEFT })
-        assertTrue(cases.any { case -> case.scalars.any { it in 0x0030..0x0039 } })
-        assertTrue(cases.any { case -> case.scalars.any { it in 0x0660..0x0669 } })
-        assertTrue(cases.any { case -> case.scalars.contains(0x0627) })
-        assertTrue(cases.any { case -> case.scalars.any { it in 0x0300..0x036F } })
-        assertTrue(cases.any { case -> case.scalars.any { it in 0x2066..0x2069 } })
-
-        cases.forEach { case ->
-            val snapshot = snapshotOf(case.text)
-            val analysis = analyzer.analyze(
-                snapshot,
-                UnicodeAnalysisRequest(case.baseDirection, language = "en"),
-            )
-            val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
-
-            assertEquals(
-                case.levels,
-                expandLevels(analysis.logicalBidiRuns, boundaries),
-                "Unicode 16 BidiCharacterTest line ${case.lineNumber}: ${case.source}",
-            )
-            assertEquals(
-                case.visualOrder,
-                visualScalarOrder(analysis.visualBidiRuns, boundaries),
-                "Unicode 16 BidiCharacterTest line ${case.lineNumber}: ${case.source}",
-            )
-        }
-    }
-
-    private fun unicode16BidiCases(): Sequence<BidiCase> = sequence {
-        val corpus = checkNotNull(javaClass.getResourceAsStream("/BidiCharacterTest-16.0.0-stratified.txt")) {
-            "The checked-in Unicode 16 BidiCharacterTest vector set is missing."
-        }
+    private fun unicode16BidiTestCases(onAutoDirection: () -> Unit): Sequence<BidiCase> = sequence {
+        val corpus = resource("BidiTest.txt")
         corpus.bufferedReader().useLines { lines ->
-            lines.forEach { rawLine ->
-                if (rawLine.isNotBlank()) yield(parseCase(rawLine))
+            yieldAll(bidiTestCases(lines, onAutoDirection))
+        }
+    }
+
+    private fun bidiTestCases(
+        lines: Sequence<String>,
+        onAutoDirection: () -> Unit = {},
+    ): Sequence<BidiCase> = sequence {
+        var levels: List<Int?>? = null
+        var visualOrder: List<Int>? = null
+        lines.forEachIndexed { index, rawLine ->
+            val source = rawLine.substringBefore('#').trim()
+            when {
+                source.isEmpty() -> Unit
+                source.startsWith("@Levels:") -> levels = parseLevels(source.substringAfter(':'))
+                source.startsWith("@Reorder:") -> visualOrder = parseIntegers(source.substringAfter(':'))
+                source.startsWith('@') -> error("Unknown BidiTest directive at line ${index + 1}: $source")
+                else -> {
+                    val fields = source.split(';').map(String::trim)
+                    check(fields.size == 2) { "Malformed BidiTest line ${index + 1}: $source" }
+                    val scalars = fields[0].split(WHITESPACE).map(BIDI_CLASS_SCALARS::getValue)
+                    val bitset = fields[1].toInt(radix = 16)
+                    if (bitset and AUTO_LTR_BIT != 0) onAutoDirection()
+                    val expectedLevels = checkNotNull(levels) { "Missing @Levels before BidiTest line ${index + 1}." }
+                    val expectedOrder = checkNotNull(visualOrder) { "Missing @Reorder before BidiTest line ${index + 1}." }
+                    check(expectedLevels.size == scalars.size) {
+                        "@Levels length differs from BidiTest line ${index + 1}."
+                    }
+                    if (bitset and EXPLICIT_LTR_BIT != 0) {
+                        yield(BidiCase("BidiTest", index + 1, source, scalars, BaseDirection.LEFT_TO_RIGHT, expectedLevels, expectedOrder))
+                    }
+                    if (bitset and EXPLICIT_RTL_BIT != 0) {
+                        yield(BidiCase("BidiTest", index + 1, source, scalars, BaseDirection.RIGHT_TO_LEFT, expectedLevels, expectedOrder))
+                    }
+                }
             }
         }
     }
 
-    private fun parseCase(rawLine: String): BidiCase {
-        val (lineNumber, source) = rawLine.split('|', limit = 2)
-        val fields = source.split(';').map(String::trim)
-        check(fields.size == 5) { "Malformed BidiCharacterTest vector: $rawLine" }
-        val scalars = fields[0].split(WHITESPACE).map { it.toInt(radix = 16) }
-        return BidiCase(
-            lineNumber = lineNumber.toInt(),
-            source = source,
-            scalars = scalars,
-            text = buildString { scalars.forEach { appendCodePoint(it) } },
-            baseDirection = when (fields[1]) {
-                "0" -> BaseDirection.LEFT_TO_RIGHT
-                "1" -> BaseDirection.RIGHT_TO_LEFT
-                else -> error("The checked-in BiDi vector must use an explicit base direction: $rawLine")
-            },
-            levels = fields[3].split(WHITESPACE).map(String::toInt),
-            visualOrder = fields[4].split(WHITESPACE).map(String::toInt),
-        )
+    private fun unicode16BidiCharacterTestCases(onAutoDirection: () -> Unit): Sequence<BidiCase> = sequence {
+        val corpus = resource("BidiCharacterTest.txt")
+        corpus.bufferedReader().useLines { lines ->
+            lines.forEachIndexed { index, rawLine ->
+                val source = rawLine.substringBefore('#').trim()
+                if (source.isEmpty()) return@forEachIndexed
+                val fields = source.split(';').map(String::trim)
+                check(fields.size == 5) { "Malformed BidiCharacterTest line ${index + 1}: $source" }
+                if (fields[1] == AUTO_DIRECTION) {
+                    onAutoDirection()
+                    return@forEachIndexed
+                }
+                val scalars = fields[0].split(WHITESPACE).map { it.toInt(radix = 16) }
+                yield(
+                    BidiCase(
+                        "BidiCharacterTest",
+                        index + 1,
+                        source,
+                        scalars,
+                        when (fields[1]) {
+                            "0" -> BaseDirection.LEFT_TO_RIGHT
+                            "1" -> BaseDirection.RIGHT_TO_LEFT
+                            else -> error("Unknown paragraph direction at BidiCharacterTest line ${index + 1}.")
+                        },
+                        parseLevels(fields[3]),
+                        parseIntegers(fields[4]),
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun resource(fileName: String) = checkNotNull(
+        javaClass.getResourceAsStream("/unicode/16.0.0/$fileName"),
+    ) { "The checked-in Unicode 16.0 $fileName corpus is missing." }
+
+    private fun parseLevels(source: String): List<Int?> = source.trim().split(WHITESPACE).map { token ->
+        token.takeUnless { it == X9_REMOVED }?.toInt()
+    }
+
+    private fun parseIntegers(source: String): List<Int> {
+        val trimmed = source.trim()
+        return if (trimmed.isEmpty()) emptyList() else trimmed.split(WHITESPACE).map(String::toInt)
     }
 
     private fun expandLevels(runs: List<BidiRun>, boundaries: Map<TextIndex, Int>): List<Int> = buildList {
@@ -128,32 +163,41 @@ class UnicodeBidiConformanceTest {
         runs.forEach { run ->
             val start = boundaries.getValue(run.range.start)
             val endExclusive = boundaries.getValue(run.range.endExclusive)
-            if (run.level.rem(2) == 0) {
-                addAll(start until endExclusive)
-            } else {
-                addAll((endExclusive - 1) downTo start)
-            }
+            if (run.level.rem(2) == 0) addAll(start until endExclusive) else addAll((endExclusive - 1) downTo start)
         }
     }
 
-    private fun snapshotOf(text: String): TextSnapshot =
-        TextSnapshots.decodeUtf16(
-            TextVersion.create(),
-            listOf(TextSlice.Utf16(text.toCharArray())),
-        ).snapshot
+    private fun snapshotOf(scalars: List<Int>): TextSnapshot = TextSnapshots.decodeUtf16(
+        TextVersion.create(),
+        listOf(TextSlice.Utf16(buildString { scalars.forEach(::appendCodePoint) }.toCharArray())),
+    ).snapshot
 
     private data class BidiCase(
+        val corpus: String,
         val lineNumber: Int,
         val source: String,
         val scalars: List<Int>,
-        val text: String,
         val baseDirection: BaseDirection,
-        val levels: List<Int>,
+        val levels: List<Int?>,
         val visualOrder: List<Int>,
     )
 
     private companion object {
         val analyzer: UnicodeAnalyzer = JvmUnicodeAnalyzer.create()
         val WHITESPACE: Regex = Regex("\\s+")
+        const val AUTO_DIRECTION: String = "2"
+        const val AUTO_LTR_BIT: Int = 0x1
+        const val EXPLICIT_LTR_BIT: Int = 0x2
+        const val EXPLICIT_RTL_BIT: Int = 0x4
+        const val X9_REMOVED: String = "x"
+
+        val BIDI_CLASS_SCALARS: Map<String, Int> = mapOf(
+            "L" to 0x0061, "R" to 0x05D0, "EN" to 0x0030, "ES" to 0x002B,
+            "ET" to 0x0024, "AN" to 0x0660, "CS" to 0x002C, "B" to 0x2029,
+            "S" to 0x0009, "WS" to 0x0020, "ON" to 0x0022, "LRE" to 0x202A,
+            "LRO" to 0x202D, "AL" to 0x0627, "RLE" to 0x202B, "RLO" to 0x202E,
+            "PDF" to 0x202C, "NSM" to 0x0300, "BN" to 0x00AD, "FSI" to 0x2068,
+            "LRI" to 0x2066, "RLI" to 0x2067, "PDI" to 0x2069,
+        )
     }
 }

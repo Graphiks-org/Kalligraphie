@@ -398,6 +398,39 @@ public class PositionedGlyph(
 }
 
 /**
+ * Final geometry of one glyphless source control in an editable line.
+ *
+ * The control maps directly to [sourceRange] but has no font glyph identifier, render asset, or
+ * representation payload. [origin] and [advance] express its layout effect. For a horizontal tab,
+ * [origin] is the pen position at the tab and [advance] covers the complete consumed span through
+ * the start of the positioned field. Synthetic leader glyphs, when present, stay inside that span
+ * and do not reduce it. In renderable mode [materializationRoute] is
+ * [GlyphMaterializationRoute.EMPTY], recording that the marker requires no ink without resolving a
+ * substitute font glyph; layout-only mode leaves the route `null`.
+ */
+public class PositionedLineControl(
+    /** Exact kind of glyphless source control. */
+    public val kind: LineControlKind,
+    /** Exact snapshot-bound scalar range occupied by the control. */
+    public val sourceRange: TextRange,
+    /** Final control origin relative to the line baseline. */
+    public val origin: LayoutPoint,
+    /** Final geometric advance contributed by the control. */
+    public val advance: LayoutVector,
+    /** No-ink route in renderable mode, or `null` in layout-only mode. */
+    public val materializationRoute: GlyphMaterializationRoute?,
+) {
+    init {
+        require(kind == LineControlKind.HORIZONTAL_TAB) {
+            "Only explicitly positioned horizontal tabs publish glyphless line-control geometry."
+        }
+        require(materializationRoute == null || materializationRoute == GlyphMaterializationRoute.EMPTY) {
+            "A glyphless line control can use only the EMPTY materialization route."
+        }
+    }
+}
+
+/**
  * One shaped run after final placement in physical visual order.
  *
  * The run retains its relative [sourceRun] and does not reinterpret source indexes. Its glyphs
@@ -411,7 +444,21 @@ public class PositionedGlyphRun(
     /** Exact render asset key shared by every glyph in renderable mode, otherwise `null`. */
     public val renderAssetKey: FontRenderAssetKey?,
     glyphs: List<PositionedGlyph>,
+    lineControls: List<PositionedLineControl>,
 ) {
+    /**
+     * Compatibility constructor for a positioned run containing only font glyphs.
+     *
+     * Existing consumers retain their original four-argument JVM constructor. New layout code
+     * uses the primary constructor when a run also publishes glyphless line controls.
+     */
+    public constructor(
+        sourceRun: ShapedGlyphRun,
+        visualOrder: Int,
+        renderAssetKey: FontRenderAssetKey?,
+        glyphs: List<PositionedGlyph>,
+    ) : this(sourceRun, visualOrder, renderAssetKey, glyphs, emptyList())
+
     /** Exact font instance that shaped every glyph in this positioned run. */
     public val fontInstanceKey: FontInstanceKey
         get() = sourceRun.fontInstanceKey
@@ -419,16 +466,24 @@ public class PositionedGlyphRun(
     /** Immutable final glyphs in this run's produced visual glyph order. */
     public val glyphs: List<PositionedGlyph> = glyphs.immutableListSnapshot()
 
+    /** Immutable glyphless source controls positioned inside this run. */
+    public val lineControls: List<PositionedLineControl> = lineControls.immutableListSnapshot()
+
     /** Final glyphs whose provenance is [GlyphProvenance.Direct] or [GlyphProvenance.Derived]. */
     private val sourceGlyphs: List<PositionedGlyph>
         get() = this.glyphs.filter { glyph -> glyph.provenance !is GlyphProvenance.Synthetic }
 
     init {
         require(visualOrder >= 0) { "Positioned run visual order must be non-negative." }
-        require(this.glyphs.size >= sourceRun.glyphs.size) {
-            "Positioned runs must contain one final placement per shaped glyph."
-        }
-        val sourceTokenSequence = sourceRun.glyphs.map { glyph -> glyph.clusterTokens }
+        val controlRanges = this.lineControls.map(PositionedLineControl::sourceRange)
+        val sourceTokenSequence = sourceRun.glyphs
+            .filterNot { glyph ->
+                glyph.clusterTokens
+                    .map { token -> sourceRun.clusters.single { cluster -> cluster.token == token } }
+                    .flatMap(ShaperCluster::scalarRanges)
+                    .all(controlRanges::contains)
+            }
+            .map { glyph -> glyph.clusterTokens }
         var sourceCursor = 0
         this.sourceGlyphs.forEach { glyph ->
             val tokens = glyph.shapedGlyph.clusterTokens
@@ -452,6 +507,17 @@ public class PositionedGlyphRun(
         }
         require(this.glyphs.all { it.renderAssetKey == renderAssetKey }) {
             "Every positioned glyph must use exactly its positioned run render asset key."
+        }
+        require(this.lineControls.all { control -> containsRange(sourceRun.range, control.sourceRange) }) {
+            "Every positioned line control must stay inside its source run."
+        }
+        require(this.lineControls.all { control ->
+            sourceRun.clusters.any { cluster -> control.sourceRange in cluster.scalarRanges }
+        }) {
+            "Every positioned line control must carry one exact source-scalar relation from its shaped run."
+        }
+        require(this.lineControls.zipWithNext().all { (left, right) -> left.sourceRange.start < right.sourceRange.start }) {
+            "Positioned line controls must use strict logical source order within a run."
         }
     }
 }
@@ -559,6 +625,43 @@ public class AutomaticHyphenBreaks(
     }
 }
 
+/**
+ * Classifies a source control that is rejected or requires explicit handling in one non-wrapped
+ * editable line.
+ *
+ * Each value identifies the complete logical control unit reported by
+ * [EditableLineError.UnsupportedLineControl]. In particular, a consecutive carriage return and
+ * line feed is classified as [CARRIAGE_RETURN_LINE_FEED], not as two independent controls.
+ */
+public enum class LineControlKind {
+    /** `U+000D CARRIAGE RETURN` not followed by `U+000A LINE FEED`. */
+    CARRIAGE_RETURN,
+
+    /** `U+000A LINE FEED` not immediately consumed by a preceding carriage return. */
+    LINE_FEED,
+
+    /** Consecutive `U+000D CARRIAGE RETURN` and `U+000A LINE FEED` as one source unit. */
+    CARRIAGE_RETURN_LINE_FEED,
+
+    /** `U+000B LINE TABULATION`, also known as vertical tab. */
+    VERTICAL_TAB,
+
+    /** `U+000C FORM FEED`. */
+    FORM_FEED,
+
+    /** `U+0085 NEXT LINE`. */
+    NEXT_LINE,
+
+    /** `U+2028 LINE SEPARATOR`. */
+    LINE_SEPARATOR,
+
+    /** `U+2029 PARAGRAPH SEPARATOR`. */
+    PARAGRAPH_SEPARATOR,
+
+    /** `U+0009 CHARACTER TABULATION`, accepted only with an explicit positioning policy. */
+    HORIZONTAL_TAB,
+}
+
 /** Typed reason an editable line could not be published. */
 public sealed interface EditableLineError {
     /** Stable machine-readable error code. */
@@ -572,6 +675,47 @@ public sealed interface EditableLineError {
         override val message: String,
     ) : EditableLineError {
         override val code: String = "layout.invalid-editable-line-input"
+    }
+
+    /**
+     * A source control cannot be represented by this non-wrapped line request.
+     *
+     * [range] is bound to the request snapshot and covers the complete control unit. A CRLF pair
+     * therefore occupies one two-scalar range. A horizontal tab uses this failure only when the
+     * request supplies no explicit tab-positioning policy.
+     */
+    public data class UnsupportedLineControl(
+        /** Exact kind of rejected source control. */
+        public val kind: LineControlKind,
+        /** Exact half-open scalar range occupied by the rejected control unit. */
+        public val range: TextRange,
+    ) : EditableLineError {
+        override val code: String = "layout.unsupported-line-control"
+        override val message: String = "Editable line does not support $kind at $range."
+    }
+
+    /**
+     * A shaped glyph relation combines a horizontal-tab scalar with ordinary source content.
+     *
+     * The line finalizer can coalesce any number of glyphs related exclusively to tabs, but it
+     * cannot remove the tab contribution from a mixed relation without re-shaping or deleting
+     * ordinary content. [range] is the complete snapshot-bound source span of that glyph
+     * relation. The operation fails atomically before placement.
+     */
+    public data class MixedLineControlGlyphRelation(
+        /** Exact horizontal-tab control kind present in the mixed relation. */
+        public val kind: LineControlKind,
+        /** Complete half-open source range jointly contributing to the shaped glyph. */
+        public val range: TextRange,
+    ) : EditableLineError {
+        init {
+            require(kind == LineControlKind.HORIZONTAL_TAB) {
+                "Only horizontal tabs can form a mixed supported line-control glyph relation."
+            }
+        }
+
+        override val code: String = "layout.mixed-line-control-glyph-relation"
+        override val message: String = "A shaped glyph mixes $kind with ordinary content at $range."
     }
 
     /** A finite public layout coordinate could not be produced. */
@@ -590,6 +734,16 @@ public sealed interface EditableLineError {
     ) : EditableLineError {
         override val code: String = "layout.unicode-analysis-limit-exceeded"
         override val message: String = "Unicode analysis exceeded $limit at $observed scalars."
+    }
+
+    /** The shared high-level editor-operation policy rejected this line atomically. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and observed count. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : EditableLineError {
+        override val code: String = "layout.editor-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation exceeded ${limit.kind} at ${limit.observed} (maximum ${limit.maximum})."
     }
 
     /** A borrowed font asset failed while validating the requested renderable route. */
@@ -740,7 +894,42 @@ public class MultiFontEditableLineRequest(
     features: List<OpenTypeFeature> = emptyList(),
     /** Cooperative cancellation signal observed between bounded fallback attempts. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
+    /** Shared finite resource policy for this complete fallback-through-publication operation. */
+    public val operationProfile: EditorOperationProfile,
 ) {
+    /**
+     * Creates a request through the historical constructor with an unbounded operation policy.
+     *
+     * This explicit overload preserves the established JVM constructor descriptor while the
+     * primary constructor lets new callers opt into one complete-operation budget.
+     */
+    public constructor(
+        snapshot: TextSnapshot,
+        unicodeAnalysis: UnicodeAnalysis,
+        fontCatalog: FontCatalogSnapshot,
+        resolutionPolicy: FontResolutionPolicySnapshot,
+        fontInstanceDescriptor: FontInstanceDescriptor,
+        shapingBackend: ShapingBackend,
+        baseDirection: BaseDirection,
+        verticalMetrics: LineVerticalMetrics,
+        materialization: EditableLineMaterialization,
+        features: List<OpenTypeFeature> = emptyList(),
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ) : this(
+        snapshot,
+        unicodeAnalysis,
+        fontCatalog,
+        resolutionPolicy,
+        fontInstanceDescriptor,
+        shapingBackend,
+        baseDirection,
+        verticalMetrics,
+        materialization,
+        features,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+
     /** Immutable deterministic OpenType feature overrides. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
@@ -946,6 +1135,18 @@ public class EditableLine(
 ) {
     /** Positioned shaped runs in physical visual order. */
     public val positionedGlyphRuns: List<PositionedGlyphRun> = positionedGlyphRuns.immutableListSnapshot()
+
+    /**
+     * Glyphless source controls from every positioned run in strict logical source order.
+     *
+     * Their geometry remains physical, but BiDi visual-run reordering never changes this
+     * source-facing sequence.
+     */
+    public val positionedLineControls: List<PositionedLineControl> =
+        this.positionedGlyphRuns
+            .flatMap(PositionedGlyphRun::lineControls)
+            .sortedWith { left, right -> left.sourceRange.start.compareTo(right.sourceRange.start) }
+            .immutableListSnapshot()
 
     /** Concrete caret geometries in physical visual traversal order. */
     public val allCaretCandidates: List<CaretCandidate> = caretCandidates.immutableListSnapshot()

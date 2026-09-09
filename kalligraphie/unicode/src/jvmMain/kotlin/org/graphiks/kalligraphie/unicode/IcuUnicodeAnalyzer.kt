@@ -61,12 +61,28 @@ internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
             val locale = parseLanguage(request.language)
             val canonicalLanguage = locale.toLanguageTag()
             val canonicalText = CanonicalUtf16Text(snapshot, profile, cancellationToken)
-            val bidi = bidi(canonicalText.value, request.baseDirection)
-            val resolvedBidiLevels = resolvedBidiLevels(snapshot, bidi, profile, cancellationToken)
+            val bidiPreparation = prepareBidi(snapshot.scalars, request.baseDirection, profile, cancellationToken)
+            val bidi = bidi(bidiPreparation.text, request.baseDirection, cancellationToken)
+            val resolvedBidiLevels = resolvedBidiLevels(
+                snapshot,
+                bidi,
+                request.baseDirection,
+                bidiPreparation.fsiDirections,
+                profile,
+                cancellationToken,
+            )
             val logicalBidiRuns = bidiRuns(snapshot, resolvedBidiLevels, profile, cancellationToken)
             val graphemes = graphemeClusters(snapshot, canonicalText, cancellationToken)
-            val scripts = scriptLanguageRuns(snapshot, locale, canonicalLanguage, profile, cancellationToken)
+            val scripts = scriptLanguageRuns(
+                snapshot,
+                locale,
+                canonicalLanguage,
+                bidiPreparation.bracketPairs,
+                profile,
+                cancellationToken,
+            )
             val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, profile, cancellationToken)
+            observeCancellation(cancellationToken)
             UnicodeAnalysisOutcome.Success(
                 UnicodeAnalysis(
                     range = snapshot.range,
@@ -102,15 +118,22 @@ private fun graphemeClusters(
 ): List<TextRange> {
     if (snapshot.scalars.isEmpty()) return emptyList()
     val iterator = BreakIterator.getCharacterInstance(ULocale.ROOT)
+    observeCancellation(cancellationToken)
     iterator.setText(text.value)
+    observeCancellation(cancellationToken)
     val ranges = mutableListOf<TextRange>()
+    observeCancellation(cancellationToken)
     var startUtf16 = iterator.first()
+    observeCancellation(cancellationToken)
     var endUtf16 = iterator.next()
+    observeCancellation(cancellationToken)
     while (endUtf16 != BreakIterator.DONE) {
         observeCancellation(cancellationToken)
         ranges += text.range(snapshot, startUtf16, endUtf16)
         startUtf16 = endUtf16
+        observeCancellation(cancellationToken)
         endUtf16 = iterator.next()
+        observeCancellation(cancellationToken)
     }
     return ranges
 }
@@ -119,6 +142,7 @@ private fun scriptLanguageRuns(
     snapshot: TextSnapshot,
     locale: ULocale,
     language: String,
+    bracketPairs: List<BracketPair>,
     profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): List<ScriptLanguageRun> {
@@ -128,7 +152,7 @@ private fun scriptLanguageRuns(
         observeCancellation(index, profile, cancellationToken)
         scriptProperties(scalar)
     }
-    val pairedScripts = pairedPunctuationScripts(snapshot.scalars, scriptProperties, profile, cancellationToken)
+    val pairedScripts = pairedPunctuationScripts(bracketPairs, scriptProperties, profile, cancellationToken)
     val resolvedScripts = IntArray(snapshot.scalars.size)
     var previousScript: Int? = null
     snapshot.scalars.indices.forEach { scalarIndex ->
@@ -223,27 +247,17 @@ private fun nextContextScript(
 }
 
 private fun pairedPunctuationScripts(
-    scalars: List<Int>,
+    bracketPairs: List<BracketPair>,
     scriptProperties: List<ScriptProperties>,
     profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): Map<Int, Int> {
-    val openingIndexes = mutableListOf<Int>()
     val resolvedScripts = mutableMapOf<Int, Int>()
-    scalars.forEachIndexed { scalarIndex, scalar ->
-        observeCancellation(scalarIndex, profile, cancellationToken)
-        when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)) {
-            UCharacter.BidiPairedBracketType.OPEN -> openingIndexes += scalarIndex
-            UCharacter.BidiPairedBracketType.CLOSE -> {
-                val openingIndex = openingIndexes.lastOrNull() ?: return@forEachIndexed
-                if (UCharacter.getBidiPairedBracket(scalars[openingIndex]) == scalar) {
-                    openingIndexes.removeAt(openingIndexes.lastIndex)
-                    enclosingScript(scriptProperties, openingIndex, scalarIndex, profile, cancellationToken)?.let { script ->
-                        resolvedScripts[openingIndex] = script
-                        resolvedScripts[scalarIndex] = script
-                    }
-                }
-            }
+    bracketPairs.forEachIndexed { pairIndex, pair ->
+        observeCancellation(pairIndex, profile, cancellationToken)
+        enclosingScript(scriptProperties, pair.opening, pair.closing, profile, cancellationToken)?.let { script ->
+            resolvedScripts[pair.opening] = script
+            resolvedScripts[pair.closing] = script
         }
     }
     return resolvedScripts
@@ -303,6 +317,8 @@ private fun scriptRun(
 private fun resolvedBidiLevels(
     snapshot: TextSnapshot,
     bidi: Bidi,
+    baseDirection: BaseDirection,
+    fsiDirections: BooleanArray,
     profile: UnicodeAnalysisProfile,
     cancellationToken: CancellationToken,
 ): IntArray {
@@ -311,20 +327,13 @@ private fun resolvedBidiLevels(
     snapshot.scalars.forEachIndexed { scalarIndex, scalar ->
         observeCancellation(scalarIndex, profile, cancellationToken)
         val level = bidi.getLevelAt(utf16Offset).toInt()
-        levels[scalarIndex] = if (
-            scalarIndex > 0 && isNonSpacingMark(scalar) && !isIsolateInitiator(snapshot.scalars[scalarIndex - 1])
-        ) {
-            levels[scalarIndex - 1]
-        } else {
-            level
-        }
+        levels[scalarIndex] = level
         utf16Offset += Character.charCount(scalar)
     }
+    restoreNormativeIsolateLevels(snapshot.scalars, levels, baseDirection, fsiDirections, profile, cancellationToken)
+    attachX9Controls(snapshot.scalars, levels)
     return levels
 }
-
-private fun isNonSpacingMark(scalar: Int): Boolean =
-    UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS) == UCharacterEnums.ECharacterDirection.DIR_NON_SPACING_MARK
 
 private fun isIsolateInitiator(scalar: Int): Boolean = when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS)) {
     UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
@@ -334,6 +343,478 @@ private fun isIsolateInitiator(scalar: Int): Boolean = when (UCharacter.getIntPr
 
     else -> false
 }
+
+private fun restoreNormativeIsolateLevels(
+    scalars: List<Int>,
+    levels: IntArray,
+    baseDirection: BaseDirection,
+    fsiDirections: BooleanArray,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+) {
+    val stack = mutableListOf(EmbeddingStatus(baseDirection.paragraphLevel, isolate = false, override = false))
+    val embeddingLevelAt = IntArray(scalars.size)
+    var overflowIsolates = 0
+    var overflowEmbeddings = 0
+    var validIsolates = 0
+    scalars.forEachIndexed { index, scalar ->
+        observeCancellation(index, profile, cancellationToken)
+        embeddingLevelAt[index] = stack.last().level
+        val direction = bidiClass(scalar)
+        if (direction == UCharacterEnums.ECharacterDirection.DIR_NON_SPACING_MARK && validIsolates == 0) {
+            var previous = index - 1
+            while (previous >= 0 && bidiClass(scalars[previous]) in X9_REMOVED_DIRECTIONS) previous -= 1
+            if (previous >= 0 && !isIsolateControl(bidiClass(scalars[previous]))) {
+                levels[index] = if (stack.last().level != embeddingLevelAt[previous]) {
+                    val sequenceDirection = maxOf(stack.last().level, embeddingLevelAt[previous]) % 2
+                    if (stack.last().level % 2 == sequenceDirection) {
+                        stack.last().level
+                    } else {
+                        stack.last().level + 1
+                    }
+                } else if (bidiClass(scalars[previous]) in BIDI_WHITESPACE_DIRECTIONS) {
+                    levels[index]
+                } else {
+                    maxOf(levels[previous], embeddingLevelAt[previous])
+                }
+            }
+        }
+        when (direction) {
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_EMBEDDING,
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_OVERRIDE,
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_EMBEDDING,
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE,
+            -> {
+                if (overflowIsolates == 0) {
+                    val rtl = bidiClass(scalar) == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_EMBEDDING ||
+                        bidiClass(scalar) == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE
+                    val newLevel = nextEmbeddingLevel(stack.last().level, rtl)
+                    if (newLevel <= MAX_EXPLICIT_EMBEDDING_LEVEL && overflowEmbeddings == 0) {
+                        val override = direction == UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_OVERRIDE ||
+                            direction == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE
+                        stack += EmbeddingStatus(newLevel, isolate = false, override = override)
+                    } else {
+                        overflowEmbeddings += 1
+                    }
+                }
+            }
+            UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_FORMAT -> when {
+                overflowIsolates != 0 -> Unit
+                overflowEmbeddings != 0 -> overflowEmbeddings -= 1
+                !stack.last().isolate && stack.size > 1 -> {
+                    stack.removeAt(stack.lastIndex)
+                }
+            }
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt(),
+            UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt(),
+            -> {
+                if (stack.last().override && validIsolates == 0) levels[index] = stack.last().level
+                val rtl = when (bidiClass(scalar)) {
+                    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt() -> false
+                    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt() -> true
+                    else -> fsiDirections[index]
+                }
+                val newLevel = nextEmbeddingLevel(stack.last().level, rtl)
+                if (newLevel <= MAX_EXPLICIT_EMBEDDING_LEVEL && overflowIsolates == 0 && overflowEmbeddings == 0) {
+                    stack += EmbeddingStatus(newLevel, isolate = true, override = false)
+                    validIsolates += 1
+                } else {
+                    overflowIsolates += 1
+                }
+            }
+            UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_ISOLATE.toInt() -> {
+                if (overflowIsolates != 0) {
+                    overflowIsolates -= 1
+                } else if (validIsolates != 0) {
+                    overflowEmbeddings = 0
+                    while (!stack.removeAt(stack.lastIndex).isolate) {
+                        // Pop embeddings nested within the matching isolate.
+                    }
+                    validIsolates -= 1
+                }
+                if (stack.last().override && validIsolates == 0) levels[index] = stack.last().level
+            }
+        }
+    }
+    resetTrailingIsolateControls(scalars, levels, baseDirection.paragraphLevel)
+}
+
+private fun attachX9Controls(scalars: List<Int>, levels: IntArray) {
+    var index = 0
+    while (index < scalars.size) {
+        if (bidiClass(scalars[index]) !in X9_REMOVED_DIRECTIONS) {
+            index += 1
+            continue
+        }
+        val start = index
+        while (index < scalars.size && bidiClass(scalars[index]) in X9_REMOVED_DIRECTIONS) index += 1
+        val retainedLevel = when {
+            index < levels.size -> levels[index]
+            start > 0 -> levels[start - 1]
+            else -> levels[start]
+        }
+        for (removedIndex in start until index) levels[removedIndex] = retainedLevel
+    }
+}
+
+private fun resetTrailingIsolateControls(scalars: List<Int>, levels: IntArray, paragraphLevel: Int) {
+    fun resetBefore(endExclusive: Int) {
+        var index = endExclusive - 1
+        while (index >= 0 && isL1Resettable(bidiClass(scalars[index]))) {
+            if (isIsolateControl(bidiClass(scalars[index]))) levels[index] = paragraphLevel
+            index -= 1
+        }
+    }
+
+    scalars.forEachIndexed { index, scalar ->
+        if (bidiClass(scalar) == UCharacterEnums.ECharacterDirection.BLOCK_SEPARATOR ||
+            bidiClass(scalar) == UCharacterEnums.ECharacterDirection.SEGMENT_SEPARATOR
+        ) {
+            resetBefore(index)
+        }
+    }
+    resetBefore(scalars.size)
+}
+
+private fun isL1Resettable(direction: Int): Boolean = direction in L1_RESETTABLE_DIRECTIONS
+
+private fun isIsolateControl(direction: Int): Boolean = direction ==
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt() ||
+    direction == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt() ||
+    direction == UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt() ||
+    direction == UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_ISOLATE.toInt()
+
+private fun fsiDirections(
+    scalars: List<Int>,
+    baseDirection: BaseDirection,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): BooleanArray {
+    // P2 ignores strong types inside nested isolates, so each frame records only direct content.
+    val fallback = baseDirection == BaseDirection.RIGHT_TO_LEFT
+    val directions = BooleanArray(scalars.size) { fallback }
+    val stack = mutableListOf(IsolateDirectionFrame())
+    var closedFrames = 0
+
+    fun closeNestedFrames() {
+        while (stack.size > 1) {
+            observeCancellation(closedFrames++, profile, cancellationToken)
+            val frame = stack.removeAt(stack.lastIndex)
+            if (frame.fsiIndex != null) directions[frame.fsiIndex] = frame.firstStrongRtl ?: fallback
+        }
+    }
+
+    scalars.forEachIndexed { index, scalar ->
+        observeCancellation(index, profile, cancellationToken)
+        when (bidiClass(scalar)) {
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT ->
+                if (stack.last().firstStrongRtl == null) stack.last().firstStrongRtl = false
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT,
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ARABIC,
+            -> if (stack.last().firstStrongRtl == null) stack.last().firstStrongRtl = true
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt(),
+            -> stack += IsolateDirectionFrame()
+            UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt() ->
+                stack += IsolateDirectionFrame(fsiIndex = index)
+            UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_ISOLATE.toInt() -> if (stack.size > 1) {
+                val frame = stack.removeAt(stack.lastIndex)
+                if (frame.fsiIndex != null) directions[frame.fsiIndex] = frame.firstStrongRtl ?: fallback
+            }
+            UCharacterEnums.ECharacterDirection.BLOCK_SEPARATOR -> {
+                closeNestedFrames()
+                stack.single().firstStrongRtl = null
+            }
+        }
+    }
+    closeNestedFrames()
+    return directions
+}
+
+private data class IsolateDirectionFrame(
+    val fsiIndex: Int? = null,
+    var firstStrongRtl: Boolean? = null,
+)
+
+private fun bidiClass(scalar: Int): Int = UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_CLASS)
+
+private fun prepareBidi(
+    scalars: List<Int>,
+    baseDirection: BaseDirection,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): BidiPreparation {
+    val fsiDirections = fsiDirections(scalars, baseDirection, profile, cancellationToken)
+    val explicit = explicitBidiStructure(scalars, baseDirection, fsiDirections, profile, cancellationToken)
+    val bracketResolution = resolveBd16BracketPairs(scalars, explicit, profile, cancellationToken)
+    val text = buildString {
+        scalars.forEachIndexed { index, scalar ->
+            observeCancellation(index, profile, cancellationToken)
+            val bracketType = UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)
+            appendCodePoint(
+                when {
+                    explicit.sequenceAt[index] in bracketResolution.overflowedSequences &&
+                        bracketType != UCharacter.BidiPairedBracketType.NONE ->
+                        NON_BRACKET_OTHER_NEUTRAL
+                    scalar == CANONICAL_LEFT_ANGLE_BRACKET -> CANONICAL_LEFT_ANGLE_BRACKET_REPRESENTATIVE
+                    scalar == CANONICAL_RIGHT_ANGLE_BRACKET -> CANONICAL_RIGHT_ANGLE_BRACKET_REPRESENTATIVE
+                    else -> scalar
+                },
+            )
+        }
+    }
+    return BidiPreparation(text, fsiDirections, bracketResolution.pairs)
+}
+
+private fun explicitBidiStructure(
+    scalars: List<Int>,
+    baseDirection: BaseDirection,
+    fsiDirections: BooleanArray,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): ExplicitBidiStructure {
+    val levels = IntArray(scalars.size)
+    val overrides = IntArray(scalars.size) { NO_OVERRIDE }
+    val matchingPdi = IntArray(scalars.size) { NO_INDEX }
+    val stack = mutableListOf(EmbeddingStatus(baseDirection.paragraphLevel, isolate = false, override = false))
+    val isolateIndexes = mutableListOf<Int>()
+    var overflowIsolates = 0
+    var overflowEmbeddings = 0
+    var validIsolates = 0
+
+    scalars.forEachIndexed { index, scalar ->
+        observeCancellation(index, profile, cancellationToken)
+        val direction = bidiClass(scalar)
+        if (direction == UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_ISOLATE.toInt() && overflowIsolates == 0 && validIsolates > 0) {
+            overflowEmbeddings = 0
+            while (!stack.removeAt(stack.lastIndex).isolate) {
+                // Pop embeddings nested within the matching isolate.
+            }
+            matchingPdi[isolateIndexes.removeAt(isolateIndexes.lastIndex)] = index
+            validIsolates -= 1
+        }
+        levels[index] = stack.last().level
+        overrides[index] = when {
+            stack.last().override && stack.last().level % 2 == 0 -> UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT
+            stack.last().override -> UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT
+            else -> NO_OVERRIDE
+        }
+        when (direction) {
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_EMBEDDING,
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_OVERRIDE,
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_EMBEDDING,
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE,
+            -> if (overflowIsolates == 0) {
+                val rtl = direction == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_EMBEDDING ||
+                    direction == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE
+                val newLevel = nextEmbeddingLevel(stack.last().level, rtl)
+                if (newLevel <= MAX_EXPLICIT_EMBEDDING_LEVEL && overflowEmbeddings == 0) {
+                    val override = direction == UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_OVERRIDE ||
+                        direction == UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE
+                    stack += EmbeddingStatus(newLevel, isolate = false, override = override)
+                } else {
+                    overflowEmbeddings += 1
+                }
+            }
+            UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_FORMAT -> when {
+                overflowIsolates != 0 -> Unit
+                overflowEmbeddings != 0 -> overflowEmbeddings -= 1
+                !stack.last().isolate && stack.size > 1 -> stack.removeAt(stack.lastIndex)
+            }
+            UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
+            UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt(),
+            UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt(),
+            -> {
+                val rtl = when (direction) {
+                    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt() -> false
+                    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt() -> true
+                    else -> fsiDirections[index]
+                }
+                val newLevel = nextEmbeddingLevel(stack.last().level, rtl)
+                if (newLevel <= MAX_EXPLICIT_EMBEDDING_LEVEL && overflowIsolates == 0 && overflowEmbeddings == 0) {
+                    stack += EmbeddingStatus(newLevel, isolate = true, override = false)
+                    isolateIndexes += index
+                    validIsolates += 1
+                } else {
+                    overflowIsolates += 1
+                }
+            }
+            UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_ISOLATE.toInt() -> {
+                if (overflowIsolates != 0) overflowIsolates -= 1
+            }
+            UCharacterEnums.ECharacterDirection.BLOCK_SEPARATOR -> {
+                stack.clear()
+                stack += EmbeddingStatus(baseDirection.paragraphLevel, isolate = false, override = false)
+                isolateIndexes.clear()
+                overflowIsolates = 0
+                overflowEmbeddings = 0
+                validIsolates = 0
+            }
+        }
+    }
+
+    return ExplicitBidiStructure(
+        levels,
+        overrides,
+        isolatingRunSequences(scalars, levels, matchingPdi, profile, cancellationToken),
+    )
+}
+
+private fun isolatingRunSequences(
+    scalars: List<Int>,
+    levels: IntArray,
+    matchingPdi: IntArray,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): IntArray {
+    // X10 links the run ending in an isolate initiator to the run beginning at its matching PDI.
+    val runs = mutableListOf<MutableList<Int>>()
+    scalars.indices.forEach { index ->
+        observeCancellation(index, profile, cancellationToken)
+        if (bidiClass(scalars[index]) in X9_REMOVED_DIRECTIONS) return@forEach
+        val previous = runs.lastOrNull()?.lastOrNull()
+        if (previous == null || levels[previous] != levels[index] ||
+            bidiClass(scalars[previous]) == UCharacterEnums.ECharacterDirection.BLOCK_SEPARATOR
+        ) {
+            runs.add(mutableListOf())
+        }
+        runs.last() += index
+    }
+    val runAt = IntArray(scalars.size) { NO_INDEX }
+    var mappedPositions = 0
+    runs.forEachIndexed { runIndex, positions ->
+        positions.forEach {
+            observeCancellation(mappedPositions++, profile, cancellationToken)
+            runAt[it] = runIndex
+        }
+    }
+    val successors = IntArray(runs.size) { NO_INDEX }
+    val hasPredecessor = BooleanArray(runs.size)
+    runs.forEachIndexed { runIndex, positions ->
+        observeCancellation(runIndex, profile, cancellationToken)
+        val last = positions.last()
+        val pdi = matchingPdi[last]
+        if (pdi != NO_INDEX) {
+            successors[runIndex] = runAt[pdi]
+            hasPredecessor[runAt[pdi]] = true
+        }
+    }
+    val sequenceAt = IntArray(scalars.size) { NO_INDEX }
+    var sequence = 0
+    var linkedRuns = 0
+    var assignedPositions = 0
+    runs.indices.forEach { startRun ->
+        observeCancellation(startRun, profile, cancellationToken)
+        if (hasPredecessor[startRun]) return@forEach
+        var run = startRun
+        while (run != NO_INDEX) {
+            observeCancellation(linkedRuns++, profile, cancellationToken)
+            runs[run].forEach {
+                observeCancellation(assignedPositions++, profile, cancellationToken)
+                sequenceAt[it] = sequence
+            }
+            run = successors[run]
+        }
+        sequence += 1
+    }
+    return sequenceAt
+}
+
+private fun resolveBd16BracketPairs(
+    scalars: List<Int>,
+    explicit: ExplicitBidiStructure,
+    profile: UnicodeAnalysisProfile,
+    cancellationToken: CancellationToken,
+): BracketResolution {
+    // BD16 owns one fixed 63-entry bracket stack per isolating run sequence.
+    val stacks = mutableMapOf<Int, MutableList<BracketStackEntry>>()
+    val pairs = mutableListOf<BracketPair>()
+    val overflowed = mutableSetOf<Int>()
+    var stackWork = 0
+    scalars.forEachIndexed { index, scalar ->
+        observeCancellation(index, profile, cancellationToken)
+        val sequence = explicit.sequenceAt[index]
+        if (sequence == NO_INDEX || sequence in overflowed || explicit.overrides[index] != NO_OVERRIDE) return@forEachIndexed
+        val stack = stacks.getOrPut(sequence, ::mutableListOf)
+        when (UCharacter.getIntPropertyValue(scalar, UProperty.BIDI_PAIRED_BRACKET_TYPE)) {
+            UCharacter.BidiPairedBracketType.OPEN -> if (stack.size == MAX_PAIRED_BRACKET_DEPTH) {
+                overflowed += sequence
+                stack.clear()
+            } else {
+                stack += BracketStackEntry(
+                    expectedClosing = canonicalBracket(UCharacter.getBidiPairedBracket(scalar)),
+                    position = index,
+                )
+            }
+            UCharacter.BidiPairedBracketType.CLOSE -> {
+                val closing = canonicalBracket(scalar)
+                var match = stack.lastIndex
+                while (match >= 0) {
+                    observeCancellation(stackWork++, profile, cancellationToken)
+                    if (stack[match].expectedClosing == closing) break
+                    match -= 1
+                }
+                if (match >= 0) {
+                    pairs += BracketPair(stack[match].position, index)
+                    while (stack.lastIndex >= match) {
+                        observeCancellation(stackWork++, profile, cancellationToken)
+                        stack.removeAt(stack.lastIndex)
+                    }
+                }
+            }
+        }
+    }
+    val validPairs = mutableListOf<BracketPair>()
+    pairs.forEachIndexed { pairIndex, pair ->
+        observeCancellation(pairIndex, profile, cancellationToken)
+        if (explicit.sequenceAt[pair.opening] !in overflowed) validPairs += pair
+    }
+    return BracketResolution(
+        pairs = validPairs,
+        overflowedSequences = overflowed,
+    )
+}
+
+private fun canonicalBracket(scalar: Int): Int = when (scalar) {
+    CANONICAL_LEFT_ANGLE_BRACKET -> CANONICAL_LEFT_ANGLE_BRACKET_REPRESENTATIVE
+    CANONICAL_RIGHT_ANGLE_BRACKET -> CANONICAL_RIGHT_ANGLE_BRACKET_REPRESENTATIVE
+    else -> scalar
+}
+
+private data class BidiPreparation(
+    val text: String,
+    val fsiDirections: BooleanArray,
+    val bracketPairs: List<BracketPair>,
+)
+
+private data class BracketResolution(
+    val pairs: List<BracketPair>,
+    val overflowedSequences: Set<Int>,
+)
+
+private data class BracketStackEntry(val expectedClosing: Int, val position: Int)
+private data class BracketPair(val opening: Int, val closing: Int)
+private data class ExplicitBidiStructure(
+    val levels: IntArray,
+    val overrides: IntArray,
+    val sequenceAt: IntArray,
+)
+
+private fun nextEmbeddingLevel(current: Int, rtl: Boolean): Int = if (rtl) {
+    if (current % 2 == 0) current + 1 else current + 2
+} else {
+    if (current % 2 == 0) current + 2 else current + 1
+}
+
+private val BaseDirection.paragraphLevel: Int
+    get() = if (this == BaseDirection.LEFT_TO_RIGHT) 0 else 1
+
+private data class EmbeddingStatus(
+    val level: Int,
+    val isolate: Boolean,
+    val override: Boolean,
+)
 
 private fun bidiRuns(
     snapshot: TextSnapshot,
@@ -410,12 +891,19 @@ private fun reverseBidiRunSequence(
     }
 }
 
-private fun bidi(text: String, baseDirection: BaseDirection): Bidi = Bidi().apply {
+private fun bidi(
+    text: String,
+    baseDirection: BaseDirection,
+    cancellationToken: CancellationToken,
+): Bidi = Bidi().apply {
     val paragraphLevel = when (baseDirection) {
         BaseDirection.LEFT_TO_RIGHT -> Bidi.LTR
         BaseDirection.RIGHT_TO_LEFT -> Bidi.RTL
     }
-    setPara(text, paragraphLevel, null)
+    val oppositeDirectionSentinel = if (baseDirection == BaseDirection.LEFT_TO_RIGHT) '\u05D0' else 'a'
+    observeCancellation(cancellationToken)
+    setPara(text + '\u2029' + oppositeDirectionSentinel, paragraphLevel, null)
+    observeCancellation(cancellationToken)
 }
 
 private class CanonicalUtf16Text(
@@ -489,3 +977,41 @@ private val UNICODE_DATA: UnicodeDataIdentity = UnicodeDataIdentity(
 private fun loadedVersion(version: VersionInfo): String = "${version.major}.${version.minor}"
 
 private const val INVALID_LANGUAGE_MESSAGE: String = "Language must be a well-formed BCP 47 tag."
+private const val MAX_EXPLICIT_EMBEDDING_LEVEL: Int = 125
+private const val MAX_PAIRED_BRACKET_DEPTH: Int = 63
+private const val NON_BRACKET_OTHER_NEUTRAL: Int = 0x0022
+private const val CANONICAL_LEFT_ANGLE_BRACKET: Int = 0x2329
+private const val CANONICAL_LEFT_ANGLE_BRACKET_REPRESENTATIVE: Int = 0x3008
+private const val CANONICAL_RIGHT_ANGLE_BRACKET: Int = 0x232A
+private const val CANONICAL_RIGHT_ANGLE_BRACKET_REPRESENTATIVE: Int = 0x3009
+private const val NO_INDEX: Int = -1
+private const val NO_OVERRIDE: Int = -1
+
+private val L1_RESETTABLE_DIRECTIONS: Set<Int> = setOf(
+    UCharacterEnums.ECharacterDirection.WHITE_SPACE_NEUTRAL,
+    UCharacterEnums.ECharacterDirection.BOUNDARY_NEUTRAL,
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_EMBEDDING,
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_OVERRIDE,
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_EMBEDDING,
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE,
+    UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_FORMAT,
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.FIRST_STRONG_ISOLATE.toInt(),
+    UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_ISOLATE.toInt(),
+)
+
+private val X9_REMOVED_DIRECTIONS: Set<Int> = setOf(
+    UCharacterEnums.ECharacterDirection.BOUNDARY_NEUTRAL,
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_EMBEDDING,
+    UCharacterEnums.ECharacterDirection.LEFT_TO_RIGHT_OVERRIDE,
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_EMBEDDING,
+    UCharacterEnums.ECharacterDirection.RIGHT_TO_LEFT_OVERRIDE,
+    UCharacterEnums.ECharacterDirection.POP_DIRECTIONAL_FORMAT,
+)
+
+private val BIDI_WHITESPACE_DIRECTIONS: Set<Int> = setOf(
+    UCharacterEnums.ECharacterDirection.WHITE_SPACE_NEUTRAL,
+    UCharacterEnums.ECharacterDirection.BLOCK_SEPARATOR,
+    UCharacterEnums.ECharacterDirection.SEGMENT_SEPARATOR,
+)

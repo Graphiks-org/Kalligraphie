@@ -715,13 +715,23 @@ class IncrementalParagraphLayoutEngineTest {
             application = ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
         )
         val backendIdentity = ShapingBackendIdentity(
-            backendId = "fixture",
-            nativeVersion = "1",
-            nativeSourceRevision = "fixture",
-            nativeArtifactId = "fixture",
-            nativeArtifactSha256 = "0".repeat(64),
-            featurePolicy = featurePolicy,
-            configurationFingerprint = "fixture-v1",
+            semantic = org.graphiks.kalligraphie.api.ShapingSemanticIdentity(
+                backendId = "fixture",
+                engineId = "fixture-engine",
+                engineVersion = "1",
+                shaperId = "fixture-shaper",
+                featurePolicy = featurePolicy,
+                configurationFingerprint = "fixture-v1",
+            ),
+            provenance = org.graphiks.kalligraphie.api.ShapingDistributionProvenance(
+                operatingSystem = "test-os",
+                architecture = "test-architecture",
+                artifactId = "fixture",
+                artifactSha256 = "0".repeat(64),
+                sourceProject = "fixture-source",
+                sourceRevision = "fixture",
+                buildChainIdentity = "fixture-build-chain",
+            ),
         )
         val faceId = FontFaceId(FontSourceId.Opaque("tests", "fixture", "face"), 0)
         val fontKey = FontInstanceKey(
@@ -829,6 +839,7 @@ class IncrementalParagraphLayoutEngineTest {
             endExclusive: Int,
             baselineY: Float,
             glyphId: Int,
+            backendIdentity: ShapingBackendIdentity = this.backendIdentity,
         ): LineLayout {
             val sourceRange = range(snapshot, start, endExclusive)
             if (start == endExclusive) return emptyLine(sourceRange, baselineY)

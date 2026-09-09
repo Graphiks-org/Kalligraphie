@@ -365,6 +365,16 @@ public sealed interface FlowCompositionError {
         override val message: String = paragraphError.message
     }
 
+    /** Complete-operation resource limit that rejected the flow atomically. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and rejecting observation. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
+    }
+
     /** Cooperative cancellation discarded the complete candidate before publication. */
     public data object Cancelled : FlowCompositionError {
         override val code: String = "layout.flow-cancelled"
@@ -876,7 +886,7 @@ internal class FlowParagraphReplayIdentity private constructor(
             paragraph.resolutionPolicyId == other.paragraph.resolutionPolicyId &&
             paragraph.resolutionPolicyVersion == other.paragraph.resolutionPolicyVersion &&
             paragraph.fontInstanceDescriptor == other.paragraph.fontInstanceDescriptor &&
-            paragraph.shapingBackendIdentity == other.paragraph.shapingBackendIdentity &&
+            paragraph.shapingSemanticIdentity == other.paragraph.shapingSemanticIdentity &&
             paragraph.featurePolicy == other.paragraph.featurePolicy &&
             paragraph.features == other.paragraph.features &&
             paragraph.materializationIdentity == other.paragraph.materializationIdentity &&
@@ -907,7 +917,7 @@ internal class FlowParagraphReplayIdentity private constructor(
             request.resolutionPolicy.policyId == paragraph.resolutionPolicyId &&
             request.resolutionPolicy.version == paragraph.resolutionPolicyVersion &&
             request.fontInstanceDescriptor == paragraph.fontInstanceDescriptor &&
-            request.shapingBackend.identity == paragraph.shapingBackendIdentity &&
+            request.shapingBackend.identity.semantic == paragraph.shapingSemanticIdentity &&
             request.featurePolicy == paragraph.featurePolicy &&
             request.features == paragraph.features &&
             request.materializationIdentity == paragraph.materializationIdentity &&
@@ -956,8 +966,9 @@ internal class FlowParagraphReplayIdentity private constructor(
  * Complete resource-free signature of inputs that may affect flow breaking or geometry.
  *
  * The signature snapshots region revision identities, paragraph configuration, and the complete
- * structural Unicode and line-break analyses while retaining no [FlowRegion], text snapshot,
- * shaping backend, resolver, renderer, or platform resource.
+ * structural Unicode and line-break analyses plus portable shaping semantics. It retains no
+ * [FlowRegion], text snapshot, shaping backend, native distribution provenance, resolver,
+ * renderer, or platform resource.
  */
 public class FlowLayoutConfigurationSignature private constructor(
     private val value: FlowLayoutConfigurationValue,
@@ -1017,7 +1028,7 @@ public class FlowLayoutConfigurationSignature private constructor(
                 layout = LayoutConfigurationSignature.from(request.input, request.constraints),
                 baseDirection = paragraph.baseDirection,
                 language = paragraph.language,
-                backendIdentity = paragraph.shapingBackend.identity,
+                shapingSemantics = paragraph.shapingBackend.identity.semantic,
                 materialization = paragraph.materializationIdentity,
                 overflowPolicy = paragraph.overflowPolicy,
                 positioning = paragraph.positioning,
@@ -1050,7 +1061,7 @@ private data class FlowLayoutConfigurationValue(
     val layout: LayoutConfigurationSignature,
     val baseDirection: BaseDirection,
     val language: String,
-    val backendIdentity: ShapingBackendIdentity,
+    val shapingSemantics: ShapingSemanticIdentity,
     val materialization: ParagraphMaterializationIdentity,
     val overflowPolicy: OverflowPolicy,
     val positioning: ParagraphPositioningPolicy,
@@ -1101,7 +1112,30 @@ public class IncrementalFlowLayoutRequest internal constructor(
     public val delta: LayoutDelta?,
     /** Cooperative cancellation signal checked between bounded operations. */
     public val cancellationToken: CancellationToken,
-)
+    /** Shared finite resource policy for this complete flow operation. */
+    public val operationProfile: EditorOperationProfile,
+) {
+    internal constructor(
+        input: LayoutInput,
+        requestedRange: TextRange,
+        constraints: ParagraphConstraints,
+        flowChain: FlowChain,
+        overscan: LineOverscan,
+        previousState: FlowLayoutState?,
+        delta: LayoutDelta?,
+        cancellationToken: CancellationToken,
+    ) : this(
+        input,
+        requestedRange,
+        constraints,
+        flowChain,
+        overscan,
+        previousState,
+        delta,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+}
 
 /**
  * Validates and creates one bounded incremental flow-composition operation.
@@ -1144,6 +1178,34 @@ public fun createIncrementalFlowLayoutRequest(
     previousState: FlowLayoutState? = null,
     delta: LayoutDelta? = null,
     cancellationToken: CancellationToken = CancellationToken.none,
+): FlowCompositionResult<IncrementalFlowLayoutRequest> = createIncrementalFlowLayoutRequest(
+    input,
+    requestedRange,
+    constraints,
+    flowChain,
+    overscan,
+    previousState,
+    delta,
+    cancellationToken,
+    EditorOperationProfile.unbounded,
+)
+
+/**
+ * Validates a flow request with one explicit complete-operation resource policy.
+ *
+ * The policy and cancellation token control work only and are excluded from retained flow,
+ * continuation, semantic, and cache identity.
+ */
+public fun createIncrementalFlowLayoutRequest(
+    input: LayoutInput,
+    requestedRange: TextRange,
+    constraints: ParagraphConstraints,
+    flowChain: FlowChain,
+    overscan: LineOverscan,
+    previousState: FlowLayoutState? = null,
+    delta: LayoutDelta? = null,
+    cancellationToken: CancellationToken = CancellationToken.none,
+    operationProfile: EditorOperationProfile,
 ): FlowCompositionResult<IncrementalFlowLayoutRequest> {
     if (!requestedRange.start.sharesVersionWith(input.text.range.start) || !input.text.contains(requestedRange)) {
         return FlowCompositionResult.Failure(
@@ -1228,6 +1290,7 @@ public fun createIncrementalFlowLayoutRequest(
             previousState,
             delta,
             cancellationToken,
+            operationProfile,
         ),
     )
 }

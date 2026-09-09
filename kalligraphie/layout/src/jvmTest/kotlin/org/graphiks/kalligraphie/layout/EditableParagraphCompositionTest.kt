@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CoverageStatus
@@ -32,6 +33,7 @@ import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutBounds
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
@@ -39,14 +41,20 @@ import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphMaterializationIdentity
 import org.graphiks.kalligraphie.api.ParagraphConstraints
+import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.ShapingBackendIdentity
+import org.graphiks.kalligraphie.api.ShapingDistributionProvenance
+import org.graphiks.kalligraphie.api.ShapingProvenanceSpan
 import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.TabStop
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
@@ -207,8 +215,106 @@ class EditableParagraphCompositionTest {
         assertTrue(fixture.recordingBackend.requests.none { request ->
             request.range == TextRange(fixture.snapshot.range.start, finalEnd) && request.eot
         })
+        val finalRun = result.lines.first().line.positionedGlyphRuns.single().sourceRun
+        assertEquals(
+            listOf(
+                ShapingProvenanceSpan(
+                    range(fixture.snapshot, 0, 11),
+                    fixture.request.shapingBackend.identity.provenance,
+                ),
+            ),
+            finalRun.provenanceSpans,
+        )
         // The provisional real-font flags are safe on `abc`, while the space-to-ligature
         // suffix is unsafe-to-concat and the selected hyphen boundary is unsafe-to-break.
+    }
+
+    @Test
+    fun paragraphCoalescenceRetainsEveryRealShapingDistributionInFirstContributionOrder() {
+        val fixture = fixture("abc office-office", width = 5_300f, height = 2_000f)
+        val primary = fixture.request.shapingBackend.identity.provenance
+        val secondary = primary.copy(
+            operatingSystem = "portable-test-os",
+            architecture = "portable-test-architecture",
+            artifactId = "portable-test-artifact",
+            artifactSha256 = "1".repeat(64),
+            buildChainIdentity = "portable-test-build-chain",
+        )
+        val secondaryStart = fixture.snapshot.textIndexAtScalarBoundary(3)
+        val routedBackend = DistributionRoutingBackend(fixture.request.shapingBackend) { shapingRequest ->
+            if (shapingRequest.range.start == secondaryStart) secondary else primary
+        }
+
+        val result = layout(copyRequest(fixture.request, shapingBackend = routedBackend))
+        val sourceRun = result.layout.lines.first().positionedGlyphRuns.single().sourceRun
+
+        assertEquals(
+            listOf(68, 69, 70, 3, 82, 5044, 70, 72, 16),
+            sourceRun.glyphs.map { glyph -> glyph.glyphId.value },
+        )
+        assertEquals(
+            listOf(612.79297f, 634.7656f, 549.8047f, 317.8711f, 611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+            sourceRun.glyphs.map { glyph -> glyph.xAdvance.value },
+        )
+        assertEquals(primary, sourceRun.backendIdentity.provenance)
+        assertEquals(listOf(primary, secondary), sourceRun.distributionProvenances)
+    }
+
+    @Test
+    fun paragraphCompositionRetainsEveryLegacyIdentityValuePublishedWithRealGlyphs() {
+        val fixture = fixture("abc office-office", width = 5_300f, height = 2_000f)
+        val legacy = ShapingBackendIdentity(
+            backendId = "legacy-paragraph-backend",
+            nativeVersion = "legacy-native-version",
+            nativeSourceRevision = "legacy-source-revision",
+            nativeArtifactId = "legacy-artifact-id",
+            nativeArtifactSha256 = "2".repeat(64),
+            featurePolicy = fixture.request.featurePolicy,
+            configurationFingerprint = "legacy-configuration",
+        )
+        val backend = LegacyIdentityReportingBackend(fixture.request.shapingBackend, legacy)
+
+        val result = layout(copyRequest(fixture.request, shapingBackend = backend))
+        val sourceRun = result.layout.lines.first().positionedGlyphRuns.single().sourceRun
+        val (
+            backendId,
+            nativeVersion,
+            nativeSourceRevision,
+            nativeArtifactId,
+            nativeArtifactSha256,
+            featurePolicy,
+            configurationFingerprint,
+        ) = sourceRun.backendIdentity
+
+        assertEquals(
+            listOf(68, 69, 70, 3, 82, 5044, 70, 72, 16),
+            sourceRun.glyphs.map { glyph -> glyph.glyphId.value },
+        )
+        assertEquals(
+            listOf(612.79297f, 634.7656f, 549.8047f, 317.8711f, 611.8164f, 966.7969f, 549.8047f, 615.2344f, 360.83984f),
+            sourceRun.glyphs.map { glyph -> glyph.xAdvance.value },
+        )
+        assertSame(legacy, sourceRun.backendIdentity)
+        assertEquals(
+            listOf(
+                "legacy-paragraph-backend",
+                "legacy-native-version",
+                "legacy-source-revision",
+                "legacy-artifact-id",
+                "2".repeat(64),
+                fixture.request.featurePolicy,
+                "legacy-configuration",
+            ),
+            listOf(
+                backendId,
+                nativeVersion,
+                nativeSourceRevision,
+                nativeArtifactId,
+                nativeArtifactSha256,
+                featurePolicy,
+                configurationFingerprint,
+            ),
+        )
     }
 
     @Test
@@ -516,6 +622,83 @@ class EditableParagraphCompositionTest {
     }
 
     @Test
+    fun verticalMixedTabRetainsItsPhysicalControlAndInlineAdvance() {
+        val fixture = fixture("A\tB", width = 1_000f, height = 4_000f, writingMode = WritingMode.VERTICAL_RL)
+
+        val projection = runCatching { layout(fixture.request).layout.lines.single() }
+
+        assertTrue(projection.isSuccess, "Vertical projection must retain the TAB cluster between neighboring glyphs.")
+        val line = projection.getOrThrow()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(range(fixture.snapshot, 1, 2), control.sourceRange)
+        assertEquals(line.baseline.x, control.origin.x)
+        assertTrue(control.origin.y > line.baseline.y)
+        assertEquals(LayoutUnit(0f), control.advance.x)
+        assertTrue(control.advance.y.value > 0f)
+        assertEquals(
+            fixture.snapshot.scalarRanges(fixture.snapshot.range),
+            line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.flatMap { cluster -> cluster.scalarRanges },
+        )
+        assertEquals(
+            LayoutUnit(
+                (line.positionedGlyphRuns.sumOf { run ->
+                    run.glyphs.sumOf { glyph -> glyph.advance.y.value.toDouble() }
+                } + control.advance.y.value.toDouble()).toFloat(),
+            ),
+            line.contentMetrics.inlineAdvance,
+        )
+    }
+
+    @Test
+    fun verticalTabOnlyLineRetainsItsPhysicalControlAndInlineAdvance() {
+        val fixture = fixture("\t", width = 1_000f, height = 4_000f, writingMode = WritingMode.VERTICAL_RL)
+
+        val projection = runCatching { layout(fixture.request).layout.lines.single() }
+
+        assertTrue(projection.isSuccess, "Vertical projection must retain a TAB-only shaped run.")
+        val line = projection.getOrThrow()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(fixture.snapshot.range, control.sourceRange)
+        assertEquals(line.baseline, control.origin)
+        assertEquals(LayoutUnit(0f), control.advance.x)
+        assertTrue(control.advance.y.value > 0f)
+        assertEquals(
+            fixture.snapshot.scalarRanges(fixture.snapshot.range),
+            line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.flatMap { cluster -> cluster.scalarRanges },
+        )
+        assertEquals(control.advance.y, line.contentMetrics.inlineAdvance)
+    }
+
+    @Test
+    fun verticalTabLeaderUsesItsCoveredExtentForInlineAdvance() {
+        val fixture = fixture(
+            "\t",
+            width = 1_000f,
+            height = 3_000f,
+            writingMode = WritingMode.VERTICAL_RL,
+            positioning = ParagraphPositioningPolicy(
+                tabStops = listOf(TabStop(LayoutUnit(3_000f), leader = '.'.code)),
+            ),
+        )
+
+        val result = layout(fixture.request)
+        val line = result.layout.lines.single()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        val leaders = line.positionedGlyphRuns.flatMap { run -> run.glyphs }
+
+        assertTrue(leaders.isNotEmpty())
+        assertTrue(leaders.all { glyph ->
+            glyph.origin.y.value + glyph.advance.y.value <= control.origin.y.value + control.advance.y.value
+        })
+        assertEquals(LayoutUnit(3_000f), control.advance.y)
+        assertEquals(LayoutUnit(3_000f), line.contentMetrics.inlineAdvance)
+        assertEquals(CoverageStatus.COMPLETE, result.coverageStatus)
+        assertNull(result.continuation)
+    }
+
+    @Test
     fun trailingSpacesDoNotExpandPublishedInkBounds() {
         val fixture = fixture("Ag   ", width = 5_000f, height = 1_000f)
 
@@ -763,6 +946,7 @@ class EditableParagraphCompositionTest {
         cancellationToken: org.graphiks.kalligraphie.api.CancellationToken = request.cancellationToken,
         materializationIdentity: ParagraphMaterializationIdentity = request.materializationIdentity,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
+        shapingBackend: ShapingBackend = request.shapingBackend,
     ): ParagraphLayoutRequest = ParagraphLayoutRequest(
         snapshot = request.snapshot,
         sourceRange = sourceRange,
@@ -776,7 +960,7 @@ class EditableParagraphCompositionTest {
         fontCatalog = fontCatalog,
         resolutionPolicy = request.resolutionPolicy,
         fontInstanceDescriptor = fontInstanceDescriptor,
-        shapingBackend = request.shapingBackend,
+        shapingBackend = shapingBackend,
         materializationIdentity = materializationIdentity,
         overflowPolicy = request.overflowPolicy,
         continuation = continuation,
@@ -805,6 +989,8 @@ class EditableParagraphCompositionTest {
         height: Float,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "en",
+        writingMode: WritingMode = WritingMode.HORIZONTAL_TB,
+        positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
         fontResources: List<FontFixture> = listOf(FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")),
         sourceStartOrdinal: Int = 0,
         recordShapingRequests: Boolean = false,
@@ -838,18 +1024,27 @@ class EditableParagraphCompositionTest {
             sourceRange = range(snapshot, sourceStartOrdinal, snapshot.scalarRanges(snapshot.range).size),
             unicodeAnalysis = unicodeAnalysis,
             lineBreakAnalysis = lineBreakAnalysis,
-            constraints = HorizontalParagraphConstraints(
-                region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(50f + height)),
-                lineMetrics = metrics,
-            ),
+            constraints = if (writingMode == WritingMode.HORIZONTAL_TB) {
+                HorizontalParagraphConstraints(
+                    region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(50f + height)),
+                    lineMetrics = metrics,
+                )
+            } else {
+                ParagraphConstraints(
+                    region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(50f + height)),
+                    lineMetrics = metrics,
+                    writingMode = writingMode,
+                )
+            },
             baseDirection = baseDirection,
             language = language,
-            featurePolicy = backend.identity.featurePolicy,
+            featurePolicy = backend.identity.semantic.featurePolicy,
             fontCatalog = catalog,
             resolutionPolicy = policy,
             fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
             shapingBackend = backend,
             materializationIdentity = ParagraphMaterializationIdentity.LayoutOnly,
+            positioning = positioning,
         )
         return Fixture(snapshot, request, recordingBackend)
     }
@@ -912,6 +1107,82 @@ class EditableParagraphCompositionTest {
         FontSource(checkNotNull(javaClass.getResourceAsStream(resource)).use { it.readBytes() }, FontSourceProvenance(declaredName))
 
     private fun <T> FontOperationResult<T>.successValue(): T = assertIs<FontOperationResult.Success<T>>(this).value
+
+    private class DistributionRoutingBackend(
+        private val delegate: ShapingBackend,
+        private val provenanceFor: (ShapingRequest) -> ShapingDistributionProvenance,
+    ) : ShapingBackend {
+        override val identity: ShapingBackendIdentity = delegate.identity
+
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val shaped = delegate.shape(request)) {
+                is FontOperationResult.Success -> {
+                    val source = shaped.value
+                    FontOperationResult.Success(
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = ShapingBackendIdentity(source.backendIdentity.semantic, provenanceFor(request)),
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            ligatureCaretFacts = source.ligatureCaretFacts,
+                        ),
+                        shaped.diagnostics,
+                    )
+                }
+
+                is FontOperationResult.Failure -> shaped
+                is FontOperationResult.Cancelled -> shaped
+            }
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
+    }
+
+    private class LegacyIdentityReportingBackend(
+        private val delegate: ShapingBackend,
+        override val identity: ShapingBackendIdentity,
+    ) : ShapingBackend {
+        override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> =
+            when (val shaped = delegate.shape(request)) {
+                is FontOperationResult.Success -> {
+                    val source = shaped.value
+                    FontOperationResult.Success(
+                        ShapedGlyphRun(
+                            range = source.range,
+                            fontInstanceKey = source.fontInstanceKey,
+                            backendIdentity = identity,
+                            direction = source.direction,
+                            script = source.script,
+                            language = source.language,
+                            bidiLevel = source.bidiLevel,
+                            bot = source.bot,
+                            eot = source.eot,
+                            featurePolicy = source.featurePolicy,
+                            features = source.features,
+                            graphemeClusters = source.graphemeClusters,
+                            glyphs = source.glyphs,
+                            clusters = source.clusters,
+                            ligatureCaretFacts = source.ligatureCaretFacts,
+                        ),
+                        shaped.diagnostics,
+                    )
+                }
+
+                is FontOperationResult.Failure -> shaped
+                is FontOperationResult.Cancelled -> shaped
+            }
+
+        override fun close(): FontOperationResult<Unit> = FontOperationResult.Success(Unit)
+    }
 
     private data class Fixture(
         val snapshot: TextSnapshot,

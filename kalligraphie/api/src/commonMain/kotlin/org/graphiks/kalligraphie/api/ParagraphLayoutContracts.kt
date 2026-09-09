@@ -627,10 +627,12 @@ private fun paragraphRenderVariantSnapshot(variant: FontRenderVariantKey): FontR
  * line remains. A partial layout prefix plus this value partitions the complete source requested
  * by the call that created it. It stores no text
  * history, incremental-edit state, borrowed resolver, native handle, renderer, or platform
- * object. Collections are defensively captured, making this value safe for concurrent reads.
+ * object. [shapingBackendIdentity] retains the captured diagnostic distribution for source
+ * compatibility, while only [shapingSemanticIdentity] participates in replay compatibility.
+ * Collections are defensively captured, making this value safe for concurrent reads.
  *
  * Create continuations only with [create]; a resumed [ParagraphLayoutRequest] rejects any
- * incompatible version, remaining range, geometry, Unicode data, font policy, shaping backend,
+ * incompatible version, remaining range, geometry, Unicode data, font policy, shaping semantics,
  * feature set, or materialization identity.
  */
 public class LayoutContinuation private constructor(
@@ -668,7 +670,11 @@ public class LayoutContinuation private constructor(
     public val resolutionPolicyVersion: String,
     /** Font instance geometry applied to selected faces. */
     public val fontInstanceDescriptor: FontInstanceDescriptor,
-    /** Pinned shaping backend and configuration identity. */
+    /**
+     * Complete shaping identity captured when this continuation was created.
+     *
+     * Its provenance is diagnostic only; compatibility uses [shapingSemanticIdentity].
+     */
     public val shapingBackendIdentity: ShapingBackendIdentity,
     /** Baseline OpenType feature policy used for shaping. */
     public val featurePolicy: ShapingFeaturePolicy,
@@ -690,6 +696,9 @@ public class LayoutContinuation private constructor(
     /** Policy used when selected faces lack OpenType vertical metrics. */
     public val verticalMetricsPolicy: VerticalMetricsPolicy,
 ) {
+    /** Portable shaping semantics required to resume this continuation. */
+    public val shapingSemanticIdentity: ShapingSemanticIdentity = shapingBackendIdentity.semantic
+
     /** Immutable deterministic OpenType feature overrides required for replay. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
@@ -717,7 +726,7 @@ public class LayoutContinuation private constructor(
             request.resolutionPolicy.policyId == resolutionPolicyId &&
             request.resolutionPolicy.version == resolutionPolicyVersion &&
             request.fontInstanceDescriptor == fontInstanceDescriptor &&
-            request.shapingBackend.identity == shapingBackendIdentity &&
+            request.shapingBackend.identity.semantic == shapingSemanticIdentity &&
             request.featurePolicy == featurePolicy &&
             request.features == features &&
             request.materializationIdentity == materializationIdentity &&
@@ -758,7 +767,7 @@ public class LayoutContinuation private constructor(
         if (request.resolutionPolicy.policyId != resolutionPolicyId) add("resolution policy")
         if (request.resolutionPolicy.version != resolutionPolicyVersion) add("resolution-policy version")
         if (request.fontInstanceDescriptor != fontInstanceDescriptor) add("font instance")
-        if (request.shapingBackend.identity != shapingBackendIdentity) add("shaping backend")
+        if (request.shapingBackend.identity.semantic != shapingSemanticIdentity) add("shaping semantics")
         if (request.featurePolicy != featurePolicy) add("feature policy")
         if (request.features != features) add("features")
         if (request.materializationIdentity != materializationIdentity) add("materialization")
@@ -904,7 +913,66 @@ public class ParagraphLayoutRequest(
     public val verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
     /** Cooperative signal observed between bounded composition operations. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
+    /** Shared finite resource policy for this complete paragraph operation. */
+    public val operationProfile: EditorOperationProfile,
 ) {
+    /**
+     * Creates a paragraph request through the historical unbounded constructor.
+     *
+     * The explicit overload preserves its established JVM descriptor; callers choosing a finite
+     * complete-operation policy use the primary constructor and supply [operationProfile].
+     */
+    public constructor(
+        snapshot: TextSnapshot,
+        sourceRange: TextRange = snapshot.range,
+        unicodeAnalysis: UnicodeAnalysis,
+        lineBreakAnalysis: LineBreakAnalysis,
+        constraints: ParagraphConstraints,
+        baseDirection: BaseDirection,
+        language: String,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature> = emptyList(),
+        fontCatalog: FontCatalogSnapshot,
+        resolutionPolicy: FontResolutionPolicySnapshot,
+        fontInstanceDescriptor: FontInstanceDescriptor,
+        shapingBackend: ShapingBackend,
+        materializationIdentity: ParagraphMaterializationIdentity,
+        overflowPolicy: OverflowPolicy = OverflowPolicy.Continue,
+        continuation: LayoutContinuation? = null,
+        positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
+        hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
+        hyphenationService: HyphenationService? = null,
+        inlineObjects: InlineObjectSnapshot? = null,
+        textOrientation: TextOrientation = TextOrientation.MIXED,
+        verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ) : this(
+        snapshot,
+        sourceRange,
+        unicodeAnalysis,
+        lineBreakAnalysis,
+        constraints,
+        baseDirection,
+        language,
+        featurePolicy,
+        features,
+        fontCatalog,
+        resolutionPolicy,
+        fontInstanceDescriptor,
+        shapingBackend,
+        materializationIdentity,
+        overflowPolicy,
+        continuation,
+        positioning,
+        hyphenationMode,
+        hyphenationService,
+        inlineObjects,
+        textOrientation,
+        verticalMetricsPolicy,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+
     /** Immutable deterministic OpenType feature overrides in caller-specified order. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
@@ -920,7 +988,7 @@ public class ParagraphLayoutRequest(
         require(unicodeAnalysis.scriptLanguageRuns.all { run -> run.language == language }) {
             "Paragraph language must match every analyzed script-language run."
         }
-        require(featurePolicy == shapingBackend.identity.featurePolicy) {
+        require(featurePolicy == shapingBackend.identity.semantic.featurePolicy) {
             "Paragraph feature policy must be implemented by the selected shaping backend."
         }
         require(this.features.map(OpenTypeFeature::tag).distinct().size == this.features.size) {
@@ -974,6 +1042,16 @@ public sealed interface ParagraphLayoutError {
     ) : ParagraphLayoutError {
         override val code: String = "layout.paragraph-font-failure"
         override val message: String = fontError.message
+    }
+
+    /** Complete-operation resource limit that rejected the paragraph atomically. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and rejecting observation. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : ParagraphLayoutError {
+        override val code: String = "layout.paragraph-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
     }
 
     /** A finite final paragraph coordinate could not be produced. */
@@ -1153,6 +1231,15 @@ private fun PositionedGlyphRun.translatedBy(baseline: LayoutPoint): PositionedGl
                 provenance = glyph.provenance,
             )
         },
+        lineControls = lineControls.map { control ->
+            PositionedLineControl(
+                kind = control.kind,
+                sourceRange = control.sourceRange,
+                origin = control.origin.translatedBy(baseline),
+                advance = control.advance,
+                materializationRoute = control.materializationRoute,
+            )
+        },
     )
 
 private fun PositionedInlineObject.translatedBy(baseline: LayoutPoint): PositionedInlineObject = PositionedInlineObject(
@@ -1234,7 +1321,7 @@ private fun List<PositionedGlyphRun>.preserveGlyphSemanticsOf(
             actualRun.sourceRun.range.start >= expectedRun.sourceRun.range.start &&
             actualRun.sourceRun.range.endExclusive <= expectedRun.sourceRun.range.endExclusive &&
             actualRun.sourceRun.fontInstanceKey == expectedRun.sourceRun.fontInstanceKey &&
-            actualRun.sourceRun.backendIdentity == expectedRun.sourceRun.backendIdentity &&
+            actualRun.sourceRun.backendIdentity.semantic == expectedRun.sourceRun.backendIdentity.semantic &&
             actualRun.sourceRun.direction == expectedRun.sourceRun.direction &&
             actualRun.sourceRun.script == expectedRun.sourceRun.script &&
             actualRun.sourceRun.language == expectedRun.sourceRun.language &&

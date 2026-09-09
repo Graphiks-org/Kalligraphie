@@ -11,6 +11,8 @@ import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EllipsisSide
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -414,6 +416,48 @@ class AdvancedTypographyJourneyTest {
     }
 
     @Test
+    fun automaticHyphenationRejectsSyntheticGlyphBeyondTheOperationBudgetAndRetriesExactly() {
+        val fixture = dejavuFixture("hyphenation")
+        val geometry = constraints(width = 4_300f, top = 50f, height = 2_400f)
+        val service = JvmPatternHyphenationService.english()
+
+        val limited = assertIs<ParagraphLayoutResult.Failure>(
+            layout(
+                fixture = fixture,
+                constraints = geometry,
+                language = "en",
+                hyphenationMode = HyphenationMode.AUTO,
+                hyphenationService = service,
+                operationProfile = EditorOperationProfile(maxTotalGlyphs = 28),
+            ),
+        )
+        val exceeded = assertIs<ParagraphLayoutError.OperationLimitExceeded>(limited.error).limit
+        assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+        assertEquals(28L, exceeded.maximum)
+        assertEquals(29L, exceeded.observed)
+
+        val retry = assertIs<ParagraphLayoutResult.Success>(
+            layout(
+                fixture = fixture,
+                constraints = geometry,
+                language = "en",
+                hyphenationMode = HyphenationMode.AUTO,
+                hyphenationService = service,
+                operationProfile = EditorOperationProfile(maxTotalGlyphs = 64),
+            ),
+        ).layout
+
+        assertEquals(listOf("hyphen", "ation"), retry.lines.map { line -> fixture.textOf(line.range) })
+        val hyphen = retry.lines.first().glyphs().single { glyph ->
+            (glyph.provenance as? GlyphProvenance.Synthetic)?.role == GlyphProvenanceRole.AUTOMATIC_HYPHEN
+        }
+        assertEquals(fixture.textIndex(6), assertIs<GlyphProvenance.Synthetic>(hyphen.provenance).anchor)
+        assertEquals(16, hyphen.shapedGlyph.glyphId.value)
+        assertEquals(360.83984f, hyphen.advance.x.value)
+        assertEquals(3843.164f, hyphen.origin.x.value)
+    }
+
+    @Test
     fun automaticHyphenationPublishesOneMarkerForAClusterWithSeveralGlyphs() {
         val fixture = dejavuFixture("a\u0301bcdef")
         val service = object : org.graphiks.kalligraphie.api.HyphenationService {
@@ -712,8 +756,10 @@ class AdvancedTypographyJourneyTest {
 
         val fieldGlyph = firstGlyphOfRange(fixture, line, fixture.range(2, 3))
         assertEquals(100f + stop.value, fieldGlyph.origin.x.value + fieldGlyph.advance.x.value)
-        val tabGlyph = firstGlyphOfRange(fixture, line, fixture.range(1, 2))
-        assertEquals(GlyphProvenance.Direct(fixture.range(1, 2)), tabGlyph.provenance)
+        val tabControl = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single { control ->
+            control.sourceRange == fixture.range(1, 2)
+        }
+        assertEquals(org.graphiks.kalligraphie.api.LineControlKind.HORIZONTAL_TAB, tabControl.kind)
         assertEquals(
             (0..3).map(fixture::textIndex).toSet(),
             line.allCaretCandidates.map { candidate -> candidate.position.index }.toSet(),
@@ -751,8 +797,31 @@ class AdvancedTypographyJourneyTest {
         assertEquals(100f + secondStop.value, c.origin.x.value + c.advance.x.value)
         val physicalEnd = line.glyphs().maxOf { glyph -> glyph.origin.x.value + glyph.advance.x.value }
         assertEquals(physicalEnd - 100f, line.contentMetrics.inlineAdvance.value)
-        val runStarts = line.positionedGlyphRuns.map { run -> run.glyphs.minOf { glyph -> glyph.origin.x.value } }
+        val runStarts = line.positionedGlyphRuns.map { run ->
+            (run.glyphs.map { glyph -> glyph.origin.x.value } +
+                run.lineControls.map { control -> control.origin.x.value }).min()
+        }
         assertEquals(runStarts.sorted(), runStarts)
+    }
+
+    @Test
+    fun consecutiveRtlTabsPublishTheirControlsInLogicalSourceOrder() {
+        val fixture = dejavuFixture("\u05D1\u0009\u0009A")
+
+        val line = layoutParagraph(
+            fixture = fixture,
+            constraints = constraints(width = 8_000f, top = 50f, height = 1_200f),
+            language = "en",
+            baseDirection = BaseDirection.RIGHT_TO_LEFT,
+            positioning = ParagraphPositioningPolicy(defaultTabInterval = LayoutUnit(2_000f)),
+        ).lines.single()
+
+        val controls = line.positionedGlyphRuns.flatMap { run -> run.lineControls }
+        assertEquals(listOf(fixture.range(1, 2), fixture.range(2, 3)), controls.map { it.sourceRange })
+        assertTrue(controls.all { it.kind == org.graphiks.kalligraphie.api.LineControlKind.HORIZONTAL_TAB })
+        assertTrue(line.glyphs().none { glyph ->
+            glyph.sourceClusters.any { cluster -> cluster.sourceRange in listOf(fixture.range(1, 2), fixture.range(2, 3)) }
+        })
     }
 
     @Test
@@ -1350,6 +1419,7 @@ class AdvancedTypographyJourneyTest {
         materialization: org.graphiks.kalligraphie.api.EditableLineMaterialization =
             org.graphiks.kalligraphie.api.EditableLineMaterialization.LayoutOnly,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): ParagraphLayoutResult = JvmEditableParagraphFacade.layout(
         JvmEditableParagraphFacadeRequest(
             snapshot = fixture.snapshot,
@@ -1369,6 +1439,7 @@ class AdvancedTypographyJourneyTest {
             textOrientation = textOrientation,
             verticalMetricsPolicy = verticalMetricsPolicy,
             continuation = continuation,
+            operationProfile = operationProfile,
         ),
     )
 

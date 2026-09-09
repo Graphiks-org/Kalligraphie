@@ -1,7 +1,11 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationContext
+import org.graphiks.kalligraphie.api.EditorOperationLimitExceeded
 import org.graphiks.kalligraphie.api.FallbackUnit
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
@@ -32,6 +36,7 @@ import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
 import org.graphiks.kalligraphie.api.ShapingRequest
+import org.graphiks.kalligraphie.api.ShapingResourceProfile
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
@@ -43,11 +48,22 @@ internal object FontFallbackResolver {
     fun resolve(request: MultiFontEditableLineRequest): FontOperationResult<FontFallbackResolution> = resolve(
         request,
         GlyphMaterializationProofs(),
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
     )
 
     fun resolve(
         request: MultiFontEditableLineRequest,
         proofs: GlyphMaterializationProofs,
+    ): FontOperationResult<FontFallbackResolution> = resolve(
+        request,
+        proofs,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    fun resolve(
+        request: MultiFontEditableLineRequest,
+        proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
     ): FontOperationResult<FontFallbackResolution> = resolve(
         ResolutionRequest(
             snapshot = request.snapshot,
@@ -57,13 +73,15 @@ internal object FontFallbackResolver {
             fontCatalog = request.fontCatalog,
             resolutionPolicy = request.resolutionPolicy,
             fontInstanceDescriptor = request.fontInstanceDescriptor,
-            shapingBackend = request.shapingBackend,
+            shapingBackend = context.boundedBackend(request.shapingBackend),
             materialization = request.materialization,
             features = request.features,
             writingMode = WritingMode.HORIZONTAL_TB,
-            cancellationToken = request.cancellationToken,
+            shapingResourceProfile = context.profile.shapingResourceProfile,
+            cancellationToken = context.cancellationToken,
         ),
         proofs,
+        context,
     )
 
     /** Resolves one paragraph-local range without observing unrelated snapshot text. */
@@ -74,6 +92,24 @@ internal object FontFallbackResolver {
         unicodeAnalysis: UnicodeAnalysis,
         materialization: EditableLineMaterialization,
         proofs: GlyphMaterializationProofs = GlyphMaterializationProofs(),
+    ): FontOperationResult<FontFallbackResolution> = resolveRange(
+        request,
+        sourceRange,
+        shapingContextRange,
+        unicodeAnalysis,
+        materialization,
+        proofs,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    fun resolveRange(
+        request: ParagraphLayoutRequest,
+        sourceRange: TextRange,
+        shapingContextRange: TextRange,
+        unicodeAnalysis: UnicodeAnalysis,
+        materialization: EditableLineMaterialization,
+        proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
     ): FontOperationResult<FontFallbackResolution> = resolve(
         ResolutionRequest(
             snapshot = request.snapshot,
@@ -83,19 +119,25 @@ internal object FontFallbackResolver {
             fontCatalog = request.fontCatalog,
             resolutionPolicy = request.resolutionPolicy,
             fontInstanceDescriptor = request.fontInstanceDescriptor,
-            shapingBackend = request.shapingBackend,
+            shapingBackend = context.boundedBackend(request.shapingBackend),
             materialization = materialization,
             features = request.features,
             writingMode = request.constraints.writingMode,
-            cancellationToken = request.cancellationToken,
+            shapingResourceProfile = context.profile.shapingResourceProfile,
+            cancellationToken = context.cancellationToken,
         ),
         proofs,
+        context,
     )
 
     private fun resolve(
         request: ResolutionRequest,
         proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
     ): FontOperationResult<FontFallbackResolution> {
+        context.sourceLimit(request.snapshot)?.let { return operationLimitFailure(it) }
+        context.scalarLimit(request.snapshot)?.let { return operationLimitFailure(it) }
+        if (context.isCancellationRequested()) return FontOperationResult.Cancelled()
         val units = fallbackUnits(request)
         if (units.isEmpty()) return FontOperationResult.Success(FontFallbackResolution(emptyList(), emptyList(), emptyList()))
 
@@ -338,14 +380,20 @@ internal object FontFallbackResolver {
                     bidiLevel = fragment.bidiLevel,
                     bot = fragment.range.start == request.shapingContextRange.start,
                     eot = fragment.range.endExclusive == request.shapingContextRange.endExclusive,
-                    featurePolicy = request.shapingBackend.identity.featurePolicy,
+                    featurePolicy = request.shapingBackend.identity.semantic.featurePolicy,
                     features = request.effectiveFeatures(),
                     graphemeClusters = graphemeFragments(fragment.range, request.unicodeAnalysis.graphemeClusters),
+                    resourceProfile = request.shapingResourceProfile,
+                    cancellationToken = request.cancellationToken,
                 ),
             )
         ) {
             is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return Attempt.Rejected(result.diagnostics + result.error.toDiagnostic())
+            is FontOperationResult.Failure -> if (result.error is FontError.EditorOperationLimitExceeded) {
+                return Attempt.Failed(result.error, result.diagnostics)
+            } else {
+                return Attempt.Rejected(result.diagnostics + result.error.toDiagnostic())
+            }
             is FontOperationResult.Cancelled -> return Attempt.Cancelled(result.diagnostics)
         }
             if (fragmentRun.glyphs.any { it.glyphId.value == 0 }) {
@@ -383,7 +431,7 @@ internal object FontFallbackResolver {
             bidiLevel = fragment.bidiLevel,
             bot = fragment.range.start == request.shapingContextRange.start,
             eot = fragment.range.endExclusive == request.shapingContextRange.endExclusive,
-            featurePolicy = request.shapingBackend.identity.featurePolicy,
+            featurePolicy = request.shapingBackend.identity.semantic.featurePolicy,
             features = request.effectiveFeatures(),
             graphemeClusters = graphemes,
             glyphs = emptyList(),
@@ -750,6 +798,7 @@ internal object FontFallbackResolver {
         val materialization: EditableLineMaterialization,
         val features: List<OpenTypeFeature>,
         val writingMode: WritingMode,
+        val shapingResourceProfile: ShapingResourceProfile,
         val cancellationToken: CancellationToken,
     ) {
         init {
@@ -796,4 +845,9 @@ internal object FontFallbackResolver {
     private const val OBJECT_REPLACEMENT: Int = 0xFFFC
     private const val VERTICAL_ALTERNATES: String = "vert"
     private const val VERTICAL_ROTATION: String = "vrt2"
+
+    private fun operationLimitFailure(exceeded: EditorOperationLimitExceeded): FontOperationResult.Failure {
+        val error = FontError.EditorOperationLimitExceeded(exceeded)
+        return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
+    }
 }

@@ -163,6 +163,17 @@ public sealed interface FontError {
         override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source
     }
 
+    /** A complete high-level editor operation exceeded its shared resource policy. */
+    public data class EditorOperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and observed count. */
+        public val exceeded: org.graphiks.kalligraphie.api.EditorOperationLimitExceeded,
+    ) : FontError {
+        override val code: String = "font.editor-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation exceeded ${exceeded.kind} at ${exceeded.observed} (maximum ${exceeded.maximum})."
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source
+    }
+
     /** The requested resource has already been closed. */
     public data class ResourceClosed(
         /** Error message describing the closed resource. */

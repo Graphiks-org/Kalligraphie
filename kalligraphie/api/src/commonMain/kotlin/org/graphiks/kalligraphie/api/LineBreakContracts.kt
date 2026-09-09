@@ -23,6 +23,24 @@ public data class LineBreakOpportunity(
     public val kind: LineBreakKind,
 )
 
+/** Atomic outcome of bounded UAX #14 analysis with no partial opportunity publication. */
+public sealed interface LineBreakAnalysisOutcome {
+    /** Complete immutable line-break analysis. */
+    public class Success(
+        /** Fully analyzed source range and its exact legal boundaries. */
+        public val value: LineBreakAnalysis,
+    ) : LineBreakAnalysisOutcome
+
+    /** Deterministic line-break work exceeded the shared editor-operation policy. */
+    public class LimitExceeded(
+        /** Exact operation-limit observation that rejected the analysis. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : LineBreakAnalysisOutcome
+
+    /** Cooperative cancellation was observed before complete analysis publication. */
+    public data object Cancelled : LineBreakAnalysisOutcome
+}
+
 /**
  * Immutable UAX #14 line-break analysis of one snapshot-bound scalar range.
  *

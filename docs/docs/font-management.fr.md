@@ -127,6 +127,37 @@ positionnés, les relations texte-vers-clusters-vers-glyphes, la navigation de
 caret (repère d’insertion) logique et visuelle, la géométrie de sélection et
 le hit-testing (test de point) déterministe.
 
+Le résultat Unicode JVM est vérifié contre chaque cas Unicode 16.0 applicable
+de `GraphemeBreakTest`, `BidiTest` et `BidiCharacterTest`, ainsi que contre les
+données complètes `Script`, `Script_Extensions` (extensions de script) et
+`Bidi_Paired_Bracket` (paire de crochets bidirectionnels). La demande publique
+impose une direction de paragraphe explicite ; les variantes BiDi officielles
+à direction automatique restent donc hors du contrat de cette API. Les
+caractères supprimés par la règle X9 d’UAX #9 ne sont omis que de la comparaison
+normative des niveaux et du réordonnancement ; les résultats éditables
+conservent leurs positions source.
+
+Le parcours sans renvoi à la ligne rejette CR, LF, CRLF comme une seule unité,
+la tabulation verticale, le saut de page, NEL, `U+2028 LINE SEPARATOR`
+(séparateur de ligne) et `U+2029 PARAGRAPH SEPARATOR` (séparateur de paragraphe)
+avant l’analyse Unicode ou la composition. L’erreur typée
+`EditableLineError.UnsupportedLineControl` indique un `LineControlKind` et le
+`TextRange` exact, lié au snapshot (instantané), qu’occupe le contrôle. Une
+`U+0009 CHARACTER TABULATION` (tabulation horizontale) est également rejetée
+si la demande ne fournit pas de `ParagraphPositioningPolicy` explicite.
+
+Avec cette politique de positionnement, TAB avance jusqu’au prochain `TabStop`
+(taquet de tabulation) explicite ou jusqu’au prochain intervalle défini par
+`defaultTabInterval`. La composition glyphique est découpée autour de chaque
+TAB : la valeur n’est jamais soumise comme U+0009, U+0020 ou `.notdef`, et
+aucun glyphe de fonte n’est résolu ni certifié pour elle. Le résultat publie à
+la place un `PositionedLineControl` associé exactement à la source, avec la
+géométrie du taquet et, en mode rendu, la route de matérialisation `EMPTY`
+(sans encre). Le contenu suivant et toutes les frontières du caret conservent
+leur couverture source exacte. Les contrôles de formatage
+BiDi LRE, RLE, PDF, LRI, RLI, FSI et PDI restent acceptés, sans encre et associés
+exactement à leur source.
+
 Pour obtenir `RENDERABLE`, remplacez `LayoutOnly` par
 `EditableLineMaterialization.Renderable` et fournissez un gestionnaire ouvert,
 un `FontRenderVariantSnapshot` (sélection visuelle) et un

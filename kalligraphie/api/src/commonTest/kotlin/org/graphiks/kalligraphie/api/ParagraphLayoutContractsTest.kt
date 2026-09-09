@@ -288,7 +288,7 @@ class ParagraphLayoutContractsTest {
             constraints = constraints,
             baseDirection = BaseDirection.LEFT_TO_RIGHT,
             language = "en",
-            featurePolicy = backend.identity.featurePolicy,
+            featurePolicy = backend.identity.semantic.featurePolicy,
             features = features,
             fontCatalog = catalog,
             resolutionPolicy = policy,
@@ -370,7 +370,7 @@ class ParagraphLayoutContractsTest {
                 bidiLevel = 0,
                 bot = true,
                 eot = true,
-                featurePolicy = backend.identity.featurePolicy,
+                featurePolicy = backend.identity.semantic.featurePolicy,
                 features = emptyList(),
                 graphemeClusters = listOf(range),
                 glyphs = listOf(glyph),
@@ -421,6 +421,7 @@ class ParagraphLayoutContractsTest {
     private fun fixture(
         text: String,
         version: TextVersion = TextVersion.create(),
+        backendIdentity: ShapingBackendIdentity = testBackendIdentity(),
     ): Fixture {
         val scalars = text.map(Char::code)
         val sourceRanges = scalars.indices.map { ordinal ->
@@ -464,22 +465,8 @@ class ParagraphLayoutContractsTest {
             candidates = listOf(FontResolutionCandidate(faceId)),
             lastResortFace = faceId,
         )
-        val featurePolicy = ShapingFeaturePolicy(
-            "test-features",
-            "1",
-            ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
-        )
-        val identity = ShapingBackendIdentity(
-            backendId = "test",
-            nativeVersion = "1",
-            nativeSourceRevision = "source",
-            nativeArtifactId = "artifact",
-            nativeArtifactSha256 = "0".repeat(64),
-            featurePolicy = featurePolicy,
-            configurationFingerprint = "config",
-        )
         val backend = object : ShapingBackend {
-            override val identity: ShapingBackendIdentity = identity
+            override val identity: ShapingBackendIdentity = backendIdentity
             override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> = error("Not used")
         }
         val descriptor = FontInstanceDescriptor(LayoutUnit(12f))
@@ -495,5 +482,34 @@ class ParagraphLayoutContractsTest {
             metrics,
         )
         return Fixture(snapshot, analysis, lineBreaks, catalog, policy, backend, metrics, constraints, fontKey)
+    }
+
+    private companion object {
+        fun testBackendIdentity(): ShapingBackendIdentity {
+            val featurePolicy = ShapingFeaturePolicy(
+                "test-features",
+                "1",
+                ShapingFeaturePolicyApplication.PINNED_BACKEND_DEFAULTS,
+            )
+            return ShapingBackendIdentity(
+                semantic = ShapingSemanticIdentity(
+                    backendId = "test",
+                    engineId = "test-engine",
+                    engineVersion = "1",
+                    shaperId = "test-shaper",
+                    featurePolicy = featurePolicy,
+                    configurationFingerprint = "config",
+                ),
+                provenance = ShapingDistributionProvenance(
+                    operatingSystem = "test-os",
+                    architecture = "test-architecture",
+                    artifactId = "artifact",
+                    artifactSha256 = "0".repeat(64),
+                    sourceProject = "test-source",
+                    sourceRevision = "source",
+                    buildChainIdentity = "test-build-chain",
+                ),
+            )
+        }
     }
 }

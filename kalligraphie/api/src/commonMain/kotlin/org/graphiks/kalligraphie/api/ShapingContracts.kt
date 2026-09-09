@@ -121,36 +121,293 @@ public class ShapingFeaturePolicy(
     override fun toString(): String = "ShapingFeaturePolicy($policyId@$version, $application)"
 }
 
-/** Immutable identity of a shaping implementation and its pinned native dependency. */
-public data class ShapingBackendIdentity(
+/**
+ * Portable semantic identity of one deterministic shaping configuration.
+ *
+ * Equality means that two backends implement the same shaping semantics independently of the
+ * operating system, processor architecture, or native artifact that distributes the engine.
+ * This value is suitable for continuations, replay signatures, run coalescence, and result-cache
+ * keys. It never authorizes sharing a native resource between backend instances.
+ */
+public data class ShapingSemanticIdentity(
+    /** Stable shaping-backend implementation identifier. */
+    public val backendId: String,
+    /** Stable identifier of the shaping engine used by the backend. */
+    public val engineId: String,
+    /** Version of [engineId] whose shaping behavior is represented. */
+    public val engineVersion: String,
+    /** Explicit shaping-engine shaper selected by the backend. */
+    public val shaperId: String,
+    /** Explicit, versioned baseline feature policy implemented by the backend. */
+    public val featurePolicy: ShapingFeaturePolicy,
+    /** Versioned fingerprint of every remaining fixed shaping configuration input. */
+    public val configurationFingerprint: String,
+) {
+    init {
+        require(backendId.isNotBlank()) { "Backend identifier must not be blank." }
+        require(engineId.isNotBlank()) { "Shaping engine identifier must not be blank." }
+        require(engineVersion.isNotBlank()) { "Shaping engine version must not be blank." }
+        require(shaperId.isNotBlank()) { "Shaper identifier must not be blank." }
+        require(configurationFingerprint.isNotBlank()) { "Configuration fingerprint must not be blank." }
+    }
+}
+
+/**
+ * Diagnostic provenance of the native distribution used by a shaping backend.
+ *
+ * Provenance distinguishes platform artifacts and build chains without changing portable shaping
+ * equivalence. It is retained in shaped results for audits and diagnostics, but must not be used
+ * for continuation compatibility, replay, coalescence, or result-cache decisions.
+ */
+public data class ShapingDistributionProvenance(
+    /** Normalized operating-system identifier of the distributed artifact. */
+    public val operatingSystem: String,
+    /** Normalized processor-architecture identifier of the distributed artifact. */
+    public val architecture: String,
+    /** Coordinate and embedded-library path identifying the distributed artifact. */
+    public val artifactId: String,
+    /** Lowercase SHA-256 digest of the library identified by [artifactId]. */
+    public val artifactSha256: String,
+    /** Stable upstream project identifier for the native shaping engine source. */
+    public val sourceProject: String,
+    /** Immutable upstream source revision used by the distributed artifact. */
+    public val sourceRevision: String,
+    /** Stable identity of the toolchain and build route that produced the artifact. */
+    public val buildChainIdentity: String,
+) {
+    init {
+        require(operatingSystem.isNotBlank()) { "Distribution operating system must not be blank." }
+        require(architecture.isNotBlank()) { "Distribution architecture must not be blank." }
+        require(artifactId.isNotBlank()) { "Native artifact identifier must not be blank." }
+        require(artifactSha256.matches(SHA256_HEX)) { "Native artifact SHA-256 must be a lowercase hexadecimal digest." }
+        require(sourceProject.isNotBlank()) { "Native source project must not be blank." }
+        require(sourceRevision.isNotBlank()) { "Native source revision must not be blank." }
+        require(buildChainIdentity.isNotBlank()) { "Native build-chain identity must not be blank." }
+    }
+}
+
+/**
+ * Exact source span attributed to one native shaping distribution.
+ *
+ * A run's spans remain in logical source order. Adjacent spans with equal [provenance] are
+ * normalized into one span, allowing derived fragments to retain only distributions whose
+ * original source ranges intersect the fragment.
+ */
+public data class ShapingProvenanceSpan(
+    /** Half-open original source range shaped by [provenance]. */
+    public val range: TextRange,
+    /** Native distribution that shaped [range]. */
+    public val provenance: ShapingDistributionProvenance,
+)
+
+/**
+ * Complete identity reported by a shaping backend and retained by shaped results.
+ *
+ * [semantic] is the only component suitable for portable equivalence decisions. [provenance]
+ * records which native distribution executed the operation for diagnostics and audits. The seven
+ * legacy properties, their positional constructor, [copy], and [component1] through [component7]
+ * remain available for source compatibility.
+ */
+public class ShapingBackendIdentity private constructor(
     /** Stable backend implementation identifier. */
     public val backendId: String,
     /** Native shaping-engine version reported by the loaded library. */
     public val nativeVersion: String,
     /** Immutable source revision embedded in the selected native artifact. */
     public val nativeSourceRevision: String,
-    /**
-     * Pinned Maven coordinate, classifier, and embedded-library path selected at runtime.
-     *
-     * This identifies the exact checked-in library resource, rather than a library found
-     * through a platform search path.
-     */
+    /** Pinned artifact coordinate, classifier, and embedded-library path selected at runtime. */
     public val nativeArtifactId: String,
-    /** Lowercase SHA-256 digest of the library resource identified by [nativeArtifactId]. */
+    /** Lowercase SHA-256 digest of the library identified by [nativeArtifactId]. */
     public val nativeArtifactSha256: String,
     /** Explicit, versioned baseline feature policy implemented by this backend. */
     public val featurePolicy: ShapingFeaturePolicy,
     /** Versioned fingerprint of the backend's fixed shaping configuration. */
     public val configurationFingerprint: String,
+    /** Portable shaping semantics implemented by this backend. */
+    public val semantic: ShapingSemanticIdentity,
+    /** Native distribution provenance observed for this backend instance. */
+    public val provenance: ShapingDistributionProvenance,
+    private val hasExplicitSemantics: Boolean,
 ) {
-    init {
-        require(backendId.isNotBlank()) { "Backend identifier must not be blank." }
-        require(nativeVersion.isNotBlank()) { "Native version must not be blank." }
-        require(nativeSourceRevision.isNotBlank()) { "Native source revision must not be blank." }
-        require(nativeArtifactId.isNotBlank()) { "Native artifact identifier must not be blank." }
-        require(nativeArtifactSha256.matches(SHA256_HEX)) { "Native artifact SHA-256 must be a lowercase hexadecimal digest." }
-        require(configurationFingerprint.isNotBlank()) { "Configuration fingerprint must not be blank." }
+    /**
+     * Creates an identity with explicit portable semantics and native distribution provenance.
+     *
+     * Backends that know their engine and shaper must use this constructor so equivalent builds
+     * can compare portably across distributions.
+     */
+    public constructor(
+        semantic: ShapingSemanticIdentity,
+        provenance: ShapingDistributionProvenance,
+    ) : this(
+        backendId = semantic.backendId,
+        nativeVersion = semantic.engineVersion,
+        nativeSourceRevision = provenance.sourceRevision,
+        nativeArtifactId = provenance.artifactId,
+        nativeArtifactSha256 = provenance.artifactSha256,
+        featurePolicy = semantic.featurePolicy,
+        configurationFingerprint = semantic.configurationFingerprint,
+        semantic = semantic,
+        provenance = provenance,
+        hasExplicitSemantics = true,
+    )
+
+    /**
+     * Creates an identity from the legacy seven-field representation.
+     *
+     * Because that representation does not identify an engine or shaper explicitly, its portable
+     * semantic identity conservatively includes every native provenance field. Two legacy values
+     * are therefore portable-equivalent only when all seven legacy fields match.
+     *
+     * @param backendId stable shaping-backend implementation identifier.
+     * @param nativeVersion shaping-engine version represented by the legacy identity.
+     * @param nativeSourceRevision immutable source revision of the native artifact.
+     * @param nativeArtifactId coordinate and embedded path of the native artifact.
+     * @param nativeArtifactSha256 lowercase SHA-256 digest of the native artifact.
+     * @param featurePolicy explicit baseline feature policy implemented by the backend.
+     * @param configurationFingerprint versioned fixed shaping configuration fingerprint.
+     */
+    public constructor(
+        backendId: String,
+        nativeVersion: String,
+        nativeSourceRevision: String,
+        nativeArtifactId: String,
+        nativeArtifactSha256: String,
+        featurePolicy: ShapingFeaturePolicy,
+        configurationFingerprint: String,
+    ) : this(
+        backendId = backendId,
+        nativeVersion = nativeVersion,
+        nativeSourceRevision = nativeSourceRevision,
+        nativeArtifactId = nativeArtifactId,
+        nativeArtifactSha256 = nativeArtifactSha256,
+        featurePolicy = featurePolicy,
+        configurationFingerprint = configurationFingerprint,
+        semantic = ShapingSemanticIdentity(
+            backendId = backendId,
+            engineId = backendId,
+            engineVersion = nativeVersion,
+            shaperId = "legacy-unspecified",
+            featurePolicy = featurePolicy,
+            configurationFingerprint = legacySemanticFingerprint(
+                configurationFingerprint,
+                nativeSourceRevision,
+                nativeArtifactId,
+                nativeArtifactSha256,
+            ),
+        ),
+        provenance = ShapingDistributionProvenance(
+            operatingSystem = "unspecified",
+            architecture = "unspecified",
+            artifactId = nativeArtifactId,
+            artifactSha256 = nativeArtifactSha256,
+            sourceProject = "unspecified",
+            sourceRevision = nativeSourceRevision,
+            buildChainIdentity = "unspecified",
+        ),
+        hasExplicitSemantics = false,
+    )
+
+    /**
+     * Copies this identity through its legacy seven-field surface.
+     *
+     * An explicitly semantic identity retains its engine and shaper while corresponding semantic
+     * or provenance fields are updated. A legacy identity remains conservative after every copy.
+     */
+    public fun copy(
+        backendId: String = this.backendId,
+        nativeVersion: String = this.nativeVersion,
+        nativeSourceRevision: String = this.nativeSourceRevision,
+        nativeArtifactId: String = this.nativeArtifactId,
+        nativeArtifactSha256: String = this.nativeArtifactSha256,
+        featurePolicy: ShapingFeaturePolicy = this.featurePolicy,
+        configurationFingerprint: String = this.configurationFingerprint,
+    ): ShapingBackendIdentity = if (hasExplicitSemantics) {
+        ShapingBackendIdentity(
+            ShapingSemanticIdentity(
+                backendId = backendId,
+                engineId = semantic.engineId,
+                engineVersion = nativeVersion,
+                shaperId = semantic.shaperId,
+                featurePolicy = featurePolicy,
+                configurationFingerprint = configurationFingerprint,
+            ),
+            provenance.copy(
+                artifactId = nativeArtifactId,
+                artifactSha256 = nativeArtifactSha256,
+                sourceRevision = nativeSourceRevision,
+            ),
+        )
+    } else {
+        ShapingBackendIdentity(
+            backendId,
+            nativeVersion,
+            nativeSourceRevision,
+            nativeArtifactId,
+            nativeArtifactSha256,
+            featurePolicy,
+            configurationFingerprint,
+        )
     }
+
+    /** Copies this identity with explicitly selected portable semantics. */
+    public fun copy(
+        semantic: ShapingSemanticIdentity,
+        provenance: ShapingDistributionProvenance = this.provenance,
+    ): ShapingBackendIdentity = ShapingBackendIdentity(semantic, provenance)
+
+    /**
+     * Creates a structured identity with the same portable semantics and another provenance.
+     *
+     * This operation also supports a legacy receiver: the returned identity retains the same
+     * conservative [semantic] instance, adopts [provenance], and exposes seven-field getters
+     * derived from those structured components. The receiver and its original legacy getters
+     * remain unchanged.
+     */
+    public fun copy(provenance: ShapingDistributionProvenance): ShapingBackendIdentity =
+        ShapingBackendIdentity(semantic, provenance)
+
+    /** Returns [backendId] for legacy destructuring. */
+    public operator fun component1(): String = backendId
+
+    /** Returns [nativeVersion] for legacy destructuring. */
+    public operator fun component2(): String = nativeVersion
+
+    /** Returns [nativeSourceRevision] for legacy destructuring. */
+    public operator fun component3(): String = nativeSourceRevision
+
+    /** Returns [nativeArtifactId] for legacy destructuring. */
+    public operator fun component4(): String = nativeArtifactId
+
+    /** Returns [nativeArtifactSha256] for legacy destructuring. */
+    public operator fun component5(): String = nativeArtifactSha256
+
+    /** Returns [featurePolicy] for legacy destructuring. */
+    public operator fun component6(): ShapingFeaturePolicy = featurePolicy
+
+    /** Returns [configurationFingerprint] for legacy destructuring. */
+    public operator fun component7(): String = configurationFingerprint
+
+    /** Compares the complete semantic identity and native distribution provenance. */
+    override fun equals(other: Any?): Boolean =
+        this === other || other is ShapingBackendIdentity && semantic == other.semantic && provenance == other.provenance
+
+    /** Returns a hash of the complete semantic identity and native distribution provenance. */
+    override fun hashCode(): Int = 31 * semantic.hashCode() + provenance.hashCode()
+
+    /** Returns a diagnostic representation of the semantic identity and provenance. */
+    override fun toString(): String = "ShapingBackendIdentity(semantic=$semantic, provenance=$provenance)"
+}
+
+private fun legacySemanticFingerprint(
+    configurationFingerprint: String,
+    nativeSourceRevision: String,
+    nativeArtifactId: String,
+    nativeArtifactSha256: String,
+): String = buildString {
+    append(configurationFingerprint.length).append(':').append(configurationFingerprint)
+    append('|').append(nativeSourceRevision.length).append(':').append(nativeSourceRevision)
+    append('|').append(nativeArtifactId.length).append(':').append(nativeArtifactId)
+    append('|').append(nativeArtifactSha256.length).append(':').append(nativeArtifactSha256)
 }
 
 /** Resource dimension enforced for one explicit shaping operation. */
@@ -441,20 +698,27 @@ public class ShapingMappings internal constructor(
 }
 
 /**
- * Immutable, relative result of one explicit shaping operation.
+ * Immutable, relative shaping result.
  *
- * The run has no final line coordinates and can therefore be positioned only by a later
- * layout layer. Its clusters partition [range], preserve source-to-cluster-to-glyph
- * relations, retain the request's true grapheme partition and explicit feature replay inputs,
- * and carry no native resource; it is safe to share across threads indefinitely.
+ * A run may come directly from one backend operation or be assembled from compatible source
+ * contributions. It has no final line coordinates and can therefore be positioned only by a later
+ * layout layer. Its clusters partition [range], preserve source-to-cluster-to-glyph relations,
+ * retain the request's true grapheme partition and explicit feature replay inputs, and carry no
+ * native resource; it is safe to share across threads indefinitely.
  */
-public class ShapedGlyphRun(
+public class ShapedGlyphRun private constructor(
     /** Source range shaped by this run. */
     public val range: TextRange,
     /** Exact font instance identity used for shaping. */
     public val fontInstanceKey: FontInstanceKey,
-    /** Pinned backend identity that produced this immutable run. */
-    public val backendIdentity: ShapingBackendIdentity,
+    /**
+     * Portable shaping semantics and the primary native provenance for this run.
+     *
+     * The primary provenance is the first contributing distribution and is retained as the
+     * source-compatible singular diagnostic route. It does not imply that every glyph was
+     * produced by that distribution; [distributionProvenances] is the complete provenance set.
+     */
+    backendIdentity: ShapingBackendIdentity,
     /** Explicit direction used by the backend. */
     public val direction: ShapingDirection,
     /** Explicit ISO 15924 script used by the backend. */
@@ -473,8 +737,157 @@ public class ShapedGlyphRun(
     graphemeClusters: List<TextRange>,
     glyphs: List<ShapedGlyph>,
     clusters: List<ShaperCluster>,
-    ligatureCaretFacts: List<GdefLigatureCaretFact> = emptyList(),
+    ligatureCaretFacts: List<GdefLigatureCaretFact>,
+    provenanceSpans: List<ShapingProvenanceSpan>,
 ) {
+    /**
+     * Creates a directly shaped run through the historical public constructor.
+     *
+     * The supplied [backendIdentity] is the sole distribution contributor across [range].
+     * Omitting [ligatureCaretFacts] retains the original Kotlin default-constructor contract.
+     *
+     * @param range source range shaped by this run.
+     * @param fontInstanceKey exact font instance identity used for shaping.
+     * @param backendIdentity exact semantic and diagnostic identity published by the backend.
+     * @param direction explicit direction used by the backend.
+     * @param script explicit ISO 15924 script used by the backend.
+     * @param language explicit language tag passed to the backend.
+     * @param bidiLevel resolved UAX #9 level used by the backend.
+     * @param bot whether the shaped context began at the supplied text boundary.
+     * @param eot whether the shaped context ended at the supplied text boundary.
+     * @param featurePolicy explicit baseline feature policy used by the backend.
+     * @param features immutable feature overrides used after [featurePolicy].
+     * @param graphemeClusters logical grapheme partition of [range].
+     * @param glyphs glyphs in shaping-engine output order.
+     * @param clusters shaping clusters in logical source order.
+     * @param ligatureCaretFacts optional GDEF caret facts for ligature glyphs.
+     */
+    public constructor(
+        range: TextRange,
+        fontInstanceKey: FontInstanceKey,
+        backendIdentity: ShapingBackendIdentity,
+        direction: ShapingDirection,
+        script: OpenTypeScript,
+        language: String,
+        bidiLevel: Int,
+        bot: Boolean,
+        eot: Boolean,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature>,
+        graphemeClusters: List<TextRange>,
+        glyphs: List<ShapedGlyph>,
+        clusters: List<ShaperCluster>,
+        ligatureCaretFacts: List<GdefLigatureCaretFact> = emptyList(),
+    ) : this(
+        range = range,
+        fontInstanceKey = fontInstanceKey,
+        backendIdentity = backendIdentity,
+        direction = direction,
+        script = script,
+        language = language,
+        bidiLevel = bidiLevel,
+        bot = bot,
+        eot = eot,
+        featurePolicy = featurePolicy,
+        features = features,
+        graphemeClusters = graphemeClusters,
+        glyphs = glyphs,
+        clusters = clusters,
+        ligatureCaretFacts = ligatureCaretFacts,
+        provenanceSpans = listOf(ShapingProvenanceSpan(range, backendIdentity.provenance)),
+    )
+
+    public companion object {
+        /**
+         * Creates a run assembled from exact native-distribution source contributions.
+         *
+         * [provenanceSpans] must form a complete ordered partition of [range]. Adjacent equal
+         * contributions are normalized. [backendIdentity] must already carry the provenance of the
+         * first normalized span. A caller that deliberately changes the primary provenance must
+         * explicitly create that identity with `copy(provenance = ...)` before invoking this
+         * factory. Rebasing a legacy identity produces a structured identity that preserves its
+         * conservative semantics; it never mutates the original legacy value.
+         *
+         * @param range complete logical source range represented by the assembled run.
+         * @param fontInstanceKey exact font instance identity shared by all contributions.
+         * @param backendIdentity portable semantics and initial primary diagnostic provenance.
+         * @param direction explicit direction shared by all contributions.
+         * @param script explicit ISO 15924 script shared by all contributions.
+         * @param language explicit language tag shared by all contributions.
+         * @param bidiLevel resolved UAX #9 level shared by all contributions.
+         * @param bot whether the assembled context begins at its supplied text boundary.
+         * @param eot whether the assembled context ends at its supplied text boundary.
+         * @param featurePolicy explicit baseline feature policy shared by all contributions.
+         * @param features immutable feature overrides shared by all contributions.
+         * @param graphemeClusters logical grapheme partition of [range].
+         * @param glyphs glyphs in shaping-engine output order.
+         * @param clusters shaping clusters in logical source order.
+         * @param ligatureCaretFacts GDEF caret facts for ligature glyphs.
+         * @param provenanceSpans exact ordered source contribution partition of [range].
+         */
+        public fun withProvenanceSpans(
+            range: TextRange,
+            fontInstanceKey: FontInstanceKey,
+            backendIdentity: ShapingBackendIdentity,
+            direction: ShapingDirection,
+            script: OpenTypeScript,
+            language: String,
+            bidiLevel: Int,
+            bot: Boolean,
+            eot: Boolean,
+            featurePolicy: ShapingFeaturePolicy,
+            features: List<OpenTypeFeature>,
+            graphemeClusters: List<TextRange>,
+            glyphs: List<ShapedGlyph>,
+            clusters: List<ShaperCluster>,
+            ligatureCaretFacts: List<GdefLigatureCaretFact>,
+            provenanceSpans: List<ShapingProvenanceSpan>,
+        ): ShapedGlyphRun = ShapedGlyphRun(
+            range = range,
+            fontInstanceKey = fontInstanceKey,
+            backendIdentity = backendIdentity,
+            direction = direction,
+            script = script,
+            language = language,
+            bidiLevel = bidiLevel,
+            bot = bot,
+            eot = eot,
+            featurePolicy = featurePolicy,
+            features = features,
+            graphemeClusters = graphemeClusters,
+            glyphs = glyphs,
+            clusters = clusters,
+            ligatureCaretFacts = ligatureCaretFacts,
+            provenanceSpans = provenanceSpans,
+        )
+    }
+
+    /**
+     * Immutable logical source partition identifying the exact distribution for each span.
+     *
+     * Adjacent spans with equal provenance are normalized. A non-empty run is covered without
+     * gaps or overlap; an empty run retains one empty span carrying its direct provenance.
+     */
+    public val provenanceSpans: List<ShapingProvenanceSpan> =
+        normalizedProvenanceSpans(range, provenanceSpans)
+
+    /**
+     * Portable shaping semantics and the primary native provenance for this run.
+     *
+     * The exact supplied identity instance is retained, preserving every legacy property and
+     * component. Its provenance must match the first item in [provenanceSpans].
+     */
+    public val backendIdentity: ShapingBackendIdentity = backendIdentity
+
+    /**
+     * Immutable ordered set of every native distribution that contributed to this run.
+     *
+     * This is a derived view of [provenanceSpans]: first source contribution order is retained and
+     * duplicate provenances are removed.
+     */
+    public val distributionProvenances: List<ShapingDistributionProvenance> =
+        this.provenanceSpans.map(ShapingProvenanceSpan::provenance).distinct().immutableListSnapshot()
+
     /** Immutable feature overrides used by the backend after [featurePolicy]. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
@@ -499,6 +912,9 @@ public class ShapedGlyphRun(
     public val mappings: ShapingMappings = ShapingMappings(range, this.clusters, this.glyphs)
 
     init {
+        require(this.backendIdentity.provenance == this.provenanceSpans.first().provenance) {
+            "Run backend identity must carry the first provenance span's distribution."
+        }
         require(bidiLevel in 0..126) { "BiDi level must be between 0 and 126." }
         require(direction.matches(bidiLevel)) { "Shaped run direction must agree with its BiDi level." }
         require(language.hasBasicLanguageTagSyntax()) { "Shaped run language has invalid basic tag syntax." }
@@ -551,7 +967,7 @@ public class ShapedGlyphRun(
 
 /** Portable backend boundary for explicit OpenType shaping. */
 public interface ShapingBackend {
-    /** Pinned identity and configuration of this backend. */
+    /** Portable shaping semantics and diagnostic native provenance of this backend. */
     public val identity: ShapingBackendIdentity
 
     /**
@@ -605,6 +1021,37 @@ private fun ShapingDirection.matches(level: Int): Boolean =
         ShapingDirection.RIGHT_TO_LEFT -> level % 2 != 0
         ShapingDirection.TOP_TO_BOTTOM -> true
     }
+
+private fun normalizedProvenanceSpans(
+    owner: TextRange,
+    spans: List<ShapingProvenanceSpan>,
+): List<ShapingProvenanceSpan> {
+    require(spans.isNotEmpty()) { "Run provenance spans must identify at least one distribution." }
+    val normalized = mutableListOf<ShapingProvenanceSpan>()
+    spans.forEach { span ->
+        val previous = normalized.lastOrNull()
+        if (
+            previous != null &&
+            previous.provenance == span.provenance &&
+            previous.range.endExclusive == span.range.start
+        ) {
+            normalized[normalized.lastIndex] = ShapingProvenanceSpan(
+                TextRange(previous.range.start, span.range.endExclusive),
+                span.provenance,
+            )
+        } else {
+            normalized += span
+        }
+    }
+    if (owner.start == owner.endExclusive) {
+        require(normalized.size == 1 && normalized.single().range == owner) {
+            "An empty run must retain one empty provenance span."
+        }
+    } else {
+        requireTextPartition(owner, normalized.map(ShapingProvenanceSpan::range), "Run provenance spans")
+    }
+    return normalized.immutableListSnapshot()
+}
 
 private fun requireTextPartition(owner: TextRange, ranges: List<TextRange>, label: String) {
     if (owner.start == owner.endExclusive) {

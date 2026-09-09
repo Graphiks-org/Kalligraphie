@@ -11,6 +11,8 @@ import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -20,8 +22,13 @@ import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
+import org.graphiks.kalligraphie.api.IncrementalLayoutError
 import org.graphiks.kalligraphie.api.IncrementalLayoutRequest
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
+import org.graphiks.kalligraphie.api.InlineObjectDefinition
+import org.graphiks.kalligraphie.api.InlineObjectEntry
+import org.graphiks.kalligraphie.api.InlineObjectId
+import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.LayoutContractResult
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutInput
@@ -32,6 +39,7 @@ import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineOverscan
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OpenTypeFeature
+import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -50,6 +58,155 @@ import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class JvmIncrementalParagraphLayoutSessionTest {
+    @Test
+    fun operationFailurePreservesPreviousPublicationAndRetryMatchesFreshSession() {
+        val fixture = fixture("fi \u0633\u0644\u0627\u0645")
+        val session = openSession()
+        val fresh = openSession()
+
+        session.use { open ->
+            fresh.use { clean ->
+                val published = assertIs<IncrementalLayoutResult.Success>(open.layout(request(fixture)))
+                val limited = assertIs<IncrementalLayoutResult.Failure>(
+                    open.layout(request(fixture, operationProfile = EditorOperationProfile(maxTotalGlyphs = 2))),
+                )
+                val exceeded = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutError.OperationLimitExceeded>(limited.error).limit
+                assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+                assertEquals(published.layout.lines.map { it.glyphIds() }, open.currentLayout()?.layout?.lines?.map { it.glyphIds() })
+
+                val retried = assertIs<IncrementalLayoutResult.Success>(
+                    open.layout(request(fixture, operationProfile = EditorOperationProfile(maxTotalGlyphs = 64))),
+                )
+                val freshResult = assertIs<IncrementalLayoutResult.Success>(
+                    clean.layout(request(fixture, operationProfile = EditorOperationProfile(maxTotalGlyphs = 64))),
+                )
+                assertEquals(freshResult.layout.lines.map { it.range to it.glyphIds() }, retried.layout.lines.map { it.range to it.glyphIds() })
+            }
+        }
+    }
+
+    @Test
+    fun continuationPreparationLimitPreservesPublicationAndRetryMatchesFreshSession() {
+        val source = fixture("fi\nfi")
+        val target = source.withText("fi\nff")
+        val changeSet = assertIs<LayoutContractResult.Success<TextChangeSet>>(
+            TextChangeSet.create(
+                source.snapshot,
+                target.snapshot,
+                listOf(TextChange(range(source.snapshot, 4, 5), range(target.snapshot, 4, 5))),
+            ),
+        ).value
+        val session = openSession()
+        val fresh = openSession()
+
+        session.use { open ->
+            fresh.use { clean ->
+                val published = assertIs<IncrementalLayoutResult.Success>(
+                    open.layout(request(source, language = "en")),
+                )
+                val limited = assertIs<IncrementalLayoutResult.Failure>(
+                    open.layout(
+                        request(
+                            fixture = target,
+                            requestedRange = range(target.snapshot, 3, 5),
+                            previousState = published.layout.state,
+                            delta = LayoutDelta(text = changeSet),
+                            language = "en",
+                            operationProfile = EditorOperationProfile(maxLineBreakWork = 8),
+                        ),
+                    ),
+                )
+                val exceeded = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutError.OperationLimitExceeded>(
+                    limited.error,
+                ).limit
+
+                assertEquals(EditorOperationLimitKind.LINE_BREAK_WORK, exceeded.kind)
+                assertEquals(8L, exceeded.maximum)
+                assertEquals(13L, exceeded.observed)
+                assertEquals(published.layout.inputIdentity, open.currentLayout()?.layout?.inputIdentity)
+                assertEquals(published.layout.lines, open.currentLayout()?.layout?.lines)
+
+                val retryRequest = request(
+                    fixture = target,
+                    requestedRange = range(target.snapshot, 3, 5),
+                    previousState = published.layout.state,
+                    delta = LayoutDelta(text = changeSet),
+                    language = "en",
+                    operationProfile = EditorOperationProfile(maxLineBreakWork = 40),
+                )
+                val retried = assertIs<IncrementalLayoutResult.Success>(open.layout(retryRequest))
+                val freshResult = assertIs<IncrementalLayoutResult.Success>(
+                    clean.layout(
+                        request(
+                            fixture = target,
+                            requestedRange = range(target.snapshot, 3, 5),
+                            language = "en",
+                            operationProfile = EditorOperationProfile(maxLineBreakWork = 40),
+                        ),
+                    ),
+                )
+
+                assertEquals(freshResult.layout.coverage.range, retried.layout.coverage.range)
+                assertEquals(freshResult.layout.coverage.isComplete, retried.layout.coverage.isComplete)
+                assertEquals(freshResult.layout.coverage.tailState, retried.layout.coverage.tailState)
+                assertEquals(freshResult.layout.lines.map(LineLayout::range), retried.layout.lines.map(LineLayout::range))
+                assertEquals(freshResult.layout.lines.map(LineLayout::lineBox), retried.layout.lines.map(LineLayout::lineBox))
+                assertEquals(freshResult.layout.lines.map { it.glyphIds() }, retried.layout.lines.map { it.glyphIds() })
+                assertEquals(freshResult.layout.lines.map { it.glyphAdvances() }, retried.layout.lines.map { it.glyphAdvances() })
+            }
+        }
+    }
+
+    @Test
+    fun inlineObjectOutsideContinuationSegmentReturnsTypedFailureAndPreservesPublication() {
+        val fixture = fixture("a\uFFFC\nfi")
+        val definition = InlineObjectDefinition(
+            id = InlineObjectId.create("lead-image"),
+            width = LayoutUnit(400f),
+            height = LayoutUnit(300f),
+            baselineOffset = LayoutUnit(250f),
+        )
+        val inlineObjects = InlineObjectSnapshot(
+            listOf(InlineObjectEntry(fixture.snapshot.textIndexAtScalarBoundary(1), definition)),
+        )
+        val session = openSession()
+
+        session.use { open ->
+            val published = assertIs<IncrementalLayoutResult.Success>(
+                open.layout(
+                    request(
+                        fixture = fixture,
+                        requestedRange = range(fixture.snapshot, 0, 2),
+                        language = "en",
+                        inlineObjects = inlineObjects,
+                    ),
+                ),
+            )
+            val placed = published.layout.lines.single().positionedInlineObjects.single()
+            assertEquals(definition.id, placed.definition.id)
+            assertEquals(range(fixture.snapshot, 1, 2), placed.sourceRange)
+            assertEquals(definition.width, LayoutUnit(placed.rect.right.value - placed.rect.left.value))
+
+            val failure = assertIs<IncrementalLayoutResult.Failure>(
+                open.layout(
+                    request(
+                        fixture = fixture,
+                        requestedRange = range(fixture.snapshot, 3, 5),
+                        previousState = published.layout.state,
+                        language = "en",
+                        inlineObjects = inlineObjects,
+                    ),
+                ),
+            )
+            val paragraph = assertIs<IncrementalLayoutError.ParagraphFailure>(failure.error).paragraphError
+            val invalid = assertIs<ParagraphLayoutError.InvalidInput>(paragraph)
+            assertTrue(invalid.message.contains("requested source range"))
+
+            assertEquals(published.layout.inputIdentity, open.currentLayout()?.layout?.inputIdentity)
+            assertEquals(published.layout.lines, open.currentLayout()?.layout?.lines)
+        }
+    }
+
     @Test
     fun realFontLayoutPublishesLiteralGlyphsAdvancesRangesAndCoverage() {
         val fixture = fixture("fi \u0633\u0644\u0627\u0645")
@@ -575,11 +732,14 @@ class JvmIncrementalParagraphLayoutSessionTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "ar",
         constraints: HorizontalParagraphConstraints = constraints(),
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
+        inlineObjects: InlineObjectSnapshot? = null,
     ): JvmIncrementalParagraphLayoutRequest = JvmIncrementalParagraphLayoutRequest(
-        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints),
+        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints, operationProfile),
         baseDirection = baseDirection,
         language = language,
         materialization = EditableLineMaterialization.LayoutOnly,
+        inlineObjects = inlineObjects,
     )
 
     private fun incrementalRequest(
@@ -589,6 +749,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
         previousState: org.graphiks.kalligraphie.api.LayoutStateHandle?,
         delta: LayoutDelta?,
         constraints: HorizontalParagraphConstraints,
+        operationProfile: EditorOperationProfile,
     ): IncrementalLayoutRequest = assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(
         createIncrementalLayoutRequest(
             input = LayoutInput(
@@ -601,6 +762,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             previousState = previousState,
             delta = delta,
             cancellationToken = cancellationToken,
+            operationProfile = operationProfile,
         ),
     ).value
 

@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie
 
 import java.util.Collections
@@ -6,6 +8,10 @@ import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
 import org.graphiks.kalligraphie.api.EditableLineDiagnosticSeverity
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationContext
+import org.graphiks.kalligraphie.api.EditorOperationLimitExceeded
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
@@ -30,12 +36,14 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextOrientation
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
 import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ParagraphComposer
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
+import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
 
 /**
  * Complete input to the JVM reference editable-paragraph journey.
@@ -89,7 +97,53 @@ public class JvmEditableParagraphFacadeRequest(
     public val continuation: LayoutContinuation? = null,
     /** Cooperative signal checked before and during bounded composition work. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
+    /** Shared finite resource policy for this complete analysis-through-composition operation. */
+    public val operationProfile: EditorOperationProfile,
 ) {
+    /** Creates a request through the historical constructor with an unbounded operation policy. */
+    public constructor(
+        snapshot: TextSnapshot,
+        sourceRange: TextRange = snapshot.range,
+        constraints: ParagraphConstraints,
+        baseDirection: BaseDirection,
+        language: String,
+        fontCatalog: FontCatalogSnapshot,
+        resolutionPolicy: FontResolutionPolicySnapshot,
+        fontInstanceDescriptor: FontInstanceDescriptor,
+        features: List<OpenTypeFeature> = emptyList(),
+        materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
+        overflowPolicy: OverflowPolicy = OverflowPolicy.Continue,
+        positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
+        hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
+        hyphenationService: HyphenationService? = null,
+        inlineObjects: InlineObjectSnapshot? = null,
+        textOrientation: TextOrientation = TextOrientation.MIXED,
+        verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
+        continuation: LayoutContinuation? = null,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ) : this(
+        snapshot,
+        sourceRange,
+        constraints,
+        baseDirection,
+        language,
+        fontCatalog,
+        resolutionPolicy,
+        fontInstanceDescriptor,
+        features,
+        materialization,
+        overflowPolicy,
+        positioning,
+        hyphenationMode,
+        hyphenationService,
+        inlineObjects,
+        textOrientation,
+        verticalMetricsPolicy,
+        continuation,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+
     /** Immutable defensive snapshot of deterministic OpenType feature overrides in caller order. */
     public val features: List<OpenTypeFeature> = Collections.unmodifiableList(features.toList())
 }
@@ -116,9 +170,14 @@ public object JvmEditableParagraphFacade {
      * machine failures escape the call. A successful result publishes complete lines only.
      */
     public fun layout(request: JvmEditableParagraphFacadeRequest): ParagraphLayoutResult {
-        if (request.cancellationToken.isCancellationRequested()) {
-            return ParagraphLayoutResult.Cancelled()
+        val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
+        context.sourceLimit(request.snapshot)?.let {
+            return ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it))
         }
+        context.scalarLimit(request.snapshot)?.let {
+            return ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it))
+        }
+        if (context.isCancellationRequested()) return ParagraphLayoutResult.Cancelled()
         val backend = when (val opened = JvmHarfBuzzShapingBackend.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return ParagraphLayoutResult.Failure(
@@ -130,8 +189,17 @@ public object JvmEditableParagraphFacade {
                 opened.diagnostics.toParagraphDiagnostics(),
             )
         }
-        return layout(request, backend)
+        return layoutOwned(request, backend, context)
     }
+
+    internal fun layout(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+    ): ParagraphLayoutResult = layoutOwned(
+        request,
+        backend,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
 
     internal fun layout(
         request: JvmEditableParagraphFacadeRequest,
@@ -149,6 +217,21 @@ public object JvmEditableParagraphFacade {
         return includeBackendCloseResult(checkNotNull(result), checkNotNull(closeResult))
     }
 
+    private fun layoutOwned(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+        context: EditorOperationContext,
+    ): ParagraphLayoutResult {
+        var result: ParagraphLayoutResult? = null
+        var closeResult: FontOperationResult<Unit>? = null
+        try {
+            result = layoutBorrowing(request, backend, context)
+        } finally {
+            closeResult = backend.close()
+        }
+        return includeBackendCloseResult(checkNotNull(result), checkNotNull(closeResult))
+    }
+
     /**
      * Composes [request] with a caller-owned [backend] without closing it.
      *
@@ -160,11 +243,39 @@ public object JvmEditableParagraphFacade {
     internal fun layoutBorrowing(
         request: JvmEditableParagraphFacadeRequest,
         backend: ShapingBackend,
+    ): ParagraphLayoutResult = layoutBorrowing(
+        request,
+        backend,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    internal fun layoutBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+        context: EditorOperationContext,
+    ): ParagraphLayoutResult = try {
+        when (val prepared = prepareParagraphRequestBorrowing(request, backend, context)) {
+            is ParagraphPreparation.Success -> ParagraphComposer.layout(
+                prepared.request,
+                request.materialization,
+                context,
+            )
+            is ParagraphPreparation.Failure -> prepared.result
+            ParagraphPreparation.Cancelled -> ParagraphLayoutResult.Cancelled()
+        }
+    } catch (error: IllegalArgumentException) {
+        ParagraphLayoutResult.Failure(
+            ParagraphLayoutError.InvalidInput(error.message ?: "Paragraph input is invalid."),
+        )
+    }
+
+    internal fun layoutBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
         paragraphLayout: (ParagraphLayoutRequest, EditableLineMaterialization) -> ParagraphLayoutResult =
             ParagraphComposer::layout,
     ): ParagraphLayoutResult = try {
-        val paragraphRequest = prepareParagraphRequestBorrowing(request, backend)
-            ?: return ParagraphLayoutResult.Cancelled()
+        val paragraphRequest = prepareParagraphRequestBorrowing(request, backend) ?: return ParagraphLayoutResult.Cancelled()
         paragraphLayout(paragraphRequest, request.materialization)
     } catch (error: IllegalArgumentException) {
         ParagraphLayoutResult.Failure(
@@ -176,8 +287,8 @@ public object JvmEditableParagraphFacade {
      * Creates a resource-free continuation for a proven line boundary without shaping its prefix.
      *
      * Unicode and line-break context are analyzed through the same pinned JVM route. [backend] and
-     * any materialization resolver are borrowed and never closed or retained. `null` reports
-     * cooperative cancellation; invalid boundaries throw [IllegalArgumentException].
+     * any materialization resolver are borrowed and never closed or retained. Cancellation and
+     * every preparation failure remain distinct typed outcomes.
      */
     internal fun continuationBorrowing(
         request: JvmEditableParagraphFacadeRequest,
@@ -185,36 +296,118 @@ public object JvmEditableParagraphFacade {
         remainingSourceRange: TextRange,
         resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
         resumptionBlockCursor: org.graphiks.kalligraphie.api.LayoutUnit,
-    ): LayoutContinuation? {
-        val paragraphRequest = prepareParagraphRequestBorrowing(request, backend) ?: return null
-        return LayoutContinuation.create(
-            request = paragraphRequest,
-            remainingSourceRange = remainingSourceRange,
-            resumptionRegionTop = resumptionRegionTop,
-            resumptionBlockCursor = resumptionBlockCursor,
-        )
+    ): ParagraphContinuationPreparation = continuationBorrowing(
+        request,
+        backend,
+        remainingSourceRange,
+        resumptionRegionTop,
+        resumptionBlockCursor,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    internal fun continuationBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+        remainingSourceRange: TextRange,
+        resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
+        resumptionBlockCursor: org.graphiks.kalligraphie.api.LayoutUnit,
+        context: EditorOperationContext,
+    ): ParagraphContinuationPreparation {
+        return try {
+            val paragraphRequest = when (val prepared = prepareParagraphRequestBorrowing(request, backend, context)) {
+                is ParagraphPreparation.Success -> prepared.request
+                is ParagraphPreparation.Failure -> return ParagraphContinuationPreparation.Failure(prepared.result)
+                ParagraphPreparation.Cancelled -> return ParagraphContinuationPreparation.Cancelled
+            }
+            ParagraphContinuationPreparation.Success(
+                LayoutContinuation.create(
+                    request = paragraphRequest,
+                    remainingSourceRange = remainingSourceRange,
+                    resumptionRegionTop = resumptionRegionTop,
+                    resumptionBlockCursor = resumptionBlockCursor,
+                ),
+            )
+        } catch (error: IllegalArgumentException) {
+            ParagraphContinuationPreparation.Failure(
+                ParagraphLayoutResult.Failure(
+                    ParagraphLayoutError.InvalidInput(error.message ?: "Paragraph continuation input is invalid."),
+                ),
+            )
+        }
     }
 
     internal fun prepareParagraphRequestBorrowing(
         request: JvmEditableParagraphFacadeRequest,
         backend: ShapingBackend,
-    ): ParagraphLayoutRequest? {
-        if (request.cancellationToken.isCancellationRequested()) return null
-        val unicodeAnalysis = JvmUnicodeAnalyzer.create().analyze(
-            request.snapshot,
-            UnicodeAnalysisRequest(request.baseDirection, request.language),
+    ): ParagraphLayoutRequest? = when (
+        val prepared = prepareParagraphRequestBorrowing(
+            request,
+            backend,
+            EditorOperationContext.create(request.operationProfile, request.cancellationToken),
         )
-        if (request.cancellationToken.isCancellationRequested()) return null
+    ) {
+        is ParagraphPreparation.Success -> prepared.request
+        is ParagraphPreparation.Failure, ParagraphPreparation.Cancelled -> null
+    }
+
+    internal fun prepareParagraphRequestBorrowing(
+        request: JvmEditableParagraphFacadeRequest,
+        backend: ShapingBackend,
+        context: EditorOperationContext,
+    ): ParagraphPreparation {
+        context.sourceLimit(request.snapshot)?.let {
+            return ParagraphPreparation.Failure(
+                ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it)),
+            )
+        }
+        context.scalarLimit(request.snapshot)?.let {
+            return ParagraphPreparation.Failure(
+                ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it)),
+            )
+        }
+        if (context.isCancellationRequested()) return ParagraphPreparation.Cancelled
+        val unicodeAnalysis = when (
+            val analyzed = JvmUnicodeAnalyzer.create().analyze(
+                snapshot = request.snapshot,
+                request = UnicodeAnalysisRequest(request.baseDirection, request.language),
+                profile = context.profile.unicodeAnalysisProfile,
+                cancellationToken = context.cancellationToken,
+            )
+        ) {
+            is UnicodeAnalysisOutcome.Success -> analyzed.value
+            is UnicodeAnalysisOutcome.LimitExceeded -> return ParagraphPreparation.Failure(
+                ParagraphLayoutResult.Failure(
+                    ParagraphLayoutError.OperationLimitExceeded(
+                        EditorOperationLimitExceeded(
+                            EditorOperationLimitKind.ANALYZED_SCALARS,
+                            context.profile.maxAnalyzedScalars.toLong(),
+                            analyzed.observed.toLong(),
+                        ),
+                    ),
+                ),
+            )
+            UnicodeAnalysisOutcome.Cancelled -> return ParagraphPreparation.Cancelled
+        }
+        if (context.isCancellationRequested()) return ParagraphPreparation.Cancelled
         val canonicalLanguage = unicodeAnalysis.scriptLanguageRuns
             .firstOrNull()
             ?.language
             ?: JvmUnicodeAnalyzer.canonicalizeLanguageTag(request.language)
-        val lineBreakAnalysis = JvmLineBreakAnalyzer.create().analyze(
-            request.snapshot,
-            unicodeAnalysis,
-        )
-        if (request.cancellationToken.isCancellationRequested()) return null
-        return ParagraphLayoutRequest(
+        val lineBreakAnalysis = when (
+            val analyzed = JvmLineBreakAnalyzer.createBounded().analyze(
+                request.snapshot,
+                unicodeAnalysis,
+                context,
+            )
+        ) {
+            is LineBreakAnalysisOutcome.Success -> analyzed.value
+            is LineBreakAnalysisOutcome.LimitExceeded -> return ParagraphPreparation.Failure(
+                ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(analyzed.limit)),
+            )
+            LineBreakAnalysisOutcome.Cancelled -> return ParagraphPreparation.Cancelled
+        }
+        if (context.isCancellationRequested()) return ParagraphPreparation.Cancelled
+        return ParagraphPreparation.Success(ParagraphLayoutRequest(
             snapshot = request.snapshot,
             sourceRange = request.sourceRange,
             unicodeAnalysis = unicodeAnalysis,
@@ -222,12 +415,12 @@ public object JvmEditableParagraphFacade {
             constraints = request.constraints,
             baseDirection = request.baseDirection,
             language = canonicalLanguage,
-            featurePolicy = backend.identity.featurePolicy,
+            featurePolicy = backend.identity.semantic.featurePolicy,
             features = request.features,
             fontCatalog = request.fontCatalog,
             resolutionPolicy = request.resolutionPolicy,
             fontInstanceDescriptor = request.fontInstanceDescriptor,
-            shapingBackend = backend,
+            shapingBackend = context.boundedBackend(backend),
             materializationIdentity = ParagraphMaterializationIdentity.from(request.materialization),
             overflowPolicy = request.overflowPolicy,
             positioning = request.positioning,
@@ -237,8 +430,9 @@ public object JvmEditableParagraphFacade {
             textOrientation = request.textOrientation,
             verticalMetricsPolicy = request.verticalMetricsPolicy,
             continuation = request.continuation,
-            cancellationToken = request.cancellationToken,
-        )
+            cancellationToken = context.cancellationToken,
+            operationProfile = context.profile,
+        ))
     }
 
     private fun includeBackendCloseResult(
@@ -282,6 +476,18 @@ public object JvmEditableParagraphFacade {
             }
         }
     }
+}
+
+internal sealed interface ParagraphPreparation {
+    class Success(val request: ParagraphLayoutRequest) : ParagraphPreparation
+    class Failure(val result: ParagraphLayoutResult.Failure) : ParagraphPreparation
+    data object Cancelled : ParagraphPreparation
+}
+
+internal sealed interface ParagraphContinuationPreparation {
+    class Success(val continuation: LayoutContinuation) : ParagraphContinuationPreparation
+    class Failure(val result: ParagraphLayoutResult.Failure) : ParagraphContinuationPreparation
+    data object Cancelled : ParagraphContinuationPreparation
 }
 
 private fun List<FontDiagnostic>.toParagraphDiagnostics(): List<EditableLineDiagnostic> = map { diagnostic ->

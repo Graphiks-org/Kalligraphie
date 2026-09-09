@@ -14,6 +14,8 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -46,6 +48,32 @@ import org.graphiks.kalligraphie.api.VisualNavigationDirection
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class JvmEditableParagraphFacadeTest {
+    @Test
+    fun operationGlyphLimitRejectsWholeParagraphAndExactRetryPublishesRealFallbackLines() {
+        val fixture = multiFaceFixture("fi \u0633\u0644\u0627\u0645")
+        val geometry = constraints(width = 1_400f, top = 50f, height = 2_400f)
+
+        val limited = assertIs<ParagraphLayoutResult.Failure>(
+            JvmEditableParagraphFacade.layout(
+                request(fixture, geometry, operationProfile = EditorOperationProfile(maxTotalGlyphs = 2)),
+            ),
+        )
+        val exceeded = assertIs<ParagraphLayoutError.OperationLimitExceeded>(limited.error).limit
+        assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+        assertEquals(2L, exceeded.maximum)
+        assertTrue(exceeded.observed > exceeded.maximum)
+
+        val retry = assertIs<ParagraphLayoutResult.Success>(
+            JvmEditableParagraphFacade.layout(
+                request(fixture, geometry, operationProfile = EditorOperationProfile(maxTotalGlyphs = 64)),
+            ),
+        )
+        assertEquals(listOf(range(fixture.snapshot, 0, 3), range(fixture.snapshot, 3, 7)), retry.layout.lines.map(LineLayout::range))
+        assertEquals(listOf(listOf(3, 1), listOf(85, 3080, 3075, 1919)), retry.layout.lines.map { line ->
+            line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId.value } }
+        })
+    }
+
     @Test
     fun mainArtifactSnapshotsAnOrderedMultiFaceCatalogFromRealFonts() {
         val latin = fontSource("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
@@ -566,6 +594,7 @@ class JvmEditableParagraphFacadeTest {
         language: String = "ar",
         features: List<OpenTypeFeature> = emptyList(),
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
         snapshot = fixture.snapshot,
         sourceRange = sourceRange,
@@ -579,6 +608,7 @@ class JvmEditableParagraphFacadeTest {
         materialization = EditableLineMaterialization.LayoutOnly,
         continuation = continuation,
         cancellationToken = cancellationToken,
+        operationProfile = operationProfile,
     )
 
     private fun multiFaceFixture(value: String): ParagraphFixture = fontFixture(

@@ -26,11 +26,12 @@ public object Kalligraphie {
     /**
      * Decodes UTF-8 source slices into one immutable, canonical [TextDecodingResult].
      *
-     * [version] remains the opaque identity of the returned snapshot. Every slice is copied by
-     * the text contract before decoding, so callers retain ownership of their byte arrays and
-     * may mutate or release them after this call. Malformed subsequences are replaced according
-     * to Unicode maximal-subpart rules and reported as structured diagnostics. The result is
-     * independent of physical slice boundaries and safe to share between threads.
+     * [version] remains the opaque identity of the returned snapshot. Array-constructed slices
+     * own defensive copies; borrowed slices read their immutable storage directly for this call
+     * and are not retained afterward. Slice seams must fall between complete valid scalars or
+     * malformed maximal subparts. Malformed subsequences are replaced according to Unicode
+     * maximal-subpart rules and reported as structured diagnostics. The result owns compact
+     * scalar and source-boundary tables and is safe to share between threads.
      */
     public fun decodeUtf8(
         version: TextVersion,
@@ -40,10 +41,11 @@ public object Kalligraphie {
     /**
      * Decodes UTF-8 source under an explicit resource [profile] and cancellation signal.
      *
-     * Source-unit limits are checked before a joined buffer is allocated. Scalar limits and
-     * [cancellationToken] are observed before a further scalar is published. A cancelled or
-     * limited result exposes no partial snapshot or diagnostics; a successful result preserves
-     * the same canonical Unicode and source-range semantics as [decodeUtf8].
+     * Source-unit limits are checked before traversal. Slices are consumed directly without a
+     * joined source buffer. Scalar limits and [cancellationToken] are observed during traversal.
+     * A source failure, cancellation, or limit exposes no partial snapshot or diagnostics; a
+     * successful result preserves the same canonical Unicode and source-range semantics as
+     * [decodeUtf8].
      */
     public fun decodeUtf8(
         version: TextVersion,
@@ -55,11 +57,12 @@ public object Kalligraphie {
     /**
      * Decodes UTF-16 source slices into one immutable, canonical [TextDecodingResult].
      *
-     * [version] remains the opaque identity of the returned snapshot. Every slice is copied by
-     * the text contract before decoding, so callers retain ownership of their code-unit arrays
-     * and may mutate or release them after this call. Malformed subsequences are replaced
-     * according to Unicode maximal-subpart rules and reported as structured diagnostics. The
-     * result is independent of physical slice boundaries and safe to share between threads.
+     * [version] remains the opaque identity of the returned snapshot. Array-constructed slices
+     * own defensive copies; borrowed slices read their immutable storage directly for this call
+     * and are not retained afterward. Slice seams must fall between complete valid scalars or
+     * malformed maximal subparts. Malformed subsequences are replaced according to Unicode
+     * maximal-subpart rules and reported as structured diagnostics. The result owns compact
+     * scalar and source-boundary tables and is safe to share between threads.
      */
     public fun decodeUtf16(
         version: TextVersion,
@@ -69,10 +72,11 @@ public object Kalligraphie {
     /**
      * Decodes UTF-16 source under an explicit resource [profile] and cancellation signal.
      *
-     * Source-unit limits are checked before a joined buffer is allocated. Scalar limits and
-     * [cancellationToken] are observed before a further scalar is published. A cancelled or
-     * limited result exposes no partial snapshot or diagnostics; a successful result preserves
-     * the same canonical Unicode and source-range semantics as [decodeUtf16].
+     * Source-unit limits are checked before traversal. Slices are consumed directly without a
+     * joined source buffer. Scalar limits and [cancellationToken] are observed during traversal.
+     * A source failure, cancellation, or limit exposes no partial snapshot or diagnostics; a
+     * successful result preserves the same canonical Unicode and source-range semantics as
+     * [decodeUtf16].
      */
     public fun decodeUtf16(
         version: TextVersion,

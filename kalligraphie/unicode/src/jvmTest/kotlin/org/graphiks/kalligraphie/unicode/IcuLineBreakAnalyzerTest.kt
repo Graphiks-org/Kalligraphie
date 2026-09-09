@@ -2,7 +2,12 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
+import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
 import org.graphiks.kalligraphie.api.LineBreakKind
 import org.graphiks.kalligraphie.api.LineBreakOpportunity
 import org.graphiks.kalligraphie.api.TextSlice
@@ -11,6 +16,91 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 class IcuLineBreakAnalyzerTest {
+    @Test
+    fun bounded_analysis_rejects_real_work_atomically_and_retry_keeps_exact_partitions() {
+        val snapshot = snapshotOf("alpha beta שלום")
+        val unicodeAnalysis = unicodeAnalyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+        val analyzer = JvmLineBreakAnalyzer.createBounded()
+
+        val limited = analyzer.analyze(
+            snapshot,
+            unicodeAnalysis,
+            EditorOperationProfile(maxLineBreakWork = 4),
+            CancellationToken.none,
+        )
+        val failure = assertIs<LineBreakAnalysisOutcome.LimitExceeded>(limited).limit
+        assertEquals(EditorOperationLimitKind.LINE_BREAK_WORK, failure.kind)
+        assertEquals(4L, failure.maximum)
+        assertEquals(15L, failure.observed)
+
+        val retry = assertIs<LineBreakAnalysisOutcome.Success>(
+            analyzer.analyze(
+                snapshot,
+                unicodeAnalysis,
+                EditorOperationProfile.unbounded,
+                CancellationToken.none,
+            ),
+        ).value
+        assertEquals(
+            listOf(
+                opportunity(snapshot, 6, LineBreakKind.ALLOWED),
+                opportunity(snapshot, 11, LineBreakKind.ALLOWED),
+            ),
+            retry.opportunities,
+        )
+        assertEquals((0 until 15).map { range(snapshot, it, it + 1) }, retry.graphemeClusters)
+    }
+
+    @Test
+    fun cancelled_bounded_analysis_publishes_nothing_and_exact_retry_succeeds() {
+        val repetitions = 512
+        val snapshot = snapshotOf("👩‍🚀 مرحبا שלום ".repeat(repetitions))
+        val unicodeAnalysis = unicodeAnalyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.RIGHT_TO_LEFT, language = "ar"),
+        )
+        val analyzer = JvmLineBreakAnalyzer.createBounded()
+
+        assertEquals(
+            LineBreakAnalysisOutcome.Cancelled,
+            analyzer.analyze(
+                snapshot,
+                unicodeAnalysis,
+                EditorOperationProfile(cancellationCheckInterval = 1),
+                CancellationToken.cancelled,
+            ),
+        )
+
+        val retry = assertIs<LineBreakAnalysisOutcome.Success>(
+            analyzer.analyze(
+                snapshot,
+                unicodeAnalysis,
+                EditorOperationProfile.unbounded,
+                CancellationToken.none,
+            ),
+        ).value
+        val expectedOpportunities = buildList {
+            repeat(repetitions) { unit ->
+                val start = unit * 15
+                add(opportunity(snapshot, start + 4, LineBreakKind.ALLOWED))
+                add(opportunity(snapshot, start + 10, LineBreakKind.ALLOWED))
+                if (unit + 1 < repetitions) add(opportunity(snapshot, start + 15, LineBreakKind.ALLOWED))
+            }
+        }
+        val expectedClusters = buildList {
+            repeat(repetitions) { unit ->
+                val start = unit * 15
+                add(range(snapshot, start, start + 3))
+                for (scalar in start + 3 until start + 15) add(range(snapshot, scalar, scalar + 1))
+            }
+        }
+        assertEquals(expectedOpportunities, retry.opportunities)
+        assertEquals(expectedClusters, retry.graphemeClusters)
+    }
+
     @Test
     fun normal_space_exposes_the_audited_allowed_boundary() {
         // Unicode 16.0 LineBreakTest.txt line 26:
@@ -74,7 +164,7 @@ class IcuLineBreakAnalyzerTest {
     }
 
     @Test
-    fun opportunities_are_independent_of_utf16_slice_boundaries() {
+    fun opportunities_are_independent_of_valid_utf16_slice_boundaries() {
         val vectors = listOf(
             "\u23E9 \u23E9",
             "\r\n\u23E9",
@@ -86,12 +176,29 @@ class IcuLineBreakAnalyzerTest {
         vectors.forEach { text ->
             val version = TextVersion.create()
             val unsplit = snapshotOf(version, listOf(text.toCharArray()))
-            val splitAtEveryCodeUnit = snapshotOf(
+            val splitAtEveryCompleteUnit = snapshotOf(
                 version,
-                text.toCharArray().map { codeUnit -> charArrayOf(codeUnit) },
+                splitAtCompleteUtf16Units(text.toCharArray()),
             )
 
-            assertEquals(analyze(unsplit), analyze(splitAtEveryCodeUnit), text)
+            assertEquals(analyze(unsplit), analyze(splitAtEveryCompleteUnit), text)
+        }
+    }
+
+    private fun splitAtCompleteUtf16Units(codeUnits: CharArray): List<CharArray> = buildList {
+        var start = 0
+        while (start < codeUnits.size) {
+            val length = if (
+                codeUnits[start].isHighSurrogate() &&
+                start + 1 < codeUnits.size &&
+                codeUnits[start + 1].isLowSurrogate()
+            ) {
+                2
+            } else {
+                1
+            }
+            add(codeUnits.copyOfRange(start, start + length))
+            start += length
         }
     }
 
@@ -111,6 +218,12 @@ class IcuLineBreakAnalyzerTest {
         boundary = snapshot.textIndexAtScalarBoundary(boundary),
         kind = kind,
     )
+
+    private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int) =
+        org.graphiks.kalligraphie.api.TextRange(
+            snapshot.textIndexAtScalarBoundary(start),
+            snapshot.textIndexAtScalarBoundary(endExclusive),
+        )
 
     private fun snapshotOf(text: String): TextSnapshot =
         snapshotOf(TextVersion.create(), listOf(text.toCharArray()))

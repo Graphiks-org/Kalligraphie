@@ -27,9 +27,11 @@ import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.unicode.TextSnapshots
+import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -182,22 +184,15 @@ class HarfBuzzJvmBackendTest {
             featurePolicy = policy,
         )
 
-        assertEquals(policy, backend.identity.featurePolicy)
+        assertEquals(policy, backend.identity.semantic.featurePolicy)
         assertEquals(policy, shaped.featurePolicy)
         assertEquals(emptyList(), shaped.features)
         assertEquals(listOf(GlyphId(5042)), shaped.glyphs.map { it.glyphId })
     }
 
     @Test
-    fun directBackendReportsItsPinnedIdentityAndShapesAnAuditedLatinLigature() {
+    fun targetDistributionKeepsPortableSemanticsAndAuditedLatinShaping() {
         val backend = backend()
-
-        assertEquals("harfbuzz-jvm", backend.identity.backendId)
-        assertEquals("14.3.0", backend.identity.nativeVersion)
-        assertEquals(expectedNativeSourceRevision(), backend.identity.nativeSourceRevision)
-        assertEquals(expectedNativeArtifactId(), backend.identity.nativeArtifactId)
-        assertEquals(expectedNativeArtifactSha256(), backend.identity.nativeArtifactSha256)
-        assertTrue(backend.identity.configurationFingerprint.contains("monotone-characters"))
 
         val shaped = shape(
             backend = backend,
@@ -210,6 +205,19 @@ class HarfBuzzJvmBackendTest {
             features = listOf(OpenTypeFeature("liga", 1)),
         )
 
+        assertEquals("harfbuzz-jvm", shaped.backendIdentity.semantic.backendId)
+        assertEquals("harfbuzz", shaped.backendIdentity.semantic.engineId)
+        assertEquals("14.3.0", shaped.backendIdentity.semantic.engineVersion)
+        assertEquals("ot", shaped.backendIdentity.semantic.shaperId)
+        assertEquals(JvmHarfBuzzShapingBackend.pinnedFeaturePolicy, shaped.backendIdentity.semantic.featurePolicy)
+        assertTrue(shaped.backendIdentity.semantic.configurationFingerprint.contains("monotone-characters"))
+        assertEquals(expectedOperatingSystem(), shaped.backendIdentity.provenance.operatingSystem)
+        assertEquals(expectedArchitecture(), shaped.backendIdentity.provenance.architecture)
+        assertEquals(expectedNativeSourceRevision(), shaped.backendIdentity.provenance.sourceRevision)
+        assertEquals(expectedNativeArtifactId(), shaped.backendIdentity.provenance.artifactId)
+        assertEquals(expectedNativeArtifactSha256(), shaped.backendIdentity.provenance.artifactSha256)
+        assertEquals("harfbuzz", shaped.backendIdentity.provenance.sourceProject)
+        assertEquals(expectedBuildChainIdentity(), shaped.backendIdentity.provenance.buildChainIdentity)
         assertEquals(listOf(GlyphId(5042)), shaped.glyphs.map { it.glyphId })
         assertEquals(listOf(LayoutUnit(1290f)), shaped.glyphs.map { it.xAdvance })
         assertEquals(listOf(ShaperClusterToken(0)), shaped.glyphs.map { it.clusterToken })
@@ -219,10 +227,10 @@ class HarfBuzzJvmBackendTest {
     fun nativeIdentityBindsEachTargetToItsVerifiedArtifactAndOtShaper() {
         val identity = backend().identity
 
-        assertEquals(expectedNativeSourceRevision(), identity.nativeSourceRevision)
-        assertEquals(expectedNativeArtifactId(), identity.nativeArtifactId)
-        assertEquals(expectedNativeArtifactSha256(), identity.nativeArtifactSha256)
-        assertTrue(identity.configurationFingerprint.contains("shaper=ot"))
+        assertEquals(expectedNativeSourceRevision(), identity.provenance.sourceRevision)
+        assertEquals(expectedNativeArtifactId(), identity.provenance.artifactId)
+        assertEquals(expectedNativeArtifactSha256(), identity.provenance.artifactSha256)
+        assertEquals("ot", identity.semantic.shaperId)
     }
 
     @Test
@@ -359,6 +367,61 @@ class HarfBuzzJvmBackendTest {
         assertEquals(listOf(range(prepared, 3, 4)), shaped.mappings.sourcesForCluster(ShaperClusterToken(3)))
         assertEquals(listOf(ShaperClusterToken(0)), shaped.mappings.clustersForSource(range(prepared, 0, 1)))
         assertEquals(listOf(ShaperClusterToken(3)), shaped.mappings.clustersForSource(range(prepared, 3, 4)))
+    }
+
+    @Test
+    fun realBackendShapesConcurrentHebrewCallsToTheSameCompleteAuditedRun() {
+        val backend = backend()
+        val font = fontInstance("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans")
+        val prepared = text("שלום")
+        val ready = CountDownLatch(8)
+        val start = CountDownLatch(1)
+        val observations = Collections.synchronizedList(mutableListOf<ConcurrentShapingObservation>())
+        val failures = Collections.synchronizedList(mutableListOf<Throwable>())
+
+        val workers = List(8) {
+            thread(name = "harfbuzz-real-shaping-$it") {
+                try {
+                    ready.countDown()
+                    start.await()
+                    val shaped = backend.shape(
+                        request(
+                            prepared = prepared,
+                            font = font,
+                            direction = ShapingDirection.RIGHT_TO_LEFT,
+                            script = OpenTypeScript("Hebr"),
+                            language = "he",
+                            bidiLevel = 1,
+                        ),
+                    ).successValue()
+                    observations += ConcurrentShapingObservation(
+                        glyphIds = shaped.glyphs.map { glyph -> glyph.glyphId.value },
+                        advances = shaped.glyphs.map { glyph -> glyph.xAdvance.value },
+                        clusterTokens = shaped.glyphs.map { glyph -> glyph.clusterToken.value },
+                    )
+                } catch (error: Throwable) {
+                    failures += error
+                }
+            }
+        }
+        assertTrue(ready.await(10, TimeUnit.SECONDS))
+        start.countDown()
+        workers.forEach { worker ->
+            worker.join(10_000)
+            assertTrue(!worker.isAlive, "A real concurrent shaping call did not complete.")
+        }
+
+        assertEquals(emptyList(), failures)
+        assertEquals(
+            List(8) {
+                ConcurrentShapingObservation(
+                    glyphIds = listOf(1293, 1285, 1292, 1305),
+                    advances = listOf(1389f, 532f, 1085f, 1495f),
+                    clusterTokens = listOf(3, 2, 1, 0),
+                )
+            },
+            observations,
+        )
     }
 
     @Test
@@ -743,6 +806,24 @@ class HarfBuzzJvmBackendTest {
         else -> error("Unexpected shaping test platform.")
     }
 
+    private fun expectedOperatingSystem(): String = when (System.getProperty("os.name")) {
+        "Mac OS X" -> "macos"
+        "Linux" -> "linux"
+        else -> error("Unexpected shaping test platform.")
+    }
+
+    private fun expectedArchitecture(): String = when (System.getProperty("os.arch")) {
+        "aarch64" -> "arm64"
+        "x86_64", "amd64" -> "x64"
+        else -> error("Unexpected shaping test architecture.")
+    }
+
+    private fun expectedBuildChainIdentity(): String = when (System.getProperty("os.name")) {
+        "Mac OS X" -> "cmake-4.4.3;appleclang-21.0.0;macos-sdk-26.5;deployment-target-11.0"
+        "Linux" -> "lwjgl-harfbuzz-3.4.3"
+        else -> error("Unexpected shaping test platform.")
+    }
+
     private fun expectedNativeSourceRevision(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
         "Mac OS X" to "aarch64",
         "Mac OS X" to "x86_64",
@@ -772,6 +853,12 @@ class HarfBuzzJvmBackendTest {
     private data class CachedResource(
         val name: String,
         val weight: Long,
+    )
+
+    private data class ConcurrentShapingObservation(
+        val glyphIds: List<Int>,
+        val advances: List<Float>,
+        val clusterTokens: List<Int>,
     )
 
     private fun org.graphiks.kalligraphie.api.ShapingSafetyFlags.mask(): Int =

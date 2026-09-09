@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.TextDecodingFailure
 import org.graphiks.kalligraphie.api.TextDecodingLimit
 import org.graphiks.kalligraphie.api.TextDecodingOutcome
 import org.graphiks.kalligraphie.api.TextDecodingProfile
@@ -11,6 +12,21 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 
 class TextDecodingFacadeTest {
+    @Test
+    fun invalid_utf8_slice_boundary_returns_a_typed_atomic_failure() {
+        val result = Kalligraphie.decodeUtf8(
+            TextVersion.create(),
+            listOf(
+                TextSlice.Utf8(byteArrayOf(0xF0.toByte(), 0x9F.toByte())),
+                TextSlice.Utf8(byteArrayOf(0x98.toByte(), 0x80.toByte())),
+            ),
+            TextDecodingProfile.unbounded,
+        )
+
+        val failure = assertIs<TextDecodingOutcome.Failure>(result)
+        assertEquals(TextDecodingFailure.INVALID_SLICE_BOUNDARY, failure.reason)
+    }
+
     @Test
     fun cancellation_after_valid_prefix_discards_the_incomplete_unicode_snapshot() {
         var checks = 0
@@ -39,7 +55,7 @@ class TextDecodingFacadeTest {
     }
 
     @Test
-    fun source_unit_budget_rejects_utf8_before_a_joined_decoder_buffer_is_published() {
+    fun source_unit_budget_rejects_utf8_before_fragment_traversal_publishes_a_snapshot() {
         val result = Kalligraphie.decodeUtf8(
             TextVersion.create(),
             listOf(TextSlice.Utf8("A\uD83D\uDE00".encodeToByteArray())),
