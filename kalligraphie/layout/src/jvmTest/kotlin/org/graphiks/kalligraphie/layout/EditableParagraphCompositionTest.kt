@@ -33,6 +33,7 @@ import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutBounds
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
@@ -51,6 +52,7 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
@@ -618,6 +620,56 @@ class EditableParagraphCompositionTest {
     }
 
     @Test
+    fun verticalMixedTabRetainsItsPhysicalControlAndInlineAdvance() {
+        val fixture = fixture("A\tB", width = 1_000f, height = 4_000f, writingMode = WritingMode.VERTICAL_RL)
+
+        val projection = runCatching { layout(fixture.request).layout.lines.single() }
+
+        assertTrue(projection.isSuccess, "Vertical projection must retain the TAB cluster between neighboring glyphs.")
+        val line = projection.getOrThrow()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(range(fixture.snapshot, 1, 2), control.sourceRange)
+        assertEquals(line.baseline.x, control.origin.x)
+        assertTrue(control.origin.y > line.baseline.y)
+        assertEquals(LayoutUnit(0f), control.advance.x)
+        assertTrue(control.advance.y.value > 0f)
+        assertEquals(
+            fixture.snapshot.scalarRanges(fixture.snapshot.range),
+            line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.flatMap { cluster -> cluster.scalarRanges },
+        )
+        assertEquals(
+            LayoutUnit(
+                (line.positionedGlyphRuns.sumOf { run ->
+                    run.glyphs.sumOf { glyph -> glyph.advance.y.value.toDouble() }
+                } + control.advance.y.value.toDouble()).toFloat(),
+            ),
+            line.contentMetrics.inlineAdvance,
+        )
+    }
+
+    @Test
+    fun verticalTabOnlyLineRetainsItsPhysicalControlAndInlineAdvance() {
+        val fixture = fixture("\t", width = 1_000f, height = 4_000f, writingMode = WritingMode.VERTICAL_RL)
+
+        val projection = runCatching { layout(fixture.request).layout.lines.single() }
+
+        assertTrue(projection.isSuccess, "Vertical projection must retain a TAB-only shaped run.")
+        val line = projection.getOrThrow()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(fixture.snapshot.range, control.sourceRange)
+        assertEquals(line.baseline, control.origin)
+        assertEquals(LayoutUnit(0f), control.advance.x)
+        assertTrue(control.advance.y.value > 0f)
+        assertEquals(
+            fixture.snapshot.scalarRanges(fixture.snapshot.range),
+            line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.flatMap { cluster -> cluster.scalarRanges },
+        )
+        assertEquals(control.advance.y, line.contentMetrics.inlineAdvance)
+    }
+
+    @Test
     fun trailingSpacesDoNotExpandPublishedInkBounds() {
         val fixture = fixture("Ag   ", width = 5_000f, height = 1_000f)
 
@@ -908,6 +960,7 @@ class EditableParagraphCompositionTest {
         height: Float,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "en",
+        writingMode: WritingMode = WritingMode.HORIZONTAL_TB,
         fontResources: List<FontFixture> = listOf(FontFixture("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")),
         sourceStartOrdinal: Int = 0,
         recordShapingRequests: Boolean = false,
@@ -941,10 +994,18 @@ class EditableParagraphCompositionTest {
             sourceRange = range(snapshot, sourceStartOrdinal, snapshot.scalarRanges(snapshot.range).size),
             unicodeAnalysis = unicodeAnalysis,
             lineBreakAnalysis = lineBreakAnalysis,
-            constraints = HorizontalParagraphConstraints(
-                region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(50f + height)),
-                lineMetrics = metrics,
-            ),
+            constraints = if (writingMode == WritingMode.HORIZONTAL_TB) {
+                HorizontalParagraphConstraints(
+                    region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(50f + height)),
+                    lineMetrics = metrics,
+                )
+            } else {
+                ParagraphConstraints(
+                    region = LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(50f + height)),
+                    lineMetrics = metrics,
+                    writingMode = writingMode,
+                )
+            },
             baseDirection = baseDirection,
             language = language,
             featurePolicy = backend.identity.semantic.featurePolicy,

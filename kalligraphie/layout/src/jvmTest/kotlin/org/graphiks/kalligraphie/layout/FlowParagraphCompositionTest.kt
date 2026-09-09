@@ -44,6 +44,7 @@ import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineBand
 import org.graphiks.kalligraphie.api.LineBreakAnalysis
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.NoProgressReason
 import org.graphiks.kalligraphie.api.OverflowPolicy
@@ -731,6 +732,60 @@ class FlowParagraphCompositionTest {
         val inlineOrigins = line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.origin.y.value - bounds.top.value } }
         assertTrue(inlineOrigins[0] in 0f..1_100f)
         assertTrue(inlineOrigins[1] in 2_200f..4_000f)
+    }
+
+    @Test
+    fun fragmentedMixedTabRetainsItsGlyphlessSourceControl() {
+        val fixture = fixture("A\tB")
+        val region = FixedRegion(fixture.request.constraints.region, listOf(InlineInterval(0f, 4_000f)))
+
+        val projection = runCatching {
+            success(
+                FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+            ).lines.single()
+        }
+
+        assertTrue(projection.isSuccess, "Flow projection must retain the TAB cluster between neighboring glyphs.")
+        val line = projection.getOrThrow()
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(range(fixture.snapshot, 1, 2), control.sourceRange)
+        assertEquals(line.baseline.y, control.origin.y)
+        assertTrue(control.origin.x > line.baseline.x)
+        assertTrue(control.advance.x.value > 0f)
+        assertEquals(
+            fixture.snapshot.scalarRanges(fixture.snapshot.range),
+            line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.flatMap { cluster -> cluster.scalarRanges },
+        )
+        assertEquals(
+            LayoutUnit(
+                (line.positionedGlyphRuns.sumOf { run ->
+                    run.glyphs.sumOf { glyph -> glyph.advance.x.value.toDouble() }
+                } + control.advance.x.value.toDouble()).toFloat(),
+            ),
+            line.contentMetrics.inlineAdvance,
+        )
+    }
+
+    @Test
+    fun fragmentedTabOnlyLineRetainsItsGlyphlessSourceControl() {
+        val fixture = fixture("\t")
+        val region = FixedRegion(fixture.request.constraints.region, listOf(InlineInterval(0f, 4_000f)))
+
+        val line = success(
+            FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+        ).lines.single()
+
+        val control = line.positionedGlyphRuns.flatMap { run -> run.lineControls }.single()
+        assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+        assertEquals(fixture.snapshot.range, control.sourceRange)
+        assertEquals(line.baseline, control.origin)
+        assertTrue(control.advance.x.value > 0f)
+        assertEquals(
+            fixture.snapshot.scalarRanges(fixture.snapshot.range),
+            line.positionedGlyphRuns.flatMap { run -> run.sourceRun.clusters }.flatMap { cluster -> cluster.scalarRanges },
+        )
+        assertEquals(control.advance.x, line.contentMetrics.inlineAdvance)
     }
 
     @Test

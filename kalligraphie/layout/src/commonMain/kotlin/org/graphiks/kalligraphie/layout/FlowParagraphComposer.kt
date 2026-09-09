@@ -42,6 +42,7 @@ import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
 import org.graphiks.kalligraphie.api.PositionedInlineObject
+import org.graphiks.kalligraphie.api.PositionedLineControl
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingProvenanceSpan
 import org.graphiks.kalligraphie.api.TextIndex
@@ -824,6 +825,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         writingMode: WritingMode,
     ): FragmentProjection {
         val glyphsByFragment = intervals.indices.map { mutableListOf<AllocatedGlyph>() }
+        val controlsByFragment = intervals.indices.map { mutableListOf<AllocatedControl>() }
         val allocations = mutableListOf<Allocation>()
         var fragmentIndex = 0
         var cursor = intervals.first().start.toDouble()
@@ -878,6 +880,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                     translation = translation,
                     objectRange = objectItem?.sourceRange,
                     sourceRange = group.sourceRange(),
+                    sourceRun = run,
                 )
                 cursor += width
                 precedingEnd = originalStart + width
@@ -885,9 +888,28 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         }
 
         if (allocations.isEmpty()) {
-            allocations += Allocation(0, 0.0, 0.0, intervals.first().start.toDouble(), null, null)
+            allocations += Allocation(0, 0.0, 0.0, intervals.first().start.toDouble(), null, null, null)
         }
-        val runs = glyphsByFragment.map { allocated -> allocated.toProjectedRuns() }
+        line.positionedGlyphRuns.forEach { run ->
+            run.lineControls.forEach { control ->
+                val sameRun = allocations.filter { allocation -> allocation.sourceRun === run }
+                val candidates = sameRun.ifEmpty { allocations }
+                val adjacent = candidates.filter { allocation ->
+                    allocation.sourceRange?.start == control.sourceRange.endExclusive ||
+                        allocation.sourceRange?.endExclusive == control.sourceRange.start
+                }
+                val inline = control.inlineCoordinate(writingMode)
+                val allocation = (adjacent.ifEmpty { candidates })
+                    .minWith(compareBy<Allocation>({ it.distanceFrom(inline) }, { it.fragmentIndex }))
+                controlsByFragment[allocation.fragmentIndex] += AllocatedControl(
+                    run,
+                    control.translatedInline(allocation.translation, baseline, writingMode),
+                )
+            }
+        }
+        val runs = intervals.indices.map { index ->
+            projectedRuns(glyphsByFragment[index], controlsByFragment[index])
+        }
         val carets = intervals.indices.map { mutableListOf<CaretCandidate>() }
         line.allCaretCandidates.forEach { candidate ->
             val inline = candidate.inlineCoordinate(writingMode)
@@ -960,28 +982,36 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         })
     }
 
-    private fun List<AllocatedGlyph>.toProjectedRuns(): List<PositionedGlyphRun> {
-        if (isEmpty()) return emptyList()
-        val groups = mutableListOf<MutableList<AllocatedGlyph>>()
-        forEach { item ->
-            val previous = groups.lastOrNull()
-            if (previous != null && previous.last().sourceRun === item.sourceRun) previous += item
-            else groups += mutableListOf(item)
-        }
-        return groups.map { group ->
-            val sourceRun = group.first().sourceRun
-            val glyphs = group.map(AllocatedGlyph::glyph)
+    private fun projectedRuns(
+        glyphs: List<AllocatedGlyph>,
+        controls: List<AllocatedControl>,
+    ): List<PositionedGlyphRun> {
+        val sourceRuns = (glyphs.map(AllocatedGlyph::sourceRun) + controls.map(AllocatedControl::sourceRun))
+            .distinct()
+            .sortedBy(PositionedGlyphRun::visualOrder)
+        return sourceRuns.map { sourceRun ->
+            val projectedGlyphs = glyphs.filter { item -> item.sourceRun === sourceRun }.map(AllocatedGlyph::glyph)
+            val projectedControls = controls.filter { item -> item.sourceRun === sourceRun }.map(AllocatedControl::control)
             PositionedGlyphRun(
-                sourceRun = sourceRun.sliceFor(glyphs),
+                sourceRun = sourceRun.sliceFor(projectedGlyphs, projectedControls),
                 visualOrder = sourceRun.visualOrder,
                 renderAssetKey = sourceRun.renderAssetKey,
-                glyphs = glyphs,
+                glyphs = projectedGlyphs,
+                lineControls = projectedControls,
             )
         }
     }
 
-    private fun PositionedGlyphRun.sliceFor(glyphs: List<PositionedGlyph>): ShapedGlyphRun {
-        val tokens = glyphs.flatMap { glyph -> glyph.shapedGlyph.clusterTokens }.toSet()
+    private fun PositionedGlyphRun.sliceFor(
+        glyphs: List<PositionedGlyph>,
+        controls: List<PositionedLineControl>,
+    ): ShapedGlyphRun {
+        val controlTokens = controls.flatMap { control ->
+            sourceRun.clusters
+                .filter { cluster -> control.sourceRange in cluster.scalarRanges }
+                .map { cluster -> cluster.token }
+        }
+        val tokens = (glyphs.flatMap { glyph -> glyph.shapedGlyph.clusterTokens } + controlTokens).toSet()
         val clusters = sourceRun.clusters.filter { cluster -> cluster.token in tokens }
         val range = TextRange(clusters.first().sourceRange.start, clusters.last().sourceRange.endExclusive)
         val sourceGlyphIndexes = sourceRun.glyphs.indices.filter { index ->
@@ -1308,6 +1338,27 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         )
     }
 
+    private fun PositionedLineControl.translatedInline(
+        inlineTranslation: Double,
+        baseline: LayoutPoint,
+        writingMode: WritingMode,
+    ): PositionedLineControl {
+        val translatedOrigin = when (writingMode) {
+            WritingMode.HORIZONTAL_TB -> LayoutPoint(
+                finite(origin.x.value.toDouble() + inlineTranslation + baseline.x.value.toDouble(), "fragment control x"),
+                finite(origin.y.value.toDouble() + baseline.y.value.toDouble(), "fragment control y"),
+            )
+
+            WritingMode.VERTICAL_RL,
+            WritingMode.VERTICAL_LR,
+            -> LayoutPoint(
+                finite(origin.x.value.toDouble() + baseline.x.value.toDouble(), "vertical fragment control x"),
+                finite(origin.y.value.toDouble() + inlineTranslation + baseline.y.value.toDouble(), "vertical fragment control y"),
+            )
+        }
+        return PositionedLineControl(kind, sourceRange, translatedOrigin, advance, materializationRoute)
+    }
+
     private fun CaretCandidate.translatedInline(
         inlineTranslation: Double,
         baseline: LayoutPoint,
@@ -1374,6 +1425,13 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         WritingMode.VERTICAL_RL,
         WritingMode.VERTICAL_LR,
         -> geometry.start.y.value.toDouble()
+    }
+
+    private fun PositionedLineControl.inlineCoordinate(writingMode: WritingMode): Double = when (writingMode) {
+        WritingMode.HORIZONTAL_TB -> origin.x.value.toDouble()
+        WritingMode.VERTICAL_RL,
+        WritingMode.VERTICAL_LR,
+        -> origin.y.value.toDouble()
     }
 
     private fun List<PositionedGlyph>.sourceRange(): TextRange {
@@ -1545,6 +1603,11 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
     private data class AllocatedGlyph(val sourceRun: PositionedGlyphRun, val glyph: PositionedGlyph)
 
+    private data class AllocatedControl(
+        val sourceRun: PositionedGlyphRun,
+        val control: PositionedLineControl,
+    )
+
     private data class Allocation(
         val fragmentIndex: Int,
         val originalStart: Double,
@@ -1552,6 +1615,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val translation: Double,
         val objectRange: TextRange?,
         val sourceRange: TextRange?,
+        val sourceRun: PositionedGlyphRun?,
     ) {
         fun distanceFrom(position: Double): Double = when {
             position < originalStart -> originalStart - position

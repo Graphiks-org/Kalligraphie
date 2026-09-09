@@ -60,6 +60,7 @@ import org.graphiks.kalligraphie.api.ParagraphTruncation
 import org.graphiks.kalligraphie.api.PositionedGlyph
 import org.graphiks.kalligraphie.api.PositionedGlyphRun
 import org.graphiks.kalligraphie.api.PositionedInlineObject
+import org.graphiks.kalligraphie.api.PositionedLineControl
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
 import org.graphiks.kalligraphie.api.ShapedGlyph
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -1151,6 +1152,15 @@ public object ParagraphComposer : ParagraphLayouter {
                         provenance = provenance,
                     )
                 },
+                lineControls = logicalRun.lineControls.map { control ->
+                    PositionedLineControl(
+                        kind = control.kind,
+                        sourceRange = control.sourceRange,
+                        origin = LayoutPoint(control.origin.y, control.origin.x),
+                        advance = LayoutVector(control.advance.y, control.advance.x),
+                        materializationRoute = control.materializationRoute,
+                    )
+                },
             )
         }
         val carets = logicalLine.allCaretCandidates.map { candidate ->
@@ -1936,7 +1946,10 @@ public object ParagraphComposer : ParagraphLayouter {
         WritingMode.VERTICAL_RL,
         WritingMode.VERTICAL_LR,
         -> finiteUnit(
-            line.positionedGlyphRuns.sumOf { run -> run.glyphs.sumOf { glyph -> glyph.advance.y.value.toDouble() } },
+            line.positionedGlyphRuns.sumOf { run ->
+                run.glyphs.sumOf { glyph -> glyph.advance.y.value.toDouble() } +
+                    run.lineControls.sumOf { control -> control.advance.y.value.toDouble() }
+            },
             "vertical line inline advance",
         )
     }
