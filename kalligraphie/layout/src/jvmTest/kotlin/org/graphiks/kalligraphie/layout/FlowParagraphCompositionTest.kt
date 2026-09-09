@@ -832,6 +832,25 @@ class FlowParagraphCompositionTest {
     }
 
     @Test
+    fun rightToLeftFlowPublishesMultipleTabControlsInLogicalSourceOrder() {
+        val fixture = fixture("\t\t", baseDirection = BaseDirection.RIGHT_TO_LEFT)
+        val region = FixedRegion(fixture.request.constraints.region, listOf(InlineInterval(0f, 4_000f)))
+
+        val projection = runCatching {
+            success(
+                FlowParagraphComposer.layoutLine(fixture.request, EditableLineMaterialization.LayoutOnly, region),
+            ).lines.single()
+        }
+
+        assertTrue(projection.isSuccess, "RTL flow must retain the logical source order of projected TAB controls.")
+        val controls = projection.getOrThrow().positionedGlyphRuns.flatMap { run -> run.lineControls }
+        assertEquals(
+            listOf(range(fixture.snapshot, 0, 1), range(fixture.snapshot, 1, 2)),
+            controls.map { control -> control.sourceRange },
+        )
+    }
+
+    @Test
     fun chainEmptyAdvancesStrictlyAndLaterRegionRestartsAtItsLocalOrigin() {
         val fixture = fixture("ab ab")
         val firstQueries = mutableListOf<LineBand>()

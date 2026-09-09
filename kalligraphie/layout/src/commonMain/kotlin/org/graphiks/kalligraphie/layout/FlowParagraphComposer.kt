@@ -965,7 +965,10 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             .sortedBy(PositionedGlyphRun::visualOrder)
         return sourceRuns.map { sourceRun ->
             val projectedGlyphs = glyphs.filter { item -> item.sourceRun === sourceRun }.map(AllocatedGlyph::glyph)
-            val projectedControls = controls.filter { item -> item.sourceRun === sourceRun }.map(AllocatedControl::control)
+            val projectedControls = controls
+                .filter { item -> item.sourceRun === sourceRun }
+                .map(AllocatedControl::control)
+                .sortedWith { left, right -> left.sourceRange.start.compareTo(right.sourceRange.start) }
             PositionedGlyphRun(
                 sourceRun = sourceRun.sliceFor(projectedGlyphs, projectedControls),
                 visualOrder = sourceRun.visualOrder,
