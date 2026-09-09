@@ -4,6 +4,8 @@ import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
@@ -39,6 +41,60 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class MultiFontEditableLineTest {
+    @Test
+    fun totalGlyphBudgetSpansRealFallbackRunsBeforeExactRetry() {
+        val selective = source("/fonts/gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val complete = source("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
+        val catalog = catalogOf(selective, complete)
+        val selectiveFace = FontFaceId(selective.id, 0)
+        val completeFace = FontFaceId(complete.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = catalog.generation,
+            policyId = "real-rejected-attempt-budget",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(selectiveFace), FontResolutionCandidate(completeFace)),
+            lastResortFace = completeFace,
+        )
+        val source = text("f\u0301 x")
+        val analysis = analyze(source, "en")
+
+        val limited = assertIs<EditableLineResult.Failure>(
+            ExactEditableLineLayouter.layout(
+                request(
+                    source,
+                    analysis,
+                    catalog,
+                    policy,
+                    backend(),
+                    EditableLineMaterialization.LayoutOnly,
+                    operationProfile = EditorOperationProfile(maxTotalGlyphs = 3),
+                ),
+            ),
+        )
+        val exceeded = assertIs<EditableLineError.OperationLimitExceeded>(limited.error).limit
+        assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+        assertEquals(3L, exceeded.maximum)
+        assertEquals(4L, exceeded.observed)
+
+        val retry = assertIs<EditableLineResult.Success>(
+            ExactEditableLineLayouter.layout(
+                request(
+                    source,
+                    analysis,
+                    catalog,
+                    policy,
+                    backend(),
+                    EditableLineMaterialization.LayoutOnly,
+                    operationProfile = EditorOperationProfile(maxTotalGlyphs = 16),
+                ),
+            ),
+        ).line
+        assertEquals(
+            listOf(73, 5923, 3, 91),
+            retry.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
+        )
+    }
+
     private val backends = mutableListOf<ShapingBackend>()
 
     @AfterTest
@@ -562,6 +618,7 @@ class MultiFontEditableLineTest {
         materialization: EditableLineMaterialization,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         cancellationToken: CancellationToken = CancellationToken.none,
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): MultiFontEditableLineRequest = MultiFontEditableLineRequest(
         snapshot = text,
         unicodeAnalysis = analysis,
@@ -573,6 +630,7 @@ class MultiFontEditableLineTest {
         verticalMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
         materialization = materialization,
         cancellationToken = cancellationToken,
+        operationProfile = operationProfile,
     )
 
     private class SwitchableCancellationToken : CancellationToken {

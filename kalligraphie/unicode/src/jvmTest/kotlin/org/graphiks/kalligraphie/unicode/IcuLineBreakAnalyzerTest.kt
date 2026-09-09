@@ -2,7 +2,12 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.BaseDirection
+import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
+import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
 import org.graphiks.kalligraphie.api.LineBreakKind
 import org.graphiks.kalligraphie.api.LineBreakOpportunity
 import org.graphiks.kalligraphie.api.TextSlice
@@ -11,6 +16,80 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 
 class IcuLineBreakAnalyzerTest {
+    @Test
+    fun bounded_analysis_rejects_real_work_atomically_and_retry_keeps_exact_partitions() {
+        val snapshot = snapshotOf("alpha beta שלום")
+        val unicodeAnalysis = unicodeAnalyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+        val analyzer = JvmLineBreakAnalyzer.createBounded()
+
+        val limited = analyzer.analyze(
+            snapshot,
+            unicodeAnalysis,
+            EditorOperationProfile(maxLineBreakWork = 4),
+            CancellationToken.none,
+        )
+        val failure = assertIs<LineBreakAnalysisOutcome.LimitExceeded>(limited).limit
+        assertEquals(EditorOperationLimitKind.LINE_BREAK_WORK, failure.kind)
+        assertEquals(4L, failure.maximum)
+        assertEquals(15L, failure.observed)
+
+        val retry = assertIs<LineBreakAnalysisOutcome.Success>(
+            analyzer.analyze(
+                snapshot,
+                unicodeAnalysis,
+                EditorOperationProfile.unbounded,
+                CancellationToken.none,
+            ),
+        ).value
+        assertEquals(
+            listOf(
+                opportunity(snapshot, 6, LineBreakKind.ALLOWED),
+                opportunity(snapshot, 11, LineBreakKind.ALLOWED),
+            ),
+            retry.opportunities,
+        )
+        assertEquals((0 until 15).map { range(snapshot, it, it + 1) }, retry.graphemeClusters)
+    }
+
+    @Test
+    fun cancelled_bounded_analysis_publishes_nothing_and_exact_retry_succeeds() {
+        val snapshot = snapshotOf("👩‍🚀 مرحبا שלום")
+        val unicodeAnalysis = unicodeAnalyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.RIGHT_TO_LEFT, language = "ar"),
+        )
+        val analyzer = JvmLineBreakAnalyzer.createBounded()
+
+        assertEquals(
+            LineBreakAnalysisOutcome.Cancelled,
+            analyzer.analyze(
+                snapshot,
+                unicodeAnalysis,
+                EditorOperationProfile(cancellationCheckInterval = 1),
+                CancellationToken.cancelled,
+            ),
+        )
+
+        val retry = assertIs<LineBreakAnalysisOutcome.Success>(
+            analyzer.analyze(
+                snapshot,
+                unicodeAnalysis,
+                EditorOperationProfile.unbounded,
+                CancellationToken.none,
+            ),
+        ).value
+        assertEquals(
+            listOf(
+                opportunity(snapshot, 4, LineBreakKind.ALLOWED),
+                opportunity(snapshot, 10, LineBreakKind.ALLOWED),
+            ),
+            retry.opportunities,
+        )
+    }
+
     @Test
     fun normal_space_exposes_the_audited_allowed_boundary() {
         // Unicode 16.0 LineBreakTest.txt line 26:
@@ -128,6 +207,12 @@ class IcuLineBreakAnalyzerTest {
         boundary = snapshot.textIndexAtScalarBoundary(boundary),
         kind = kind,
     )
+
+    private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int) =
+        org.graphiks.kalligraphie.api.TextRange(
+            snapshot.textIndexAtScalarBoundary(start),
+            snapshot.textIndexAtScalarBoundary(endExclusive),
+        )
 
     private fun snapshotOf(text: String): TextSnapshot =
         snapshotOf(TextVersion.create(), listOf(text.toCharArray()))

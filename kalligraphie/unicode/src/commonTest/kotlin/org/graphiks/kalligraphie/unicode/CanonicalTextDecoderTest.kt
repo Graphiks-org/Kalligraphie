@@ -6,12 +6,14 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.SourceBias
 import org.graphiks.kalligraphie.api.SourceEncoding
 import org.graphiks.kalligraphie.api.SourceIndexResult
 import org.graphiks.kalligraphie.api.SourceOffset
 import org.graphiks.kalligraphie.api.SourceRange
 import org.graphiks.kalligraphie.api.TextDecodingFailure
+import org.graphiks.kalligraphie.api.TextDecodingLimit
 import org.graphiks.kalligraphie.api.TextDecodingOutcome
 import org.graphiks.kalligraphie.api.TextDecodingProfile
 import org.graphiks.kalligraphie.api.TextDecodingResult
@@ -23,6 +25,51 @@ import org.graphiks.kalligraphie.api.Utf16Storage
 import org.graphiks.kalligraphie.api.Utf8Storage
 
 class CanonicalTextDecoderTest {
+    @Test
+    fun editor_source_and_scalar_limits_reject_atomically_then_exact_retry_succeeds() {
+        val malformed = byteArrayOf(
+            0x61,
+            0xF0.toByte(), 0x9F.toByte(), 0x98.toByte(), 0x80.toByte(),
+            0xE2.toByte(), 0x82.toByte(), 0x41,
+        )
+        val slices = listOf(
+            TextSlice.Utf8(malformed.copyOfRange(0, 5)),
+            TextSlice.Utf8(malformed.copyOfRange(5, malformed.size)),
+        )
+
+        val sourceLimited = TextSnapshots.decodeUtf8(
+            TextVersion.create(),
+            slices,
+            EditorOperationProfile(maxSourceUnits = 7).textDecodingProfile,
+        )
+        val sourceFailure = assertIs<TextDecodingOutcome.LimitExceeded>(sourceLimited)
+        assertEquals(TextDecodingLimit.SOURCE_UNITS, sourceFailure.limit)
+        assertEquals(8L, sourceFailure.observed)
+
+        val scalarLimited = TextSnapshots.decodeUtf8(
+            TextVersion.create(),
+            slices,
+            EditorOperationProfile(maxAnalyzedScalars = 3).textDecodingProfile,
+        )
+        val scalarFailure = assertIs<TextDecodingOutcome.LimitExceeded>(scalarLimited)
+        assertEquals(TextDecodingLimit.SCALARS, scalarFailure.limit)
+        assertEquals(4L, scalarFailure.observed)
+
+        val retry = assertIs<TextDecodingOutcome.Success>(
+            TextSnapshots.decodeUtf8(
+                TextVersion.create(),
+                slices,
+                EditorOperationProfile.unbounded.textDecodingProfile,
+            ),
+        ).value
+        assertEquals(listOf(0x61, 0x1F600, 0xFFFD, 0x41), retry.snapshot.scalars)
+        assertEquals(listOf("text.malformed-utf8"), retry.diagnostics.map(TextDiagnostic::code))
+        assertEquals(
+            listOf(0 to 1, 1 to 5, 5 to 7, 7 to 8),
+            retry.snapshot.sourceRanges.map { it.start.value to it.endExclusive.value },
+        )
+    }
+
     @Test
     fun utf8_and_utf16_produce_the_same_scalars_and_boundaries() {
         val version = TextVersion.create()

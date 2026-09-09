@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.AutomaticHyphenBreaks
@@ -16,6 +18,7 @@ import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.EditorOperationContext
 import org.graphiks.kalligraphie.api.EllipsisSide
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstance
@@ -141,8 +144,26 @@ public object ParagraphComposer : ParagraphLayouter {
     override fun layout(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
+    ): ParagraphLayoutResult = layout(
+        request,
+        materialization,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    /** Composes within a caller-owned complete-operation budget. */
+    @org.graphiks.kalligraphie.api.KalligraphieInternalApi
+    public fun layout(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        context: EditorOperationContext,
     ): ParagraphLayoutResult = try {
-        when (val composition = compose(request, materialization)) {
+        context.sourceLimit(request.snapshot)?.let {
+            return ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it))
+        }
+        context.scalarLimit(request.snapshot)?.let {
+            return ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it))
+        }
+        when (val composition = compose(request, materialization, context)) {
             is ParagraphCompositionResult.Failure -> ParagraphLayoutResult.Failure(
                 composition.error.toParagraphError(),
                 composition.diagnostics,
@@ -151,6 +172,8 @@ public object ParagraphComposer : ParagraphLayouter {
             is ParagraphCompositionResult.Cancelled -> ParagraphLayoutResult.Cancelled(composition.diagnostics)
             is ParagraphCompositionResult.Success -> projectComposition(request, composition)
         }
+    } catch (limit: EditorOperationLimitReached) {
+        ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(limit.exceeded))
     } catch (overflow: ParagraphGeometryOverflowException) {
         ParagraphLayoutResult.Failure(
             ParagraphLayoutError.GeometryOverflow(overflow.message ?: "Paragraph geometry overflowed."),
@@ -160,7 +183,23 @@ public object ParagraphComposer : ParagraphLayouter {
     internal fun compose(
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
+    ): ParagraphCompositionResult = compose(
+        request,
+        materialization,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    internal fun compose(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        context: EditorOperationContext,
     ): ParagraphCompositionResult {
+        context.sourceLimit(request.snapshot)?.let {
+            return ParagraphCompositionResult.Failure(EditableLineError.OperationLimitExceeded(it))
+        }
+        context.scalarLimit(request.snapshot)?.let {
+            return ParagraphCompositionResult.Failure(EditableLineError.OperationLimitExceeded(it))
+        }
         if (materialization.identity() != request.materializationIdentity) {
             return ParagraphCompositionResult.Failure(
                 EditableLineError.InvalidInput("Paragraph materialization does not match the captured request identity."),
@@ -198,11 +237,12 @@ public object ParagraphComposer : ParagraphLayouter {
                 unicodeAnalysis = provisionalAnalysis,
                 materialization = materialization,
                 proofs = proofs,
+                context = context,
             )
         ) {
             is FontOperationResult.Success -> resolved.value.shapedRuns
             is FontOperationResult.Failure -> return ParagraphCompositionResult.Failure(
-                EditableLineError.FontResolutionFailure(resolved.error),
+                resolved.error.toEditableResolutionError(),
                 resolved.diagnostics.map(::fontDiagnostic),
             )
             is FontOperationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(
@@ -221,7 +261,7 @@ public object ParagraphComposer : ParagraphLayouter {
             if (!fullLineFits()) {
                 return ParagraphCompositionResult.Success(emptyList(), null, hasUnplacedTrailingEmptyLine = true)
             }
-            return when (val empty = emptyLine(request, request.sourceRange, materialization)) {
+            return when (val empty = emptyLine(request, request.sourceRange, materialization, context)) {
                 is EditableLineResult.Success -> ParagraphCompositionResult.Success(
                     listOf(place(empty.line, request, blockCursor)),
                     remainingSourceRange = null,
@@ -247,6 +287,7 @@ public object ParagraphComposer : ParagraphLayouter {
                         provisionalRuns = provisionalRuns,
                         materialization = materialization,
                         proofs = proofs,
+                        context = context,
                     )
                     if (truncated != null) {
                         if (replaced != null) placed.removeAt(placed.lastIndex)
@@ -270,6 +311,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     provisionalRuns = provisionalRuns,
                     materialization = materialization,
                     proofs = proofs,
+                    context = context,
                 )
             ) {
                 is FinalizationResult.Success -> {
@@ -283,6 +325,7 @@ public object ParagraphComposer : ParagraphLayouter {
                             provisionalRuns = provisionalRuns,
                             materialization = materialization,
                             proofs = proofs,
+                            context = context,
                         )
                         if (truncated != null) {
                             placed += place(truncated.line, request, blockCursor, truncated.fontInstances)
@@ -313,7 +356,7 @@ public object ParagraphComposer : ParagraphLayouter {
                 return ParagraphCompositionResult.Success(placed, null, hasUnplacedTrailingEmptyLine = true)
             }
             val emptyRange = TextRange(request.sourceRange.endExclusive, request.sourceRange.endExclusive)
-            when (val empty = emptyLine(request, emptyRange, materialization)) {
+            when (val empty = emptyLine(request, emptyRange, materialization, context)) {
                 is EditableLineResult.Success -> placed += place(empty.line, request, blockCursor)
                 is EditableLineResult.Failure -> return ParagraphCompositionResult.Failure(empty.error, empty.diagnostics)
                 is EditableLineResult.Cancelled -> return ParagraphCompositionResult.Cancelled(empty.diagnostics)
@@ -332,7 +375,25 @@ public object ParagraphComposer : ParagraphLayouter {
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
         maximumEndExclusive: TextIndex? = null,
+    ): ParagraphCompositionResult = composeFirstLineBounded(
+        request,
+        materialization,
+        maximumEndExclusive,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    internal fun composeFirstLineBounded(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        maximumEndExclusive: TextIndex? = null,
+        context: EditorOperationContext,
     ): ParagraphCompositionResult {
+        context.sourceLimit(request.snapshot)?.let {
+            return ParagraphCompositionResult.Failure(EditableLineError.OperationLimitExceeded(it))
+        }
+        context.scalarLimit(request.snapshot)?.let {
+            return ParagraphCompositionResult.Failure(EditableLineError.OperationLimitExceeded(it))
+        }
         if (materialization.identity() != request.materializationIdentity) {
             return ParagraphCompositionResult.Failure(
                 EditableLineError.InvalidInput("Paragraph materialization does not match the captured request identity."),
@@ -360,7 +421,7 @@ public object ParagraphComposer : ParagraphLayouter {
             )
         }
         if (request.sourceRange.start == request.sourceRange.endExclusive) {
-            return compose(request, materialization)
+            return compose(request, materialization, context)
         }
 
         val allClusters = request.unicodeAnalysis.graphemeClusters
@@ -414,11 +475,12 @@ public object ParagraphComposer : ParagraphLayouter {
                     unicodeAnalysis = provisionalAnalysis,
                     materialization = materialization,
                     proofs = proofs,
+                    context = context,
                 )
             ) {
                 is FontOperationResult.Success -> resolved.value.shapedRuns
                 is FontOperationResult.Failure -> return ParagraphCompositionResult.Failure(
-                    EditableLineError.FontResolutionFailure(resolved.error),
+                    resolved.error.toEditableResolutionError(),
                     resolved.diagnostics.map(::fontDiagnostic),
                 )
                 is FontOperationResult.Cancelled -> return ParagraphCompositionResult.Cancelled(
@@ -435,6 +497,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     provisionalRuns = provisionalRuns,
                     materialization = materialization,
                     proofs = proofs,
+                    context = context,
                 )
             ) {
                 is FinalizationResult.Success -> finalized
@@ -530,6 +593,7 @@ public object ParagraphComposer : ParagraphLayouter {
             TextRange(request.sourceRange.start, remaining.start)
         }
         val layout = FinalParagraphLayout(request.snapshot, request.lineBreakAnalysis, range, projectedLines)
+        if (request.cancellationToken.isCancellationRequested()) return ParagraphLayoutResult.Cancelled()
         return if (composition.truncation != null) {
             ParagraphLayoutResult.Success(
                 layout = layout,
@@ -796,6 +860,7 @@ public object ParagraphComposer : ParagraphLayouter {
         provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
         proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
     ): FinalizationResult {
         require(candidates.isNotEmpty())
         candidates.asReversed().forEach { boundary ->
@@ -806,6 +871,7 @@ public object ParagraphComposer : ParagraphLayouter {
                 provisionalRuns,
                 materialization,
                 proofs,
+                context,
             )
             when (finalized) {
                 is FinalizationResult.Success -> {
@@ -826,6 +892,7 @@ public object ParagraphComposer : ParagraphLayouter {
         provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
         proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
         ellipsis: LineEllipsisPolicy? = null,
     ): FinalizationResult {
         val finalAnalysis = analysisForLine(request, lineRange, resetLineTrailingWhitespace = true)
@@ -845,6 +912,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     unicodeAnalysis = finalAnalysis,
                     materialization = materialization,
                     proofs = proofs,
+                    context = context,
                 )
             ) {
                 is FontOperationResult.Success -> {
@@ -853,7 +921,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     diagnostics += resolved.value.diagnostics.map(::fontDiagnostic)
                 }
                 is FontOperationResult.Failure -> return FinalizationResult.Failure(
-                    EditableLineError.FontResolutionFailure(resolved.error),
+                    resolved.error.toEditableResolutionError(),
                     diagnostics + resolved.diagnostics.map(::fontDiagnostic),
                 )
                 is FontOperationResult.Cancelled -> return FinalizationResult.Cancelled(
@@ -873,6 +941,7 @@ public object ParagraphComposer : ParagraphLayouter {
                 diagnostics = diagnostics,
                 materialization = materialization,
                 proofs = proofs,
+                context = context,
                 ellipsis = ellipsis,
             )
         }
@@ -897,6 +966,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     cancellationToken = request.cancellationToken,
                 ),
                 proofs,
+                context,
             )
         ) {
             is EditableLineResult.Success -> FinalizationResult.Success(
@@ -935,6 +1005,7 @@ public object ParagraphComposer : ParagraphLayouter {
         diagnostics: List<EditableLineDiagnostic>,
         materialization: EditableLineMaterialization,
         proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
         ellipsis: LineEllipsisPolicy?,
     ): FinalizationResult {
         val instancesByKey = fontInstances.associateBy(FontInstance::key)
@@ -1013,6 +1084,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     cancellationToken = request.cancellationToken,
                 ),
                 proofs,
+                context,
             )
         ) {
             is EditableLineResult.Success -> FinalizationResult.Success(
@@ -1424,6 +1496,7 @@ public object ParagraphComposer : ParagraphLayouter {
         provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
         proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
     ): TruncatedLine? {
         val ellipsis = request.overflowPolicy as? OverflowPolicy.Ellipsis ?: return null
         val terminal = request.sourceRange.endExclusive
@@ -1433,10 +1506,24 @@ public object ParagraphComposer : ParagraphLayouter {
         val measureBoundaries = (sourceClusters.map { it.endExclusive } + lineStart).distinct().sortedWith(TextIndex::compareTo)
             .filter { boundary -> boundary > lineStart && boundary <= terminal }
         measureBoundaries.asReversed().forEach { boundary ->
-            when (val finalized = finalizeLine(request, TextRange(lineStart, boundary), sourceClusters, provisionalRuns, materialization, proofs)) {
+            when (
+                val finalized = finalizeLine(
+                    request,
+                    TextRange(lineStart, boundary),
+                    sourceClusters,
+                    provisionalRuns,
+                    materialization,
+                    proofs,
+                    context,
+                )
+            ) {
                 is FinalizationResult.Success -> {
                     prefixWidths[boundary] = inlineAdvance(finalized.line).value.toDouble()
                     prefixInstances[boundary] = finalized.fontInstances
+                }
+                is FinalizationResult.Failure -> {
+                    val limit = finalized.error as? EditableLineError.OperationLimitExceeded
+                    if (limit != null) throw EditorOperationLimitReached(limit.limit)
                 }
                 else -> Unit
             }
@@ -1452,6 +1539,7 @@ public object ParagraphComposer : ParagraphLayouter {
                 provisionalRuns,
                 materialization,
                 proofs,
+                context,
                 completeRange,
                 completeRange,
                 side,
@@ -1465,7 +1553,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     val prefixWidth = prefixWidths[boundary] ?: return@firstOrNull false
                     prefixWidth + markerWidth <= width
                 } ?: lineStart.takeIf { markerWidth <= width } ?: return null
-                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs,
+                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs, context,
                     completeRange, TextRange(b0, terminal), side)
             }
             EllipsisSide.INLINE_START -> {
@@ -1485,7 +1573,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     }
                 }
                 if (!suffixFound) return markerOnly()
-                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs,
+                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs, context,
                     completeRange, TextRange(lineStart, chosen.start), side)
             }
             EllipsisSide.MIDDLE -> {
@@ -1507,7 +1595,7 @@ public object ParagraphComposer : ParagraphLayouter {
                     .lastOrNull { (_, w) -> w + markerWidth + suffixWidth <= width }?.key
                     ?: lineStart.takeIf { markerWidth + suffixWidth <= width }
                     ?: return markerOnly()
-                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs,
+                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs, context,
                     completeRange, TextRange(b0, startB0), side)
             }
         }
@@ -1519,6 +1607,7 @@ public object ParagraphComposer : ParagraphLayouter {
         provisionalRuns: List<ShapedGlyphRun>,
         materialization: EditableLineMaterialization,
         proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
         lineRange: TextRange,
         hiddenRange: TextRange,
         side: EllipsisSide,
@@ -1530,6 +1619,7 @@ public object ParagraphComposer : ParagraphLayouter {
             provisionalRuns = provisionalRuns,
             materialization = materialization,
             proofs = proofs,
+            context = context,
             ellipsis = LineEllipsisPolicy(side, hiddenRange),
         )
         return when (finalized) {
@@ -1539,6 +1629,11 @@ public object ParagraphComposer : ParagraphLayouter {
                     EllipsisSide.INLINE_END, EllipsisSide.MIDDLE -> hiddenRange.start
                 }
                 TruncatedLine(finalized.line, finalized.fontInstances, ParagraphTruncation(hiddenRange, anchor, side))
+            }
+            is FinalizationResult.Failure -> {
+                val limit = finalized.error as? EditableLineError.OperationLimitExceeded
+                if (limit != null) throw EditorOperationLimitReached(limit.limit)
+                null
             }
             else -> null
         }
@@ -1585,6 +1680,7 @@ public object ParagraphComposer : ParagraphLayouter {
         request: ParagraphLayoutRequest,
         range: TextRange,
         materialization: EditableLineMaterialization,
+        context: EditorOperationContext,
     ): EditableLineResult {
         if (request.constraints.writingMode != WritingMode.HORIZONTAL_TB) {
             val level = if (request.baseDirection == BaseDirection.LEFT_TO_RIGHT) 0 else 1
@@ -1635,6 +1731,7 @@ public object ParagraphComposer : ParagraphLayouter {
             isLastLine = true,
             cancellationToken = request.cancellationToken,
         ),
+        context,
     )
     }
 
@@ -2117,9 +2214,15 @@ internal fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (
     is EditableLineError.MixedLineControlGlyphRelation -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.GeometryOverflow -> ParagraphLayoutError.GeometryOverflow(message)
     is EditableLineError.UnicodeAnalysisLimitExceeded -> ParagraphLayoutError.InvalidInput(message)
+    is EditableLineError.OperationLimitExceeded -> ParagraphLayoutError.OperationLimitExceeded(limit)
     is EditableLineError.FontMaterializationFailure -> ParagraphLayoutError.FontFailure(fontError)
     is EditableLineError.ShapingFailure -> ParagraphLayoutError.FontFailure(fontError)
     is EditableLineError.FontResolutionFailure -> ParagraphLayoutError.FontFailure(fontError)
+}
+
+private fun FontError.toEditableResolutionError(): EditableLineError = when (this) {
+    is FontError.EditorOperationLimitExceeded -> EditableLineError.OperationLimitExceeded(exceeded)
+    else -> EditableLineError.FontResolutionFailure(this)
 }
 
 internal class ParagraphGeometryOverflowException(message: String) : IllegalStateException(message)

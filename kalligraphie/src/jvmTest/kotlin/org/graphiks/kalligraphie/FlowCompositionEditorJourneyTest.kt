@@ -10,6 +10,8 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FlowChain
 import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionResult
@@ -61,6 +63,48 @@ import org.graphiks.kalligraphie.layout.IncrementalFlowLayoutEngine
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class FlowCompositionEditorJourneyTest {
+    @Test
+    fun operationLimitPublishesNoFlowAndExactRetryPublishesTheRealClusterPrefix() {
+        val fixture = incrementalRealFontFixture(
+            "aaaaaaaaaa",
+            fonts = listOf(IncrementalFontFixture("dejavu/DejaVuSans.ttf", "DejaVu Sans")),
+        )
+        val chain = horizontalChain(count = 1, inlineExtent = 3_800f)
+        val constraints = incrementalTestConstraints(width = 3_800f, top = 100f, height = 1_200f)
+
+        val limited = assertIs<FlowCompositionResult.Failure>(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = constraints,
+                    operationProfile = EditorOperationProfile(maxTotalGlyphs = 0),
+                ),
+            ),
+        )
+        val exceeded = assertIs<FlowCompositionError.OperationLimitExceeded>(limited.error).limit
+        assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+        assertEquals(0L, exceeded.maximum)
+
+        val retry = success(
+            JvmFlowCompositionFacade.layout(
+                request(
+                    fixture,
+                    chain,
+                    requestedRange = fixture.snapshot.incrementalRange(0, 1),
+                    constraints = constraints,
+                    operationProfile = EditorOperationProfile(maxTotalGlyphs = 64),
+                ),
+            ),
+        )
+        assertEquals(fixture.snapshot.incrementalRange(0, 6), retry.fragments.single().laidOutRange)
+        assertEquals(
+            listOf(68, 68, 68, 68, 68, 68),
+            retry.lines.single().positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
+        )
+    }
+
     @Test
     fun boundedFlowPublishesTheLargestActuallyPlaceableClusterPrefixBetweenExponentialProbes() {
         val fixture = incrementalRealFontFixture(
@@ -1543,6 +1587,7 @@ class FlowCompositionEditorJourneyTest {
         hyphenationService: HyphenationService? = null,
         inlineObjects: InlineObjectSnapshot? = null,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): JvmFlowCompositionRequest {
         val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
             createIncrementalFlowLayoutRequest(
@@ -1553,6 +1598,7 @@ class FlowCompositionEditorJourneyTest {
                 overscan = LineOverscan(overscan),
                 previousState = previousState,
                 delta = delta,
+                operationProfile = operationProfile,
             ),
         ).value
         return JvmFlowCompositionRequest(

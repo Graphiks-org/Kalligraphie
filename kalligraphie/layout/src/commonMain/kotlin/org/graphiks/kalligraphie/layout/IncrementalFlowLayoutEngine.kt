@@ -1,6 +1,9 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationContext
 import org.graphiks.kalligraphie.api.FlowCompositionDiagnostic
 import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionInputIdentity
@@ -49,7 +52,27 @@ public object IncrementalFlowLayoutEngine {
         request: IncrementalFlowLayoutRequest,
         paragraph: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
+    ): FlowCompositionResult<FlowLayout> = layout(
+        request,
+        paragraph,
+        materialization,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    /** Materializes flow within a caller-owned complete-operation budget. */
+    @org.graphiks.kalligraphie.api.KalligraphieInternalApi
+    public fun layout(
+        request: IncrementalFlowLayoutRequest,
+        paragraph: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        context: EditorOperationContext,
     ): FlowCompositionResult<FlowLayout> {
+        context.sourceLimit(request.input.text)?.let {
+            return FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(it))
+        }
+        context.scalarLimit(request.input.text)?.let {
+            return FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(it))
+        }
         validatePreparedParagraph(request, paragraph)?.let { return FlowCompositionResult.Failure(it) }
         if (request.cancellationToken.isCancellationRequested()) {
             return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
@@ -152,6 +175,7 @@ public object IncrementalFlowLayoutEngine {
                 continuation = continuation,
                 maximumLines = 1,
                 flowConfiguration = configuration,
+                context = context,
             )
             val success = when (composed) {
                 is FlowCompositionResult.Success -> composed
@@ -392,6 +416,9 @@ public object IncrementalFlowLayoutEngine {
             is FlowCompositionResult.Success -> created.value
             is FlowCompositionResult.Failure -> return created
         }
+        if (request.cancellationToken.isCancellationRequested()) {
+            return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+        }
         return when (
             val created = FlowLayout.create(
                 inputIdentity,
@@ -403,7 +430,11 @@ public object IncrementalFlowLayoutEngine {
                 diagnostics,
             )
         ) {
-            is FlowCompositionResult.Success -> FlowCompositionResult.Success(created.value, flowDiagnostics)
+            is FlowCompositionResult.Success -> if (request.cancellationToken.isCancellationRequested()) {
+                FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+            } else {
+                FlowCompositionResult.Success(created.value, flowDiagnostics)
+            }
             is FlowCompositionResult.Failure -> created
         }
     }
@@ -506,4 +537,5 @@ private fun ParagraphLayoutRequest.forFlowSourceRange(sourceRange: TextRange): P
         textOrientation = textOrientation,
         verticalMetricsPolicy = verticalMetricsPolicy,
         cancellationToken = cancellationToken,
+        operationProfile = operationProfile,
     )

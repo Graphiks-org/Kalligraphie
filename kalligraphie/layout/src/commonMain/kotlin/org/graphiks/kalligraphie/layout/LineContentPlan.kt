@@ -1,9 +1,12 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
 import org.graphiks.kalligraphie.api.EditableLineDiagnosticSeverity
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineRequest
+import org.graphiks.kalligraphie.api.EditorOperationContext
 import org.graphiks.kalligraphie.api.EllipsisSide
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -62,6 +65,7 @@ internal object LineContentPlan {
         request: EditableLineRequest,
         snapshot: TextSnapshot,
         diagnostics: MutableList<EditableLineDiagnostic>,
+        context: EditorOperationContext,
     ): List<RefinedRun> {
         val instances = request.fontInstances.associateBy(FontInstance::key)
         val softHyphens = request.softHyphenPolicy
@@ -80,9 +84,9 @@ internal object LineContentPlan {
         }
         return request.shapedGlyphRuns.map { run ->
             val instance = instances[run.fontInstanceKey]
-            refineRun(request, snapshot, run, instance, softHyphens, automatic, diagnostics)
-        }.let { runPlan -> applyEllipsis(request, snapshot, runPlan, diagnostics) }
-            .let { runPlan -> applyKashidaSpacing(request, snapshot, runPlan, diagnostics) }
+            refineRun(request, snapshot, run, instance, softHyphens, automatic, diagnostics, context)
+        }.let { runPlan -> applyEllipsis(request, snapshot, runPlan, diagnostics, context) }
+            .let { runPlan -> applyKashidaSpacing(request, snapshot, runPlan, diagnostics, context) }
             .let { runPlan -> applyJustificationSpacing(request, snapshot, runPlan) }
     }
 
@@ -96,6 +100,7 @@ internal object LineContentPlan {
         snapshot: TextSnapshot,
         runs: List<RefinedRun>,
         diagnostics: MutableList<EditableLineDiagnostic>,
+        context: EditorOperationContext,
     ): List<RefinedRun> {
         val ellipsis = request.ellipsis ?: return runs
         var anchor = ellipsis.hiddenRange.start
@@ -147,19 +152,22 @@ internal object LineContentPlan {
             if (!hiddenInRun && !markerInRun) return@forEachIndexed
             val rebuilt = mutableListOf<RefinedGlyph>()
             var anchorEmitted = false
-            fun markerFor(reference: ShapedGlyph): List<RefinedGlyph> = markerGlyphs.map { (glyphId, advance, _) ->
-                RefinedGlyph(
-                    shapedGlyph = ShapedGlyph(
-                        glyphId = glyphId,
-                        xAdvance = advance,
-                        yAdvance = LayoutUnit(0f),
-                        xOffset = LayoutUnit(0f),
-                        yOffset = LayoutUnit(0f),
-                        safetyFlags = reference.safetyFlags,
-                        clusterTokens = listOf(reference.clusterTokens.first()),
-                    ),
-                    provenance = GlyphProvenance.Synthetic(anchor, GlyphProvenanceRole.ELLIPSIS),
-                )
+            fun markerFor(reference: ShapedGlyph): List<RefinedGlyph> {
+                context.reserveSyntheticGlyphs(markerGlyphs.size.toLong())
+                return markerGlyphs.map { (glyphId, advance, _) ->
+                    RefinedGlyph(
+                        shapedGlyph = ShapedGlyph(
+                            glyphId = glyphId,
+                            xAdvance = advance,
+                            yAdvance = LayoutUnit(0f),
+                            xOffset = LayoutUnit(0f),
+                            yOffset = LayoutUnit(0f),
+                            safetyFlags = reference.safetyFlags,
+                            clusterTokens = listOf(reference.clusterTokens.first()),
+                        ),
+                        provenance = GlyphProvenance.Synthetic(anchor, GlyphProvenanceRole.ELLIPSIS),
+                    )
+                }
             }
             val firstGlyph = run.glyphs.firstOrNull()?.shapedGlyph
             if (!markerAttached && !markerBefore && firstGlyph != null &&
@@ -232,6 +240,7 @@ internal object LineContentPlan {
         snapshot: TextSnapshot,
         runs: List<RefinedRun>,
         diagnostics: MutableList<EditableLineDiagnostic>,
+        context: EditorOperationContext,
     ): List<RefinedRun> {
         val target = request.targetInlineExtent ?: return runs
         val positioning = request.positioning ?: return runs
@@ -269,6 +278,10 @@ internal object LineContentPlan {
             }
             val countPerGap = (perGapAdvance / advance.value.toDouble()).toInt()
             if (countPerGap <= 0) return@forEach
+            val insertionCount = gaps.keys.count { glyphIndex ->
+                run.glyphs[glyphIndex].shapedGlyph.clusterTokens.isNotEmpty()
+            }.toLong() * countPerGap.toLong()
+            context.reserveSyntheticGlyphs(insertionCount)
             val expanded = mutableListOf<RefinedGlyph>()
             run.glyphs.forEachIndexed { glyphIndex, glyph ->
                 expanded += glyph
@@ -338,6 +351,7 @@ internal object LineContentPlan {
         softHyphens: org.graphiks.kalligraphie.api.SoftHyphenLinePolicy?,
         automaticBreaks: List<TextIndex>,
         diagnostics: MutableList<EditableLineDiagnostic>,
+        context: EditorOperationContext,
     ): RefinedRun {
         val stream = mutableListOf<RefinedGlyph>()
         val tabScalars = run.clusters.flatMap { cluster ->
@@ -386,6 +400,7 @@ internal object LineContentPlan {
                 automaticGlyphsRemaining[mapped.endExclusive] = remaining
                 if (remaining == 0) {
                     substituteHyphen(instance, glyph, diagnostics)?.let { hyphen ->
+                        context.reserveSyntheticGlyphs(1L)
                         stream += RefinedGlyph(
                             hyphen,
                             GlyphProvenance.Synthetic(mapped.endExclusive, GlyphProvenanceRole.AUTOMATIC_HYPHEN),

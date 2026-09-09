@@ -1,8 +1,11 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie
 
 import java.util.Collections
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationContext
 import org.graphiks.kalligraphie.api.FlowCompositionError
 import org.graphiks.kalligraphie.api.FlowCompositionResult
 import org.graphiks.kalligraphie.api.FlowLayout
@@ -80,9 +83,17 @@ public object JvmFlowCompositionFacade {
      * typed [FlowCompositionResult.Failure] values.
      */
     public fun layout(request: JvmFlowCompositionRequest): FlowCompositionResult<FlowLayout> {
-        if (request.request.cancellationToken.isCancellationRequested()) {
-            return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+        val context = EditorOperationContext.create(
+            request.request.operationProfile,
+            request.request.cancellationToken,
+        )
+        context.sourceLimit(request.request.input.text)?.let {
+            return FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(it))
         }
+        context.scalarLimit(request.request.input.text)?.let {
+            return FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(it))
+        }
+        if (context.isCancellationRequested()) return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
         val backend = when (val opened = JvmHarfBuzzShapingBackend.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return FlowCompositionResult.Failure(
@@ -93,7 +104,7 @@ public object JvmFlowCompositionFacade {
         var result: FlowCompositionResult<FlowLayout>? = null
         var closeResult: FontOperationResult<Unit>? = null
         try {
-            result = layoutBorrowing(request, backend)
+            result = layoutBorrowing(request, backend, context)
         } finally {
             closeResult = backend.close()
         }
@@ -109,6 +120,16 @@ public object JvmFlowCompositionFacade {
     internal fun layoutBorrowing(
         request: JvmFlowCompositionRequest,
         backend: ShapingBackend,
+    ): FlowCompositionResult<FlowLayout> = layoutBorrowing(
+        request,
+        backend,
+        EditorOperationContext.create(request.request.operationProfile, request.request.cancellationToken),
+    )
+
+    internal fun layoutBorrowing(
+        request: JvmFlowCompositionRequest,
+        backend: ShapingBackend,
+        context: EditorOperationContext,
     ): FlowCompositionResult<FlowLayout> {
         val portable = request.request
         if (portable.cancellationToken.isCancellationRequested()) {
@@ -135,9 +156,11 @@ public object JvmFlowCompositionFacade {
                     textOrientation = request.textOrientation,
                     verticalMetricsPolicy = request.verticalMetricsPolicy,
                     cancellationToken = portable.cancellationToken,
+                    operationProfile = context.profile,
                 ),
                 backend,
-            ) ?: return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+                context,
+            )
         } catch (error: IllegalArgumentException) {
             return FlowCompositionResult.Failure(
                 FlowCompositionError.ParagraphFailure(
@@ -145,6 +168,16 @@ public object JvmFlowCompositionFacade {
                 ),
             )
         }
-        return IncrementalFlowLayoutEngine.layout(portable, paragraph, request.materialization)
+        val prepared = when (paragraph) {
+            is ParagraphPreparation.Success -> paragraph.request
+            is ParagraphPreparation.Failure -> return FlowCompositionResult.Failure(
+                when (val error = paragraph.result.error) {
+                    is ParagraphLayoutError.OperationLimitExceeded -> FlowCompositionError.OperationLimitExceeded(error.limit)
+                    else -> FlowCompositionError.ParagraphFailure(error)
+                },
+            )
+            ParagraphPreparation.Cancelled -> return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+        }
+        return IncrementalFlowLayoutEngine.layout(portable, prepared, request.materialization, context)
     }
 }

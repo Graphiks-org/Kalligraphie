@@ -169,11 +169,13 @@ private class HarfBuzzJvmBackend(
     }
 
     private fun prepareFont(request: ShapingRequest, layoutSize: Float): PreparedHarfBuzzFont {
+        observeCancellation(request)
         val fontData = when (val result = request.font.copyOpenTypeData()) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> throw PreparedFontFailure(result)
             is FontOperationResult.Cancelled -> throw PreparedFontCancelled(result)
         }
+        observeCancellation(request)
         if (fontData.face != request.font.key.face) {
             throw PreparedFontFailure(
                 shapingFailure(
@@ -182,7 +184,14 @@ private class HarfBuzzJvmBackend(
                 ),
             )
         }
-        return nativeLibrary.prepare(fontData.copyBytes(), layoutSize)
+        val bytes = fontData.copyBytes()
+        observeCancellation(request)
+        val prepared = nativeLibrary.prepare(bytes, layoutSize)
+        if (request.cancellationToken.isCancellationRequested()) {
+            prepared.close()
+            throw ShapingCancelled
+        }
+        return prepared
     }
 }
 
@@ -756,6 +765,7 @@ internal class HarfBuzzNativeLibrary(
         if (glyphCount > request.resourceProfile.maxGlyphs) {
             throw ShapingLimitExceeded(ShapingResourceLimit.GLYPHS, glyphCount)
         }
+        observeCancellation(request)
         val infos = address(bufferGetGlyphInfos, buffer, MemorySegment.NULL).reinterpret(glyphCount.toLong() * GLYPH_INFO_BYTES)
         val positions = address(bufferGetGlyphPositions, buffer, MemorySegment.NULL).reinterpret(glyphCount.toLong() * GLYPH_POSITION_BYTES)
         val glyphRecords = List(glyphCount) { glyphIndex ->

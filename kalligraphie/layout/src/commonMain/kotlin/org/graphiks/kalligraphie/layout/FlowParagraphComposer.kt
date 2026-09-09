@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.CaretCandidate
@@ -5,6 +7,7 @@ import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.CaretPosition
 import org.graphiks.kalligraphie.api.EditableLine
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationContext
 import org.graphiks.kalligraphie.api.FlowChain
 import org.graphiks.kalligraphie.api.FlowCompositionDiagnostic
 import org.graphiks.kalligraphie.api.FlowCompositionError
@@ -88,7 +91,8 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         if (request.continuation != null) {
             return paragraphFailure("Line-level flow composition does not consume paragraph continuations.")
         }
-        return when (val attempt = composeLine(request, materialization, region, blockStart)) {
+        val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
+        return when (val attempt = composeLine(request, materialization, region, blockStart, context)) {
             is LineAttempt.Failure -> attempt.failure
             LineAttempt.EndOfRegion -> noSpaceForFirstUnit(request)
             is LineAttempt.Placed -> {
@@ -150,6 +154,28 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         continuation: FlowContinuation?,
         maximumLines: Int?,
         flowConfiguration: FlowLayoutConfigurationSignature?,
+    ): FlowCompositionResult<ParagraphFragment> = layoutFragment(
+        request,
+        materialization,
+        chain,
+        inputIdentity,
+        continuation,
+        maximumLines,
+        flowConfiguration,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    /** Composes a fragment within a caller-owned complete-operation budget. */
+    @org.graphiks.kalligraphie.api.KalligraphieInternalApi
+    public fun layoutFragment(
+        request: ParagraphLayoutRequest,
+        materialization: EditableLineMaterialization,
+        chain: FlowChain,
+        inputIdentity: FlowCompositionInputIdentity,
+        continuation: FlowContinuation?,
+        maximumLines: Int?,
+        flowConfiguration: FlowLayoutConfigurationSignature?,
+        context: EditorOperationContext,
     ): FlowCompositionResult<ParagraphFragment> {
         require(maximumLines == null || maximumLines > 0) {
             "A bounded flow fragment must allow at least one complete line."
@@ -227,6 +253,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                         chain.regions[regionIndex],
                         blockOffset,
                         feasibilityLineLimit,
+                        context,
                     )
                 ) {
                     is RegionComposition.Failure -> return composition.failure
@@ -277,6 +304,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         region: FlowRegion,
         initialBlockOffset: Float,
         maximumLines: Int?,
+        context: EditorOperationContext,
     ): RegionComposition {
         val lines = mutableListOf<LineLayout>()
         val lineBlockEnds = mutableListOf<Float>()
@@ -285,7 +313,15 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         var emptyLineRequired = request.sourceRange.start == request.sourceRange.endExclusive
         while (emptyLineRequired || remainingStart < request.sourceRange.endExclusive) {
             val remaining = TextRange(remainingStart, request.sourceRange.endExclusive)
-            when (val attempt = composeLine(request.withSourceRange(remaining), materialization, region, blockOffset)) {
+            when (
+                val attempt = composeLine(
+                    request.withSourceRange(remaining),
+                    materialization,
+                    region,
+                    blockOffset,
+                    context,
+                )
+            ) {
                 is LineAttempt.Failure -> return RegionComposition.Failure(attempt.failure)
                 LineAttempt.EndOfRegion -> return RegionComposition.Success(lines, lineBlockEnds, blockOffset, false)
                 is LineAttempt.Placed -> {
@@ -377,6 +413,9 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         val diagnostics = newlyRelaxed.map { constraint ->
             FlowCompositionDiagnostic.FragmentationRelaxed(constraint, paragraphRange, candidate.regionIndex)
         }
+        if (request.cancellationToken.isCancellationRequested()) {
+            return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+        }
         return FlowCompositionResult.Success(
             ParagraphFragment(
                 paragraphRange = paragraphRange,
@@ -407,6 +446,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         materialization: EditableLineMaterialization,
         region: FlowRegion,
         blockStart: Float,
+        context: EditorOperationContext,
     ): LineAttempt {
         if (request.cancellationToken.isCancellationRequested()) {
             return LineAttempt.Failure(FlowCompositionResult.Failure(FlowCompositionError.Cancelled))
@@ -505,6 +545,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                             request.withSingleLineExtent(totalInlineExtent.toFloat()),
                             materialization,
                             intervals,
+                            context,
                         )
                     ) {
                         is FlowCompositionResult.Success -> composed.value
@@ -571,8 +612,9 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
         intervals: List<InlineInterval>,
+        context: EditorOperationContext,
     ): FlowCompositionResult<ParagraphCompositionResult.Success> {
-        val initial = composeBoundedCandidate(request, materialization, maximumEndExclusive = null)
+        val initial = composeBoundedCandidate(request, materialization, maximumEndExclusive = null, context)
         val initialSuccess = when (initial) {
             is FlowCompositionResult.Success -> initial.value
             is FlowCompositionResult.Failure -> return initial
@@ -588,7 +630,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 )
                 logicalPrefixEnds.forEach { prefixEnd ->
                     val prefix = when (
-                        val composed = composeBoundedCandidate(request, materialization, prefixEnd)
+                        val composed = composeBoundedCandidate(request, materialization, prefixEnd, context)
                     ) {
                         is FlowCompositionResult.Success -> composed
                         is FlowCompositionResult.Failure -> return composed
@@ -613,13 +655,16 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         request: ParagraphLayoutRequest,
         materialization: EditableLineMaterialization,
         maximumEndExclusive: TextIndex?,
-    ): FlowCompositionResult<ParagraphCompositionResult.Success> = when (
-        val composed = ParagraphComposer.composeFirstLineBounded(
-            request,
-            materialization,
-            maximumEndExclusive = maximumEndExclusive,
-        )
-    ) {
+        context: EditorOperationContext,
+    ): FlowCompositionResult<ParagraphCompositionResult.Success> = try {
+        when (
+            val composed = ParagraphComposer.composeFirstLineBounded(
+                request,
+                materialization,
+                maximumEndExclusive = maximumEndExclusive,
+                context = context,
+            )
+        ) {
         is ParagraphCompositionResult.Success -> if (composed.lines.size == 1) {
             FlowCompositionResult.Success(composed)
         } else {
@@ -631,10 +676,13 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
                 ),
             )
         }
-        is ParagraphCompositionResult.Failure -> FlowCompositionResult.Failure(
-            FlowCompositionError.ParagraphFailure(composed.error.toParagraphError()),
-        )
-        is ParagraphCompositionResult.Cancelled -> FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+            is ParagraphCompositionResult.Failure -> FlowCompositionResult.Failure(
+                composed.error.toParagraphError().toFlowError(),
+            )
+            is ParagraphCompositionResult.Cancelled -> FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
+        }
+    } catch (limit: EditorOperationLimitReached) {
+        FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(limit.exceeded))
     }
 
     private fun probePacking(
@@ -761,7 +809,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
 
             is ParagraphComposer.ProjectedLine.Failure -> when (val error = projected.error) {
                 is ParagraphLayoutError.GeometryOverflow -> geometryOverflow(error.message)
-                else -> FlowCompositionResult.Failure(FlowCompositionError.ParagraphFailure(error))
+                else -> FlowCompositionResult.Failure(error.toFlowError())
             }
 
             is ParagraphComposer.ProjectedLine.Cancelled ->
@@ -1073,6 +1121,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             textOrientation = textOrientation,
             verticalMetricsPolicy = verticalMetricsPolicy,
             cancellationToken = cancellationToken,
+            operationProfile = operationProfile,
         )
     }
 
@@ -1104,6 +1153,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             textOrientation = textOrientation,
             verticalMetricsPolicy = verticalMetricsPolicy,
             cancellationToken = cancellationToken,
+            operationProfile = operationProfile,
         )
 
     private fun ComposedParagraphLine.atFlowPosition(
@@ -1389,6 +1439,11 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
     private fun paragraphFailure(message: String): FlowCompositionResult.Failure = FlowCompositionResult.Failure(
         FlowCompositionError.ParagraphFailure(ParagraphLayoutError.InvalidInput(message)),
     )
+
+    private fun ParagraphLayoutError.toFlowError(): FlowCompositionError = when (this) {
+        is ParagraphLayoutError.OperationLimitExceeded -> FlowCompositionError.OperationLimitExceeded(limit)
+        else -> FlowCompositionError.ParagraphFailure(this)
+    }
 
     private fun geometryOverflow(message: String): FlowCompositionResult.Failure = FlowCompositionResult.Failure(
         FlowCompositionError.GeometryOverflow(message),

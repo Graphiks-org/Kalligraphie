@@ -11,6 +11,8 @@ import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -50,6 +52,33 @@ import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class JvmIncrementalParagraphLayoutSessionTest {
+    @Test
+    fun operationFailurePreservesPreviousPublicationAndRetryMatchesFreshSession() {
+        val fixture = fixture("fi \u0633\u0644\u0627\u0645")
+        val session = openSession()
+        val fresh = openSession()
+
+        session.use { open ->
+            fresh.use { clean ->
+                val published = assertIs<IncrementalLayoutResult.Success>(open.layout(request(fixture)))
+                val limited = assertIs<IncrementalLayoutResult.Failure>(
+                    open.layout(request(fixture, operationProfile = EditorOperationProfile(maxTotalGlyphs = 2))),
+                )
+                val exceeded = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutError.OperationLimitExceeded>(limited.error).limit
+                assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+                assertEquals(published.layout.lines.map { it.glyphIds() }, open.currentLayout()?.layout?.lines?.map { it.glyphIds() })
+
+                val retried = assertIs<IncrementalLayoutResult.Success>(
+                    open.layout(request(fixture, operationProfile = EditorOperationProfile(maxTotalGlyphs = 64))),
+                )
+                val freshResult = assertIs<IncrementalLayoutResult.Success>(
+                    clean.layout(request(fixture, operationProfile = EditorOperationProfile(maxTotalGlyphs = 64))),
+                )
+                assertEquals(freshResult.layout.lines.map { it.range to it.glyphIds() }, retried.layout.lines.map { it.range to it.glyphIds() })
+            }
+        }
+    }
+
     @Test
     fun realFontLayoutPublishesLiteralGlyphsAdvancesRangesAndCoverage() {
         val fixture = fixture("fi \u0633\u0644\u0627\u0645")
@@ -575,8 +604,9 @@ class JvmIncrementalParagraphLayoutSessionTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "ar",
         constraints: HorizontalParagraphConstraints = constraints(),
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): JvmIncrementalParagraphLayoutRequest = JvmIncrementalParagraphLayoutRequest(
-        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints),
+        request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints, operationProfile),
         baseDirection = baseDirection,
         language = language,
         materialization = EditableLineMaterialization.LayoutOnly,
@@ -589,6 +619,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
         previousState: org.graphiks.kalligraphie.api.LayoutStateHandle?,
         delta: LayoutDelta?,
         constraints: HorizontalParagraphConstraints,
+        operationProfile: EditorOperationProfile,
     ): IncrementalLayoutRequest = assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(
         createIncrementalLayoutRequest(
             input = LayoutInput(
@@ -601,6 +632,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             previousState = previousState,
             delta = delta,
             cancellationToken = cancellationToken,
+            operationProfile = operationProfile,
         ),
     ).value
 

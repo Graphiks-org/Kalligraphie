@@ -12,6 +12,8 @@ import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.CaretAffinity
 import org.graphiks.kalligraphie.api.EditableLineError
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
@@ -187,6 +189,88 @@ class JvmEditableLineLayoutSessionTest {
     }
 
     @Test
+    fun totalGlyphBudgetSpansManyRealRunsAndEverySessionRetryGetsAFreshBudget() {
+        val font = liberationSans()
+        val text = snapshot("aאaאaאaא")
+        val session = openSession()
+        try {
+            val limited = session.layout(
+                request(
+                    text,
+                    font,
+                    operationProfile = EditorOperationProfile(
+                        maxGlyphsPerRun = 1,
+                        maxTotalGlyphs = 5,
+                    ),
+                ),
+            )
+            val failure = assertIs<EditableLineResult.Failure>(limited)
+            val exceeded = assertIs<EditableLineError.OperationLimitExceeded>(failure.error).limit
+            assertEquals(EditorOperationLimitKind.TOTAL_GLYPHS, exceeded.kind)
+            assertEquals(5L, exceeded.maximum)
+            assertEquals(6L, exceeded.observed)
+
+            val firstRetry = assertIs<EditableLineResult.Success>(
+                session.layout(request(text, font, operationProfile = EditorOperationProfile(maxTotalGlyphs = 8))),
+            ).line
+            val secondRetry = assertIs<EditableLineResult.Success>(
+                session.layout(request(text, font, operationProfile = EditorOperationProfile(maxTotalGlyphs = 8))),
+            ).line
+            assertEquals(
+                listOf(68, 1280, 68, 1280, 68, 1280, 68, 1280),
+                firstRetry.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.shapedGlyph.glyphId.value } },
+            )
+            assertEquals(
+                firstRetry.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.origin.x.value to it.advance.x.value } },
+                secondRetry.positionedGlyphRuns.flatMap { run -> run.glyphs.map { it.origin.x.value to it.advance.x.value } },
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(session.close())
+        }
+    }
+
+    @Test
+    fun perRunGlyphLimitHasPriorityWhenTheSameRealResultAlsoExceedsTheTotalLimit() {
+        val font = liberationSans()
+        val session = openSession()
+        try {
+            val result = assertIs<EditableLineResult.Failure>(
+                session.layout(
+                    request(
+                        snapshot("a"),
+                        font,
+                        operationProfile = EditorOperationProfile(
+                            maxGlyphsPerRun = 0,
+                            maxTotalGlyphs = 0,
+                        ),
+                    ),
+                ),
+            )
+            val exceeded = assertIs<EditableLineError.OperationLimitExceeded>(result.error).limit
+            assertEquals(EditorOperationLimitKind.GLYPHS_PER_RUN, exceeded.kind)
+            assertEquals(0L, exceeded.maximum)
+            assertEquals(1L, exceeded.observed)
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(session.close())
+        }
+    }
+
+    @Test
+    fun atomicCancellationLeavesTheReusableSessionReadyForAnExactRealTextRetry() {
+        val font = liberationSans()
+        val text = snapshot("office \u05e9\u05dc\u05d5\u05dd")
+        val session = openSession()
+        try {
+            assertIs<EditableLineResult.Cancelled>(
+                session.layout(request(text, font, cancellationToken = CancellationToken.cancelled)),
+            )
+            assertEquals(firstOracle(), observe(text, session.layout(request(text, font))))
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(session.close())
+        }
+    }
+
+    @Test
     fun reentrantCloseFromARealLayoutCallbackIsRejectedWithoutClosingTheSession() {
         val font = liberationSans()
         val text = snapshot("office שלום")
@@ -224,6 +308,7 @@ class JvmEditableLineLayoutSessionTest {
         font: FontInstance,
         cancellationToken: CancellationToken = CancellationToken.none,
         shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+        operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     ): JvmEditableLineFacadeRequest = JvmEditableLineFacadeRequest(
         snapshot = snapshot,
         font = font,
@@ -235,6 +320,7 @@ class JvmEditableLineLayoutSessionTest {
         materialization = EditableLineMaterialization.LayoutOnly,
         cancellationToken = cancellationToken,
         shapingResourceProfile = shapingResourceProfile,
+        operationProfile = operationProfile,
     )
 
     private fun snapshot(text: String): TextSnapshot = Kalligraphie.decodeUtf16(

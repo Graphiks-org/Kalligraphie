@@ -62,7 +62,7 @@ internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
             val canonicalLanguage = locale.toLanguageTag()
             val canonicalText = CanonicalUtf16Text(snapshot, profile, cancellationToken)
             val bidiPreparation = prepareBidi(snapshot.scalars, request.baseDirection, profile, cancellationToken)
-            val bidi = bidi(bidiPreparation.text, request.baseDirection)
+            val bidi = bidi(bidiPreparation.text, request.baseDirection, cancellationToken)
             val resolvedBidiLevels = resolvedBidiLevels(
                 snapshot,
                 bidi,
@@ -82,6 +82,7 @@ internal class IcuUnicodeAnalyzer : BoundedUnicodeAnalyzer {
                 cancellationToken,
             )
             val visualBidiRuns = reorderBidiRuns(logicalBidiRuns, profile, cancellationToken)
+            observeCancellation(cancellationToken)
             UnicodeAnalysisOutcome.Success(
                 UnicodeAnalysis(
                     range = snapshot.range,
@@ -117,15 +118,22 @@ private fun graphemeClusters(
 ): List<TextRange> {
     if (snapshot.scalars.isEmpty()) return emptyList()
     val iterator = BreakIterator.getCharacterInstance(ULocale.ROOT)
+    observeCancellation(cancellationToken)
     iterator.setText(text.value)
+    observeCancellation(cancellationToken)
     val ranges = mutableListOf<TextRange>()
+    observeCancellation(cancellationToken)
     var startUtf16 = iterator.first()
+    observeCancellation(cancellationToken)
     var endUtf16 = iterator.next()
+    observeCancellation(cancellationToken)
     while (endUtf16 != BreakIterator.DONE) {
         observeCancellation(cancellationToken)
         ranges += text.range(snapshot, startUtf16, endUtf16)
         startUtf16 = endUtf16
+        observeCancellation(cancellationToken)
         endUtf16 = iterator.next()
+        observeCancellation(cancellationToken)
     }
     return ranges
 }
@@ -883,13 +891,19 @@ private fun reverseBidiRunSequence(
     }
 }
 
-private fun bidi(text: String, baseDirection: BaseDirection): Bidi = Bidi().apply {
+private fun bidi(
+    text: String,
+    baseDirection: BaseDirection,
+    cancellationToken: CancellationToken,
+): Bidi = Bidi().apply {
     val paragraphLevel = when (baseDirection) {
         BaseDirection.LEFT_TO_RIGHT -> Bidi.LTR
         BaseDirection.RIGHT_TO_LEFT -> Bidi.RTL
     }
     val oppositeDirectionSentinel = if (baseDirection == BaseDirection.LEFT_TO_RIGHT) '\u05D0' else 'a'
+    observeCancellation(cancellationToken)
     setPara(text + '\u2029' + oppositeDirectionSentinel, paragraphLevel, null)
+    observeCancellation(cancellationToken)
 }
 
 private class CanonicalUtf16Text(

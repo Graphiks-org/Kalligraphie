@@ -1,7 +1,11 @@
 package org.graphiks.kalligraphie.unicode
 
 import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.EditorOperationContext
+import org.graphiks.kalligraphie.api.EditorOperationProfile
+import org.graphiks.kalligraphie.api.KalligraphieInternalApi
 import org.graphiks.kalligraphie.api.LineBreakAnalysis
+import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
@@ -33,6 +37,19 @@ public interface BoundedUnicodeAnalyzer : UnicodeAnalyzer {
         profile: UnicodeAnalysisProfile,
         cancellationToken: CancellationToken = CancellationToken.none,
     ): UnicodeAnalysisOutcome
+
+    /** @suppress Reuses the profile and token of one enclosing high-level operation. */
+    @KalligraphieInternalApi
+    public fun analyze(
+        snapshot: TextSnapshot,
+        request: UnicodeAnalysisRequest,
+        context: EditorOperationContext,
+    ): UnicodeAnalysisOutcome = analyze(
+        snapshot,
+        request,
+        context.profile.unicodeAnalysisProfile,
+        context.cancellationToken,
+    )
 }
 
 /** Portable contract for UAX #14 line-break opportunities over a complete Unicode analysis. */
@@ -46,4 +63,29 @@ public fun interface LineBreakAnalyzer {
      * string offsets or borrowed native resources.
      */
     public fun analyze(snapshot: TextSnapshot, unicodeAnalysis: UnicodeAnalysis): LineBreakAnalysis
+}
+
+/** Additive bounded UAX #14 analyzer that preserves the historical [LineBreakAnalyzer] SAM. */
+public interface BoundedLineBreakAnalyzer : LineBreakAnalyzer {
+    /**
+     * Analyzes one complete snapshot under [profile] and [cancellationToken].
+     *
+     * Iterative conversion and boundary work consumes the line-break budget. Cancellation is
+     * checked immediately around ICU calls, which remain non-preemptible while in flight. A
+     * failure or cancellation publishes no partial [LineBreakAnalysis].
+     */
+    public fun analyze(
+        snapshot: TextSnapshot,
+        unicodeAnalysis: UnicodeAnalysis,
+        profile: EditorOperationProfile,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): LineBreakAnalysisOutcome
+
+    /** @suppress Reuses the budget of an enclosing high-level editor operation. */
+    @KalligraphieInternalApi
+    public fun analyze(
+        snapshot: TextSnapshot,
+        unicodeAnalysis: UnicodeAnalysis,
+        context: EditorOperationContext,
+    ): LineBreakAnalysisOutcome
 }

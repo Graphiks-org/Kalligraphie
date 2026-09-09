@@ -1,9 +1,12 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie
 
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.EditorOperationContext
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -47,9 +50,17 @@ public class JvmEditableLineLayoutSession private constructor(
      * [EditableLineError.ShapingFailure] carrying [FontError.ResourceClosed].
      */
     public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
+        val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
+        return layout(request, context)
+    }
+
+    internal fun layout(
+        request: JvmEditableLineFacadeRequest,
+        context: EditorOperationContext,
+    ): EditableLineResult {
         if (!acquireOperation()) return closedResult()
         return try {
-            JvmEditableLineFacade.layoutBorrowing(request, backend)
+            JvmEditableLineFacade.layoutBorrowing(request, backend, context)
         } finally {
             releaseOperation()
         }

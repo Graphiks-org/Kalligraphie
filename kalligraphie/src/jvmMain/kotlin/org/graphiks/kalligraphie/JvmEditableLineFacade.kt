@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.BaseDirection
@@ -8,6 +10,10 @@ import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.EditorOperationContext
+import org.graphiks.kalligraphie.api.EditorOperationLimitExceeded
+import org.graphiks.kalligraphie.api.EditorOperationLimitKind
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
@@ -35,6 +41,7 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
 import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.toDiagnostic
+import org.graphiks.kalligraphie.api.intersect
 import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 
@@ -83,7 +90,46 @@ public class JvmEditableLineFacadeRequest(
      * present. Explicit and implicit stops are then resolved by [ParagraphPositioningPolicy].
      */
     public val positioning: ParagraphPositioningPolicy?,
+    /** Shared finite resource policy for this complete analysis-through-publication operation. */
+    public val operationProfile: EditorOperationProfile,
 ) {
+    /**
+     * Creates a request through the historical constructor that includes [positioning].
+     *
+     * The compatibility route remains unbounded until a caller chooses the primary constructor
+     * and supplies an explicit [operationProfile].
+     */
+    public constructor(
+        snapshot: TextSnapshot,
+        font: FontInstance,
+        baseDirection: BaseDirection,
+        language: String,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature>,
+        verticalMetrics: LineVerticalMetrics,
+        materialization: EditableLineMaterialization,
+        emptyLineBidiLevel: Int? = null,
+        cancellationToken: CancellationToken = CancellationToken.none,
+        unicodeAnalysisProfile: UnicodeAnalysisProfile = UnicodeAnalysisProfile.unbounded,
+        shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+        positioning: ParagraphPositioningPolicy?,
+    ) : this(
+        snapshot,
+        font,
+        baseDirection,
+        language,
+        featurePolicy,
+        features,
+        verticalMetrics,
+        materialization,
+        emptyLineBidiLevel,
+        cancellationToken,
+        unicodeAnalysisProfile,
+        shapingResourceProfile,
+        positioning,
+        EditorOperationProfile.unbounded,
+    )
+
     /**
      * Creates a request through the original source- and binary-compatible constructor.
      *
@@ -118,6 +164,39 @@ public class JvmEditableLineFacadeRequest(
         unicodeAnalysisProfile = unicodeAnalysisProfile,
         shapingResourceProfile = shapingResourceProfile,
         positioning = null,
+        operationProfile = EditorOperationProfile.unbounded,
+    )
+
+    /** Creates a non-tab request with an explicit complete-operation resource policy. */
+    public constructor(
+        snapshot: TextSnapshot,
+        font: FontInstance,
+        baseDirection: BaseDirection,
+        language: String,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature>,
+        verticalMetrics: LineVerticalMetrics,
+        materialization: EditableLineMaterialization,
+        emptyLineBidiLevel: Int? = null,
+        cancellationToken: CancellationToken = CancellationToken.none,
+        unicodeAnalysisProfile: UnicodeAnalysisProfile = UnicodeAnalysisProfile.unbounded,
+        shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+        operationProfile: EditorOperationProfile,
+    ) : this(
+        snapshot,
+        font,
+        baseDirection,
+        language,
+        featurePolicy,
+        features,
+        verticalMetrics,
+        materialization,
+        emptyLineBidiLevel,
+        cancellationToken,
+        unicodeAnalysisProfile,
+        shapingResourceProfile,
+        null,
+        operationProfile,
     )
 
     /** Immutable OpenType feature overrides applied in deterministic caller order. */
@@ -166,23 +245,25 @@ public object JvmEditableLineFacade {
      * certified representation profile.
      */
     public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
-        preflight(request)?.let { return it }
+        val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
+        preflight(request, context)?.let { return it }
         val session = when (val opened = JvmEditableLineLayoutSession.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return shapingFailure(opened)
             is FontOperationResult.Cancelled -> return EditableLineResult.Cancelled(opened.diagnostics.toEditableDiagnostics())
         }
-        return layoutWithOwnedSession(request, session)
+        return layoutWithOwnedSession(request, session, context)
     }
 
     internal fun layout(
         request: JvmEditableLineFacadeRequest,
         backend: ShapingBackend,
     ): EditableLineResult {
+        val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
         var result: EditableLineResult? = null
         var closeResult: FontOperationResult<Unit>? = null
         try {
-            result = layoutBorrowing(request, backend)
+            result = layoutBorrowing(request, backend, context)
         } finally {
             closeResult = backend.close()
         }
@@ -192,44 +273,68 @@ public object JvmEditableLineFacade {
     internal fun layoutBorrowing(
         request: JvmEditableLineFacadeRequest,
         backend: ShapingBackend,
+    ): EditableLineResult = layoutBorrowing(
+        request,
+        backend,
+        EditorOperationContext.create(request.operationProfile, request.cancellationToken),
+    )
+
+    internal fun layoutBorrowing(
+        request: JvmEditableLineFacadeRequest,
+        backend: ShapingBackend,
+        context: EditorOperationContext,
     ): EditableLineResult {
-        val analysis = when (val analyzed = analyze(request)) {
+        val analysis = when (val analyzed = analyze(request, context)) {
             is FacadeUnicodeAnalysis.Success -> analyzed.analysis
             is FacadeUnicodeAnalysis.Result -> return analyzed.result
         }
-        return layoutAnalyzed(request, analysis, backend)
+        return layoutAnalyzed(request, analysis, context.boundedBackend(backend), context)
     }
 
     private fun layoutWithOwnedSession(
         request: JvmEditableLineFacadeRequest,
         session: JvmEditableLineLayoutSession,
+        context: EditorOperationContext,
     ): EditableLineResult {
         var result: EditableLineResult? = null
         var closeResult: FontOperationResult<Unit>? = null
         try {
-            result = session.layout(request)
+            result = session.layout(request, context)
         } finally {
             closeResult = session.close()
         }
         return includeBackendCloseResult(checkNotNull(result), checkNotNull(closeResult))
     }
 
-    private fun analyze(request: JvmEditableLineFacadeRequest): FacadeUnicodeAnalysis = try {
-        preflight(request)?.let { return FacadeUnicodeAnalysis.Result(it) }
+    private fun analyze(
+        request: JvmEditableLineFacadeRequest,
+        context: EditorOperationContext,
+    ): FacadeUnicodeAnalysis = try {
+        preflight(request, context)?.let { return FacadeUnicodeAnalysis.Result(it) }
         when (
             val outcome = JvmUnicodeAnalyzer.create().analyze(
                 snapshot = request.snapshot,
                 request = UnicodeAnalysisRequest(request.baseDirection, request.language),
-                profile = request.unicodeAnalysisProfile,
-                cancellationToken = request.cancellationToken,
+                profile = request.operationProfile.intersect(request.unicodeAnalysisProfile),
+                cancellationToken = context.cancellationToken,
             )
         ) {
             is UnicodeAnalysisOutcome.Success -> FacadeUnicodeAnalysis.Success(outcome.value)
             is UnicodeAnalysisOutcome.LimitExceeded -> FacadeUnicodeAnalysis.Result(
-                EditableLineResult.Failure(
-                    error = EditableLineError.UnicodeAnalysisLimitExceeded(outcome.limit, outcome.observed),
-                    diagnostics = emptyList(),
-                ),
+                if (request.operationProfile.maxAnalyzedScalars <= request.unicodeAnalysisProfile.maxScalars) {
+                    operationLimitFailure(
+                        EditorOperationLimitExceeded(
+                            EditorOperationLimitKind.ANALYZED_SCALARS,
+                            request.operationProfile.maxAnalyzedScalars.toLong(),
+                            outcome.observed.toLong(),
+                        ),
+                    )
+                } else {
+                    EditableLineResult.Failure(
+                        EditableLineError.UnicodeAnalysisLimitExceeded(outcome.limit, outcome.observed),
+                        emptyList(),
+                    )
+                },
             )
 
             UnicodeAnalysisOutcome.Cancelled -> FacadeUnicodeAnalysis.Result(EditableLineResult.Cancelled())
@@ -238,13 +343,21 @@ public object JvmEditableLineFacade {
         FacadeUnicodeAnalysis.Result(invalidInput(error))
     }
 
-    private fun preflight(request: JvmEditableLineFacadeRequest): EditableLineResult.Failure? = try {
-        unsupportedLineControl(request)
+    private fun preflight(
+        request: JvmEditableLineFacadeRequest,
+        context: EditorOperationContext,
+    ): EditableLineResult? = try {
+        context.sourceLimit(request.snapshot)?.let { return operationLimitFailure(it) }
+        context.scalarLimit(request.snapshot)?.let { return operationLimitFailure(it) }
+        unsupportedLineControl(request)?.let { return it }
+        if (context.isCancellationRequested()) EditableLineResult.Cancelled() else null
     } catch (error: IllegalArgumentException) {
         invalidInput(error)
     }
 
-    private fun unsupportedLineControl(request: JvmEditableLineFacadeRequest): EditableLineResult.Failure? {
+    private fun unsupportedLineControl(
+        request: JvmEditableLineFacadeRequest,
+    ): EditableLineResult? {
         val snapshot = request.snapshot
         snapshot.scalars.forEachIndexed { index, scalar ->
             val (kind, length) = when (scalar) {
@@ -284,6 +397,7 @@ public object JvmEditableLineFacade {
         request: JvmEditableLineFacadeRequest,
         analysis: UnicodeAnalysis,
         backend: ShapingBackend,
+        context: EditorOperationContext,
     ): EditableLineResult {
         return when (val shaped = shapeRuns(request, analysis, backend)) {
             is ShapingRunsResult.Success -> try {
@@ -300,6 +414,7 @@ public object JvmEditableLineFacade {
                         positioning = request.positioning,
                         cancellationToken = request.cancellationToken,
                     ),
+                    context,
                 )
             } catch (error: IllegalArgumentException) {
                 invalidInput(error)
@@ -450,11 +565,25 @@ public object JvmEditableLineFacade {
             diagnostics = emptyList(),
         )
 
-    private fun shapingFailure(result: FontOperationResult.Failure): EditableLineResult.Failure =
-        EditableLineResult.Failure(
-            error = EditableLineError.ShapingFailure(result.error),
-            diagnostics = result.diagnostics.toEditableDiagnostics(),
-        )
+    private fun shapingFailure(result: FontOperationResult.Failure): EditableLineResult.Failure {
+        val error = result.error
+        return if (error is org.graphiks.kalligraphie.api.FontError.EditorOperationLimitExceeded) {
+            operationLimitFailure(error.exceeded, result.diagnostics.toEditableDiagnostics())
+        } else {
+            EditableLineResult.Failure(
+                error = EditableLineError.ShapingFailure(error),
+                diagnostics = result.diagnostics.toEditableDiagnostics(),
+            )
+        }
+    }
+
+    private fun operationLimitFailure(
+        exceeded: EditorOperationLimitExceeded,
+        diagnostics: List<EditableLineDiagnostic> = emptyList(),
+    ): EditableLineResult.Failure = EditableLineResult.Failure(
+        EditableLineError.OperationLimitExceeded(exceeded),
+        diagnostics,
+    )
 
     private fun includeBackendCloseResult(
         result: EditableLineResult,

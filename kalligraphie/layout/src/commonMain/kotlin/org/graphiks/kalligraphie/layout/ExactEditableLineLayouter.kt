@@ -1,3 +1,5 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.layout
 
 import kotlin.math.ceil
@@ -16,6 +18,9 @@ import org.graphiks.kalligraphie.api.EditableLineLayouter
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.EditorOperationContext
+import org.graphiks.kalligraphie.api.EditorOperationLimitExceeded
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -90,8 +95,12 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
      * call. Failure and cancellation never publish a partial line.
      */
     public fun layout(request: MultiFontEditableLineRequest): EditableLineResult {
+        val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
+        context.sourceLimit(request.snapshot)?.let { return operationLimitFailure(it) }
+        context.scalarLimit(request.snapshot)?.let { return operationLimitFailure(it) }
+        if (context.isCancellationRequested()) return EditableLineResult.Cancelled()
         val proofs = GlyphMaterializationProofs()
-        return when (val resolved = FontFallbackResolver.resolve(request, proofs)) {
+        return when (val resolved = FontFallbackResolver.resolve(request, proofs, context)) {
             is FontOperationResult.Success -> {
                 when (
                     val positioned = layout(
@@ -114,9 +123,10 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                             fontInstances = resolved.value.instances,
                             verticalMetrics = request.verticalMetrics,
                             materialization = request.materialization,
-                            cancellationToken = request.cancellationToken,
+                            cancellationToken = context.cancellationToken,
                         ),
                         proofs,
+                        context,
                     )
                 ) {
                     is EditableLineResult.Success -> EditableLineResult.Success(
@@ -135,10 +145,17 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 }
             }
 
-            is FontOperationResult.Failure -> EditableLineResult.Failure(
-                EditableLineError.FontResolutionFailure(resolved.error),
-                resolved.diagnostics.map(::fontDiagnostic),
-            )
+            is FontOperationResult.Failure -> when (val error = resolved.error) {
+                is org.graphiks.kalligraphie.api.FontError.EditorOperationLimitExceeded ->
+                    EditableLineResult.Failure(
+                        EditableLineError.OperationLimitExceeded(error.exceeded),
+                        resolved.diagnostics.map(::fontDiagnostic),
+                    )
+                else -> EditableLineResult.Failure(
+                    EditableLineError.FontResolutionFailure(error),
+                    resolved.diagnostics.map(::fontDiagnostic),
+                )
+            }
 
             is FontOperationResult.Cancelled -> EditableLineResult.Cancelled(resolved.diagnostics.map(::fontDiagnostic))
         }
@@ -153,11 +170,32 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
      * This singleton retains no request resource and is safe for concurrent calls; renderable
      * mode borrows and closes its asset before returning.
      */
-    override fun layout(request: EditableLineRequest): EditableLineResult = layout(request, GlyphMaterializationProofs())
+    override fun layout(request: EditableLineRequest): EditableLineResult = layout(
+        request,
+        GlyphMaterializationProofs(),
+        EditorOperationContext.create(EditorOperationProfile.unbounded, request.cancellationToken),
+    )
 
     internal fun layout(
         request: EditableLineRequest,
         proofs: GlyphMaterializationProofs,
+    ): EditableLineResult = layout(
+        request,
+        proofs,
+        EditorOperationContext.create(EditorOperationProfile.unbounded, request.cancellationToken),
+    )
+
+    /** Finalizes an already-shaped line within its caller-owned complete-operation budget. */
+    @org.graphiks.kalligraphie.api.KalligraphieInternalApi
+    public fun layout(
+        request: EditableLineRequest,
+        context: EditorOperationContext,
+    ): EditableLineResult = layout(request, GlyphMaterializationProofs(), context)
+
+    internal fun layout(
+        request: EditableLineRequest,
+        proofs: GlyphMaterializationProofs,
+        context: EditorOperationContext,
     ): EditableLineResult {
         val diagnostics = mutableListOf<EditableLineDiagnostic>()
         val mixedControlRelation = request.snapshot?.let { snapshot ->
@@ -167,7 +205,9 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             return EditableLineResult.Failure(mixedControlRelation, diagnostics)
         }
         val placements = try {
-            positionRuns(request, refineGlyphs(request, diagnostics))
+            positionRuns(request, refineGlyphs(request, diagnostics, context), context)
+        } catch (limit: EditorOperationLimitReached) {
+            return operationLimitFailure(limit.exceeded, diagnostics)
         } catch (overflow: GeometryOverflowException) {
             return EditableLineResult.Failure(
                 EditableLineError.GeometryOverflow(overflow.message ?: "Editable line geometry overflowed."),
@@ -175,6 +215,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             )
         }
 
+        if (context.isCancellationRequested()) return EditableLineResult.Cancelled(diagnostics)
         placements.forEach { placement ->
             placement.caretPositions.putAll(resolveInternalLigatureCarets(request, placement, diagnostics))
         }
@@ -184,6 +225,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             is CertificationResult.Cancelled -> return EditableLineResult.Cancelled(diagnostics + result.diagnostics)
         }
 
+        if (context.isCancellationRequested()) return EditableLineResult.Cancelled(diagnostics)
         val positionedRuns = placements.map { placement ->
             PositionedGlyphRun(
                 sourceRun = placement.sourceRun,
@@ -220,6 +262,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         val candidates = candidates(request, placements)
         val inlineObjects = placements.flatMap(RunPlacement::objects)
             .sortedWith { left, right -> left.sourceRange.start.compareTo(right.sourceRange.start) }
+        if (context.isCancellationRequested()) return EditableLineResult.Cancelled(diagnostics)
         return EditableLineResult.Success(
             EditableLine(
                 range = request.unicodeAnalysis.range,
@@ -236,6 +279,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     private fun positionRuns(
         request: EditableLineRequest,
         refinedRuns: List<RefinedRun>,
+        context: EditorOperationContext,
     ): List<RunPlacement> {
         val visualRuns = visualRuns(request)
         val refinedBySource = refinedRuns.associateBy { run -> run.sourceRun }
@@ -244,7 +288,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         var pen = 0.0
         val placements = ordered.mapIndexed { visualOrder, refined ->
             val objects = mutableListOf<PositionedInlineObject>()
-            val glyphs = expandAndPositionRun(request, refined, pen, objects, tabs)
+            val glyphs = expandAndPositionRun(request, refined, pen, objects, tabs, context)
             val runStart = glyphs.firstOrNull()?.penStart?.value?.toDouble() ?: pen
             val runEnd = glyphs.lastOrNull()?.penEnd?.value?.toDouble() ?: pen
             pen = runEnd
@@ -362,6 +406,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     private fun refineGlyphs(
         request: EditableLineRequest,
         diagnostics: MutableList<EditableLineDiagnostic>,
+        context: EditorOperationContext,
     ): List<RefinedRun> {
         val snapshot = request.snapshot
         return if (snapshot == null) {
@@ -374,7 +419,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 )
             }
         } else {
-            LineContentPlan.build(request, snapshot, diagnostics)
+            LineContentPlan.build(request, snapshot, diagnostics, context)
         }
     }
 
@@ -394,6 +439,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         runStartPen: Double,
         collectedObjects: MutableList<PositionedInlineObject>,
         tabs: TabFields,
+        context: EditorOperationContext,
     ): List<GlyphPlacement> {
         val positioning = request.positioning
         val entries = refined.glyphs
@@ -457,38 +503,38 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     fieldStart
                 }
                 val leader = stop.leader.takeIf { _ -> positioning != null }
-                val leaders = buildList {
-                    if (leader != null && penAtTab < tabEnd) {
-                        val instance = request.fontInstances.firstOrNull { it.key == refined.sourceRun.fontInstanceKey }
-                        if (instance != null) {
-                            val leaderGlyph = (instance.resolveGlyph(leader) as? FontOperationResult.Success)?.value
-                            val leaderAdvance = leaderGlyph?.let { glyph ->
-                                (instance.metrics(glyph.glyphId) as? FontOperationResult.Success)?.value?.advanceWidth
-                            }
-                            if (leaderGlyph != null && leaderAdvance != null && leaderAdvance.value > 0f) {
-                                val count = ((tabEnd - penAtTab) / leaderAdvance.value).toInt()
-                                repeat(count) {
-                                    add(
-                                        RefinedGlyph(
-                                            shapedGlyph = ShapedGlyph(
-                                                glyphId = leaderGlyph.glyphId,
-                                                xAdvance = leaderAdvance,
-                                                yAdvance = LayoutUnit(0f),
-                                                xOffset = LayoutUnit(0f),
-                                                yOffset = LayoutUnit(0f),
-                                                safetyFlags = entry.shapedGlyph.safetyFlags,
-                                                clusterTokens = listOf(entry.shapedGlyph.clusterTokens.first()),
-                                            ),
-                                            provenance = GlyphProvenance.Synthetic(
-                                                refined.sourceRun.clusterFor(entry.shapedGlyph.clusterTokens.first()).sourceRange.start,
-                                                GlyphProvenanceRole.TAB_LEADER,
-                                            ),
-                                        ),
-                                    )
-                                }
-                            }
+                val leaderSpec = if (leader != null && penAtTab < tabEnd) {
+                    request.fontInstances.firstOrNull { it.key == refined.sourceRun.fontInstanceKey }?.let { instance ->
+                        val glyph = (instance.resolveGlyph(leader) as? FontOperationResult.Success)?.value
+                        val advance = glyph?.let { resolved ->
+                            (instance.metrics(resolved.glyphId) as? FontOperationResult.Success)?.value?.advanceWidth
                         }
+                        if (glyph != null && advance != null && advance.value > 0f) glyph to advance else null
                     }
+                } else {
+                    null
+                }
+                val leaderCount = leaderSpec?.let { (_, advance) ->
+                    ((tabEnd - penAtTab) / advance.value).toInt().coerceAtLeast(0)
+                } ?: 0
+                context.reserveSyntheticGlyphs(leaderCount.toLong())
+                val leaders = List(leaderCount) {
+                    val (leaderGlyph, leaderAdvance) = checkNotNull(leaderSpec)
+                    RefinedGlyph(
+                        shapedGlyph = ShapedGlyph(
+                            glyphId = leaderGlyph.glyphId,
+                            xAdvance = leaderAdvance,
+                            yAdvance = LayoutUnit(0f),
+                            xOffset = LayoutUnit(0f),
+                            yOffset = LayoutUnit(0f),
+                            safetyFlags = entry.shapedGlyph.safetyFlags,
+                            clusterTokens = listOf(entry.shapedGlyph.clusterTokens.first()),
+                        ),
+                        provenance = GlyphProvenance.Synthetic(
+                            refined.sourceRun.clusterFor(entry.shapedGlyph.clusterTokens.first()).sourceRange.start,
+                            GlyphProvenanceRole.TAB_LEADER,
+                        ),
+                    )
                 }
                 var penAtField = penAtTab
                 leaders.forEach { leaderEntry ->
@@ -1328,3 +1374,11 @@ internal fun fontDiagnostic(diagnostic: org.graphiks.kalligraphie.api.FontDiagno
         },
         message = diagnostic.message,
     )
+
+private fun operationLimitFailure(
+    exceeded: EditorOperationLimitExceeded,
+    diagnostics: List<EditableLineDiagnostic> = emptyList(),
+): EditableLineResult.Failure = EditableLineResult.Failure(
+    EditableLineError.OperationLimitExceeded(exceeded),
+    diagnostics,
+)

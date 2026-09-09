@@ -200,6 +200,7 @@ public class IncrementalParagraphLayoutEngine(
             continuation = publishedSignatures.last().continuation,
             lineCheckpoints = publishedSignatures,
         )
+        if (request.cancellationToken.isCancellationRequested()) return IncrementalLayoutResult.Cancelled
         return IncrementalLayoutResult.Success(
             layout = PublishedIncrementalLayout(
                 IncrementalLayoutInputIdentity(

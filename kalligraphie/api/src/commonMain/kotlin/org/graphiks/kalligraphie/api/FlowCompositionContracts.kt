@@ -365,6 +365,16 @@ public sealed interface FlowCompositionError {
         override val message: String = paragraphError.message
     }
 
+    /** Complete-operation resource limit that rejected the flow atomically. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and rejecting observation. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : FlowCompositionError {
+        override val code: String = "layout.flow-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
+    }
+
     /** Cooperative cancellation discarded the complete candidate before publication. */
     public data object Cancelled : FlowCompositionError {
         override val code: String = "layout.flow-cancelled"
@@ -1102,6 +1112,8 @@ public class IncrementalFlowLayoutRequest internal constructor(
     public val delta: LayoutDelta?,
     /** Cooperative cancellation signal checked between bounded operations. */
     public val cancellationToken: CancellationToken,
+    /** Shared finite resource policy for this complete flow operation. */
+    public val operationProfile: EditorOperationProfile,
 )
 
 /**
@@ -1145,6 +1157,34 @@ public fun createIncrementalFlowLayoutRequest(
     previousState: FlowLayoutState? = null,
     delta: LayoutDelta? = null,
     cancellationToken: CancellationToken = CancellationToken.none,
+): FlowCompositionResult<IncrementalFlowLayoutRequest> = createIncrementalFlowLayoutRequest(
+    input,
+    requestedRange,
+    constraints,
+    flowChain,
+    overscan,
+    previousState,
+    delta,
+    cancellationToken,
+    EditorOperationProfile.unbounded,
+)
+
+/**
+ * Validates a flow request with one explicit complete-operation resource policy.
+ *
+ * The policy and cancellation token control work only and are excluded from retained flow,
+ * continuation, semantic, and cache identity.
+ */
+public fun createIncrementalFlowLayoutRequest(
+    input: LayoutInput,
+    requestedRange: TextRange,
+    constraints: ParagraphConstraints,
+    flowChain: FlowChain,
+    overscan: LineOverscan,
+    previousState: FlowLayoutState? = null,
+    delta: LayoutDelta? = null,
+    cancellationToken: CancellationToken = CancellationToken.none,
+    operationProfile: EditorOperationProfile,
 ): FlowCompositionResult<IncrementalFlowLayoutRequest> {
     if (!requestedRange.start.sharesVersionWith(input.text.range.start) || !input.text.contains(requestedRange)) {
         return FlowCompositionResult.Failure(
@@ -1229,6 +1269,7 @@ public fun createIncrementalFlowLayoutRequest(
             previousState,
             delta,
             cancellationToken,
+            operationProfile,
         ),
     )
 }

@@ -720,6 +720,8 @@ public class IncrementalLayoutRequest internal constructor(
     public val delta: LayoutDelta?,
     /** Cooperative cancellation signal observed by layout work. */
     public val cancellationToken: CancellationToken,
+    /** Shared finite resource policy for this complete incremental operation. */
+    public val operationProfile: EditorOperationProfile,
 )
 
 /**
@@ -733,6 +735,32 @@ public fun createIncrementalLayoutRequest(
     previousState: LayoutStateHandle?,
     delta: LayoutDelta?,
     cancellationToken: CancellationToken,
+): LayoutContractResult<IncrementalLayoutRequest> = createIncrementalLayoutRequest(
+    input,
+    requestedRange,
+    constraints,
+    overscan,
+    previousState,
+    delta,
+    cancellationToken,
+    EditorOperationProfile.unbounded,
+)
+
+/**
+ * Validates an incremental request with one explicit complete-operation resource policy.
+ *
+ * The policy controls admission and work only; it is deliberately absent from semantic
+ * configuration, continuation, and cache identity.
+ */
+public fun createIncrementalLayoutRequest(
+    input: LayoutInput,
+    requestedRange: TextRange,
+    constraints: ParagraphConstraints,
+    overscan: LineOverscan,
+    previousState: LayoutStateHandle?,
+    delta: LayoutDelta?,
+    cancellationToken: CancellationToken,
+    operationProfile: EditorOperationProfile,
 ): LayoutContractResult<IncrementalLayoutRequest> {
     val rangeError = validateRangeDomain(input.text, requestedRange, "Requested layout range")
     if (rangeError != null) return LayoutContractResult.Failure(rangeError)
@@ -809,6 +837,7 @@ public fun createIncrementalLayoutRequest(
             previousState,
             delta,
             cancellationToken,
+            operationProfile,
         ),
     )
 }
@@ -955,6 +984,16 @@ public sealed interface IncrementalLayoutError {
         override val message: String,
     ) : IncrementalLayoutError {
         override val code: String = "layout.incremental-invalid-text-change"
+    }
+
+    /** Complete-operation resource limit that rejected the candidate publication. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and rejecting observation. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : IncrementalLayoutError {
+        override val code: String = "layout.incremental-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
     }
 }
 

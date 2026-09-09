@@ -736,6 +736,16 @@ public sealed interface EditableLineError {
         override val message: String = "Unicode analysis exceeded $limit at $observed scalars."
     }
 
+    /** The shared high-level editor-operation policy rejected this line atomically. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and observed count. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : EditableLineError {
+        override val code: String = "layout.editor-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation exceeded ${limit.kind} at ${limit.observed} (maximum ${limit.maximum})."
+    }
+
     /** A borrowed font asset failed while validating the requested renderable route. */
     public data class FontMaterializationFailure(
         /** Underlying typed font failure. */
@@ -884,7 +894,42 @@ public class MultiFontEditableLineRequest(
     features: List<OpenTypeFeature> = emptyList(),
     /** Cooperative cancellation signal observed between bounded fallback attempts. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
+    /** Shared finite resource policy for this complete fallback-through-publication operation. */
+    public val operationProfile: EditorOperationProfile,
 ) {
+    /**
+     * Creates a request through the historical constructor with an unbounded operation policy.
+     *
+     * This explicit overload preserves the established JVM constructor descriptor while the
+     * primary constructor lets new callers opt into one complete-operation budget.
+     */
+    public constructor(
+        snapshot: TextSnapshot,
+        unicodeAnalysis: UnicodeAnalysis,
+        fontCatalog: FontCatalogSnapshot,
+        resolutionPolicy: FontResolutionPolicySnapshot,
+        fontInstanceDescriptor: FontInstanceDescriptor,
+        shapingBackend: ShapingBackend,
+        baseDirection: BaseDirection,
+        verticalMetrics: LineVerticalMetrics,
+        materialization: EditableLineMaterialization,
+        features: List<OpenTypeFeature> = emptyList(),
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ) : this(
+        snapshot,
+        unicodeAnalysis,
+        fontCatalog,
+        resolutionPolicy,
+        fontInstanceDescriptor,
+        shapingBackend,
+        baseDirection,
+        verticalMetrics,
+        materialization,
+        features,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+
     /** Immutable deterministic OpenType feature overrides. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 

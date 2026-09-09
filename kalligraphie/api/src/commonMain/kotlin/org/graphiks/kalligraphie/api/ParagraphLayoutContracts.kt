@@ -913,7 +913,66 @@ public class ParagraphLayoutRequest(
     public val verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
     /** Cooperative signal observed between bounded composition operations. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
+    /** Shared finite resource policy for this complete paragraph operation. */
+    public val operationProfile: EditorOperationProfile,
 ) {
+    /**
+     * Creates a paragraph request through the historical unbounded constructor.
+     *
+     * The explicit overload preserves its established JVM descriptor; callers choosing a finite
+     * complete-operation policy use the primary constructor and supply [operationProfile].
+     */
+    public constructor(
+        snapshot: TextSnapshot,
+        sourceRange: TextRange = snapshot.range,
+        unicodeAnalysis: UnicodeAnalysis,
+        lineBreakAnalysis: LineBreakAnalysis,
+        constraints: ParagraphConstraints,
+        baseDirection: BaseDirection,
+        language: String,
+        featurePolicy: ShapingFeaturePolicy,
+        features: List<OpenTypeFeature> = emptyList(),
+        fontCatalog: FontCatalogSnapshot,
+        resolutionPolicy: FontResolutionPolicySnapshot,
+        fontInstanceDescriptor: FontInstanceDescriptor,
+        shapingBackend: ShapingBackend,
+        materializationIdentity: ParagraphMaterializationIdentity,
+        overflowPolicy: OverflowPolicy = OverflowPolicy.Continue,
+        continuation: LayoutContinuation? = null,
+        positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
+        hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
+        hyphenationService: HyphenationService? = null,
+        inlineObjects: InlineObjectSnapshot? = null,
+        textOrientation: TextOrientation = TextOrientation.MIXED,
+        verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ) : this(
+        snapshot,
+        sourceRange,
+        unicodeAnalysis,
+        lineBreakAnalysis,
+        constraints,
+        baseDirection,
+        language,
+        featurePolicy,
+        features,
+        fontCatalog,
+        resolutionPolicy,
+        fontInstanceDescriptor,
+        shapingBackend,
+        materializationIdentity,
+        overflowPolicy,
+        continuation,
+        positioning,
+        hyphenationMode,
+        hyphenationService,
+        inlineObjects,
+        textOrientation,
+        verticalMetricsPolicy,
+        cancellationToken,
+        EditorOperationProfile.unbounded,
+    )
+
     /** Immutable deterministic OpenType feature overrides in caller-specified order. */
     public val features: List<OpenTypeFeature> = features.immutableListSnapshot()
 
@@ -983,6 +1042,16 @@ public sealed interface ParagraphLayoutError {
     ) : ParagraphLayoutError {
         override val code: String = "layout.paragraph-font-failure"
         override val message: String = fontError.message
+    }
+
+    /** Complete-operation resource limit that rejected the paragraph atomically. */
+    public data class OperationLimitExceeded(
+        /** Exact resource dimension, configured maximum, and rejecting observation. */
+        public val limit: EditorOperationLimitExceeded,
+    ) : ParagraphLayoutError {
+        override val code: String = "layout.paragraph-operation-limit-exceeded"
+        override val message: String =
+            "Editor operation ${limit.kind} limit ${limit.maximum} was exceeded by ${limit.observed}."
     }
 
     /** A finite final paragraph coordinate could not be produced. */
