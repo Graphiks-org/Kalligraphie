@@ -127,6 +127,16 @@ positionnés, les relations texte-vers-clusters-vers-glyphes, la navigation de
 caret (repère d’insertion) logique et visuelle, la géométrie de sélection et
 le hit-testing (test de point) déterministe.
 
+Le résultat Unicode JVM est vérifié contre chaque cas Unicode 16.0 applicable
+de `GraphemeBreakTest`, `BidiTest` et `BidiCharacterTest`, ainsi que contre les
+données complètes `Script`, `Script_Extensions` (extensions de script) et
+`Bidi_Paired_Bracket` (paire de crochets bidirectionnels). La demande publique
+impose une direction de paragraphe explicite ; les variantes BiDi officielles
+à direction automatique restent donc hors du contrat de cette API. Les
+caractères supprimés par la règle X9 d’UAX #9 ne sont omis que de la comparaison
+normative des niveaux et du réordonnancement ; les résultats éditables
+conservent leurs positions source.
+
 Pour obtenir `RENDERABLE`, remplacez `LayoutOnly` par
 `EditableLineMaterialization.Renderable` et fournissez un gestionnaire ouvert,
 un `FontRenderVariantSnapshot` (sélection visuelle) et un

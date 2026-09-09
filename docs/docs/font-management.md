@@ -105,6 +105,14 @@ request. The result is `EditableLineResult`: on success it contains shaped and
 positioned glyphs, text-to-cluster-to-glyph mappings, logical and visual caret
 navigation, selection geometry, and deterministic hit testing.
 
+The JVM Unicode result is verified against every applicable Unicode 16.0 case
+in `GraphemeBreakTest`, `BidiTest`, and `BidiCharacterTest`, and against the
+complete `Script`, `Script_Extensions`, and `Bidi_Paired_Bracket` data. The
+public request requires an explicit paragraph direction, so the official
+auto-direction BiDi variants are outside this API contract. UAX #9 characters
+removed by rule X9 are omitted only from the normative level and reordering
+comparison; editable results retain their source positions.
+
 For `RENDERABLE` output, replace `LayoutOnly` with
 `EditableLineMaterialization.Renderable` and provide an open resolver, a
 `FontRenderVariantSnapshot`, and `FontAccessRequirementsSnapshot` containing

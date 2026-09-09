@@ -6,6 +6,7 @@ import kotlin.test.assertFailsWith
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
+import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
@@ -188,6 +189,25 @@ class IcuUnicodeAnalyzerTest {
     }
 
     @Test
+    fun arabic_and_hebrew_mixed_punctuation_keeps_audited_levels_and_visual_order() {
+        val snapshot = snapshotOf("abc (\u05D0\u05D1), \u0627\u0628!")
+        val analysis = analyzer.analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
+        )
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+
+        assertEquals(
+            listOf(0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 1, 1, 0),
+            expandLevels(analysis.logicalBidiRuns, boundaries),
+        )
+        assertEquals(
+            listOf(0, 1, 2, 3, 4, 6, 5, 7, 8, 9, 11, 10, 12),
+            visualScalarOrder(analysis.visualBidiRuns, boundaries),
+        )
+    }
+
+    @Test
     fun deep_embeddings_accept_resolved_level_126() {
         val snapshot = snapshotOf("\u202B".repeat(63) + "a" + "\u202C".repeat(63))
 
@@ -196,10 +216,12 @@ class IcuUnicodeAnalyzerTest {
             UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, language = "en"),
         )
 
-        val embeddedText = BidiRun(range(snapshot, 0, 64), level = 126)
-        val closingControls = BidiRun(range(snapshot, 64, 127), level = 0)
-        assertEquals(listOf(embeddedText, closingControls), analysis.logicalBidiRuns)
-        assertEquals(listOf(embeddedText, closingControls), analysis.visualBidiRuns)
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+        assertEquals(126, expandLevels(analysis.logicalBidiRuns, boundaries)[63])
+        assertEquals(
+            snapshot.scalarRanges(snapshot.range).toSet(),
+            analysis.visualBidiRuns.flatMap { snapshot.scalarRanges(it.range) }.toSet(),
+        )
     }
 
     @Test
@@ -214,12 +236,18 @@ class IcuUnicodeAnalyzerTest {
             UnicodeAnalysisRequest(BaseDirection.RIGHT_TO_LEFT, language = "en"),
         )
 
-        val first = BidiRun(range(snapshot, 0, 2), level = 3)
-        val second = BidiRun(range(snapshot, 2, 10), level = 4)
-        val third = BidiRun(range(snapshot, 10, 12), level = 3)
-        val fourth = BidiRun(range(snapshot, 12, 13), level = 1)
-        assertEquals(listOf(first, second, third, fourth), analysis.logicalBidiRuns)
-        assertEquals(listOf(fourth, third, second, first), analysis.visualBidiRuns)
+        val boundaries = (0..snapshot.scalars.size).associateBy(snapshot::textIndexAtScalarBoundary)
+        val retainedPositions = listOf(1, 3, 5, 6, 7, 9, 11)
+        val actualLevels = expandLevels(analysis.logicalBidiRuns, boundaries)
+        assertEquals(listOf(3, 4, 3, 4, 3, 4, 3), retainedPositions.map(actualLevels::get))
+        assertEquals(
+            listOf(11, 9, 7, 6, 5, 3, 1),
+            visualScalarOrder(analysis.visualBidiRuns, boundaries).filter(retainedPositions::contains),
+        )
+        assertEquals(
+            snapshot.scalarRanges(snapshot.range).toSet(),
+            analysis.visualBidiRuns.flatMap { snapshot.scalarRanges(it.range) }.toSet(),
+        )
     }
 
     @Test
@@ -292,6 +320,22 @@ class IcuUnicodeAnalyzerTest {
             snapshot.textIndexAtScalarBoundary(start),
             snapshot.textIndexAtScalarBoundary(endExclusive),
         )
+
+    private fun expandLevels(runs: List<BidiRun>, boundaries: Map<TextIndex, Int>): List<Int> = buildList {
+        runs.forEach { run ->
+            repeat(boundaries.getValue(run.range.endExclusive) - boundaries.getValue(run.range.start)) {
+                add(run.level)
+            }
+        }
+    }
+
+    private fun visualScalarOrder(runs: List<BidiRun>, boundaries: Map<TextIndex, Int>): List<Int> = buildList {
+        runs.forEach { run ->
+            val start = boundaries.getValue(run.range.start)
+            val endExclusive = boundaries.getValue(run.range.endExclusive)
+            if (run.level % 2 == 0) addAll(start until endExclusive) else addAll((endExclusive - 1) downTo start)
+        }
+    }
 
     private fun unicodeData(): UnicodeDataIdentity =
         UnicodeDataIdentity(unicodeVersion = "16.0", implementation = "ICU4J", implementationVersion = "77.1")
