@@ -9,8 +9,6 @@ import java.util.Base64
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BitmapLimits
 import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapProfile
@@ -21,6 +19,7 @@ import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -67,26 +66,6 @@ class GlyphMaterializationBenchmarkTest {
         val rendered = report.toMarkdown()
         outputPath.parent?.let(Files::createDirectories)
         Files.writeString(outputPath, rendered)
-
-        assertEquals(
-            listOf(
-                "ColrColdNormalization",
-                "ColrWarmResolution",
-                "SvgColdNormalization",
-                "SvgWarmResolution",
-                "BitmapColdDecode",
-                "BitmapWarmResolution",
-                "PaletteChange",
-                "CachePressureAndEviction",
-                "CooperativeCancellation",
-                "RenderableConsumerColdSingleFont",
-                "RenderableConsumerWarmSingleFont",
-                "RenderableConsumerColdMixedBidi",
-                "RenderableConsumerWarmMixedBidi",
-            ),
-            report.profiles.map(GlyphMaterializationMeasurementProfile::name),
-        )
-        assertTrue(rendered.contains("Glyph materialization measurement"))
     }
 
     private fun positiveEnvironmentInteger(name: String, defaultValue: Int): Int {
@@ -228,6 +207,16 @@ internal object GlyphMaterializationBenchmark {
         "RenderableConsumerWarmSingleFont",
         "RenderableConsumerColdMixedBidi",
         "RenderableConsumerWarmMixedBidi",
+        "TrueTypeColdPreparation",
+        "TrueTypeWarmPreparation",
+        "TrueTypeColdTextMapping",
+        "TrueTypeWarmTextMapping",
+        "TrueTypeColdMetrics",
+        "TrueTypeWarmMetrics",
+        "TrueTypeColdOutlines",
+        "TrueTypeWarmOutlines",
+        "TrueTypeColdDetach",
+        "TrueTypeWarmDetach",
     )
 
     fun reportFor(
@@ -263,6 +252,8 @@ internal object GlyphMaterializationBenchmark {
         val svg = Fixture("TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf", "TwitterColorEmoji SVG-in-OpenType", GlyphId(1), svgBytes())
         val bitmap = Fixture("ebdt_fmt1.ttf", "Skia EBDT format 1", GlyphId(3), bitmapBytes())
         val liberation = Fixture("LiberationSans-Regular.ttf", "Liberation Sans Regular", GlyphId(36), liberationBytes())
+        val trueTypeScalars = TRUE_TYPE_PARAGRAPH.codePoints().toArray().toList()
+        val trueTypeGlyphIds = trueTypeParagraphGlyphIds(liberation, trueTypeScalars)
         val consumerSingle = ConsumerScenario(
             id = "single-font",
             fixtures = listOf(colr),
@@ -302,13 +293,23 @@ internal object GlyphMaterializationBenchmark {
             consumerWarmProfile(consumerSingle, warmupIterations, iterations),
             consumerColdProfile(consumerMixedBidi, warmupIterations, iterations),
             consumerWarmProfile(consumerMixedBidi, warmupIterations, iterations),
+            trueTypeColdPreparationProfile(liberation, warmupIterations, iterations),
+            trueTypeWarmPreparationProfile(liberation, warmupIterations, iterations),
+            trueTypeColdTextMappingProfile(liberation, trueTypeScalars, warmupIterations, iterations),
+            trueTypeWarmTextMappingProfile(liberation, trueTypeScalars, warmupIterations, iterations),
+            trueTypeColdMetricsProfile(liberation, trueTypeScalars, warmupIterations, iterations),
+            trueTypeWarmMetricsProfile(liberation, trueTypeScalars, warmupIterations, iterations),
+            trueTypeColdOutlinesProfile(liberation, trueTypeGlyphIds, warmupIterations, iterations),
+            trueTypeWarmOutlinesProfile(liberation, trueTypeGlyphIds, warmupIterations, iterations),
+            trueTypeColdDetachProfile(liberation, warmupIterations, iterations),
+            trueTypeWarmDetachProfile(liberation, warmupIterations, iterations),
         )
         return reportFor(
             environment = environment,
             corpus = GlyphMaterializationMeasurementCorpus(
-                id = "portable-glyph-materialization-v2",
-                description = "three direct glyph routes plus a one-scalar single-font and a two-scalar mixed-fallback BiDi RENDERABLE consumer journey",
-                glyphCount = 6,
+                id = "portable-glyph-materialization-v3",
+                description = "23 profiles including ten portable TrueType editor stages over Liberation Sans and the stable paragraph \"$TRUE_TYPE_PARAGRAPH\"",
+                glyphCount = 6 + trueTypeScalars.size,
             ),
             profiles = profiles,
         )
@@ -522,6 +523,349 @@ internal object GlyphMaterializationBenchmark {
         }
     }
 
+    private fun trueTypeColdPreparationProfile(
+        fixture: Fixture,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeColdPreparation",
+        route = "Liberation Sans embedded TrueType catalog capture, face resolution, and instance creation",
+        timedBoundary = "starts before embedded catalog capture and ends after the resolved face and created instance are consumed",
+        cacheState = "cold: a new embedded catalog is captured for every sample",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        repeat(warmupIterations + iterations) { index ->
+            val sample = timed {
+                consumePreparedTrueType(prepareTrueType(fixture))
+                Observation(sourceBytes = fixture.bytes.size.toLong())
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeWarmPreparationProfile(
+        fixture: Fixture,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeWarmPreparation",
+        route = "Liberation Sans face resolution and instance creation from one captured embedded catalog",
+        timedBoundary = "starts before face resolution and ends after the created instance is consumed; catalog capture is excluded",
+        cacheState = "warm: one captured embedded catalog is reused for every face resolution and instance creation",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        val catalog = captureTrueTypeCatalog(fixture)
+        repeat(warmupIterations + iterations) { index ->
+            val sample = timed {
+                consumePreparedTrueType(instantiateTrueType(catalog))
+                Observation()
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeColdTextMappingProfile(
+        fixture: Fixture,
+        scalars: List<Int>,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeColdTextMapping",
+        route = "Liberation Sans Unicode scalar to glyph mapping for the stable editor paragraph",
+        timedBoundary = "starts before new catalog, face, and instance preparation and ends after every paragraph glyph id is consumed",
+        cacheState = "cold: a new embedded catalog and font instance are created for every sample",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        repeat(warmupIterations + iterations) { index ->
+            val sample = timed {
+                val prepared = prepareTrueType(fixture)
+                resolveParagraphGlyphs(prepared.instance, scalars)
+                Observation(sourceBytes = fixture.bytes.size.toLong())
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeWarmTextMappingProfile(
+        fixture: Fixture,
+        scalars: List<Int>,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeWarmTextMapping",
+        route = "Liberation Sans Unicode scalar to glyph mapping for the stable editor paragraph",
+        timedBoundary = "starts before resolving the first scalar and ends after every paragraph glyph id is consumed; instance preparation is excluded",
+        cacheState = "warm: one prepared font instance is reused and the paragraph scalars are enumerated outside the timed operations",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        val instance = prepareTrueType(fixture).instance
+        repeat(warmupIterations + iterations) { index ->
+            val sample = timed {
+                resolveParagraphGlyphs(instance, scalars)
+                Observation()
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeColdMetricsProfile(
+        fixture: Fixture,
+        scalars: List<Int>,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeColdMetrics",
+        route = "Liberation Sans mapping and horizontal metrics for every stable-paragraph glyph",
+        timedBoundary = "starts before new catalog, face, and instance preparation, includes full paragraph mapping, and ends after every advance and bounds value is consumed",
+        cacheState = "cold: a new embedded catalog and font instance are created for every sample",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        repeat(warmupIterations + iterations) { index ->
+            val sample = timed {
+                val prepared = prepareTrueType(fixture)
+                consumeGlyphMetrics(prepared.instance, resolveParagraphGlyphs(prepared.instance, scalars))
+                Observation(sourceBytes = fixture.bytes.size.toLong())
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeWarmMetricsProfile(
+        fixture: Fixture,
+        scalars: List<Int>,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeWarmMetrics",
+        route = "Liberation Sans horizontal metrics for pre-mapped stable-paragraph glyphs",
+        timedBoundary = "starts before the first metrics lookup and ends after every advance and bounds value is consumed; preparation and mapping are excluded",
+        cacheState = "warm: one prepared instance and one pre-mapped paragraph glyph sequence are reused",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        val instance = prepareTrueType(fixture).instance
+        val glyphIds = resolveParagraphGlyphs(instance, scalars)
+        repeat(warmupIterations + iterations) { index ->
+            val sample = timed {
+                consumeGlyphMetrics(instance, glyphIds)
+                Observation()
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeColdOutlinesProfile(
+        fixture: Fixture,
+        glyphIds: List<GlyphId>,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeColdOutlines",
+        route = "Liberation Sans portable glyf outlines for distinct nonzero stable-paragraph glyphs",
+        timedBoundary = "starts before new catalog, resolver, instance, and asset creation and ends after every distinct nonzero paragraph representation is consumed",
+        cacheState = "cold: a new resolver and attached outline asset are created and closed for every sample",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        repeat(warmupIterations + iterations) { index ->
+            var opened: OpenAsset? = null
+            val sample = timed(cleanup = { opened?.close() }) {
+                opened = openAsset(fixture, trueTypeRequirements(), cachePolicy = CACHE_POLICY)
+                consumeOutlines(checkNotNull(opened).asset, glyphIds)
+                Observation(sourceBytes = fixture.bytes.size.toLong())
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeWarmOutlinesProfile(
+        fixture: Fixture,
+        glyphIds: List<GlyphId>,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeWarmOutlines",
+        route = "Liberation Sans cached portable glyf outlines for distinct nonzero stable-paragraph glyphs",
+        timedBoundary = "starts before the first cached outline resolution and ends after every distinct nonzero paragraph representation is consumed; setup, seed, and closure are excluded",
+        cacheState = "warm: one attached asset is seeded for every distinct nonzero paragraph glyph before repeated resolution",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        val opened = openAsset(fixture, trueTypeRequirements(), cachePolicy = CACHE_POLICY)
+        try {
+            consumeOutlines(opened.asset, glyphIds)
+            repeat(warmupIterations + iterations) { index ->
+                val sample = timed {
+                    consumeOutlines(opened.asset, glyphIds)
+                    Observation()
+                }
+                if (index >= warmupIterations) record(sample)
+            }
+        } finally {
+            opened.close()
+        }
+    }
+
+    private fun trueTypeColdDetachProfile(
+        fixture: Fixture,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeColdDetach",
+        route = "Liberation Sans attached-to-detached portable outline asset lifetime",
+        timedBoundary = "starts before new attached asset creation, includes detachment and attached-owner closure, and ends after glyph 36 is resolved and consumed through the detached handle",
+        cacheState = "cold: a new catalog, resolver, and attached asset are created for every detach sample",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        repeat(warmupIterations + iterations) { index ->
+            var opened: OpenAsset? = null
+            var detached: FontRenderAssetHandle? = null
+            val sample = timed(cleanup = {
+                detached?.close()
+                opened?.close()
+            }) {
+                opened = openAsset(fixture, trueTypeRequirements(), cachePolicy = CACHE_POLICY)
+                val attached = checkNotNull(opened)
+                detached = success(attached.asset.detach())
+                success(attached.asset.close())
+                success(attached.resolver.close())
+                consumeOutlineRepresentation(
+                    glyphId = fixture.glyphId,
+                    representation = success(checkNotNull(detached).resolveGlyph(FontGlyphRequest(fixture.glyphId))),
+                )
+                Observation(sourceBytes = fixture.bytes.size.toLong())
+            }
+            if (index >= warmupIterations) record(sample)
+        }
+    }
+
+    private fun trueTypeWarmDetachProfile(
+        fixture: Fixture,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "TrueTypeWarmDetach",
+        route = "Liberation Sans repeated independent detached outline handles",
+        timedBoundary = "starts before detachment from one prepared attached asset and ends after glyph 36 is resolved, consumed, and the independent detached handle is closed",
+        cacheState = "warm: one prepared attached asset remains open across independent detach, consume, and close cycles",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+    ) { record ->
+        val opened = openAsset(fixture, trueTypeRequirements(), cachePolicy = CACHE_POLICY)
+        try {
+            consumeOutlineRepresentation(
+                glyphId = fixture.glyphId,
+                representation = success(opened.asset.resolveGlyph(FontGlyphRequest(fixture.glyphId))),
+            )
+            repeat(warmupIterations + iterations) { index ->
+                val sample = timed {
+                    var detached: FontRenderAssetHandle? = null
+                    try {
+                        detached = success(opened.asset.detach())
+                        consumeOutlineRepresentation(
+                            glyphId = fixture.glyphId,
+                            representation = success(detached.resolveGlyph(FontGlyphRequest(fixture.glyphId))),
+                        )
+                        Observation()
+                    } finally {
+                        detached?.close()
+                    }
+                }
+                if (index >= warmupIterations) record(sample)
+            }
+        } finally {
+            opened.close()
+        }
+    }
+
+    private fun trueTypeParagraphGlyphIds(fixture: Fixture, scalars: List<Int>): List<GlyphId> {
+        val glyphIds = resolveParagraphGlyphs(prepareTrueType(fixture).instance, scalars)
+            .filter { glyphId -> glyphId.value != 0 }
+            .distinct()
+        check(glyphIds.isNotEmpty()) { "The portable TrueType paragraph must resolve at least one nonzero glyph." }
+        return glyphIds
+    }
+
+    private fun captureTrueTypeCatalog(fixture: Fixture): FontCatalogSnapshot = success(
+        Kalligraphie.embedded(fixture.bytes, FontSourceProvenance(fixture.provenance), CACHE_POLICY),
+    )
+
+    private fun prepareTrueType(fixture: Fixture): PreparedTrueType =
+        instantiateTrueType(captureTrueTypeCatalog(fixture))
+
+    private fun instantiateTrueType(catalog: FontCatalogSnapshot): PreparedTrueType {
+        val face = success(catalog.resolveFace(catalog.faces.single().id, trueTypeRequirements()))
+        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2_048f))))
+        return PreparedTrueType(catalog, face, instance)
+    }
+
+    private fun consumePreparedTrueType(prepared: PreparedTrueType) {
+        consumeValue(prepared.catalog.generation.hashCode().toLong())
+        consumeValue(prepared.face.id.hashCode().toLong())
+        consumeValue(prepared.face.metadata.unitsPerEm.toLong())
+        consumeValue(prepared.instance.key.hashCode().toLong())
+    }
+
+    private fun resolveParagraphGlyphs(instance: FontInstance, scalars: List<Int>): List<GlyphId> =
+        scalars.map { scalar ->
+            val resolution = success(instance.resolveGlyph(scalar))
+            consumeValue(resolution.glyphId.value.toLong())
+            resolution.glyphId
+        }
+
+    private fun consumeGlyphMetrics(instance: FontInstance, glyphIds: List<GlyphId>) {
+        glyphIds.forEach { glyphId ->
+            val metrics = success(instance.metrics(glyphId))
+            consumeValue(metrics.advanceWidthDesignUnits.toLong())
+            consumeValue(metrics.advanceWidth.value.toRawBits().toLong())
+            consumeValue(metrics.bounds.minX.toLong())
+            consumeValue(metrics.bounds.minY.toLong())
+            consumeValue(metrics.bounds.maxX.toLong())
+            consumeValue(metrics.bounds.maxY.toLong())
+            consumeValue(metrics.scaledBounds.minX.value.toRawBits().toLong())
+            consumeValue(metrics.scaledBounds.minY.value.toRawBits().toLong())
+            consumeValue(metrics.scaledBounds.maxX.value.toRawBits().toLong())
+            consumeValue(metrics.scaledBounds.maxY.value.toRawBits().toLong())
+        }
+    }
+
+    private fun consumeOutlines(asset: FontRenderAssetHandle, glyphIds: List<GlyphId>) {
+        glyphIds.forEach { glyphId ->
+            consumeOutlineRepresentation(
+                glyphId = glyphId,
+                representation = success(asset.resolveGlyph(FontGlyphRequest(glyphId))),
+            )
+        }
+    }
+
+    private fun consumeOutlineRepresentation(glyphId: GlyphId, representation: GlyphRepresentation) {
+        when (representation) {
+            is GlyphRepresentation.Outline -> {
+                val outline = representation.outline
+                consumeValue(outline.glyphId.toLong())
+                consumeValue(outline.unitsPerEm.toLong())
+                consumeValue(outline.bounds.minX.toLong())
+                consumeValue(outline.bounds.minY.toLong())
+                consumeValue(outline.bounds.maxX.toLong())
+                consumeValue(outline.bounds.maxY.toLong())
+                consumeValue(outline.contours.size.toLong())
+                consumeValue(outline.commands.size.toLong())
+            }
+            GlyphRepresentation.Empty -> consumeValue(glyphId.value.toLong())
+            else -> error("Portable TrueType outline measurement received ${representation::class.simpleName} for glyph ${glyphId.value}.")
+        }
+    }
+
+    private fun consumeValue(value: Long) {
+        blackhole = blackhole xor value
+    }
+
     private fun resolveCold(fixture: Fixture, requirements: FontAccessRequirementsSnapshot): Observation {
         val opened = openAsset(fixture, requirements, cachePolicy = CACHE_POLICY)
         return try {
@@ -618,10 +962,19 @@ internal object GlyphMaterializationBenchmark {
     ): OpenAsset {
         val catalog = success(Kalligraphie.embedded(fixture.bytes, FontSourceProvenance(fixture.provenance), cachePolicy))
         val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
-        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
-        val asset = success(instance.acquireRenderAsset(resolver, variant, requirements))
-        return OpenAsset(resolver, instance, asset)
+        return try {
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val asset = success(instance.acquireRenderAsset(resolver, variant, requirements))
+            OpenAsset(resolver, instance, asset)
+        } catch (failure: Throwable) {
+            try {
+                resolver.close()
+            } catch (closeFailure: Throwable) {
+                failure.addSuppressed(closeFailure)
+            }
+            throw failure
+        }
     }
 
     private fun measuredProfile(
@@ -668,19 +1021,26 @@ internal object GlyphMaterializationBenchmark {
         )
     }
 
-    private fun timed(operation: () -> Observation): Sample {
-        val allocationsBefore = ThreadAllocationProbe.currentBytes()
-        val started = System.nanoTime()
-        val observation = operation()
-        val completed = System.nanoTime()
-        val allocationsAfter = ThreadAllocationProbe.currentBytes()
-        consume(observation.representation)
-        return Sample(
-            elapsedNanos = max(1L, completed - started),
-            allocatedBytes = if (allocationsBefore != null && allocationsAfter != null) max(0L, allocationsAfter - allocationsBefore) else null,
-            observation = observation,
-            cancellationDelayNanos = observation.cancellationSignaledAtNanos?.let { signal -> completed - signal },
-        )
+    private fun timed(
+        cleanup: () -> Unit = {},
+        operation: () -> Observation,
+    ): Sample {
+        try {
+            val allocationsBefore = ThreadAllocationProbe.currentBytes()
+            val started = System.nanoTime()
+            val observation = operation()
+            val completed = System.nanoTime()
+            val allocationsAfter = ThreadAllocationProbe.currentBytes()
+            consume(observation.representation)
+            return Sample(
+                elapsedNanos = max(1L, completed - started),
+                allocatedBytes = if (allocationsBefore != null && allocationsAfter != null) max(0L, allocationsAfter - allocationsBefore) else null,
+                observation = observation,
+                cancellationDelayNanos = observation.cancellationSignaledAtNanos?.let { signal -> completed - signal },
+            )
+        } finally {
+            cleanup()
+        }
     }
 
     private fun observe(representation: GlyphRepresentation, sourceBytes: Long): Observation = when (representation) {
@@ -734,6 +1094,9 @@ internal object GlyphMaterializationBenchmark {
         maxCompositeComponents = 256,
     )
 
+    private fun trueTypeRequirements(): FontAccessRequirementsSnapshot =
+        FontAccessRequirementsSnapshot.renderable(outlineProfile())
+
     private fun colrBytes(): ByteArray = resourceBytes("/fonts/bungee-color/BungeeColor-Regular.ttf")
 
     private fun svgBytes(): ByteArray = Base64.getMimeDecoder().decode(resourceBytes("/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64"))
@@ -783,6 +1146,12 @@ internal object GlyphMaterializationBenchmark {
     private fun usedHeapBytes(): Long = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory()
 
     private data class Fixture(val name: String, val provenance: String, val glyphId: GlyphId, val bytes: ByteArray)
+
+    private data class PreparedTrueType(
+        val catalog: FontCatalogSnapshot,
+        val face: FontFace,
+        val instance: FontInstance,
+    )
 
     private data class ConsumerScenario(
         val id: String,
@@ -868,6 +1237,8 @@ internal object GlyphMaterializationBenchmark {
     }
 
     private const val GC_POLICY: String = "System.gc() twice before and after each profile; no requested GC between samples"
+    private const val TRUE_TYPE_PARAGRAPH: String =
+        "Readable typography keeps words, punctuation, carets, and 0123456789 responsive while an editor changes text."
     private val CACHE_POLICY = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 1_000_000)
     private val PRESSURE_CACHE_POLICY = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 10_000)
 

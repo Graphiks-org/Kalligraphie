@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie
 
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
@@ -26,6 +27,57 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class DetachedRenderAssetContractTest {
+    @Test
+    fun concurrentDetachAndAssetClosePublishOnlyACompleteIndependentHandleOrResourceClosed() {
+        repeat(32) {
+            val opened = openRenderableFont(fixtureBytes(), 2048f)
+            val start = CountDownLatch(1)
+            val executor = Executors.newFixedThreadPool(2)
+            try {
+                val detach = executor.submit<FontOperationResult<FontRenderAssetHandle>> {
+                    start.await()
+                    opened.asset.detach()
+                }
+                val close = executor.submit<FontOperationResult<Unit>> {
+                    start.await()
+                    opened.asset.close()
+                }
+                start.countDown()
+
+                assertIs<FontOperationResult.Success<Unit>>(close.get(10, TimeUnit.SECONDS))
+                when (val result = detach.get(10, TimeUnit.SECONDS)) {
+                    is FontOperationResult.Success -> {
+                        val detached = result.value
+                        try {
+                            val representation = success(
+                                detached.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none),
+                            )
+                            val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
+                            assertEquals(36, outline.glyphId)
+                            assertEquals(4, outline.bounds.minX)
+                            assertEquals(1362, outline.bounds.maxX)
+                        } finally {
+                            assertIs<FontOperationResult.Success<Unit>>(detached.close())
+                        }
+                    }
+
+                    is FontOperationResult.Failure -> assertIs<FontError.ResourceClosed>(result.error)
+                    is FontOperationResult.Cancelled -> error("Detachment without cancellation must not return cancellation.")
+                }
+                assertIs<FontError.ResourceClosed>(
+                    assertIs<FontOperationResult.Failure>(
+                        opened.asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none),
+                    ).error,
+                )
+            } finally {
+                opened.asset.close()
+                opened.resolver.close()
+                executor.shutdownNow()
+                assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS))
+            }
+        }
+    }
+
     @Test
     fun concurrentAcquireAndResolverCloseRemainLinearizableForARealFontAsset() {
         repeat(32) {
