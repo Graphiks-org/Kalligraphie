@@ -401,9 +401,12 @@ public class PositionedGlyph(
  * Final geometry of one glyphless source control in an editable line.
  *
  * The control maps directly to [sourceRange] but has no font glyph identifier, render asset, or
- * representation payload. [origin] and [advance] express its layout effect. In renderable mode
- * [materializationRoute] is [GlyphMaterializationRoute.EMPTY], recording that the marker requires
- * no ink without resolving a substitute font glyph; layout-only mode leaves the route `null`.
+ * representation payload. [origin] and [advance] express its layout effect. For a horizontal tab,
+ * [origin] is the pen position at the tab and [advance] covers the complete consumed span through
+ * the start of the positioned field. Synthetic leader glyphs, when present, stay inside that span
+ * and do not reduce it. In renderable mode [materializationRoute] is
+ * [GlyphMaterializationRoute.EMPTY], recording that the marker requires no ink without resolving a
+ * substitute font glyph; layout-only mode leaves the route `null`.
  */
 public class PositionedLineControl(
     /** Exact kind of glyphless source control. */
@@ -475,12 +478,10 @@ public class PositionedGlyphRun(
         val controlRanges = this.lineControls.map(PositionedLineControl::sourceRange)
         val sourceTokenSequence = sourceRun.glyphs
             .filterNot { glyph ->
-                val clusters = glyph.clusterTokens.map { token ->
-                    sourceRun.clusters.single { cluster -> cluster.token == token }
-                }
-                controlRanges.any { controlRange ->
-                    clusters.all { cluster -> containsRange(controlRange, cluster.sourceRange) }
-                }
+                glyph.clusterTokens
+                    .map { token -> sourceRun.clusters.single { cluster -> cluster.token == token } }
+                    .flatMap(ShaperCluster::scalarRanges)
+                    .all(controlRanges::contains)
             }
             .map { glyph -> glyph.clusterTokens }
         var sourceCursor = 0
@@ -511,9 +512,9 @@ public class PositionedGlyphRun(
             "Every positioned line control must stay inside its source run."
         }
         require(this.lineControls.all { control ->
-            sourceRun.clusters.any { cluster -> containsRange(control.sourceRange, cluster.sourceRange) }
+            sourceRun.clusters.any { cluster -> control.sourceRange in cluster.scalarRanges }
         }) {
-            "Every positioned line control must carry at least one source-cluster relation from its shaped run."
+            "Every positioned line control must carry one exact source-scalar relation from its shaped run."
         }
         require(this.lineControls.zipWithNext().all { (left, right) -> left.sourceRange.start < right.sourceRange.start }) {
             "Positioned line controls must use strict logical source order within a run."
@@ -691,6 +692,30 @@ public sealed interface EditableLineError {
     ) : EditableLineError {
         override val code: String = "layout.unsupported-line-control"
         override val message: String = "Editable line does not support $kind at $range."
+    }
+
+    /**
+     * A shaped glyph relation combines a horizontal-tab scalar with ordinary source content.
+     *
+     * The line finalizer can coalesce any number of glyphs related exclusively to tabs, but it
+     * cannot remove the tab contribution from a mixed relation without re-shaping or deleting
+     * ordinary content. [range] is the complete snapshot-bound source span of that glyph
+     * relation. The operation fails atomically before placement.
+     */
+    public data class MixedLineControlGlyphRelation(
+        /** Exact horizontal-tab control kind present in the mixed relation. */
+        public val kind: LineControlKind,
+        /** Complete half-open source range jointly contributing to the shaped glyph. */
+        public val range: TextRange,
+    ) : EditableLineError {
+        init {
+            require(kind == LineControlKind.HORIZONTAL_TAB) {
+                "Only horizontal tabs can form a mixed supported line-control glyph relation."
+            }
+        }
+
+        override val code: String = "layout.mixed-line-control-glyph-relation"
+        override val message: String = "A shaped glyph mixes $kind with ordinary content at $range."
     }
 
     /** A finite public layout coordinate could not be produced. */
@@ -1066,9 +1091,17 @@ public class EditableLine(
     /** Positioned shaped runs in physical visual order. */
     public val positionedGlyphRuns: List<PositionedGlyphRun> = positionedGlyphRuns.immutableListSnapshot()
 
-    /** Glyphless source controls flattened from positioned runs in physical visual-run order. */
+    /**
+     * Glyphless source controls from every positioned run in strict logical source order.
+     *
+     * Their geometry remains physical, but BiDi visual-run reordering never changes this
+     * source-facing sequence.
+     */
     public val positionedLineControls: List<PositionedLineControl> =
-        this.positionedGlyphRuns.flatMap(PositionedGlyphRun::lineControls).immutableListSnapshot()
+        this.positionedGlyphRuns
+            .flatMap(PositionedGlyphRun::lineControls)
+            .sortedWith { left, right -> left.sourceRange.start.compareTo(right.sourceRange.start) }
+            .immutableListSnapshot()
 
     /** Concrete caret geometries in physical visual traversal order. */
     public val allCaretCandidates: List<CaretCandidate> = caretCandidates.immutableListSnapshot()

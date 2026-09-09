@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.EditableLineDiagnostic
 import org.graphiks.kalligraphie.api.EditableLineDiagnosticSeverity
+import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EllipsisSide
 import org.graphiks.kalligraphie.api.FontInstance
@@ -11,6 +12,7 @@ import org.graphiks.kalligraphie.api.GlyphProvenance
 import org.graphiks.kalligraphie.api.GlyphProvenanceRole
 import org.graphiks.kalligraphie.api.JustificationMode
 import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.ParagraphAlignment
 import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.ShapedGlyph
@@ -34,6 +36,28 @@ import org.graphiks.kalligraphie.api.TextSnapshot
  * names a real source range; no document position is created.
  */
 internal object LineContentPlan {
+    /** Returns the first glyph relation that cannot be separated into tab and ordinary content. */
+    fun mixedLineControlGlyphRelation(
+        request: EditableLineRequest,
+        snapshot: TextSnapshot,
+    ): EditableLineError.MixedLineControlGlyphRelation? {
+        request.shapedGlyphRuns.forEach { run ->
+            run.glyphs.forEach { glyph ->
+                val scalars = glyph.clusterTokens
+                    .map(run::clusterFor)
+                    .flatMap { cluster -> cluster.scalarRanges }
+                    .flatMap(snapshot::scalarValues)
+                if (TAB in scalars && scalars.any { scalar -> scalar != TAB }) {
+                    return EditableLineError.MixedLineControlGlyphRelation(
+                        kind = LineControlKind.HORIZONTAL_TAB,
+                        range = mappedRange(snapshot, run, glyph),
+                    )
+                }
+            }
+        }
+        return null
+    }
+
     fun build(
         request: EditableLineRequest,
         snapshot: TextSnapshot,
@@ -316,6 +340,16 @@ internal object LineContentPlan {
         diagnostics: MutableList<EditableLineDiagnostic>,
     ): RefinedRun {
         val stream = mutableListOf<RefinedGlyph>()
+        val tabScalars = run.clusters.flatMap { cluster ->
+            cluster.scalarRanges.mapNotNull { scalarRange ->
+                if (snapshot.scalarValues(scalarRange) == listOf(TAB)) {
+                    cluster.token to scalarRange
+                } else {
+                    null
+                }
+            }
+        }
+        val tabTokens = tabScalars.map(Pair<ShaperClusterToken, TextRange>::first).toSet()
         val automaticGlyphsRemaining = run.glyphs
             .map { glyph -> mappedRange(snapshot, run, glyph).endExclusive }
             .filter { boundary -> boundary in automaticBreaks }
@@ -325,13 +359,7 @@ internal object LineContentPlan {
         run.glyphs.forEach { glyph ->
             val mapped = mappedRange(snapshot, run, glyph)
             val scalars = snapshot.scalarValues(mapped)
-            if (scalars.any { it == TAB } && instance != null) {
-                val tabGlyph = neutralTabGlyph(glyph)
-                stream += RefinedGlyph(
-                    tabGlyph,
-                    GlyphProvenance.Synthetic(mapped.start, GlyphProvenanceRole.TAB_STOP),
-                    tabMarker = true,
-                )
+            if (instance != null && glyph.clusterTokens.any(tabTokens::contains)) {
                 return@forEach
             }
             if (scalars.any { it == SOFT_HYPHEN } && instance != null && softHyphens != null) {
@@ -368,28 +396,29 @@ internal object LineContentPlan {
             }
             stream += RefinedGlyph(glyph, GlyphProvenance.Direct(mapped))
         }
-        if (instance != null && run.clusters.any { cluster ->
-                snapshot.scalarValues(cluster.sourceRange).any { it == TAB }
-            }
-        ) {
-            val glyphTokens = stream.flatMap { glyph -> glyph.shapedGlyph.clusterTokens }.toSet()
-            val markersNeeded = run.clusters.filter { cluster ->
-                snapshot.scalarValues(cluster.sourceRange).any { it == TAB } &&
-                    cluster.token !in glyphTokens
-            }
-            if (markersNeeded.isNotEmpty()) {
-                val markersByToken = markersNeeded.associate { cluster ->
-                    cluster.token to RefinedGlyph(
-                        shapedGlyph = zeroAdvanceTab(cluster.token),
-                        provenance = GlyphProvenance.Synthetic(
-                            cluster.sourceRange.start,
-                            GlyphProvenanceRole.TAB_STOP,
-                        ),
-                        tabMarker = true,
-                    )
+        if (instance != null && tabScalars.isNotEmpty()) {
+            val markersByToken = tabScalars
+                .groupBy(Pair<ShaperClusterToken, TextRange>::first, Pair<ShaperClusterToken, TextRange>::second)
+                .mapValues { (token, scalarRanges) ->
+                    val logicalRanges = scalarRanges.sortedWith { left, right -> left.start.compareTo(right.start) }
+                    val producedRanges = if (run.direction == ShapingDirection.RIGHT_TO_LEFT) {
+                        logicalRanges.asReversed()
+                    } else {
+                        logicalRanges
+                    }
+                    producedRanges.map { scalarRange ->
+                        RefinedGlyph(
+                            shapedGlyph = zeroAdvanceTab(token),
+                            provenance = GlyphProvenance.Synthetic(
+                                scalarRange.start,
+                                GlyphProvenanceRole.TAB_STOP,
+                            ),
+                            tabMarker = true,
+                            lineControlRange = scalarRange,
+                        )
+                    }
                 }
-                stream.replaceClustersInGlyphOrder(run, markersByToken)
-            }
+            stream.replaceClustersInGlyphOrder(run, markersByToken)
         }
         val inlineObjects = request.inlineObjects
         if (instance != null && inlineObjects != null &&
@@ -406,10 +435,12 @@ internal object LineContentPlan {
             if (objectsByToken.isNotEmpty()) {
                 val space = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
                 val replacements = objectsByToken.associate { (token, objectEntry) ->
-                    token to RefinedGlyph(
-                        shapedGlyph = zeroAdvanceShapeForObject(space, token, objectEntry.second.width),
-                        provenance = GlyphProvenance.Direct(objectEntry.first),
-                        inlineObjectWidth = objectEntry.second.width,
+                    token to listOf(
+                        RefinedGlyph(
+                            shapedGlyph = zeroAdvanceShapeForObject(space, token, objectEntry.second.width),
+                            provenance = GlyphProvenance.Direct(objectEntry.first),
+                            inlineObjectWidth = objectEntry.second.width,
+                        ),
                     )
                 }
                 stream.replaceClustersInGlyphOrder(run, replacements)
@@ -421,7 +452,7 @@ internal object LineContentPlan {
     /** Reorders reconstructed cluster entries in shaping output order for both inline directions. */
     private fun MutableList<RefinedGlyph>.replaceClustersInGlyphOrder(
         run: ShapedGlyphRun,
-        replacements: Map<ShaperClusterToken, RefinedGlyph>,
+        replacements: Map<ShaperClusterToken, List<RefinedGlyph>>,
     ) {
         val remaining = toMutableList()
         val rebuilt = mutableListOf<RefinedGlyph>()
@@ -469,16 +500,6 @@ internal object LineContentPlan {
         yOffset = LayoutUnit(0f),
         safetyFlags = ShapingSafetyFlags(false, false),
         clusterTokens = listOf(token),
-    )
-
-    private fun neutralTabGlyph(glyph: ShapedGlyph): ShapedGlyph = ShapedGlyph(
-        glyphId = NO_INK_LINE_CONTROL_MARKER,
-        xAdvance = LayoutUnit(0f),
-        yAdvance = LayoutUnit(0f),
-        xOffset = LayoutUnit(0f),
-        yOffset = LayoutUnit(0f),
-        safetyFlags = glyph.safetyFlags,
-        clusterTokens = glyph.clusterTokens,
     )
 
     private fun applyJustificationSpacing(
@@ -552,6 +573,7 @@ internal object LineContentPlan {
                     -> provenance
                 },
                 tabMarker = current.tabMarker,
+                lineControlRange = current.lineControlRange,
                 inlineObjectWidth = current.inlineObjectWidth,
             )
             result[unit.runIndex] = RefinedRun(run.sourceRun, updated)

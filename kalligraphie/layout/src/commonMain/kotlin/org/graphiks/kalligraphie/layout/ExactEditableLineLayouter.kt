@@ -160,6 +160,12 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         proofs: GlyphMaterializationProofs,
     ): EditableLineResult {
         val diagnostics = mutableListOf<EditableLineDiagnostic>()
+        val mixedControlRelation = request.snapshot?.let { snapshot ->
+            LineContentPlan.mixedLineControlGlyphRelation(request, snapshot)
+        }
+        if (mixedControlRelation != null) {
+            return EditableLineResult.Failure(mixedControlRelation, diagnostics)
+        }
         val placements = try {
             positionRuns(request, refineGlyphs(request, diagnostics))
         } catch (overflow: GeometryOverflowException) {
@@ -196,15 +202,9 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 },
                 lineControls = placement.lineControlGlyphs
                     .map { control ->
-                        val logicalClusters = control.sourceClusters.sortedWith { left, right ->
-                            left.sourceRange.start.compareTo(right.sourceRange.start)
-                        }
                         PositionedLineControl(
                             kind = checkNotNull(control.lineControlKind),
-                            sourceRange = TextRange(
-                                logicalClusters.first().sourceRange.start,
-                                logicalClusters.last().sourceRange.endExclusive,
-                            ),
+                            sourceRange = checkNotNull(control.lineControlRange),
                             origin = control.origin,
                             advance = control.advance,
                             materializationRoute = if (request.materialization is EditableLineMaterialization.Renderable) {
@@ -305,7 +305,8 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
             IndexedVisualRefinedGlyph(
                 visual = visual,
                 visualIndex = visualIndex,
-                sourceRange = mappedRange(snapshot, visual.run.sourceRun, visual.glyph.shapedGlyph),
+                sourceRange = visual.glyph.lineControlRange
+                    ?: mappedRange(snapshot, visual.run.sourceRun, visual.glyph.shapedGlyph),
             )
         }.sortedWith { left, right ->
             val start = left.sourceRange.start.compareTo(right.sourceRange.start)
@@ -323,10 +324,10 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         var tabIndex = 0
         logical.forEachIndexed { position, tab ->
             val visual = tab.visual
-            if (!isTabGlyph(request, visual.run, visual.glyph)) return@forEachIndexed
+            if (!isTabGlyph(request, visual.glyph)) return@forEachIndexed
             val key = TabGlyphKey(visual.run.sourceRun, visual.index)
             var fieldEnd = position + 1
-            while (fieldEnd < logical.size && !isTabGlyph(request, logical[fieldEnd].visual.run, logical[fieldEnd].visual.glyph)) {
+            while (fieldEnd < logical.size && !isTabGlyph(request, logical[fieldEnd].visual.glyph)) {
                 fieldEnd += 1
             }
             val field = logical.subList(position + 1, fieldEnd).sortedBy(IndexedVisualRefinedGlyph::visualIndex)
@@ -396,7 +397,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
     ): List<GlyphPlacement> {
         val positioning = request.positioning
         val entries = refined.glyphs
-        val needsTabWalk = request.snapshot != null && entries.any { isTabGlyph(request, refined, it) }
+        val needsTabWalk = request.snapshot != null && entries.any { isTabGlyph(request, it) }
         val needsPrepositioning = entries.indices.any { index -> tabs.prepositionedStart(refined, index) != null }
         if (!needsTabWalk && !needsPrepositioning && entries.none { it.inlineObjectWidth != null }) {
             return positionEntries(request, refined, entries, runStartPen, collectedObjects)
@@ -415,7 +416,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                 index += 1
                 continue
             }
-            if (isTabGlyph(request, refined, entry)) {
+            if (isTabGlyph(request, entry)) {
                 val localFieldAfter = mutableListOf<RefinedGlyph>()
                 var cursor = index + 1
                 val key = TabGlyphKey(refined.sourceRun, index)
@@ -503,7 +504,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     penAtField += leaderEntry.shapedGlyph.xAdvance.value.toDouble()
                 }
                 val jumpEnd = max(penAtField, tabEnd)
-                val tabAdvance = jumpEnd - penAtField
+                val tabAdvance = jumpEnd - penAtTab
                 val jumpShaped = ShapedGlyph(
                     glyphId = entry.shapedGlyph.glyphId,
                     xAdvance = finiteUnit(tabAdvance, "tab advance"),
@@ -519,9 +520,10 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                     origin = LayoutPoint(finiteUnit(penAtTab + jumpShaped.xOffset.value.toDouble(), "tab origin"), jumpShaped.yOffset),
                     advance = LayoutVector(jumpShaped.xAdvance, jumpShaped.yAdvance),
                     penStart = finiteUnit(penAtTab, "tab pen start"),
-                    penEnd = finiteUnit(penAtField + tabAdvance, "tab pen end"),
+                    penEnd = finiteUnit(jumpEnd, "tab pen end"),
                     provenance = entry.provenance,
                     lineControlKind = LineControlKind.HORIZONTAL_TAB,
+                    lineControlRange = checkNotNull(entry.lineControlRange),
                 )
                 out += tabPlacement
                 pen = jumpEnd
@@ -1216,6 +1218,7 @@ private data class GlyphPlacement(
     val penEnd: LayoutUnit,
     val provenance: GlyphProvenance,
     val lineControlKind: LineControlKind? = null,
+    val lineControlRange: TextRange? = null,
 )
 
 /** One refined final glyph with the provenance attributed by its transform. */
@@ -1224,6 +1227,8 @@ internal data class RefinedGlyph(
     val provenance: GlyphProvenance,
     /** True when this entry represents a tab-stop jump rather than printable content. */
     val tabMarker: Boolean = false,
+    /** Exact source scalar represented by [tabMarker], or `null` for ordinary glyph content. */
+    val lineControlRange: TextRange? = null,
     /** Width consumed by an inline object marker, or `null` when this is a glyph entry. */
     val inlineObjectWidth: LayoutUnit? = null,
 )
@@ -1296,13 +1301,10 @@ private fun finiteUnit(value: Double, label: String): LayoutUnit {
 
 private fun isTabGlyph(
     request: EditableLineRequest,
-    refined: RefinedRun,
     entry: RefinedGlyph,
 ): Boolean {
-    val snapshot = request.snapshot ?: return false
-    return entry.shapedGlyph.clusterTokens
-        .map(refined.sourceRun::clusterFor)
-        .any { cluster -> snapshot.scalarValues(cluster.sourceRange).any { it == TAB_SCALAR } }
+    if (request.snapshot == null) return false
+    return entry.tabMarker && entry.lineControlRange != null
 }
 
 private fun legacyMappedRange(run: ShapedGlyphRun, glyph: ShapedGlyph): TextRange {
@@ -1310,7 +1312,6 @@ private fun legacyMappedRange(run: ShapedGlyphRun, glyph: ShapedGlyph): TextRang
     return TextRange(mapped.first().sourceRange.start, mapped.last().sourceRange.endExclusive)
 }
 
-private const val TAB_SCALAR: Int = 0x0009
 internal val DEFAULT_TAB_INTERVAL: LayoutUnit = LayoutUnit(1000f / 8f)
 private const val EPSILON_LAYOUT: Double = 1e-6
 

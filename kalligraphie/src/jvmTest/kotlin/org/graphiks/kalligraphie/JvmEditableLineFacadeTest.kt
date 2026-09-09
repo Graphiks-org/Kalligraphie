@@ -21,6 +21,8 @@ import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
+import org.graphiks.kalligraphie.api.GlyphProvenance
+import org.graphiks.kalligraphie.api.GlyphProvenanceRole
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LineControlKind
@@ -232,6 +234,76 @@ class JvmEditableLineFacadeTest {
     }
 
     @Test
+    fun tabLeaderGlyphsStayInsideTheCompleteSourceMappedControlSpan() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A\tB".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val line = assertIs<EditableLineResult.Success>(
+                JvmEditableLineFacade.layout(
+                    lineRequest(
+                        snapshot = snapshot,
+                        font = fixture.font,
+                        positioning = ParagraphPositioningPolicy(
+                            tabStops = listOf(TabStop(LayoutUnit(3_000f), leader = 0x2E)),
+                        ),
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = fixture.resolver,
+                            variant = FontRenderVariantKey.default,
+                            outlineProfile = OUTLINE_PROFILE,
+                        ),
+                    ),
+                ),
+            ).line
+
+            val glyphs = line.positionedGlyphRuns.flatMap { run -> run.glyphs }
+            assertEquals(
+                listOf(
+                    Triple(GlyphId(36), 0f, 1_366f),
+                    Triple(GlyphId(17), 1_366f, 569f),
+                    Triple(GlyphId(17), 1_935f, 569f),
+                    Triple(GlyphId(37), 3_000f, 1_366f),
+                ),
+                glyphs.map { glyph -> Triple(glyph.shapedGlyph.glyphId, glyph.origin.x.value, glyph.advance.x.value) },
+            )
+            assertTrue(glyphs.all { glyph -> glyph.materializationCertificate?.route == GlyphMaterializationRoute.OUTLINE })
+            val leaders = glyphs.filter { glyph ->
+                val provenance = glyph.provenance
+                provenance is GlyphProvenance.Synthetic && provenance.role == GlyphProvenanceRole.TAB_LEADER
+            }
+            assertEquals(listOf(1_366f to 1_935f, 1_935f to 2_504f), leaders.map { glyph ->
+                glyph.origin.x.value to glyph.origin.x.value + glyph.advance.x.value
+            })
+            val control = line.positionedLineControls.single()
+            assertEquals(1_366f, control.origin.x.value)
+            assertEquals(1_634f, control.advance.x.value)
+            assertEquals(GlyphMaterializationRoute.EMPTY, control.materializationRoute)
+            assertEquals(
+                listOf(1_366f to 3_000f),
+                line.selectionGeometry(
+                    CaretPosition(snapshot.textIndexAtScalarBoundary(1), CaretAffinity.DOWNSTREAM),
+                    CaretPosition(snapshot.textIndexAtScalarBoundary(2), CaretAffinity.UPSTREAM),
+                ).map { fragment -> fragment.left.value to fragment.right.value },
+            )
+            assertEquals(
+                listOf(
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 0f, 0, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(1, CaretAffinity.UPSTREAM, 1_366f, 1, 0, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 1_366f, 2, 1, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(2, CaretAffinity.UPSTREAM, 3_000f, 3, 1, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 3_000f, 4, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 4_366f, 5, 2, 0, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                ),
+                caretOracles(snapshot, line.allCaretCandidates),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
     fun repeated_tabs_use_the_literal_default_interval_without_publishing_font_glyphs() {
         val snapshot = Kalligraphie.decodeUtf16(
             version = TextVersion.create(),
@@ -334,6 +406,70 @@ class JvmEditableLineFacadeTest {
                     CaretOracle(1, CaretAffinity.DOWNSTREAM, 4_000f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
                     CaretOracle(1, CaretAffinity.UPSTREAM, 4_000f, 4, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
                     CaretOracle(0, CaretAffinity.DOWNSTREAM, 5_286f, 5, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                ),
+                caretOracles(snapshot, line.allCaretCandidates),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun consecutiveRightToLeftTabsPublishGloballyLogicalControlsWithExactGeometry() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("\u05D1\t\tA".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val line = assertIs<EditableLineResult.Success>(
+                JvmEditableLineFacade.layout(
+                    lineRequest(
+                        snapshot = snapshot,
+                        font = fixture.font,
+                        baseDirection = BaseDirection.RIGHT_TO_LEFT,
+                        positioning = ParagraphPositioningPolicy(defaultTabInterval = LayoutUnit(2_000f)),
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = fixture.resolver,
+                            variant = FontRenderVariantKey.default,
+                            outlineProfile = OUTLINE_PROFILE,
+                        ),
+                    ),
+                ),
+            ).line
+
+            assertEquals(
+                listOf(
+                    Triple(GlyphId(36), 2_634f, 1_366f),
+                    Triple(GlyphId(1281), 8_000f, 1_225f),
+                ),
+                line.positionedGlyphRuns.flatMap { run -> run.glyphs }.map { glyph ->
+                    Triple(glyph.shapedGlyph.glyphId, glyph.origin.x.value, glyph.advance.x.value)
+                },
+            )
+            assertEquals(
+                listOf(
+                    Triple(1, 6_000f, 2_000f),
+                    Triple(2, 4_000f, 2_000f),
+                ),
+                line.positionedLineControls.map { control ->
+                    val scalar = (0..4).single { ordinal ->
+                        snapshot.textIndexAtScalarBoundary(ordinal) == control.sourceRange.start
+                    }
+                    Triple(scalar, control.origin.x.value, control.advance.x.value)
+                },
+            )
+            assertTrue(line.positionedLineControls.all { control -> control.materializationRoute == GlyphMaterializationRoute.EMPTY })
+            assertEquals(
+                listOf(
+                    CaretOracle(3, CaretAffinity.DOWNSTREAM, 2_634f, 0, 0, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(4, CaretAffinity.UPSTREAM, 4_000f, 1, 0, 2, ShapingDirection.LEFT_TO_RIGHT, CaretStrength.WEAK, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(3, CaretAffinity.UPSTREAM, 4_000f, 2, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(2, CaretAffinity.DOWNSTREAM, 6_000f, 3, 1, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(2, CaretAffinity.UPSTREAM, 6_000f, 4, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(1, CaretAffinity.DOWNSTREAM, 8_000f, 5, 2, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
+                    CaretOracle(1, CaretAffinity.UPSTREAM, 8_000f, 6, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_END),
+                    CaretOracle(0, CaretAffinity.DOWNSTREAM, 9_225f, 7, 3, 1, ShapingDirection.RIGHT_TO_LEFT, CaretStrength.STRONG, CaretBoundaryEdge.LOGICAL_START),
                 ),
                 caretOracles(snapshot, line.allCaretCandidates),
             )

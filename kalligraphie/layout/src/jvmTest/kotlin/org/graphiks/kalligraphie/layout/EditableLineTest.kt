@@ -9,6 +9,7 @@ import org.graphiks.kalligraphie.api.CaretStrength
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.EditableLine
+import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
@@ -109,6 +110,81 @@ class EditableLineTest {
         assertEquals(listOf(0f, 10f, 50f, 70f), (0..3).map { ordinal ->
             line.caretCandidates(index(prepared, ordinal)).single().geometry.start.x.value
         })
+    }
+
+    @Test
+    fun multiplePreShapedGlyphsForOneTabProduceOneSourceMappedControl() {
+        val prepared = text("A\tB")
+        val font = fontFixture().instance
+        val sourceRun = shapedRun(
+            prepared = prepared,
+            font = font,
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            level = 0,
+            glyphs = listOf(
+                glyph(10, 10f, 0),
+                glyph(90, 3f, 1),
+                glyph(91, 2f, 1),
+                glyph(11, 20f, 2),
+            ),
+        )
+
+        val line = assertIs<EditableLineResult.Success>(
+            ExactEditableLineLayouter.layout(
+                EditableLineRequest(
+                    unicodeAnalysis = analysis(prepared, listOf(0), listOf(0)),
+                    shapedGlyphRuns = listOf(sourceRun),
+                    baseDirection = ShapingDirection.LEFT_TO_RIGHT,
+                    font = font,
+                    verticalMetrics = LineVerticalMetrics(ascent = LayoutUnit(8f), descent = LayoutUnit(2f)),
+                    materialization = EditableLineMaterialization.LayoutOnly,
+                    snapshot = prepared,
+                    positioning = ParagraphPositioningPolicy(tabStops = listOf(TabStop(LayoutUnit(50f)))),
+                ),
+            ),
+        ).line
+
+        assertEquals(listOf(GlyphId(10), GlyphId(11)), line.positionedGlyphRuns.single().glyphs.map { it.shapedGlyph.glyphId })
+        val control = line.positionedLineControls.single()
+        assertEquals(range(prepared, 1, 2), control.sourceRange)
+        assertEquals(10f, control.origin.x.value)
+        assertEquals(40f, control.advance.x.value)
+        assertEquals(listOf(0f, 10f, 50f, 70f), (0..3).map { ordinal ->
+            line.caretCandidates(index(prepared, ordinal)).single().geometry.start.x.value
+        })
+    }
+
+    @Test
+    fun glyphRelationMixingOrdinaryContentAndTabReturnsTypedFailure() {
+        val prepared = text("A\tB")
+        val font = fontFixture().instance
+        val sourceRun = shapedRun(
+            prepared = prepared,
+            font = font,
+            direction = ShapingDirection.LEFT_TO_RIGHT,
+            level = 0,
+            glyphs = listOf(glyphWithTokens(10, 15f, listOf(0, 1)), glyph(11, 20f, 2)),
+        )
+
+        val result = ExactEditableLineLayouter.layout(
+            EditableLineRequest(
+                unicodeAnalysis = analysis(prepared, listOf(0), listOf(0)),
+                shapedGlyphRuns = listOf(sourceRun),
+                baseDirection = ShapingDirection.LEFT_TO_RIGHT,
+                font = font,
+                verticalMetrics = LineVerticalMetrics(ascent = LayoutUnit(8f), descent = LayoutUnit(2f)),
+                materialization = EditableLineMaterialization.LayoutOnly,
+                snapshot = prepared,
+                positioning = ParagraphPositioningPolicy(tabStops = listOf(TabStop(LayoutUnit(50f)))),
+            ),
+        )
+
+        val failure = assertIs<EditableLineResult.Failure>(result)
+        val error = assertIs<EditableLineError.MixedLineControlGlyphRelation>(failure.error)
+        assertEquals(LineControlKind.HORIZONTAL_TAB, error.kind)
+        assertEquals(range(prepared, 0, 2), error.range)
+        assertEquals("layout.mixed-line-control-glyph-relation", error.code)
+        assertEquals(emptyList(), failure.diagnostics)
     }
 
     @Test
