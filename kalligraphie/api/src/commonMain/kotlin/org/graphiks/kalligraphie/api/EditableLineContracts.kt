@@ -559,6 +559,43 @@ public class AutomaticHyphenBreaks(
     }
 }
 
+/**
+ * Classifies a source control that is rejected or requires explicit handling in one non-wrapped
+ * editable line.
+ *
+ * Each value identifies the complete logical control unit reported by
+ * [EditableLineError.UnsupportedLineControl]. In particular, a consecutive carriage return and
+ * line feed is classified as [CARRIAGE_RETURN_LINE_FEED], not as two independent controls.
+ */
+public enum class LineControlKind {
+    /** `U+000D CARRIAGE RETURN` not followed by `U+000A LINE FEED`. */
+    CARRIAGE_RETURN,
+
+    /** `U+000A LINE FEED` not immediately consumed by a preceding carriage return. */
+    LINE_FEED,
+
+    /** Consecutive `U+000D CARRIAGE RETURN` and `U+000A LINE FEED` as one source unit. */
+    CARRIAGE_RETURN_LINE_FEED,
+
+    /** `U+000B LINE TABULATION`, also known as vertical tab. */
+    VERTICAL_TAB,
+
+    /** `U+000C FORM FEED`. */
+    FORM_FEED,
+
+    /** `U+0085 NEXT LINE`. */
+    NEXT_LINE,
+
+    /** `U+2028 LINE SEPARATOR`. */
+    LINE_SEPARATOR,
+
+    /** `U+2029 PARAGRAPH SEPARATOR`. */
+    PARAGRAPH_SEPARATOR,
+
+    /** `U+0009 CHARACTER TABULATION`, accepted only with an explicit positioning policy. */
+    HORIZONTAL_TAB,
+}
+
 /** Typed reason an editable line could not be published. */
 public sealed interface EditableLineError {
     /** Stable machine-readable error code. */
@@ -572,6 +609,23 @@ public sealed interface EditableLineError {
         override val message: String,
     ) : EditableLineError {
         override val code: String = "layout.invalid-editable-line-input"
+    }
+
+    /**
+     * A source control cannot be represented by this non-wrapped line request.
+     *
+     * [range] is bound to the request snapshot and covers the complete control unit. A CRLF pair
+     * therefore occupies one two-scalar range. A horizontal tab uses this failure only when the
+     * request supplies no explicit tab-positioning policy.
+     */
+    public data class UnsupportedLineControl(
+        /** Exact kind of rejected source control. */
+        public val kind: LineControlKind,
+        /** Exact half-open scalar range occupied by the rejected control unit. */
+        public val range: TextRange,
+    ) : EditableLineError {
+        override val code: String = "layout.unsupported-line-control"
+        override val message: String = "Editable line does not support $kind at $range."
     }
 
     /** A finite public layout coordinate could not be produced. */

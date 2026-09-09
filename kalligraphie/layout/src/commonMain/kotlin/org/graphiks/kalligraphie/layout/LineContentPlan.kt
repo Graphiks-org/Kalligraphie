@@ -326,7 +326,8 @@ internal object LineContentPlan {
             val mapped = mappedRange(snapshot, run, glyph)
             val scalars = snapshot.scalarValues(mapped)
             if (scalars.any { it == TAB } && instance != null) {
-                val tabGlyph = neutralTabGlyph(glyph, scalars)
+                val marker = (instance.resolveGlyph(SPACE) as? FontOperationResult.Success)?.value?.glyphId ?: GlyphId(0)
+                val tabGlyph = neutralTabGlyph(glyph, marker)
                 stream += RefinedGlyph(tabGlyph, GlyphProvenance.Direct(mapped), tabMarker = true)
                 return@forEach
             }
@@ -465,8 +466,8 @@ internal object LineContentPlan {
         clusterTokens = listOf(token),
     )
 
-    private fun neutralTabGlyph(glyph: ShapedGlyph, scalars: List<Int>): ShapedGlyph = ShapedGlyph(
-        glyphId = glyph.glyphId,
+    private fun neutralTabGlyph(glyph: ShapedGlyph, marker: GlyphId): ShapedGlyph = ShapedGlyph(
+        glyphId = marker,
         xAdvance = LayoutUnit(0f),
         yAdvance = LayoutUnit(0f),
         xOffset = LayoutUnit(0f),

@@ -105,6 +105,21 @@ request. The result is `EditableLineResult`: on success it contains shaped and
 positioned glyphs, text-to-cluster-to-glyph mappings, logical and visual caret
 navigation, selection geometry, and deterministic hit testing.
 
+The non-wrapped route rejects CR, LF, CRLF as one unit, vertical tab, form feed,
+NEL, `U+2028 LINE SEPARATOR`, and `U+2029 PARAGRAPH SEPARATOR` before Unicode
+analysis or shaping. The typed `EditableLineError.UnsupportedLineControl`
+reports a `LineControlKind` and the exact snapshot-bound `TextRange` occupied by
+the control. A `U+0009 CHARACTER TABULATION` is likewise rejected unless the
+request supplies an explicit `ParagraphPositioningPolicy`.
+
+With a positioning policy, TAB advances to the next explicit `TabStop`, or to
+the next interval selected by `defaultTabInterval` when no explicit stop
+applies. It is replaced by a glyphless marker rather than publishing the
+font's ordinary TAB/.notdef glyph; the following content, caret boundaries,
+and source mappings reflect the resulting tab-stop geometry. The BiDi
+formatting controls LRE, RLE, PDF, LRI, RLI, FSI, and PDI remain accepted,
+glyphless, and exactly source-mapped.
+
 The JVM Unicode result is verified against every applicable Unicode 16.0 case
 in `GraphemeBreakTest`, `BidiTest`, and `BidiCharacterTest`, and against the
 complete `Script`, `Script_Extensions`, and `Bidi_Paired_Bracket` data. The

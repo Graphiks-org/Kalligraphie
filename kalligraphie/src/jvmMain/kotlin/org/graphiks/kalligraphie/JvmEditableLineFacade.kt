@@ -15,8 +15,10 @@ import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
+import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
@@ -40,8 +42,11 @@ import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
  *
  * The request describes exactly one complete, non-wrapped [snapshot]. Its base direction,
  * language, baseline feature policy, feature overrides, vertical metrics, and publication mode
- * are all explicit. Script and run direction are resolved by the pinned Unicode analysis and
- * then copied explicitly into every HarfBuzz request; the facade never defaults text to LTR.
+ * are all explicit. A horizontal tab additionally requires [positioning]. Script and run
+ * direction are resolved by the pinned Unicode analysis and then copied explicitly into every
+ * HarfBuzz request; the facade never defaults text to LTR. Hard line separators and a tab without
+ * positioning are rejected with an exact [EditableLineError.UnsupportedLineControl] before
+ * Unicode analysis or shaping begins.
  * [materialization] borrows any resolver it contains only for the synchronous call. The request
  * captures its feature list and is safe to share between threads when its font and borrowed
  * resolver support concurrent calls.
@@ -70,6 +75,13 @@ public class JvmEditableLineFacadeRequest(
     public val unicodeAnalysisProfile: UnicodeAnalysisProfile = UnicodeAnalysisProfile.unbounded,
     /** Resource profile enforced for each explicit HarfBuzz shaping run. */
     public val shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
+    /**
+     * Explicit alignment and tab-stop policy, or `null` when the line contains no horizontal tab.
+     *
+     * A snapshot containing `U+0009 CHARACTER TABULATION` is rejected unless this policy is
+     * present. Explicit and implicit stops are then resolved by [ParagraphPositioningPolicy].
+     */
+    public val positioning: ParagraphPositioningPolicy? = null,
 ) {
     /** Immutable OpenType feature overrides applied in deterministic caller order. */
     public val features: List<OpenTypeFeature> = features.toList()
@@ -94,7 +106,8 @@ public class JvmEditableLineFacadeRequest(
 /**
  * JVM-reference consumer facade for one exact editable Unicode line.
  *
- * The facade executes the complete deterministic route: ICU4J Unicode analysis, the embedded
+ * The facade first rejects unsupported line controls, then executes the deterministic route:
+ * ICU4J Unicode analysis, the embedded
  * hash-verified HarfBuzz JVM backend, and portable final-line layout. It returns a typed failure
  * when Unicode inputs are invalid or HarfBuzz cannot open or shape. Android and Apple adapters
  * are deliberately not selected by this JVM-only entry point. It owns no native handle after a
@@ -104,10 +117,12 @@ public object JvmEditableLineFacade {
     /**
      * Produces one editable line through the complete JVM reference route.
      *
-     * All shaping requests explicitly receive resolved script, direction, language, UAX #9
-     * level, BOT/EOT flags, baseline policy, and feature overrides. A successful line preserves
-     * shaped runs and their backend identities; `RENDERABLE` publication additionally certifies
-     * every final glyph through the selected certified representation profile.
+     * Unsupported hard separators and tabs without a positioning policy return an exact typed
+     * failure before ICU or HarfBuzz work. All shaping requests explicitly receive resolved
+     * script, direction, language, UAX #9 level, BOT/EOT flags, baseline policy, and feature
+     * overrides. A successful line preserves shaped runs and their backend identities;
+     * `RENDERABLE` publication additionally certifies every final glyph through the selected
+     * certified representation profile.
      */
     public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
         val analysis = when (val analyzed = analyze(request)) {
@@ -134,6 +149,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun analyze(request: JvmEditableLineFacadeRequest): FacadeUnicodeAnalysis = try {
+        unsupportedLineControl(request)?.let { return FacadeUnicodeAnalysis.Result(it) }
         when (
             val outcome = JvmUnicodeAnalyzer.create().analyze(
                 snapshot = request.snapshot,
@@ -156,6 +172,42 @@ public object JvmEditableLineFacade {
         FacadeUnicodeAnalysis.Result(invalidInput(error))
     }
 
+    private fun unsupportedLineControl(request: JvmEditableLineFacadeRequest): EditableLineResult.Failure? {
+        val snapshot = request.snapshot
+        snapshot.scalars.forEachIndexed { index, scalar ->
+            val (kind, length) = when (scalar) {
+                0x000D -> if (snapshot.scalars.getOrNull(index + 1) == 0x000A) {
+                    LineControlKind.CARRIAGE_RETURN_LINE_FEED to 2
+                } else {
+                    LineControlKind.CARRIAGE_RETURN to 1
+                }
+                0x000A -> LineControlKind.LINE_FEED to 1
+                0x000B -> LineControlKind.VERTICAL_TAB to 1
+                0x000C -> LineControlKind.FORM_FEED to 1
+                0x0085 -> LineControlKind.NEXT_LINE to 1
+                0x2028 -> LineControlKind.LINE_SEPARATOR to 1
+                0x2029 -> LineControlKind.PARAGRAPH_SEPARATOR to 1
+                0x0009 -> if (request.positioning == null) {
+                    LineControlKind.HORIZONTAL_TAB to 1
+                } else {
+                    return@forEachIndexed
+                }
+                else -> return@forEachIndexed
+            }
+            return EditableLineResult.Failure(
+                error = EditableLineError.UnsupportedLineControl(
+                    kind = kind,
+                    range = TextRange(
+                        snapshot.textIndexAtScalarBoundary(index),
+                        snapshot.textIndexAtScalarBoundary(index + length),
+                    ),
+                ),
+                diagnostics = emptyList(),
+            )
+        }
+        return null
+    }
+
     private fun layout(
         request: JvmEditableLineFacadeRequest,
         analysis: UnicodeAnalysis,
@@ -175,6 +227,8 @@ public object JvmEditableLineFacade {
                             font = request.font,
                             verticalMetrics = request.verticalMetrics,
                             materialization = request.materialization,
+                            snapshot = request.snapshot,
+                            positioning = request.positioning,
                             cancellationToken = request.cancellationToken,
                         ),
                     )

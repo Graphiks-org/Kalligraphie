@@ -137,6 +137,23 @@ caractères supprimés par la règle X9 d’UAX #9 ne sont omis que de la compar
 normative des niveaux et du réordonnancement ; les résultats éditables
 conservent leurs positions source.
 
+Le parcours sans renvoi à la ligne rejette CR, LF, CRLF comme une seule unité,
+la tabulation verticale, le saut de page, NEL, `U+2028 LINE SEPARATOR`
+(séparateur de ligne) et `U+2029 PARAGRAPH SEPARATOR` (séparateur de paragraphe)
+avant l’analyse Unicode ou la composition. L’erreur typée
+`EditableLineError.UnsupportedLineControl` indique un `LineControlKind` et le
+`TextRange` exact, lié au snapshot (instantané), qu’occupe le contrôle. Une
+`U+0009 CHARACTER TABULATION` (tabulation horizontale) est également rejetée
+si la demande ne fournit pas de `ParagraphPositioningPolicy` explicite.
+
+Avec cette politique de positionnement, TAB avance jusqu’au prochain `TabStop`
+(taquet de tabulation) explicite ou jusqu’au prochain intervalle défini par
+`defaultTabInterval`. Un marqueur sans encre remplace le glyphe TAB/.notdef
+ordinaire de la fonte ; le contenu suivant, les frontières du caret et les
+relations source reflètent la géométrie du taquet. Les contrôles de formatage
+BiDi LRE, RLE, PDF, LRI, RLI, FSI et PDI restent acceptés, sans encre et associés
+exactement à leur source.
+
 Pour obtenir `RENDERABLE`, remplacez `LayoutOnly` par
 `EditableLineMaterialization.Renderable` et fournissez un gestionnaire ouvert,
 un `FontRenderVariantSnapshot` (sélection visuelle) et un

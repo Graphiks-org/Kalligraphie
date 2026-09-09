@@ -21,7 +21,10 @@ import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.LineControlKind
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
+import org.graphiks.kalligraphie.api.TabStop
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
@@ -36,6 +39,169 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class JvmEditableLineFacadeTest {
+    @Test
+    fun hard_line_controls_are_rejected_with_their_exact_scalar_range_before_cancellation() {
+        val cases = listOf(
+            Triple("A\rB", LineControlKind.CARRIAGE_RETURN, 1 to 2),
+            Triple("A\nB", LineControlKind.LINE_FEED, 1 to 2),
+            Triple("A\r\nB", LineControlKind.CARRIAGE_RETURN_LINE_FEED, 1 to 3),
+            Triple("A\u000BB", LineControlKind.VERTICAL_TAB, 1 to 2),
+            Triple("A\u000CB", LineControlKind.FORM_FEED, 1 to 2),
+            Triple("A\u0085B", LineControlKind.NEXT_LINE, 1 to 2),
+            Triple("A\u2028B", LineControlKind.LINE_SEPARATOR, 1 to 2),
+            Triple("A\u2029B", LineControlKind.PARAGRAPH_SEPARATOR, 1 to 2),
+        )
+        val fixture = renderableFixture()
+        try {
+            cases.forEach { (text, expectedKind, expectedBoundaries) ->
+                val snapshot = Kalligraphie.decodeUtf16(
+                    version = TextVersion.create(),
+                    slices = listOf(TextSlice.Utf16(text.toCharArray())),
+                ).snapshot
+
+                val result = JvmEditableLineFacade.layout(
+                    lineRequest(
+                        snapshot = snapshot,
+                        font = fixture.font,
+                        cancellationToken = CancellationToken.cancelled,
+                    ),
+                )
+
+                val control = assertIs<EditableLineError.UnsupportedLineControl>(
+                    assertIs<EditableLineResult.Failure>(result).error,
+                )
+                assertEquals(expectedKind, control.kind)
+                assertEquals(
+                    org.graphiks.kalligraphie.api.TextRange(
+                        snapshot.textIndexAtScalarBoundary(expectedBoundaries.first),
+                        snapshot.textIndexAtScalarBoundary(expectedBoundaries.second),
+                    ),
+                    control.range,
+                )
+            }
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun horizontal_tab_without_positioning_is_rejected_with_its_exact_range_before_cancellation() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A\tB".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val result = JvmEditableLineFacade.layout(
+                lineRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    cancellationToken = CancellationToken.cancelled,
+                ),
+            )
+
+            val control = assertIs<EditableLineError.UnsupportedLineControl>(
+                assertIs<EditableLineResult.Failure>(result).error,
+            )
+            assertEquals(LineControlKind.HORIZONTAL_TAB, control.kind)
+            assertEquals(
+                org.graphiks.kalligraphie.api.TextRange(
+                    snapshot.textIndexAtScalarBoundary(1),
+                    snapshot.textIndexAtScalarBoundary(2),
+                ),
+                control.range,
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun explicit_tab_stop_positions_the_following_liberation_glyph_and_uses_a_glyphless_marker() {
+        val snapshot = Kalligraphie.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("A\tB".toCharArray())),
+        ).snapshot
+        val fixture = renderableFixture()
+        try {
+            val result = JvmEditableLineFacade.layout(
+                lineRequest(
+                    snapshot = snapshot,
+                    font = fixture.font,
+                    positioning = ParagraphPositioningPolicy(
+                        tabStops = listOf(TabStop(LayoutUnit(3_000f))),
+                    ),
+                ),
+            )
+
+            val line = assertIs<EditableLineResult.Success>(result).line
+            val glyphs = line.positionedGlyphRuns.flatMap { it.glyphs }
+            assertEquals(listOf(GlyphId(36), GlyphId(3), GlyphId(37)), glyphs.map { it.shapedGlyph.glyphId })
+            assertEquals(listOf(0f, 1_366f, 3_000f), glyphs.map { it.origin.x.value })
+            assertEquals(listOf(1_366f, 1_634f, 1_366f), glyphs.map { it.advance.x.value })
+            assertEquals(
+                org.graphiks.kalligraphie.api.TextRange(
+                    snapshot.textIndexAtScalarBoundary(1),
+                    snapshot.textIndexAtScalarBoundary(2),
+                ),
+                glyphs[1].mappedSourceRange,
+            )
+            assertEquals(
+                (0..3).map(snapshot::textIndexAtScalarBoundary).toSet(),
+                line.allCaretCandidates.map { it.position.index }.toSet(),
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun bidi_formatting_controls_remain_glyphless_and_preserve_every_source_and_caret_boundary() {
+        val cases = listOf(
+            "A\u202AB\u202CC" to listOf(1, 3),
+            "A\u202BB\u202CC" to listOf(1, 3),
+            "A\u2066B\u2069C" to listOf(1, 3),
+            "A\u2067B\u2069C" to listOf(1, 3),
+            "A\u2068B\u2069C" to listOf(1, 3),
+        )
+        val fixture = renderableFixture()
+        try {
+            cases.forEach { (text, controlOrdinals) ->
+                val snapshot = Kalligraphie.decodeUtf16(
+                    version = TextVersion.create(),
+                    slices = listOf(TextSlice.Utf16(text.toCharArray())),
+                ).snapshot
+
+                val line = assertIs<EditableLineResult.Success>(
+                    JvmEditableLineFacade.layout(lineRequest(snapshot, fixture.font)),
+                ).line
+                val glyphs = line.positionedGlyphRuns.flatMap { it.glyphs }
+                controlOrdinals.forEach { ordinal ->
+                    val range = org.graphiks.kalligraphie.api.TextRange(
+                        snapshot.textIndexAtScalarBoundary(ordinal),
+                        snapshot.textIndexAtScalarBoundary(ordinal + 1),
+                    )
+                    val controlGlyph = glyphs.single { it.mappedSourceRange == range }
+                    assertEquals(GlyphId(3), controlGlyph.shapedGlyph.glyphId)
+                    assertEquals(0f, controlGlyph.advance.x.value)
+                    val sourceRun = line.positionedGlyphRuns.single {
+                        range.start >= it.sourceRun.range.start &&
+                            range.endExclusive <= it.sourceRun.range.endExclusive
+                    }.sourceRun
+                    val cluster = sourceRun.clusters.single { it.sourceRange == range }
+                    assertEquals(listOf(cluster.token), sourceRun.mappings.clustersForSource(range))
+                    assertEquals(listOf(range), sourceRun.mappings.sourcesForCluster(cluster.token))
+                }
+                assertEquals(
+                    (0..5).map(snapshot::textIndexAtScalarBoundary).toSet(),
+                    line.allCaretCandidates.map { it.position.index }.toSet(),
+                )
+            }
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+        }
+    }
+
     @Test
     fun x9_controls_keep_literal_text_cluster_glyph_and_caret_mappings_through_the_public_facade() {
         val snapshot = Kalligraphie.decodeUtf16(
@@ -335,6 +501,24 @@ class JvmEditableLineFacadeTest {
         ).value
         return RenderableFixture(font, resolver)
     }
+
+    private fun lineRequest(
+        snapshot: org.graphiks.kalligraphie.api.TextSnapshot,
+        font: FontInstance,
+        cancellationToken: CancellationToken = CancellationToken.none,
+        positioning: ParagraphPositioningPolicy? = null,
+    ): JvmEditableLineFacadeRequest = JvmEditableLineFacadeRequest(
+        snapshot = snapshot,
+        font = font,
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "en",
+        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        features = emptyList(),
+        verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+        materialization = EditableLineMaterialization.LayoutOnly,
+        positioning = positioning,
+        cancellationToken = cancellationToken,
+    )
 
     private fun fixtureBytes(): ByteArray =
         checkNotNull(javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf")) {

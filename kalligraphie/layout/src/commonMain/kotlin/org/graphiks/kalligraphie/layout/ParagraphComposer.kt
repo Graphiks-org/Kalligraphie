@@ -2113,6 +2113,7 @@ private fun GdefLigatureCaretFact.shifted(glyphOffset: Int): GdefLigatureCaretFa
 
 internal fun EditableLineError.toParagraphError(): ParagraphLayoutError = when (this) {
     is EditableLineError.InvalidInput -> ParagraphLayoutError.InvalidInput(message)
+    is EditableLineError.UnsupportedLineControl -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.GeometryOverflow -> ParagraphLayoutError.GeometryOverflow(message)
     is EditableLineError.UnicodeAnalysisLimitExceeded -> ParagraphLayoutError.InvalidInput(message)
     is EditableLineError.FontMaterializationFailure -> ParagraphLayoutError.FontFailure(fontError)
