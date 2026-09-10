@@ -38,6 +38,7 @@ import org.graphiks.kalligraphie.api.GlyphRepresentationProfile
 import org.graphiks.kalligraphie.api.NativeHandleProfile
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.PaintGraphProfile
+import org.graphiks.kalligraphie.api.immutableListSnapshot
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
@@ -135,7 +136,7 @@ public class EmbeddedFontCatalog(
                     bitmap = id in bitmapRouteSupportedFaces,
                 ),
             )
-        }
+        }.immutableListSnapshot()
     }
 
     /** Creates a one-face embedded catalogue with a deterministic content-derived generation. */
