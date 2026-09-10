@@ -110,13 +110,25 @@ class JvmEditableParagraphFacadeTest {
             assertEquals(faces.toSet(), glyphRuns.map { run -> run.fontInstanceKey.face }.toSet())
             assertTrue(glyphs.isNotEmpty())
             assertTrue(glyphs.all { glyph -> glyph.materializationCertificate != null })
-            assertTrue(
-                glyphs
-                    .filter { glyph -> glyph.materializationCertificate?.route != GlyphMaterializationRoute.EMPTY }
-                    .all { glyph ->
-                        assertNotNull(glyph.materializationCertificate).route == GlyphMaterializationRoute.OUTLINE
-                    },
+            val expectedOutlineRanges = listOf(
+                faces[0] to range(snapshot, 0, 5),
+                faces[1] to range(snapshot, 6, 9),
+                faces[2] to range(snapshot, 10, 14),
             )
+            expectedOutlineRanges.forEach { (face, scriptRange) ->
+                assertTrue(
+                    glyphRuns
+                        .filter { run -> run.fontInstanceKey.face == face }
+                        .flatMap { run -> run.glyphs }
+                        .any { glyph ->
+                            val mappedRange = glyph.mappedSourceRange
+                            glyph.materializationCertificate?.route == GlyphMaterializationRoute.OUTLINE &&
+                                mappedRange.start >= scriptRange.start &&
+                                mappedRange.endExclusive <= scriptRange.endExclusive
+                        },
+                    "Expected face $face to certify an OUTLINE glyph inside $scriptRange.",
+                )
+            }
         } finally {
             assertIs<FontOperationResult.Success<Unit>>(resolver.close())
         }
