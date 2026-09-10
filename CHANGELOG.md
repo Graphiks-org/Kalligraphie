@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
+- A named Apple M2 Max glyph-materialization reference with reproducible p50,
+  p95, p99, allocation, and retained-JVM-memory observations for all 23
+  measurement profiles.
 - Reproducible opt-in measurement of cold and warm portable TrueType editor stages for preparation, text mapping, metrics, outlines, and detached render assets.
 - Exact region-chain composition through `org.graphiks:kalligraphie`: immutable application-supplied `FlowRegion` geometry with exclusions and bounded refinement, logical lines distributed into geometric `LineFragment` values without restarting BiDi or splitting clusters and inline objects, deterministic fragmentation relaxation diagnostics, identity-attested `FlowContinuation` reuse, and incremental forward rematerialization with explicit unmaterialized coverage.
 - Advanced typography and derived content through `org.graphiks:kalligraphie`: typed `GlyphProvenance` for direct, derived, and synthetic glyphs, soft and automatic hyphenation (versioned pattern service with digest-verified `hyph-en-us` data and structured diagnostics), inter-word / inter-character / kashida justification, tab stops with START/END/CENTER/DECIMAL alignment and synthetic leaders, ellipsis truncation (`INLINE_START`, `MIDDLE`, `INLINE_END`) with explicit hidden source ranges, inline objects for `U+FFFC` with caret/selection/hit-testing semantics, and final-glyph recertification after every transform.

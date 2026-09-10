@@ -1,8 +1,10 @@
 # Glyph materialization measurement
 
 Kalligraphie provides an opt-in JVM measurement runner for portable glyph
-materialization. It is test-source tooling, not a functional latency test and
-not a published benchmark result. It exercises the checked-in, audited COLR/
+materialization. It is test-source tooling, not a functional latency test. A
+[named observational reference](glyph-materialization-reference-apple-m2-max-2026-09-10.md)
+publishes one reproducible result without turning it into a portable threshold.
+The runner exercises the checked-in, audited COLR/
 CPAL, SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures
 through the public catalog, resolver, instance, asset, and `resolveGlyph(...)`
 paths.
