@@ -1,6 +1,11 @@
 package org.graphiks.kalligraphie.api
 
-internal fun <Element> Iterable<Element>.immutableListSnapshot(): List<Element> =
+internal fun <Element> Collection<Element>.immutableListSnapshot(): List<Element> =
+    ImmutableSnapshotList(toList())
+
+/** Returns an immutable list copy that cannot be changed through a mutable JVM cast. */
+@KalligraphieInternalApi
+public fun <Element> Iterable<Element>.immutableListSnapshot(): List<Element> =
     ImmutableSnapshotList(toList())
 
 private class ImmutableSnapshotList<Element>(

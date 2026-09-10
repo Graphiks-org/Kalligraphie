@@ -16,6 +16,7 @@ import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditorOperationLimitKind
 import org.graphiks.kalligraphie.api.EditorOperationProfile
+import org.graphiks.kalligraphie.api.FontAssetResolverHandle
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -24,8 +25,10 @@ import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
+import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.LayoutPoint
 import org.graphiks.kalligraphie.api.LayoutRect
@@ -34,6 +37,7 @@ import org.graphiks.kalligraphie.api.LineLayout
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LogicalNavigationDirection
 import org.graphiks.kalligraphie.api.OpenTypeFeature
+import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.ParagraphLayoutError
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
@@ -48,6 +52,76 @@ import org.graphiks.kalligraphie.api.VisualNavigationDirection
 import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 
 class JvmEditableParagraphFacadeTest {
+    @Test
+    fun publicFacadeCertifiesLatinHebrewAndArabicFallbackFromMainArtifact() {
+        val latin = mainArtifactFontSource("gdef-kern/GdefKerningFixture.ttf", "GDEF kerning fixture")
+        val hebrew = mainArtifactFontSource("liberation/LiberationSans-Regular.ttf", "Liberation Sans Regular")
+        val arabic = mainArtifactFontSource("amiri/Amiri-Regular.ttf", "Amiri Regular")
+        val sources = listOf(latin, hebrew, arabic)
+        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+            Kalligraphie.embedded(sources),
+        ).value
+        val faces = catalog.faces.map { face -> face.id }
+        val snapshot = Kalligraphie.decodeUtf16(
+            TextVersion.create(),
+            listOf(TextSlice.Utf16("Latin \u05D0\u05D1\u05D2 \u0633\u0644\u0627\u0645".toCharArray())),
+        ).snapshot
+        val fixture = ParagraphFixture(
+            snapshot = snapshot,
+            catalog = catalog,
+            policy = FontResolutionPolicySnapshot(
+                generation = catalog.generation,
+                policyId = "public-three-script-renderable-fixture",
+                version = "1",
+                candidates = faces.map(::FontResolutionCandidate),
+                lastResortFace = faces.last(),
+            ),
+            latinFace = faces.first(),
+            arabicFace = faces.last(),
+        )
+        val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(
+            catalog.openAssetResolver(),
+        ).value
+
+        try {
+            val result = assertIs<ParagraphLayoutResult.Success>(
+                JvmEditableParagraphFacade.layout(
+                    request(
+                        fixture = fixture,
+                        constraints = constraints(width = 10_000f, top = 50f, height = 1_200f),
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = resolver,
+                            variant = FontRenderVariantKey.default,
+                            outlineProfile = OutlineProfile(
+                                maxBytes = 1_000_000,
+                                maxContours = 2_048,
+                                maxPoints = 16_384,
+                                maxCompositeDepth = 8,
+                                maxCompositeComponents = 256,
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            val glyphRuns = result.layout.lines.flatMap(LineLayout::positionedGlyphRuns)
+            val glyphs = glyphRuns.flatMap { run -> run.glyphs }
+
+            assertEquals(listOf(latin.id, hebrew.id, arabic.id), catalog.faces.map { face -> face.id.source })
+            assertEquals(faces.toSet(), glyphRuns.map { run -> run.fontInstanceKey.face }.toSet())
+            assertTrue(glyphs.isNotEmpty())
+            assertTrue(glyphs.all { glyph -> glyph.materializationCertificate != null })
+            assertTrue(
+                glyphs
+                    .filter { glyph -> glyph.materializationCertificate?.route != GlyphMaterializationRoute.EMPTY }
+                    .all { glyph ->
+                        assertNotNull(glyph.materializationCertificate).route == GlyphMaterializationRoute.OUTLINE
+                    },
+            )
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(resolver.close())
+        }
+    }
+
     @Test
     fun operationGlyphLimitRejectsWholeParagraphAndExactRetryPublishesRealFallbackLines() {
         val fixture = multiFaceFixture("fi \u0633\u0644\u0627\u0645")
@@ -595,6 +669,7 @@ class JvmEditableParagraphFacadeTest {
         features: List<OpenTypeFeature> = emptyList(),
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
+        materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
     ): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
         snapshot = fixture.snapshot,
         sourceRange = sourceRange,
@@ -605,7 +680,7 @@ class JvmEditableParagraphFacadeTest {
         resolutionPolicy = fixture.policy,
         fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
         features = features,
-        materialization = EditableLineMaterialization.LayoutOnly,
+        materialization = materialization,
         continuation = continuation,
         cancellationToken = cancellationToken,
         operationProfile = operationProfile,
@@ -682,6 +757,14 @@ class JvmEditableParagraphFacadeTest {
         sourceBytes = fixtureBytes(relativePath),
         provenance = FontSourceProvenance(declaredName),
     )
+
+    private fun mainArtifactFontSource(relativePath: String, declaredName: String): FontSource {
+        val classpathPath = "/fonts/$relativePath"
+        val sourceBytes = checkNotNull(javaClass.getResourceAsStream(classpathPath)) {
+            "main artifact fixture font is missing: $relativePath"
+        }.use { stream -> stream.readBytes() }
+        return FontSource(sourceBytes, FontSourceProvenance(declaredName))
+    }
 
     private fun fixtureBytes(relativePath: String): ByteArray {
         val classpathPath = "/fonts/$relativePath"
