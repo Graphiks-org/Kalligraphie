@@ -14,6 +14,10 @@ import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontFallbackDiagnostic
+import org.graphiks.kalligraphie.api.FontFallbackStage
+import org.graphiks.kalligraphie.api.FontFallbackReason
+import org.graphiks.kalligraphie.api.FontFallbackLastResortState
 import org.graphiks.kalligraphie.api.FontFaceCapabilities
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontFaceRecord
@@ -145,9 +149,10 @@ internal object FontFallbackResolver {
         val requirements = requirementsFor(request.materialization)
         val records = request.fontCatalog.faces.associateBy(FontFaceRecord::id)
         val rejectedAttempts = mutableSetOf<RejectedAttempt>()
-        val instances = mutableMapOf<FontFaceId, FontInstance>()
+        val instances = mutableMapOf<InstanceAccessKey, FontInstance>()
         val shapedGroups = mutableMapOf<GroupSignature, List<ShapedGlyphRun>>()
         val diagnostics = mutableListOf<FontDiagnostic>()
+        val fallbackDiagnostics = mutableListOf<FontFallbackDiagnostic>()
         var assignments = units.map { unit ->
             if (request.cancellationToken.isCancellationRequested()) {
                 return FontOperationResult.Cancelled(diagnostics)
@@ -163,10 +168,12 @@ internal object FontFallbackResolver {
                     instances,
                     rejectedAttempts,
                     diagnostics,
+                    fallbackDiagnostics,
                 )
             ) {
                 is CandidateSelection.Selected -> selection.assigned
-                CandidateSelection.Exhausted -> return unresolved(unit, diagnostics)
+                CandidateSelection.Exhausted -> return unresolved(diagnostics, fallbackDiagnostics)
+                is CandidateSelection.Failed -> return FontOperationResult.Failure(selection.error, diagnostics + selection.diagnostics)
                 is CandidateSelection.Cancelled -> return FontOperationResult.Cancelled(diagnostics + selection.diagnostics)
             }
         }
@@ -186,7 +193,7 @@ internal object FontFallbackResolver {
                     shaped += cached
                     return@forEach
                 }
-                when (val attempted = shapeAndValidate(group, request, proofs)) {
+                when (val attempted = shapeAndValidate(group, request, proofs, fallbackDiagnostics)) {
                     is Attempt.Success -> {
                         shapedGroups[signature] = attempted.runs
                         shaped += attempted.runs
@@ -207,6 +214,16 @@ internal object FontFallbackResolver {
             val rejectedGroup = rejected
             if (rejectedGroup == null) {
                 assignments.filter { it.record.id == request.resolutionPolicy.lastResortFace }.forEach { assigned ->
+                    val materialization = request.materialization as? EditableLineMaterialization.Renderable
+                    val profiles = if (materialization == null || assigned.glyphless) emptyList() else shaped
+                        .filter { run -> run.fontInstanceKey == assigned.instance.key && intersection(run.range, assigned.unit.range) != null }
+                        .mapNotNull { run -> proofs.find(assigned.instance, materialization, run.glyphs.map { it.glyphId })?.assetKey?.representationProfile }
+                        .distinct()
+                    profiles.ifEmpty { listOf(null) }.forEach { profile ->
+                        fallbackDiagnostics += request.decision(assigned.unit, assigned.record.id,
+                            if (materialization == null || assigned.glyphless) FontFallbackStage.Shaping else FontFallbackStage.Materialization,
+                            FontFallbackReason.LastResortSelected, profile, selected = true)
+                    }
                     diagnostics += FontDiagnostic(
                         code = "font.fallback-last-resort",
                         severity = FontDiagnosticSeverity.WARNING,
@@ -218,8 +235,11 @@ internal object FontFallbackResolver {
                     FontFallbackResolution(
                         units = units,
                         shapedRuns = shaped,
-                        instances = assignments.map(AssignedUnit::instance).distinctBy(FontInstance::key),
+                        // A glyphless layout-only instance must not hide an instance resolved for visible glyphs.
+                        instances = assignments.sortedBy(AssignedUnit::glyphless)
+                            .map(AssignedUnit::instance).distinctBy(FontInstance::key),
                         diagnostics = diagnostics,
+                        fallbackDiagnostics = fallbackDiagnostics,
                     ),
                 )
             }
@@ -249,10 +269,12 @@ internal object FontFallbackResolver {
                             instances,
                             rejectedAttempts,
                             diagnostics,
+                            fallbackDiagnostics,
                         )
                     ) {
                         is CandidateSelection.Selected -> selection.assigned
-                        CandidateSelection.Exhausted -> return unresolved(assigned.unit, diagnostics)
+                        CandidateSelection.Exhausted -> return unresolved(diagnostics, fallbackDiagnostics)
+                        is CandidateSelection.Failed -> return FontOperationResult.Failure(selection.error, diagnostics + selection.diagnostics)
                         is CandidateSelection.Cancelled -> return FontOperationResult.Cancelled(diagnostics + selection.diagnostics)
                     }
                 } else {
@@ -269,23 +291,40 @@ internal object FontFallbackResolver {
         records: Map<FontFaceId, FontFaceRecord>,
         requirements: FontAccessRequirementsSnapshot,
         request: ResolutionRequest,
-        instances: MutableMap<FontFaceId, FontInstance>,
+        instances: MutableMap<InstanceAccessKey, FontInstance>,
         rejectedAttempts: MutableSet<RejectedAttempt>,
         diagnostics: MutableList<FontDiagnostic>,
+        fallbackDiagnostics: MutableList<FontFallbackDiagnostic>,
     ): CandidateSelection {
+        val glyphless = unit.isGlyphless(request.snapshot)
+        // Controls need an instance for layout, but never negotiate a glyph representation.
+        val candidateRequirements = if (glyphless) FontAccessRequirementsSnapshot.layoutOnly() else requirements
         policy.candidates.forEach { candidate ->
             if (request.cancellationToken.isCancellationRequested()) {
                 return CandidateSelection.Cancelled(emptyList())
             }
             val record = records.getValue(candidate.faceId)
-            val accesses = requirements.fallbackAccesses()
-            if (!accesses.any { access -> unit.isCompatibleWith(record.id, access, rejectedAttempts) } ||
-                !supports(record.capabilities, requirements)
-            ) return@forEach
-            val instance = instances[record.id] ?: run {
-                val face = when (val resolved = catalog.resolveFace(record.id, requirements)) {
+            val accesses = candidateRequirements.fallbackAccesses()
+            if (!accesses.any { access -> unit.isCompatibleWith(record.id, access, rejectedAttempts) }) return@forEach
+            if (!supports(record.capabilities, candidateRequirements)) {
+                if (!record.capabilities.characterMapping || !record.capabilities.shaping) {
+                    fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.FaceResolution, FontFallbackReason.FaceUnavailable)
+                } else {
+                    candidateRequirements.acceptedProfiles.forEach { profile ->
+                        fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.Materialization,
+                            FontFallbackReason.RepresentationUnavailable, profile)
+                    }
+                }
+                accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
+                return@forEach
+            }
+            val instanceAccess = InstanceAccessKey(record.id, candidateRequirements)
+            val instance = instances[instanceAccess] ?: run {
+                val face = when (val resolved = catalog.resolveFace(record.id, candidateRequirements)) {
                     is FontOperationResult.Success -> resolved.value
                     is FontOperationResult.Failure -> {
+                        if (resolved.error.isTerminal()) return CandidateSelection.Failed(resolved.error, resolved.diagnostics)
+                        fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.FaceResolution, FontFallbackReason.FaceUnavailable)
                         accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
                         diagnostics += resolved.diagnostics + resolved.error.toDiagnostic()
                         diagnostics += rejectedCandidateDiagnostic(record.id, "Face resolution did not meet the required capabilities.")
@@ -296,8 +335,10 @@ internal object FontFallbackResolver {
                     is FontOperationResult.Cancelled -> return CandidateSelection.Cancelled(resolved.diagnostics)
                 }
                 when (val instantiated = face.instantiate(request.fontInstanceDescriptor)) {
-                    is FontOperationResult.Success -> instantiated.value.also { instances[record.id] = it }
+                    is FontOperationResult.Success -> instantiated.value.also { instances[instanceAccess] = it }
                     is FontOperationResult.Failure -> {
+                        if (instantiated.error.isTerminal()) return CandidateSelection.Failed(instantiated.error, instantiated.diagnostics)
+                        fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.Instantiation, FontFallbackReason.InstantiationFailed)
                         accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
                         diagnostics += instantiated.diagnostics + instantiated.error.toDiagnostic()
                         diagnostics += rejectedCandidateDiagnostic(record.id, "Face instantiation failed for the requested instance descriptor.")
@@ -308,13 +349,17 @@ internal object FontFallbackResolver {
                     is FontOperationResult.Cancelled -> return CandidateSelection.Cancelled(instantiated.diagnostics)
                 }
             }
-            if (unit.isGlyphless(request.snapshot)) {
+            if (glyphless) {
                 return CandidateSelection.Selected(AssignedUnit(unit, record, instance, glyphless = true))
             }
             when (val mapping = mapsAllRequiredScalars(unit, request, instance)) {
                 ScalarMapping.Supported -> return CandidateSelection.Selected(AssignedUnit(unit, record, instance))
                 is ScalarMapping.Cancelled -> return CandidateSelection.Cancelled(mapping.diagnostics)
-                is ScalarMapping.Unsupported -> diagnostics += mapping.diagnostics
+                is ScalarMapping.Failed -> return CandidateSelection.Failed(mapping.error, mapping.diagnostics)
+                is ScalarMapping.Unsupported -> {
+                    diagnostics += mapping.diagnostics
+                    fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.Cmap, mapping.reason)
+                }
             }
             accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
             diagnostics += rejectedCandidateDiagnostic(record.id, "The complete fallback unit is not covered by the candidate character mapping.")
@@ -332,12 +377,12 @@ internal object FontFallbackResolver {
         request.snapshot.scalarValues(unit.range).forEach { scalar ->
             if (request.cancellationToken.isCancellationRequested()) return ScalarMapping.Cancelled(emptyList())
             if (scalar.isVariationSelector()) {
-                val base = precedingScalar ?: return ScalarMapping.Unsupported(emptyList())
+                val base = precedingScalar ?: return ScalarMapping.Unsupported(emptyList(), FontFallbackReason.VariationSequenceUnsupported)
                 when (val result = instance.resolveGlyph(base, scalar)) {
-                    is FontOperationResult.Success -> if (result.value.glyphId.value == 0) return ScalarMapping.Unsupported(emptyList())
-                    is FontOperationResult.Failure -> return ScalarMapping.Unsupported(
-                        result.diagnostics + result.error.toDiagnostic(),
-                    )
+                    is FontOperationResult.Success -> if (result.value.glyphId.value == 0) return ScalarMapping.Unsupported(emptyList(), FontFallbackReason.VariationSequenceUnsupported)
+                    is FontOperationResult.Failure -> return if (result.error.isTerminal()) {
+                        ScalarMapping.Failed(result.error, result.diagnostics)
+                    } else ScalarMapping.Unsupported(result.diagnostics + result.error.toDiagnostic(), FontFallbackReason.VariationSequenceUnsupported)
                     is FontOperationResult.Cancelled -> return ScalarMapping.Cancelled(result.diagnostics)
                 }
                 precedingScalar = null
@@ -345,9 +390,9 @@ internal object FontFallbackResolver {
                 if (scalar !in IGNORED_MAPPING_SCALARS) {
                     when (val result = instance.resolveGlyph(scalar)) {
                         is FontOperationResult.Success -> if (result.value.glyphId.value == 0) return ScalarMapping.Unsupported(emptyList())
-                        is FontOperationResult.Failure -> return ScalarMapping.Unsupported(
-                            result.diagnostics + result.error.toDiagnostic(),
-                        )
+                        is FontOperationResult.Failure -> return if (result.error.isTerminal()) {
+                            ScalarMapping.Failed(result.error, result.diagnostics)
+                        } else ScalarMapping.Unsupported(result.diagnostics + result.error.toDiagnostic())
                         is FontOperationResult.Cancelled -> return ScalarMapping.Cancelled(result.diagnostics)
                     }
                 }
@@ -361,8 +406,14 @@ internal object FontFallbackResolver {
         group: List<AssignedUnit>,
         request: ResolutionRequest,
         proofs: GlyphMaterializationProofs,
+        fallbackDiagnostics: MutableList<FontFallbackDiagnostic>,
     ): Attempt {
         val first = group.first()
+        fun reject(stage: FontFallbackStage, reason: FontFallbackReason, profile: GlyphRepresentationProfile? = null) {
+            group.forEach { assigned ->
+                fallbackDiagnostics += request.decision(assigned.unit, assigned.record.id, stage, reason, profile)
+            }
+        }
         val fragments = shapingFragments(group, request)
         val shaped = mutableListOf<ShapedGlyphRun>()
         fragments.forEach { fragment ->
@@ -395,19 +446,26 @@ internal object FontFallbackResolver {
             )
         ) {
             is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> if (result.error is FontError.EditorOperationLimitExceeded) {
+            is FontOperationResult.Failure -> if (result.error.isTerminal()) {
                 return Attempt.Failed(result.error, result.diagnostics)
             } else {
+                reject(FontFallbackStage.Shaping, when (result.error.code) {
+                    "font.shaping-context-cannot-be-projected" -> FontFallbackReason.ContextCannotBeProjected
+                    else -> FontFallbackReason.ShapingFailed
+                })
                 return Attempt.Rejected(result.diagnostics + result.error.toDiagnostic())
             }
             is FontOperationResult.Cancelled -> return Attempt.Cancelled(result.diagnostics)
         }
             if (fragmentRun.glyphs.any { glyph -> glyph.glyphId.value == 0 && glyph.mapsVisibleScalar(fragmentRun, request.snapshot) }) {
+                reject(FontFallbackStage.Shaping, FontFallbackReason.MissingGlyph)
                 return Attempt.Rejected(listOf(rejectionDiagnostic("Shaping produced the missing-glyph identifier for a complete fallback unit.")))
             }
             val materialization = request.materialization
             if (materialization is EditableLineMaterialization.Renderable) {
-                when (val validation = validateMaterialization(fragmentRun, first.instance, materialization, request, proofs)) {
+                when (val validation = validateMaterialization(fragmentRun, first.instance, materialization, request, proofs) { reason, profile ->
+                    reject(FontFallbackStage.Materialization, reason, profile)
+                }) {
                     Validation.Valid -> Unit
                     is Validation.Rejected -> return Attempt.Rejected(validation.diagnostics)
                     is Validation.Failed -> return Attempt.Failed(validation.error, validation.diagnostics)
@@ -503,8 +561,9 @@ internal object FontFallbackResolver {
         materialization: EditableLineMaterialization.Renderable,
         request: ResolutionRequest,
         proofs: GlyphMaterializationProofs,
+        onRejection: (FontFallbackReason, GlyphRepresentationProfile) -> Unit,
     ): Validation {
-        if (proofs.find(instance, materialization, shaped.glyphs.map { it.glyphId }) != null) {
+        if (materialization.requirements.acceptedProfiles.size == 1 && proofs.find(instance, materialization, shaped.glyphs.map { it.glyphId }) != null) {
             return Validation.Valid
         }
         if (materialization.requirements.acceptedProfiles.size > 1) {
@@ -518,7 +577,7 @@ internal object FontFallbackResolver {
                         portableDataRequired = materialization.requirements.portableDataRequired,
                     ),
                 )
-                when (val validation = validateMaterialization(shaped, instance, profileMaterialization, request, proofs)) {
+                when (val validation = validateMaterialization(shaped, instance, profileMaterialization, request, proofs, onRejection)) {
                     Validation.Valid -> return Validation.Valid
                     is Validation.Rejected -> if (firstRejection == null) firstRejection = validation
                     is Validation.Failed -> return validation
@@ -533,11 +592,16 @@ internal object FontFallbackResolver {
             val acquired = instance.acquireMaterializationAsset(materialization)
         ) {
             is FontOperationResult.Success -> acquired.value
-            is FontOperationResult.Failure -> return Validation.Rejected(acquired.diagnostics + acquired.error.toDiagnostic())
+            is FontOperationResult.Failure -> {
+                if (acquired.error.isTerminalMaterializationFailure()) return Validation.Failed(acquired.error, acquired.diagnostics)
+                onRejection(acquired.error.materializationReason(), materialization.requirements.acceptedProfiles.single())
+                return Validation.Rejected(acquired.diagnostics + acquired.error.toDiagnostic())
+            }
             is FontOperationResult.Cancelled -> return Validation.Cancelled(acquired.diagnostics)
         }
         val routes = mutableMapOf<org.graphiks.kalligraphie.api.GlyphId, GlyphMaterializationRoute>()
         var validation: Validation = Validation.Valid
+        var rejectionReason = FontFallbackReason.AssetIncompatible
         try {
             val variantSnapshot = asset.key.variantSnapshot ?: FontRenderVariantSnapshot.default
             if (
@@ -580,9 +644,11 @@ internal object FontFallbackResolver {
                             }
                         }
 
-                        is FontOperationResult.Failure -> validation = Validation.Rejected(
-                            resolved.diagnostics + resolved.error.toDiagnostic(),
-                        )
+                        is FontOperationResult.Failure -> {
+                            rejectionReason = resolved.error.materializationReason()
+                            validation = if (resolved.error.isTerminalMaterializationFailure()) Validation.Failed(resolved.error, resolved.diagnostics)
+                            else Validation.Rejected(resolved.diagnostics + resolved.error.toDiagnostic())
+                        }
                         is FontOperationResult.Cancelled -> validation = Validation.Cancelled(resolved.diagnostics)
                     }
                 }
@@ -597,18 +663,20 @@ internal object FontFallbackResolver {
                         is Validation.Cancelled -> prior.diagnostics
                     }
                     val closeDiagnostics = closed.diagnostics + closed.error.toDiagnostic()
-                    validation = when (validation) {
+                    validation = when (val prior = validation) {
                         is Validation.Cancelled -> Validation.Cancelled(priorDiagnostics + closeDiagnostics)
+                        is Validation.Failed -> Validation.Failed(prior.error, priorDiagnostics + closeDiagnostics)
                         else -> Validation.Failed(closed.error, priorDiagnostics + closeDiagnostics)
                     }
                 }
-                is FontOperationResult.Cancelled -> if (validation == Validation.Valid) {
+                is FontOperationResult.Cancelled -> if (validation !is Validation.Failed) {
                     validation = Validation.Cancelled(closed.diagnostics)
                 }
                 is FontOperationResult.Success -> Unit
             }
         }
         if (validation == Validation.Valid) proofs.record(asset.key, routes)
+        if (validation is Validation.Rejected) onRejection(rejectionReason, materialization.requirements.acceptedProfiles.single())
         return validation
     }
 
@@ -709,12 +777,13 @@ internal object FontFallbackResolver {
         }
 
     private fun unresolved(
-        unit: FallbackUnit,
         diagnostics: List<FontDiagnostic>,
+        fallbackDiagnostics: List<FontFallbackDiagnostic>,
     ): FontOperationResult.Failure {
         val error = FontError.UnrenderableFontResolution(
             message = "No policy candidate can shape and materialize the complete fallback unit.",
             location = FontDiagnosticLocation.Source,
+            fallbackDiagnostics = fallbackDiagnostics,
         )
         return FontOperationResult.Failure(error, diagnostics + error.toDiagnostic())
     }
@@ -730,6 +799,47 @@ internal object FontFallbackResolver {
         severity = FontDiagnosticSeverity.WARNING,
         location = FontDiagnosticLocation.Source,
         message = message,
+    )
+
+    private fun FontError.isTerminal(): Boolean = this is FontError.ResourceClosed ||
+        this is FontError.ResourceLimitExceeded || this is FontError.ShapingResourceLimitExceeded ||
+        this is FontError.EditorOperationLimitExceeded || this is FontError.Cancelled
+
+    private fun FontError.materializationReason(): FontFallbackReason = when (this) {
+        is FontError.UnsupportedRepresentationProfile, is FontError.GlyphRepresentationUnavailable,
+        is FontError.ResourceLimitExceeded -> FontFallbackReason.RepresentationUnavailable
+        is FontError.IncompatibleCatalogGeneration -> FontFallbackReason.AssetIncompatible
+        else -> FontFallbackReason.GlyphMaterializationFailed
+    }
+
+    // Called only for acquisition/glyph resolution bounded by one representation profile. A
+    // contour/point/byte bound here rejects that profile; operation and shaping budgets stay terminal.
+    private fun FontError.isTerminalMaterializationFailure(): Boolean =
+        isTerminal() && this !is FontError.ResourceLimitExceeded
+
+    private fun ResolutionRequest.decision(
+        unit: FallbackUnit,
+        face: FontFaceId,
+        stage: FontFallbackStage,
+        reason: FontFallbackReason,
+        profile: GlyphRepresentationProfile? = null,
+        selected: Boolean = false,
+    ): FontFallbackDiagnostic = FontFallbackDiagnostic(
+        textVersion = snapshot.version,
+        range = unit.range,
+        unit = unit,
+        contributingFragments = unit.fragments,
+        faceId = face,
+        representationProfile = profile,
+        candidateRank = resolutionPolicy.candidates.indexOfFirst { it.faceId == face },
+        profileRank = profile?.let { requirementsFor(materialization).acceptedProfiles.indexOf(it) },
+        stage = stage,
+        reason = reason,
+        lastResortState = when {
+            face != resolutionPolicy.lastResortFace -> FontFallbackLastResortState.NotLastResort
+            selected -> FontFallbackLastResortState.Selected
+            else -> FontFallbackLastResortState.Rejected
+        },
     )
 
     private fun rejectedCandidateDiagnostic(faceId: FontFaceId, reason: String): FontDiagnostic = FontDiagnostic(
@@ -751,6 +861,12 @@ internal object FontFallbackResolver {
         val record: FontFaceRecord,
         val instance: FontInstance,
         val glyphless: Boolean = false,
+    )
+
+    // Access requirements can affect provider instances even when their geometry keys match.
+    private data class InstanceAccessKey(
+        val faceId: FontFaceId,
+        val requirements: FontAccessRequirementsSnapshot,
     )
 
     private data class ShapingFragment(
@@ -796,12 +912,14 @@ internal object FontFallbackResolver {
     private sealed interface CandidateSelection {
         data class Selected(val assigned: AssignedUnit) : CandidateSelection
         data object Exhausted : CandidateSelection
+        data class Failed(val error: FontError, val diagnostics: List<FontDiagnostic>) : CandidateSelection
         data class Cancelled(val diagnostics: List<FontDiagnostic>) : CandidateSelection
     }
 
     private sealed interface ScalarMapping {
         data object Supported : ScalarMapping
-        data class Unsupported(val diagnostics: List<FontDiagnostic>) : ScalarMapping
+        data class Unsupported(val diagnostics: List<FontDiagnostic>, val reason: FontFallbackReason = FontFallbackReason.MissingVisibleCoverage) : ScalarMapping
+        data class Failed(val error: FontError, val diagnostics: List<FontDiagnostic>) : ScalarMapping
         data class Cancelled(val diagnostics: List<FontDiagnostic>) : ScalarMapping
     }
 
