@@ -23,6 +23,7 @@ import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontInstanceKey
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontOperationResult.Success
@@ -96,6 +97,7 @@ public class EmbeddedFontCatalog(
         resources = ids.zip(capturedEntries).associate { (id, entry) ->
             id to PreparedFontResource(
                 preparedFont = PreparedTrueTypeFont(entry.source, entry.parsedFont),
+                sourceByteSize = entry.source.sizeInBytes,
                 cachePolicy = cachePolicy,
             )
         }
@@ -485,6 +487,7 @@ internal class FontHandleLifecycle(
 @OptIn(ExperimentalAtomicApi::class)
 internal class PreparedFontResource(
     internal val preparedFont: PreparedTrueTypeFont,
+    internal val sourceByteSize: Int,
     cachePolicy: FontMaterializationCachePolicy,
 ) {
     private val leaseCount = AtomicInt(0)
@@ -522,6 +525,81 @@ internal class PreparedFontResource(
         }
     }
 }
+
+/** Conservative retained-byte estimate for one embedded operation-owned render asset. */
+internal fun estimateEmbeddedRenderAssetBytes(
+    resource: PreparedFontResource,
+    parsedFont: ParsedTrueTypeFont,
+    instanceKey: FontInstanceKey,
+    renderVariant: FontRenderVariantSnapshot,
+    profile: GlyphRepresentationProfile,
+): Long {
+    var total = 512L
+        .saturatingAdd(resource.sourceByteSize.toLong())
+        .saturatingAdd(instanceKey.geometry.normalizedAxes.size.toLong().saturatingMultiply(32L))
+        .saturatingAdd(renderVariant.estimatedRetainedBytes())
+        .saturatingAdd(profile.estimatedRetainedBytes())
+    total = when (profile) {
+        is OutlineProfile -> total
+            .saturatingAdd(profile.maxBytes.toLong())
+            .saturatingAdd(profile.maxPoints.toLong().saturatingMultiply(48L))
+            .saturatingAdd(profile.maxContours.toLong().saturatingMultiply(24L))
+            .saturatingAdd(profile.maxCompositeComponents.toLong().saturatingMultiply(64L))
+        is PaintGraphProfile -> total
+            .saturatingAdd(profile.limits.maxSourceBytes.toLong())
+            .saturatingAdd(profile.limits.maxDecodedPaletteBytes.toLong())
+            .saturatingAdd(profile.limits.maxNodes.toLong().saturatingMultiply(96L))
+            .saturatingAdd(profile.limits.maxReferences.toLong().saturatingMultiply(8L))
+            .saturatingAdd(profile.outlineProfile.maxBytes.toLong())
+            .saturatingAdd(estimateColrCpalRetainedBytes(resource, parsedFont))
+            .saturatingAdd(estimateSvgRetainedBytes(parsedFont, profile))
+        is BitmapProfile -> total
+            .saturatingAdd(profile.limits.maxIndexTableBytes.toLong())
+            .saturatingAdd(profile.limits.maxBitmapTableBytes.toLong())
+            .saturatingAdd(profile.limits.maxTotalDecodedBytes.toLong())
+        is NativeHandleProfile -> total
+    }
+    return total
+}
+
+private fun estimateColrCpalRetainedBytes(
+    resource: PreparedFontResource,
+    parsedFont: ParsedTrueTypeFont,
+): Long {
+    val colrRecord = parsedFont.tableRecords["COLR"] ?: return 0L
+    val cpalRecord = parsedFont.tableRecords["CPAL"] ?: return 0L
+    val source = resource.preparedFont.copySourceBytes()
+    val colr = slice(source, colrRecord) ?: return Long.MAX_VALUE
+    val cpal = slice(source, cpalRecord) ?: return Long.MAX_VALUE
+    val baseGlyphCount = colr.unsignedShortAt(2)?.toLong() ?: return Long.MAX_VALUE
+    val layerCount = colr.unsignedShortAt(12)?.toLong() ?: return Long.MAX_VALUE
+    val paletteEntryCount = cpal.unsignedShortAt(2)?.toLong() ?: return Long.MAX_VALUE
+    val paletteCount = cpal.unsignedShortAt(4)?.toLong() ?: return Long.MAX_VALUE
+
+    // Every base-glyph record may retain a complete copy of the layer-reference list. Palette
+    // colors are expanded objects rather than packed four-byte source records.
+    return baseGlyphCount.saturatingMultiply(96L)
+        .saturatingAdd(layerCount.saturatingMultiply(32L))
+        .saturatingAdd(baseGlyphCount.saturatingMultiply(layerCount).saturatingMultiply(8L))
+        .saturatingAdd(paletteCount.saturatingMultiply(48L))
+        .saturatingAdd(paletteCount.saturatingMultiply(paletteEntryCount).saturatingMultiply(56L))
+}
+
+private fun estimateSvgRetainedBytes(
+    parsedFont: ParsedTrueTypeFont,
+    profile: PaintGraphProfile,
+): Long {
+    if ("SVG " !in parsedFont.tableRecords) return 0L
+    val glyphCount = parsedFont.metadata.glyphCount.toLong()
+    return profile.limits.maxSvgDocuments.toLong().saturatingMultiply(96L)
+        .saturatingAdd(glyphCount.saturatingMultiply(112L))
+        .saturatingAdd(glyphCount.saturatingMultiply(profile.limits.maxNodes.toLong()).saturatingMultiply(96L))
+        .saturatingAdd(profile.limits.maxSourceBytes.toLong().saturatingMultiply(96L))
+}
+
+private fun ByteArray.unsignedShortAt(offset: Int): Int? =
+    if (offset < 0 || offset > size - 2) null
+    else ((this[offset].toInt() and 0xFF) shl 8) or (this[offset + 1].toInt() and 0xFF)
 
 internal fun cachedRepresentationRetainedBytes(
     key: GlyphRepresentationKey,
