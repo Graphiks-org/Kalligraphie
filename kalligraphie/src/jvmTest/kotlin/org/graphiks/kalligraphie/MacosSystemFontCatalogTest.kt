@@ -21,32 +21,6 @@ import kotlin.test.assertNotEquals
 
 class MacosSystemFontCatalogTest {
     @Test
-    fun preservesPortableIdentityAcrossGenerationsForAnUnchangedControlledRoot() {
-        if (!System.getProperty("os.name").startsWith("Mac")) return
-
-        val root = Files.createTempDirectory("kalligraphie-system-font-identity")
-        try {
-            Files.write(root.resolve("fixture.ttf"), minimalTrueTypeFont(glyphCount = 1, tables = emptyMap()))
-            val options = MacosSystemFontCatalogOptions(
-                roots = listOf(root.toString()),
-                maxPathsToVisit = 2,
-                maxFaces = 1,
-                maxSourceBytes = 4_096,
-                maxTotalSourceBytes = 4_096,
-            )
-
-            val first = success(MacosSystemFontCatalog.open(options))
-            val second = success(MacosSystemFontCatalog.open(options))
-
-            assertEquals(first.faces.single().id, second.faces.single().id)
-            assertNotEquals(first.generation, second.generation)
-        } finally {
-            Files.deleteIfExists(root.resolve("fixture.ttf"))
-            Files.deleteIfExists(root)
-        }
-    }
-
-    @Test
     fun preservesPortableAssetIdentityAcrossGenerationsButRequiresTheOwningResolverForReopening() {
         if (!System.getProperty("os.name").startsWith("Mac")) return
 

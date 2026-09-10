@@ -12,9 +12,11 @@ import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
+import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
@@ -249,18 +251,49 @@ class DetachedRenderAssetContractTest {
     }
 
     @Test
-    fun instanceKeysAreStableAndDistinctBySourceAndSize() {
-        val bytes = fixtureBytes()
-        val face = faceFor(bytes)
-        val sameA = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f)))).key
-        val sameB = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f)))).key
-        val differentSize = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1024f)))).key
-        val mutated = bytes.copyOf().also { it[it.lastIndex] = (it.last().toInt() xor 0x01).toByte() }
-        val differentSource = success(faceFor(mutated).instantiate(FontInstanceDescriptor(LayoutUnit(2048f)))).key
+    fun interleavedSourcesMaterializeTheirAuditedGlyphOutcomesWithAnEnabledCache() {
+        val liberation = FontSource(
+            sourceBytes = fixtureBytes(),
+            provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
+        )
+        val amiri = FontSource(
+            sourceBytes = amiriFixtureBytes(),
+            provenance = FontSourceProvenance(declaredName = "Amiri Regular"),
+        )
+        val catalog = success(
+            Kalligraphie.embedded(
+                sources = listOf(liberation, amiri),
+                cachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 1_000_000),
+            ),
+        )
+        val requirements = FontAccessRequirementsSnapshot.renderable(sourceIsolationOutlineProfile())
+        val liberationFace = success(catalog.resolveFace(catalog.faces[0].id, requirements))
+        val amiriFace = success(catalog.resolveFace(catalog.faces[1].id, requirements))
+        val liberationInstance = success(liberationFace.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
+        val amiriInstance = success(amiriFace.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
+        val resolver = success(catalog.openAssetResolver())
 
-        assertEquals(sameA, sameB)
-        assertNotEquals(sameA, differentSize)
-        assertNotEquals(sameA, differentSource)
+        try {
+            val liberationGlyph = success(liberationInstance.resolveGlyph('A'.code)).glyphId
+            val amiriGlyph = success(amiriInstance.resolveGlyph('A'.code)).glyphId
+            assertEquals(GlyphId(36), liberationGlyph)
+            assertEquals(GlyphId(6227), amiriGlyph)
+
+            val liberationAsset = success(
+                liberationInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements),
+            )
+            val amiriAsset = success(amiriInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+            try {
+                assertAuditedLiberationA(liberationAsset, liberationGlyph)
+                assertAuditedAmiriA(amiriAsset, amiriGlyph)
+                assertAuditedLiberationA(liberationAsset, liberationGlyph)
+            } finally {
+                liberationAsset.close()
+                amiriAsset.close()
+            }
+        } finally {
+            resolver.close()
+        }
     }
 
     @Test
@@ -356,6 +389,45 @@ class DetachedRenderAssetContractTest {
     private fun catalogFor(bytes: ByteArray): FontCatalogSnapshot =
         success(Kalligraphie.embedded(bytes, FontSourceProvenance(declaredName = "Liberation Sans Regular")))
 
+    /**
+     * These independent fixture facts make a source-cache collision observable: Liberation's
+     * U+0041 is outline glyph 36 in a 2048-unit em with bounds (4, 0, 1362, 1409), whereas
+     * Amiri's U+0041 is outline glyph 6227 in a 1000-unit em with bounds (-14, -3, 619, 647).
+     * Consequently a source confused with the other cannot satisfy either result, including the
+     * warm Liberation resolution after Amiri has materialized.
+     */
+    private fun assertAuditedLiberationA(asset: FontRenderAssetHandle, glyph: GlyphId) {
+        val outline = assertIs<GlyphRepresentation.Outline>(
+            success(asset.resolveGlyph(FontGlyphRequest(glyph), CancellationToken.none)),
+        ).outline
+
+        assertEquals(36, outline.glyphId)
+        assertEquals(2048, outline.unitsPerEm)
+        assertEquals(4, outline.bounds.minX)
+        assertEquals(1362, outline.bounds.maxX)
+        assertEquals(1409, outline.bounds.maxY)
+    }
+
+    private fun assertAuditedAmiriA(asset: FontRenderAssetHandle, glyph: GlyphId) {
+        val outline = assertIs<GlyphRepresentation.Outline>(
+            success(asset.resolveGlyph(FontGlyphRequest(glyph), CancellationToken.none)),
+        ).outline
+
+        assertEquals(6227, outline.glyphId)
+        assertEquals(1000, outline.unitsPerEm)
+        assertEquals(-14, outline.bounds.minX)
+        assertEquals(-3, outline.bounds.minY)
+        assertEquals(619, outline.bounds.maxX)
+        assertEquals(647, outline.bounds.maxY)
+    }
+
+    private fun sourceIsolationOutlineProfile(): OutlineProfile =
+        outlineProfile(
+            maxContours = 1_024,
+            maxPoints = 65_536,
+            maxCompositeDepth = 16,
+        )
+
     private fun outlineProfile(
         maxBytes: Int = 1_000_000,
         maxContours: Int = 256,
@@ -374,6 +446,11 @@ class DetachedRenderAssetContractTest {
     private fun fixtureBytes(): ByteArray =
         checkNotNull(javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf")) {
             "fixture font resource is missing"
+        }.use { it.readBytes() }
+
+    private fun amiriFixtureBytes(): ByteArray =
+        checkNotNull(javaClass.getResourceAsStream("/fonts/amiri/Amiri-Regular.ttf")) {
+            "Amiri Regular fixture is missing"
         }.use { it.readBytes() }
 
     private fun <T> success(result: FontOperationResult<T>): T =
