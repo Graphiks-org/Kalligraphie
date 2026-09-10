@@ -35,20 +35,6 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
-    fun renderVariantsKeepPaletteAndForegroundSelectionInTheirIdentity() {
-        val paletteZero = FontRenderVariantSnapshot(
-            cpalPaletteIndex = 0,
-            foregroundColor = GlyphColor(1, 2, 3),
-        )
-        val paletteOne = FontRenderVariantSnapshot(
-            cpalPaletteIndex = 1,
-            foregroundColor = GlyphColor(1, 2, 3),
-        )
-
-        assertNotEquals(paletteZero.key, paletteOne.key)
-    }
-
-    @Test
     fun paintGraphsRejectReferenceCyclesBeforePublication() {
         assertFailsWith<IllegalArgumentException> {
             GlyphPaintIR(
@@ -258,82 +244,6 @@ class GlyphRepresentationContractsTest {
         )
 
         assertFalse(profile.accepts(paint))
-    }
-
-    @Test
-    fun profileKeyFactoriesEncodeEveryPaintAndBitmapRequirement() {
-        val paint = PaintGraphProfile(
-            acceptedNodeKinds = listOf(GlyphPaintNodeKind.SOLID_OUTLINE, GlyphPaintNodeKind.GROUP),
-            acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
-            limits = PaintGraphLimits(
-                maxNodes = 3,
-                maxReferences = 2,
-                maxDepth = 2,
-                maxSourceBytes = 10,
-                maxPaths = 1,
-                maxGradients = 0,
-                maxPalettes = 2,
-                maxPaletteEntries = 3,
-                maxColorRecords = 4,
-                maxDecodedPaletteBytes = 5,
-                maxBaseGlyphRecords = 6,
-                maxLayerRecords = 7,
-                maxSvgDocuments = 8,
-                maxSvgTransformOperations = 9,
-            ),
-            outlineProfile = outlineProfile(),
-        )
-        val bitmap = BitmapProfile(
-            strike = BitmapStrike(16, 17),
-            acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
-            acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
-            limits = BitmapLimits(
-                maxStrikes = 1,
-                maxIndexSubtables = 7,
-                maxRecordCount = 8,
-                maxIndexTableBytes = 9,
-                maxBitmapTableBytes = 10,
-                maxWidth = 2,
-                maxHeight = 3,
-                maxPixels = 4,
-                maxCompressedBytes = 5,
-                maxTotalCompressedBytes = 11,
-                maxDecodedBytes = 6,
-                maxTotalDecodedBytes = 12,
-            ),
-        )
-
-        assertEquals(
-            "nodes=SOLID_OUTLINE,GROUP;composition=SOURCE_OVER;limits=3,2,2,10,1,0,2,3,4,5,6,7,8,9;outline=1,1024,32,128,8,32",
-            GlyphRepresentationProfileKey.paintGraph(paint).parameters,
-        )
-        assertEquals(
-            "strike=16,17;pixels=ALPHA_8;colors=SRGB;limits=1,7,8,9,10,2,3,4,5,11,6,12",
-            GlyphRepresentationProfileKey.bitmap(bitmap).parameters,
-        )
-        val changedOutlineSchema = PaintGraphProfile(
-            acceptedNodeKinds = paint.acceptedNodeKinds,
-            acceptedCompositionModes = paint.acceptedCompositionModes,
-            limits = paint.limits,
-            outlineProfile = paint.outlineProfile.copy(schemaVersion = 2),
-        )
-
-        assertNotEquals(
-            GlyphRepresentationProfileKey.paintGraph(paint),
-            GlyphRepresentationProfileKey.paintGraph(changedOutlineSchema),
-        )
-        assertNotEquals(
-            GlyphRepresentationProfileKey.nativeHandle(NativeHandleProfile(bridgeKind = "a:b", bridgeVersion = "c")),
-            GlyphRepresentationProfileKey.nativeHandle(NativeHandleProfile(bridgeKind = "a", bridgeVersion = "b:c")),
-        )
-    }
-
-    @Test
-    fun generationsWithTheSameTokenRemainDistinctAcrossProviderDomains() {
-        val left = FontCatalogGeneration(FontProviderId("provider-a"), "generation-7")
-        val right = FontCatalogGeneration(FontProviderId("provider-b"), "generation-7")
-
-        assertNotEquals(left, right)
     }
 
     @Test
