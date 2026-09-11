@@ -52,6 +52,7 @@ nav:
   - Font Management: font-management.md
   - Editable-line Measurement: editable-line-measurement.md
   - Glyph Materialization Measurement: glyph-materialization-measurement.md
+  - Glyph Materialization Reference: glyph-materialization-reference-apple-m2-max-2026-09-10.md
   - Editable Paragraphs: editable-paragraphs.md
   - Incremental Layout Measurement: incremental-layout-measurement.md
   - Advanced Typography: advanced-typography.md

@@ -2,9 +2,11 @@
 
 Kalligraphie fournit un runner (programme de mesure) JVM opt-in (activé
 explicitement) pour la matérialisation portable des glyphes. Il vit dans les
-sources de test : ce n’est ni un test fonctionnel de latence, ni un résultat de
-benchmark (mesure comparative) publié. Il exécute les fixtures (données de test
-fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1 et Liberation Sans TrueType
+sources de test : ce n’est pas un test fonctionnel de latence. Une
+[référence observationnelle nommée](glyph-materialization-reference-apple-m2-max-2026-09-10.fr.md)
+publie un résultat reproductible sans en faire un seuil portable. Le programme
+exécute les fixtures (données de test fixes) COLR/CPAL, SVG-in-OpenType, EBDT
+format 1 et Liberation Sans TrueType
 auditées et versionnées, à travers les parcours publics catalogue, resolver
 (résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`.
 
