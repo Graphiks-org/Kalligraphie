@@ -64,7 +64,13 @@ public data class PaintGraphLimits(
     public val maxLayerRecords: Int = 65_536,
     /** Maximum SVG-in-OpenType document records decoded for one paint route. */
     public val maxSvgDocuments: Int = 4_096,
-    /** Maximum SVG transform operations normalized for one paint route. */
+    /**
+     * Maximum authored SVG group and gradient transform operations parsed across the complete
+     * `SVG ` table for one paint-route acquisition.
+     *
+     * This source-processing budget is independent of [maxTransforms], which bounds reached
+     * transform nodes in the generated paint graph.
+     */
     public val maxSvgTransformOperations: Int = 4_096,
     /** Maximum color stops across reached gradient paints. */
     public val maxColorStops: Int = 0,
