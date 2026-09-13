@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
+- Opt-in public font-asset handoff and four-worker resolution measurements, with stage percentiles and an observational Apple M2 Max reference outside functional checks.
+- Immutable layouts can now be paired with an explicit closable handle that atomically retains all certified font roots and hands independent assets to delayed renderers.
 - Structured portable font materialization cache budgets for estimated retained bytes, decoded pixels, native bytes and native allocations, enforced atomically per face and per catalog with global LRU ordering; preserves the historical byte-only constructor and observable glyph results. Native charges remain zero until a native route owns cacheable resources.
 - Reproducible opt-in measurement of cold and warm portable TrueType editor stages for preparation, text mapping, metrics, outlines, and detached render assets.
 - Exact region-chain composition through `org.graphiks:kalligraphie`: immutable application-supplied `FlowRegion` geometry with exclusions and bounded refinement, logical lines distributed into geometric `LineFragment` values without restarting BiDi or splitting clusters and inline objects, deterministic fragmentation relaxation diagnostics, identity-attested `FlowContinuation` reuse, and incremental forward rematerialization with explicit unmaterialized coverage.

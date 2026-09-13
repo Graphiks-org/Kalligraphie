@@ -7,7 +7,7 @@ CPAL, SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures
 through the public catalog, resolver, instance, asset, and `resolveGlyph(...)`
 paths.
 
-The runner records twenty-seven profiles, in this order:
+The runner records thirty profiles, in this order:
 
 - cold and warm COLR v0 / CPAL v0 normalization;
 - cold and warm SVG-in-OpenType normalization;
@@ -22,7 +22,9 @@ The runner records twenty-seven profiles, in this order:
 - cold and warm reusable incremental sessions for the same single-font and
   mixed-BiDi paragraphs;
 - cold and warm portable TrueType preparation, text mapping, metrics, outlines,
-  and detachment stages over one stable Liberation Sans editor paragraph.
+  and detachment stages over one stable Liberation Sans editor paragraph;
+- `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, then
+  `ConcurrentResolveWarm` over that same paragraph.
 
 For the six historical direct-glyph profiles, cold samples start before
 embedded-catalog creation and end after the returned immutable representation
@@ -123,6 +125,75 @@ allocation status, retained JVM-memory observation, source bytes, and the
 Liberation Sans SHA-256 alongside the other fixture hashes. Native retained
 memory and native allocations remain explicitly `unavailable`: the portable
 API exposes no trustworthy accounting boundary for either value.
+
+## Public font-asset handoff
+
+The final three profiles use the stable paragraph above and the audited
+Liberation Sans fixture. Before timing, the runner verifies the fixture hash
+and literal glyph 36 outline facts from its independent audit (2048 units per
+em, bounds `(4, 0, 1362, 1409)`, two contours). It also checks the paragraph's
+final distinct glyph sequence against the fixed corpus below.
+
+`FontAssetRetainReopenCold` creates a fresh embedded catalog, resolver, resolved
+face/font instance and public `JvmEditableLineLayoutSession` for every sample.
+The session owns its real HarfBuzz backend. Its public `layout` method takes a
+`JvmEditableLineFacadeRequest` and composes the stable text as one renderable
+`EditableLine`. Each sample then calls `openLayoutHandle`, groups all final certificates by complete
+`FontRenderAssetKey`, retains one renderer asset per key, and resolves and
+consumes every final certified glyph, including repeats. The total includes
+renderer assets, layout handle, backend and resolver cleanup.
+
+`FontAssetRetainReopenWarm` prepares one catalog, resolver, face/font instance
+and reusable public line session outside timing and seeds the complete portable
+path before warmup.
+Every sample supplies a fresh text version and creates a new editable line, handle
+and renderer assets. Their closure is timed; persistent session/backend and
+resolver cleanup occurs outside sample timing. This profile is the named
+60 Hz observation, with an objective of p95 <= 8,000,000 ns.
+
+Both profiles keep per-sample durations for one chain and publish nearest-rank
+p50/p95/p99 for these boundaries:
+
+| Stage | Timed work |
+| --- | --- |
+| `layout-certification` | Fresh text version, public line layout and final certification; cold also creates catalog, resolver, face/font and public session/backend |
+| `layout-handle-open` | Public `openLayoutHandle` and registration of its owner |
+| `renderer-asset-retain` | One public `retainFontAsset` per complete key and registration of each owner |
+| `glyph-resolve-consume` | Every final certified glyph's resolution and actual representation-field consumption |
+| `owned-resource-close` | All per-sample owners, including backend and resolver for cold |
+| `total` | Complete sample, including small orchestration gaps such as certificate grouping |
+
+Stage percentiles are computed separately; their sums need not equal a total
+percentile. Cleanup runs on failure/cancellation and continues after cleanup
+errors. No production instrumentation or internal cache counters are added.
+
+`ConcurrentResolveWarm` obtains one renderer asset through the same public
+layout, handle and retention chain, then closes the layout handle, backend and
+resolver before warmup or timing. It pre-resolves this fixed corpus of 35
+distinct nonzero glyph IDs in paragraph first-occurrence order:
+
+```text
+53, 72, 68, 71, 69, 79, 3, 87, 92, 83, 82, 74, 85, 75, 78, 86, 90, 15,
+88, 81, 70, 76, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 89, 91, 17
+```
+
+Four persistent worker threads share this asset; round-robin partitioning gives
+them 9, 9, 9 and 8 glyphs. Each sample is one concurrent wave resolving and
+consuming every corpus glyph exactly once. Main latency is whole-wave wall
+time from dispatch to all-worker completion, never divided by operation count.
+The report records four workers and 35 operations per wave. Allocation is the
+sum of trustworthy nonnegative per-thread deltas inside the four resolve/consume
+intervals, averaged per wave; coordinator and dispatch allocations are excluded.
+If any worker lacks such a counter, allocation is `unavailable` with a reason.
+Workers terminate before the shared renderer asset closes, including on failure.
+Interruption during coordinator result collection is restored after owner cleanup.
+This is the named 120 Hz observation, with an objective of p95 <= 4,000,000 ns.
+
+The two objectives produce observational `PASS` or `ABOVE` fields only; neither
+can fail the runner or `check`. These tooling changes use smoke execution and
+real measurements as evidence, with no artificial structural test or latency
+assertion. See the [Apple M2 Max reference](glyph-materialization-reference-apple-m2-max.md)
+for one machine observation, not a universal performance promise.
 
 ## Reproducible invocation
 

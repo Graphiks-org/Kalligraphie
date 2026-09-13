@@ -444,7 +444,9 @@ public interface FontRenderAssetHandle {
      *
      * Detachment does not close or mutate this handle. Each successful call
      * returns a separately owned handle; callers must close every returned
-     * handle. An implementation that cannot detach returns a typed failure.
+     * handle. Each successful detached handle preserves the exact complete [key]. When the
+     * provider supports layout handoff, a detached handle can itself detach another independent
+     * owner. An implementation that cannot provide this detachment returns a typed failure.
      */
     public fun detach(): FontOperationResult<FontRenderAssetHandle> =
         unsupportedContractOperation("This render asset does not support detachment.")

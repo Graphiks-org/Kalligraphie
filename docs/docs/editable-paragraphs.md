@@ -79,6 +79,19 @@ all candidates at ambiguous BiDi boundaries, `selectionGeometry(...)`, and
 deterministic `hitTest(...)`. All results are immutable and bound to the input
 snapshot version.
 
+### Retain font assets for a delayed renderer
+
+When the request uses `EditableLineMaterialization.Renderable`, a successful
+`ParagraphLayout` contains certificates but owns no font resource. Before
+closing the borrowed resolver, obtain the separate atomic ownership success
+with `paragraph.openLayoutHandle(resolver)`. Group certificates from
+`paragraph.lines` by `assetKey`, call `retainFontAsset(...)` once per group,
+and close each returned renderer asset independently. The layout remains
+readable after the handle closes, and assets already retained remain usable.
+Layout success alone does not guarantee later reopening. See
+[Font Management](font-management.md#own-certified-assets-for-delayed-rendering)
+for the complete sequence and lifecycle boundaries.
+
 ## Line-breaking and shaping guarantees
 
 The JVM route analyzes legal UAX #14 break opportunities with versioned
@@ -230,6 +243,11 @@ Each fragment records its exact paragraph and laid-out ranges, first/last
 flags, structured diagnostics, and optional continuation. Its `LineLayout`
 values remain logical lines. When an exclusion supplies several intervals,
 one line contains several geometric `LineFragment` values.
+
+For renderable flow output, `flow.openLayoutHandle(resolver)` performs the same
+second atomic ownership operation over all certificates in the published
+`flow.lines`. It does not attach resource ownership to the continuation or the
+incremental layout state.
 
 Paragraph BiDi resolution, line selection, and UAX #9 L1–L4 happen once for
 that logical line. Visual runs are then assigned to intervals and may split

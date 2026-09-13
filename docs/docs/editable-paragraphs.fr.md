@@ -5,7 +5,8 @@ multiligne, immuable et éditable. Il prolonge le parcours de ligne
 éditable exacte présenté dans la [Gestion des fontes](font-management.md) : la
 façade publique `JvmEditableParagraphFacade` effectue, pour un appel, l’analyse
 ICU et la composition HarfBuzz, puis retourne des valeurs portables et
-indépendantes du renderer (moteur de rendu). Elle ne conserve ni handle natif,
+indépendantes du renderer (moteur de rendu). Elle ne conserve ni handle
+(gestionnaire de durée de vie) natif,
 ni gestionnaire de ressources, ni backend, ni renderer, ni objet de plateforme.
 
 ## Composer un paragraphe
@@ -80,6 +81,20 @@ Le `ParagraphLayout` obtenu fournit la navigation logique et visuelle des
 carets (repères d’insertion), tous les candidats aux frontières BiDi ambiguës,
 `selectionGeometry(...)` et un `hitTest(...)` déterministe. Les résultats sont
 immuables et liés à la version du snapshot d’entrée.
+
+### Conserver les ressources de fonte pour un rendu différé
+
+Quand la demande emploie `EditableLineMaterialization.Renderable`, un
+`ParagraphLayout` réussi contient des certificats, mais ne possède aucune
+ressource de fonte. Avant de fermer le résolveur emprunté, obtenez le second
+succès atomique de propriété avec `paragraph.openLayoutHandle(resolver)`.
+Regroupez les certificats de `paragraph.lines` par `assetKey`, appelez
+`retainFontAsset(...)` une fois par groupe, puis fermez indépendamment chaque
+ressource remise au moteur de rendu. Le layout reste lisible après la fermeture
+du gestionnaire, et les ressources déjà conservées restent utilisables. Le
+succès du layout seul ne garantit pas une réouverture ultérieure. Consultez la
+[Gestion des fontes](font-management.fr.md#posseder-les-ressources-certifiees-pour-un-rendu-differe)
+pour la séquence complète et les frontières de durée de vie.
 
 ## Garanties de coupure et de composition
 
@@ -242,6 +257,12 @@ composée, ses indicateurs premier/dernier, ses diagnostics structurés et son
 éventuelle continuation. Ses `LineLayout` restent des lignes logiques. Quand
 une exclusion fournit plusieurs intervalles, une ligne contient plusieurs
 `LineFragment` géométriques.
+
+Pour un flow (composition dans des régions) rendable,
+`flow.openLayoutHandle(resolver)` réalise la même seconde opération atomique de
+propriété sur tous les certificats de `flow.lines` publiés. Elle n’attache pas
+la propriété des ressources à la continuation ni à l’état de composition
+incrémentale.
 
 La résolution BiDi (bidirectionnelle) du paragraphe, le choix de la ligne et
 les étapes L1–L4 de l’UAX #9 sont appliqués une seule fois à cette ligne
