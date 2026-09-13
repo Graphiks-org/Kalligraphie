@@ -52,6 +52,8 @@ operation. These are scenario measurements reconstructed from immutable
 certificates and provider estimates. They are neither a time constraint nor
 proof of a particular cache or pooling algorithm.
 
+`FontMaterializationCachePolicy` now applies independent per-face and per-catalog budgets for retained bytes, decoded pixels and native dimensions. The current portable runner does not expose this coordinator's retained totals, admission decisions or eviction counts. Its timings and heap observations do not prove those bounds. Native charges remain zero; native resources and provider-wide or engine-wide accounting are outside this measurement scope.
+
 ## Reusable HarfBuzz sessions
 
 `SessionColdSingleFont`, `SessionWarmSingleFont`, `SessionColdMixedBidi` and

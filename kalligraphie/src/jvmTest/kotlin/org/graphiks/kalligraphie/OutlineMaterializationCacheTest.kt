@@ -17,29 +17,41 @@ import kotlin.test.assertIs
 class OutlineMaterializationCacheTest {
     @Test
     fun keepsThePortableOutlineIdenticalWithBoundedRepresentationRetention() {
-        val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile())
-        val catalog = success(
-            Kalligraphie.embedded(
-                sourceBytes = fixtureBytes(),
-                provenance = FontSourceProvenance("Liberation Sans outline cache fixture"),
-                cachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 1_024),
-            ),
-        )
-        val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
-        val instance = success(face.instantiate(org.graphiks.kalligraphie.api.FontInstanceDescriptor(LayoutUnit(16f))))
-        val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
-        try {
-            val initial = assertIs<GlyphRepresentation.Outline>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))))
-            val warm = assertIs<GlyphRepresentation.Outline>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))))
-            success(asset.resolveGlyph(FontGlyphRequest(GlyphId(7))))
-            val afterPressure = assertIs<GlyphRepresentation.Outline>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))))
+        materializationCachePolicies().forEach { cachePolicy ->
+            val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile())
+            val catalog = success(
+                Kalligraphie.embedded(
+                    sourceBytes = fixtureBytes(),
+                    provenance = FontSourceProvenance("Liberation Sans outline cache fixture"),
+                    cachePolicy = cachePolicy,
+                )
+            )
+            val resolver = success(catalog.openAssetResolver())
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(org.graphiks.kalligraphie.api.FontInstanceDescriptor(LayoutUnit(16f))))
+            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+            try {
+                val initial = assertIs<GlyphRepresentation.Outline>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))))
+                val warm = assertIs<GlyphRepresentation.Outline>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))))
+                success(asset.resolveGlyph(FontGlyphRequest(GlyphId(7))))
+                val afterPressure = assertIs<GlyphRepresentation.Outline>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))))
 
-            assertEquals(initial, warm)
-            assertEquals(initial, afterPressure)
-        } finally {
-            asset.close()
-            resolver.close()
+                for (representation in listOf(initial, warm, afterPressure)) {
+                    val outline = representation.outline
+                    assertEquals(36, outline.glyphId)
+                    assertEquals(2048, outline.unitsPerEm)
+                    assertEquals(4, outline.bounds.minX)
+                    assertEquals(0, outline.bounds.minY)
+                    assertEquals(1362, outline.bounds.maxX)
+                    assertEquals(1409, outline.bounds.maxY)
+                    assertEquals(2, outline.contours.size)
+                }
+                assertEquals(initial, warm)
+                assertEquals(initial, afterPressure)
+            } finally {
+                asset.close()
+                resolver.close()
+            }
         }
     }
 

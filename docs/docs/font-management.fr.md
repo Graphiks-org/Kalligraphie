@@ -52,29 +52,35 @@ données immuables requises par `resolveGlyph(...)`.
 
 ### Rétention bornée des représentations
 
-`FontMaterializationCachePolicy` peut conserver les résultats complets, immuables et portables
-des contours, graphes de peinture et pixels bitmap décodés d’une face capturée dans un cache
-(mémoire temporaire). La politique est désactivée
-par défaut ; elle peut être passée à `Kalligraphie.embedded(...)` ou à
-`MacosSystemFontCatalogOptions`. Son budget en octets est uniquement une politique de coût : il
-ne modifie ni la sélection de route, ni une clé de représentation, un certificat, un diagnostic
-ou le résultat d’un glyphe. Les entrées sont limitées à une face et à une génération de provider
-(fournisseur), pondérées par les données de contour et de peinture normalisées ainsi que les
-pixels bitmap décodés retenus, puis évincées selon
-LRU (least recently used, moins récemment utilisé). L’annulation et les erreurs opérationnelles
-ne sont jamais conservées ; un résultat plus grand que le budget est retourné normalement sans
-être conservé. Aucune entrée du cache ne retient de gestionnaire, de ressource de rendu, de
-catalogue ni de ressource native.
+`FontMaterializationCachePolicy` peut conserver les succès complets, immuables et portables des contours, graphes de peinture et bitmaps (images matricielles). Le cache (mémoire interne de réutilisation) est désactivé par défaut. La politique se passe à `Kalligraphie.embedded(...)` ou à `MacosSystemFontCatalogOptions`.
+
+`FontCacheBudget` fixe quatre limites indépendantes, positives ou nulles : octets retenus estimés, pixels bitmap décodés, octets natifs et allocations natives. Les limites `perFace` et `perCatalog` doivent être respectées simultanément. Un bitmap conservé compte largeur × hauteur pixels ; les contours et la peinture comptent zéro pixel. Les entrées portables comptent zéro octet natif et zéro allocation native. `Long.MAX_VALUE` laisse une dimension pratiquement non bornée.
+
+Chaque catalogue coordonne atomiquement l'admission et l'ordre LRU (`least recently used`, moins récemment utilisé) de toutes ses faces. Un dépassement par face retire la plus ancienne entrée de cette face ; un dépassement du cumul retire la plus ancienne entrée globale. Un résultat trop lourd est retourné sans être conservé. La sélection de route, les identités, certificats et diagnostics restent identiques. Les annulations et erreurs opérationnelles ne sont jamais conservées.
 
 ```kotlin
-val cachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 4L * 1024L * 1024L)
+val cachePolicy = FontMaterializationCachePolicy(
+    perFace = FontCacheBudget(
+        retainedBytes = 4L * 1024L * 1024L,
+        decodedPixels = 1_000_000L,
+        nativeBytes = 0L,
+        nativeAllocations = 0L,
+    ),
+    perCatalog = FontCacheBudget(
+        retainedBytes = 16L * 1024L * 1024L,
+        decodedPixels = 4_000_000L,
+        nativeBytes = 0L,
+        nativeAllocations = 0L,
+    ),
+)
 val catalogResult = Kalligraphie.embedded(bytes, provenance, cachePolicy)
 ```
 
-Le cache est libéré après la fermeture du dernier gestionnaire ou de la dernière ressource de
-rendu utilisant cette face. Une ressource détachée conserve son lease (droit d’usage temporaire)
-ordinaire : le détachement ne modifie donc pas une opération déjà admise et n’expose pas une
-entrée de cache fermée.
+Le constructeur historique `FontMaterializationCachePolicy(maxEvictableBytesPerFace = 4L * 1024L * 1024L)` et le getter (accesseur) `maxEvictableBytesPerFace` restent disponibles. Ce constructeur borne uniquement les octets retenus par face ; ses autres dimensions et le cumul du catalogue restent non bornés. `FontMaterializationCachePolicy.disabled` ne conserve aucune représentation.
+
+Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource native. La fermeture du dernier lease (droit de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
+
+Les catalogues ne partagent pas encore de budget au niveau provider/engine (fournisseur/moteur). Cette portée de propriété et la participation des ressources natives seront introduites avec une route native. Les tests de glyphes démontrent la transparence observable ; ils ne mesurent pas la rétention et ne prouvent pas l'admission du cache. La comptabilité appartient à une future instrumentation opt-in (activée explicitement), hors `check`.
 
 Sur macOS, l’artefact JVM expose aussi `MacosSystemFontCatalog.open()`. Il
 capture, sous limites, les fichiers `.ttf` réguliers dans un instantané

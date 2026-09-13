@@ -60,6 +60,8 @@ estimations du provider (fournisseur). Elles ne constituent ni une contrainte
 de temps, ni la preuve d’un algorithme particulier de cache ou de pool (réserve
 réutilisable).
 
+`FontMaterializationCachePolicy` applique des budgets indépendants par face et par catalogue pour les octets retenus, les pixels décodés et les dimensions natives. Le runner (programme de mesure) portable actuel n’expose ni les cumuls retenus par ce coordinateur, ni ses admissions, ni ses nombres d’évictions. Ses durées et observations du tas mémoire ne prouvent pas ces plafonds. Les charges natives restent nulles ; les ressources natives et la comptabilité partagée au niveau provider/engine (fournisseur/moteur) restent hors de ce périmètre de mesure.
+
 ## Sessions HarfBuzz réutilisables
 
 `SessionColdSingleFont`, `SessionWarmSingleFont`, `SessionColdMixedBidi` et

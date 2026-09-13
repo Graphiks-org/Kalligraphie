@@ -212,15 +212,31 @@ class DetachedRenderAssetContractTest {
 
     @Test
     fun detachedAssetDoesNotDependOnCatalogOrAttachedOwner() {
-        val detached = detachedAssetAfterOwnersClose()
+        for (cachePolicy in materializationCachePolicies()) {
+            val detached = detachedAssetAfterOwnersClose(cachePolicy)
+            try {
+                assertAuditedLiberationA(detached, GlyphId(36))
+                assertAuditedLiberationA(detached, GlyphId(36))
+            } finally {
+                assertIs<FontOperationResult.Success<Unit>>(detached.close())
+            }
+        }
+    }
 
-        val representation = success(detached.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none))
-        val outline = assertIs<GlyphRepresentation.Outline>(representation).outline
-
-        assertEquals(36, outline.glyphId)
-        assertEquals(4, outline.bounds.minX)
-        assertEquals(1362, outline.bounds.maxX)
-        assertIs<FontOperationResult.Success<Unit>>(detached.close())
+    @Test
+    fun cancelledResolutionDoesNotPublishAWarmDetachedGlyph() {
+        for (cachePolicy in materializationCachePolicies()) {
+            val detached = detachedAssetAfterOwnersClose(cachePolicy)
+            try {
+                assertAuditedLiberationA(detached, GlyphId(36))
+                assertIs<FontOperationResult.Cancelled>(
+                    detached.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.cancelled),
+                )
+                assertAuditedLiberationA(detached, GlyphId(36))
+            } finally {
+                detached.close()
+            }
+        }
     }
 
     @Test
@@ -251,48 +267,69 @@ class DetachedRenderAssetContractTest {
     }
 
     @Test
-    fun interleavedSourcesMaterializeTheirAuditedGlyphOutcomesWithAnEnabledCache() {
-        val liberation = FontSource(
-            sourceBytes = fixtureBytes(),
-            provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
-        )
-        val amiri = FontSource(
-            sourceBytes = amiriFixtureBytes(),
-            provenance = FontSourceProvenance(declaredName = "Amiri Regular"),
-        )
-        val catalog = success(
-            Kalligraphie.embedded(
-                sources = listOf(liberation, amiri),
-                cachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 1_000_000),
-            ),
-        )
-        val requirements = FontAccessRequirementsSnapshot.renderable(sourceIsolationOutlineProfile())
-        val liberationFace = success(catalog.resolveFace(catalog.faces[0].id, requirements))
-        val amiriFace = success(catalog.resolveFace(catalog.faces[1].id, requirements))
-        val liberationInstance = success(liberationFace.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
-        val amiriInstance = success(amiriFace.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
-        val resolver = success(catalog.openAssetResolver())
-
-        try {
-            val liberationGlyph = success(liberationInstance.resolveGlyph('A'.code)).glyphId
-            val amiriGlyph = success(amiriInstance.resolveGlyph('A'.code)).glyphId
-            assertEquals(GlyphId(36), liberationGlyph)
-            assertEquals(GlyphId(6227), amiriGlyph)
-
-            val liberationAsset = success(
-                liberationInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements),
+    fun interleavedSourcesPreserveTheirAuditedGlyphsAcrossRetentionPolicies() {
+        materializationCachePolicies().forEach { cachePolicy ->
+            val liberation = FontSource(
+                sourceBytes = fixtureBytes(),
+                provenance = FontSourceProvenance(declaredName = "Liberation Sans Regular"),
             )
-            val amiriAsset = success(amiriInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+            val amiri = FontSource(
+                sourceBytes = amiriFixtureBytes(),
+                provenance = FontSourceProvenance(declaredName = "Amiri Regular"),
+            )
+            val catalog = success(
+                Kalligraphie.embedded(
+                    sources = listOf(liberation, amiri),
+                    cachePolicy = cachePolicy,
+                ),
+            )
+            val requirements = FontAccessRequirementsSnapshot.renderable(sourceIsolationOutlineProfile())
+            val liberationFace = success(catalog.resolveFace(catalog.faces[0].id, requirements))
+            val amiriFace = success(catalog.resolveFace(catalog.faces[1].id, requirements))
+            val liberationInstance = success(liberationFace.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
+            val amiriInstance = success(amiriFace.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
+            val resolver = success(catalog.openAssetResolver())
+
             try {
-                assertAuditedLiberationA(liberationAsset, liberationGlyph)
-                assertAuditedAmiriA(amiriAsset, amiriGlyph)
-                assertAuditedLiberationA(liberationAsset, liberationGlyph)
+                val liberationGlyph = success(liberationInstance.resolveGlyph('A'.code)).glyphId
+                val amiriGlyph = success(amiriInstance.resolveGlyph('A'.code)).glyphId
+                assertEquals(GlyphId(36), liberationGlyph)
+                assertEquals(GlyphId(6227), amiriGlyph)
+
+                val liberationAsset = success(
+                    liberationInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements),
+                )
+                val amiriAsset = success(amiriInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+                try {
+                    repeat(3) {
+                        assertAuditedLiberationA(liberationAsset, liberationGlyph)
+                        assertAuditedAmiriA(amiriAsset, amiriGlyph)
+                        assertAuditedLiberationA(liberationAsset, liberationGlyph)
+                    }
+                    val key = liberationAsset.key
+                    val detached = success(liberationAsset.detach())
+                    try {
+                        liberationAsset.close()
+                        assertAuditedAmiriA(amiriAsset, amiriGlyph)
+                        val reopened = success(resolver.reopen(key))
+                        try {
+                            assertAuditedLiberationA(reopened, liberationGlyph)
+                        } finally {
+                            reopened.close()
+                        }
+                        amiriAsset.close()
+                        resolver.close()
+                        assertAuditedLiberationA(detached, liberationGlyph)
+                    } finally {
+                        detached.close()
+                    }
+                } finally {
+                    liberationAsset.close()
+                    amiriAsset.close()
+                }
             } finally {
-                liberationAsset.close()
-                amiriAsset.close()
+                resolver.close()
             }
-        } finally {
-            resolver.close()
         }
     }
 
@@ -336,19 +373,26 @@ class DetachedRenderAssetContractTest {
 
     @Test
     fun restrictiveOutlineProfileReturnsTypedLimitFailureThroughPublicRoute() {
-        val catalog = catalogFor(fixtureBytes())
-        val resolver = success(catalog.openAssetResolver())
-        val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile(maxContours = 1))
-        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
-        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
-        val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+        for (cachePolicy in materializationCachePolicies()) {
+            val catalog = catalogFor(fixtureBytes(), cachePolicy)
+            val resolver = success(catalog.openAssetResolver())
+            val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile(maxContours = 1))
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
+            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
 
-        val result = asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none)
+            try {
+                val result = asset.resolveGlyph(FontGlyphRequest(GlyphId(36)), CancellationToken.none)
 
-        val failure = assertIs<FontOperationResult.Failure>(result)
-        assertIs<FontError.ResourceLimitExceeded>(failure.error)
-        assertEquals("font.resource-limit-exceeded", failure.error.code)
-        assertEquals("font.resource-limit-exceeded", failure.diagnostics.single().code)
+                val failure = assertIs<FontOperationResult.Failure>(result)
+                assertIs<FontError.ResourceLimitExceeded>(failure.error)
+                assertEquals("font.resource-limit-exceeded", failure.error.code)
+                assertEquals("font.resource-limit-exceeded", failure.diagnostics.single().code)
+            } finally {
+                asset.close()
+                resolver.close()
+            }
+        }
     }
 
     private fun openRenderableFont(bytes: ByteArray, size: Float): DetachedFontResources {
@@ -362,8 +406,10 @@ class DetachedRenderAssetContractTest {
         return DetachedFontResources(resolver, instance, asset)
     }
 
-    private fun detachedAssetAfterOwnersClose(): FontRenderAssetHandle {
-        val catalog = catalogFor(fixtureBytes())
+    private fun detachedAssetAfterOwnersClose(
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+    ): FontRenderAssetHandle {
+        val catalog = catalogFor(fixtureBytes(), cachePolicy)
         val resolver = success(catalog.openAssetResolver())
         val face = success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(outlineProfile())))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
@@ -386,8 +432,12 @@ class DetachedRenderAssetContractTest {
             success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()))
         }
 
-    private fun catalogFor(bytes: ByteArray): FontCatalogSnapshot =
-        success(Kalligraphie.embedded(bytes, FontSourceProvenance(declaredName = "Liberation Sans Regular")))
+    private fun catalogFor(
+        bytes: ByteArray,
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+    ): FontCatalogSnapshot = success(
+        Kalligraphie.embedded(bytes, FontSourceProvenance(declaredName = "Liberation Sans Regular"), cachePolicy),
+    )
 
     /**
      * These independent fixture facts make a source-cache collision observable: Liberation's

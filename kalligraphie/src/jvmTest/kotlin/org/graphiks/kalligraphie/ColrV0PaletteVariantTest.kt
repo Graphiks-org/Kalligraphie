@@ -26,7 +26,8 @@ import kotlin.test.assertNotEquals
 class ColrV0PaletteVariantTest {
     @Test
     fun restrictiveOutlineLimitsCannotReuseAPermissiveWarmColrResult() {
-        val catalog = catalog(bungeeFixtureBytes())
+        materializationCachePolicies().forEach { cachePolicy ->
+        val catalog = catalog(bungeeFixtureBytes(), cachePolicy)
         val permissiveRequirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
         val face = success(catalog.resolveFace(catalog.faces.single().id, permissiveRequirements))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
@@ -63,17 +64,21 @@ class ColrV0PaletteVariantTest {
                     restrictiveAsset.resolveGlyph(FontGlyphRequest(glyph)),
                 )
                 assertIs<FontError.ResourceLimitExceeded>(failure.error)
+                assertEquals("font.resource-limit-exceeded", failure.error.code)
+                kotlin.test.assertTrue(failure.diagnostics.any { it.code == "font.resource-limit-exceeded" })
             } finally {
                 restrictiveAsset.close()
             }
         } finally {
             resolver.close()
         }
+        }
     }
 
     @Test
     fun reopensTheExactSecondCpalPaletteWithoutChangingTheSelectedGlyphOrMetrics() {
-        val catalog = catalog(bungeeFixtureBytes())
+        materializationCachePolicies().forEach { cachePolicy ->
+        val catalog = catalog(bungeeFixtureBytes(), cachePolicy)
         val requirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
         val resolver = success(catalog.openAssetResolver())
         val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
@@ -123,6 +128,7 @@ class ColrV0PaletteVariantTest {
         } finally {
             resolver.close()
         }
+        }
     }
 
     @Test
@@ -156,11 +162,14 @@ class ColrV0PaletteVariantTest {
         }
     }
 
-    private fun catalog(bytes: ByteArray) = success(
+    private fun catalog(
+        bytes: ByteArray,
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 1_000_000),
+    ) = success(
         Kalligraphie.embedded(
             bytes,
             FontSourceProvenance("Bungee Color Regular"),
-            FontMaterializationCachePolicy(maxEvictableBytesPerFace = 1_000_000),
+            cachePolicy,
         ),
     )
 

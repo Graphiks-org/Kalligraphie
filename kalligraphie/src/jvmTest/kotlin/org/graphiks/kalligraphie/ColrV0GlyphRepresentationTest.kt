@@ -23,10 +23,12 @@ import kotlin.test.assertIs
 class ColrV0GlyphRepresentationTest {
     @Test
     fun materializesEmojiTwoGrinningFaceIntoTheIndependentlySpecifiedLayeredPaintGraph() {
+        materializationCachePolicies().forEach { cachePolicy ->
         val catalog = success(
             Kalligraphie.embedded(
                 fixtureBytes(),
                 FontSourceProvenance("EmojiTwo COLRv0 4.0"),
+                cachePolicy,
             ),
         )
         val requirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
@@ -47,6 +49,10 @@ class ColrV0GlyphRepresentationTest {
             )
             try {
                 val paint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(glyph)))).paint
+                val repeated = assertIs<GlyphRepresentation.Paint>(
+                    success(asset.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(glyph))),
+                ).paint
+                assertEquals(paint, repeated)
                 val group = assertIs<GlyphPaintNode.Group>(paint.nodes[paint.rootNode])
 
                 assertEquals(listOf(0, 1, 2, 3, 4, 5), group.children)
@@ -65,11 +71,41 @@ class ColrV0GlyphRepresentationTest {
                     ),
                     paint.nodes.take(6).map { node -> assertIs<GlyphPaintNode.SolidOutline>(node).color },
                 )
+
+                val pressureProfile = paintProfile().let { profile ->
+                    PaintGraphProfile(
+                        acceptedNodeKinds = profile.acceptedNodeKinds,
+                        acceptedCompositionModes = profile.acceptedCompositionModes,
+                        limits = profile.limits.copy(maxNodes = profile.limits.maxNodes + 1),
+                        outlineProfile = profile.outlineProfile,
+                        schemaVersion = profile.schemaVersion,
+                    )
+                }
+                val pressureRequirements = FontAccessRequirementsSnapshot.renderable(listOf(pressureProfile))
+                val pressureAsset = success(
+                    instance.acquireRenderAsset(resolver, FontRenderVariantSnapshot(cpalPaletteIndex = 0), pressureRequirements),
+                )
+                try {
+                    val pressurePaint = assertIs<GlyphRepresentation.Paint>(
+                        success(pressureAsset.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(glyph))),
+                    ).paint
+                    assertEquals(
+                        listOf(2_650, 10_717, 10_718, 10_719, 10_720, 10_721),
+                        pressurePaint.nodes.take(6).map { node -> assertIs<GlyphPaintNode.SolidOutline>(node).outline.glyphId },
+                    )
+                } finally {
+                    pressureAsset.close()
+                }
+                val afterPressure = assertIs<GlyphRepresentation.Paint>(
+                    success(asset.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(glyph))),
+                ).paint
+                assertEquals(paint, afterPressure)
             } finally {
                 asset.close()
             }
         } finally {
             resolver.close()
+        }
         }
     }
 

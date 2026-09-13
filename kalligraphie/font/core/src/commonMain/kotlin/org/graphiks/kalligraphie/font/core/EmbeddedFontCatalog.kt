@@ -63,7 +63,8 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  *
  * @param generation stable identifier for this immutable catalog generation.
  * @param entries captured source bytes, provenance, and parsed metadata for every face.
- * @param cachePolicy bounded portable representation retention independently applied per face.
+ * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
+ * complete portable representations; this does not bound sources or caller-owned assets.
  */
 @KalligraphieInternalApi
 public class EmbeddedFontCatalog(
@@ -94,11 +95,13 @@ public class EmbeddedFontCatalog(
         require(ids.distinct().size == ids.size) {
             "An embedded font catalog must not contain the same source twice."
         }
+        val representations = FontMaterializationCache(cachePolicy)
         resources = ids.zip(capturedEntries).associate { (id, entry) ->
             id to PreparedFontResource(
                 preparedFont = PreparedTrueTypeFont(entry.source, entry.parsedFont),
                 sourceByteSize = entry.source.sizeInBytes,
-                cachePolicy = cachePolicy,
+                faceId = id,
+                representations = representations,
             )
         }
         parsedFonts = ids.zip(capturedEntries).associate { (id, entry) -> id to entry.parsedFont }
@@ -488,20 +491,19 @@ internal class FontHandleLifecycle(
 internal class PreparedFontResource(
     internal val preparedFont: PreparedTrueTypeFont,
     internal val sourceByteSize: Int,
-    cachePolicy: FontMaterializationCachePolicy,
+    private val faceId: FontFaceId,
+    private val representations: FontMaterializationCache,
 ) {
     private val leaseCount = AtomicInt(0)
-    private val representations = WeightedEvictableCache<GlyphRepresentationKey, Success<GlyphRepresentation>>(
-        cachePolicy.maxEvictableBytesPerFace,
-    )
 
-    internal fun cachedRepresentation(key: GlyphRepresentationKey): Success<GlyphRepresentation>? = representations.get(key)
+    internal fun cachedRepresentation(key: GlyphRepresentationKey): Success<GlyphRepresentation>? =
+        representations.get(faceId, key)
 
     internal fun cacheRepresentation(
         key: GlyphRepresentationKey,
         result: Success<GlyphRepresentation>,
     ) {
-        representations.put(key, result, cachedRepresentationRetainedBytes(key, result))
+        representations.put(faceId, key, result, cachedRepresentationCharge(key, result))
     }
 
     internal fun acquireLease(): PreparedFontResourceLease {
@@ -519,7 +521,7 @@ internal class PreparedFontResource(
             val current = leaseCount.load()
             check(current > 0) { "Prepared font resource lease released more than once." }
             if (leaseCount.compareAndSet(current, current - 1)) {
-                if (current == 1) representations.clear()
+                if (current == 1) representations.clearFace(faceId)
                 return
             }
         }
@@ -608,6 +610,22 @@ internal fun cachedRepresentationRetainedBytes(
     CACHE_ENTRY_ENVELOPE_BYTES
         .saturatingAdd(key.estimatedRetainedBytes())
         .saturatingAdd(result.estimatedRetainedBytes())
+
+internal fun cachedRepresentationCharge(
+    key: GlyphRepresentationKey,
+    result: Success<GlyphRepresentation>,
+): FontCacheCharge = FontCacheCharge(
+    retainedBytes = cachedRepresentationRetainedBytes(key, result),
+    decodedPixels = when (val value = result.value) {
+        is GlyphRepresentation.Bitmap -> value.bitmap.width.toLong() * value.bitmap.height.toLong()
+        GlyphRepresentation.Empty,
+        is GlyphRepresentation.Outline,
+        is GlyphRepresentation.Paint,
+        -> 0L
+    },
+    nativeBytes = 0L,
+    nativeAllocations = 0L,
+)
 
 private fun Success<GlyphRepresentation>.estimatedRetainedBytes(): Long =
     value.estimatedRetainedBytes().saturatingAdd(diagnostics.estimatedRetainedBytes())
