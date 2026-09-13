@@ -770,13 +770,10 @@ private class SvgDocumentParser(
                             is FontOperationResult.Failure -> return parsed
                             is FontOperationResult.Cancelled -> return parsed
                         }
-                        val authoredPath = when (val materialized = materializePath(commands, AffineTransform.identity)) {
-                            is FontOperationResult.Success -> materialized.value
-                            is FontOperationResult.Failure -> return materialized
-                            is FontOperationResult.Cancelled -> return materialized
-                        }
-                        if (!authoredPath.fits(profile)) {
-                            return unsupported("SVG clip path exceeds the selected outline profile.")
+                        when (val validated = validateRawClipPath(commands, profile)) {
+                            is FontOperationResult.Success -> Unit
+                            is FontOperationResult.Failure -> return validated
+                            is FontOperationResult.Cancelled -> return validated
                         }
                         val childTransform = when (
                             val parsed = parseTransform(attributes.getOrElse("transform") { "" }, "SVG clip path")
@@ -884,13 +881,10 @@ private class SvgDocumentParser(
                         val width = parsedWidth.value
                         val height = parsedHeight.value
                         val commands = rectangleRawPath(x, y, width, height)
-                        val authoredPath = when (val materialized = materializePath(commands, AffineTransform.identity)) {
-                            is FontOperationResult.Success -> materialized.value
-                            is FontOperationResult.Failure -> return materialized
-                            is FontOperationResult.Cancelled -> return materialized
-                        }
-                        if (!authoredPath.fits(profile)) {
-                            return unsupported("SVG clip rectangle exceeds the selected outline profile.")
+                        when (val validated = validateRawClipPath(commands, profile)) {
+                            is FontOperationResult.Success -> Unit
+                            is FontOperationResult.Failure -> return validated
+                            is FontOperationResult.Cancelled -> return validated
                         }
                         val childTransform = when (
                             val parsed = parseTransform(attributes.getOrElse("transform") { "" }, "SVG clip rectangle")
@@ -1930,6 +1924,71 @@ private fun rectangleRawPath(
     RawPathCommand.LineTo(Point(x, y + height)),
     RawPathCommand.Close,
 )
+
+private fun validateRawClipPath(
+    commands: List<RawPathCommand>,
+    profile: PaintGraphProfile,
+): FontOperationResult<Unit> {
+    var contourOpen = false
+    var pointCount = 0L
+    var contourCount = 0L
+    var byteWeight = 32
+
+    fun addWeight(weight: Int) {
+        byteWeight = if (byteWeight > Int.MAX_VALUE - weight) Int.MAX_VALUE else byteWeight + weight
+    }
+
+    fun invalidPath(): FontOperationResult.Failure =
+        invalid("font.svg.invalid-path", "SVG path coordinates exceed the portable path domain.")
+
+    fun Point.isFiniteCoordinate(): Boolean = x.isFinite() && y.isFinite()
+
+    for (command in commands) {
+        when (command) {
+            is RawPathCommand.MoveTo -> {
+                if (contourOpen || !command.point.isFiniteCoordinate()) return invalidPath()
+                contourOpen = true
+                pointCount += 1
+                addWeight(16)
+            }
+
+            is RawPathCommand.LineTo -> {
+                if (!contourOpen || !command.point.isFiniteCoordinate()) return invalidPath()
+                pointCount += 1
+                addWeight(16)
+            }
+
+            is RawPathCommand.CubicTo -> {
+                if (
+                    !contourOpen ||
+                    !command.control1.isFiniteCoordinate() ||
+                    !command.control2.isFiniteCoordinate() ||
+                    !command.endpoint.isFiniteCoordinate()
+                ) {
+                    return invalidPath()
+                }
+                pointCount += 3
+                addWeight(48)
+            }
+
+            RawPathCommand.Close -> {
+                if (!contourOpen) return invalidPath()
+                contourOpen = false
+                contourCount += 1
+                addWeight(1)
+            }
+        }
+    }
+    if (commands.isEmpty() || contourOpen) return invalidPath()
+    if (
+        pointCount > profile.outlineProfile.maxPoints ||
+        contourCount > profile.outlineProfile.maxContours ||
+        byteWeight > profile.outlineProfile.maxBytes
+    ) {
+        return unsupported("SVG clip path exceeds the selected outline profile.")
+    }
+    return FontOperationResult.Success(Unit)
+}
 
 private fun materializePath(
     commands: List<RawPathCommand>,

@@ -432,6 +432,109 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     @Test
+    fun translatedOutOfRangePathClipMaterializesInsideTheFinalCoordinateDomain() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <path transform="translate(-2147483648 0)" d="M2147483648 0 L2147483649 0 L2147483648 1 Z"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[0]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun translatedOutOfRangeRectangularClipMaterializesInsideTheFinalCoordinateDomain() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <rect x="2147483648" y="0" width="1" height="1" transform="translate(-2147483648 0)"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[0]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 1.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun outOfRangePathClipWithoutItsTranslationRemainsInvalidWhenReferenced() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <path d="M2147483648 0 L2147483649 0 L2147483648 1 Z"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val error = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()))
+
+        assertEquals("font.svg.invalid-path", error.code)
+    }
+
+    @Test
+    fun outOfRangeRectangularClipWithoutItsTranslationRemainsInvalidWhenReferenced() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <rect x="2147483648" y="0" width="1" height="1"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val error = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()))
+
+        assertEquals("font.svg.invalid-path", error.code)
+    }
+
+    @Test
     fun rectangularClipChildRejectsInvalidDimensions() {
         val documents = listOf(
             "<rect x=\"0\" y=\"0\" width=\"-1\" height=\"1\"/>",

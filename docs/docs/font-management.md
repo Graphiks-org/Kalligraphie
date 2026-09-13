@@ -258,8 +258,12 @@ above. It cannot contain fills, styles, `clip-rule`, IDs on its child, groups,
 shapes, nested clips, references, animation, or any other element or attribute.
 
 For each reached use, the shape's effective transform `T` materializes the
-painted shape while the definition's path uses `T * C`, where `C` is the
-definition transform composed in authored order. The existing paint subtree is
+painted shape while the definition's path uses `T * C * D`, where `C` is the
+definition transform and `D` is the child transform, both composed in authored
+order. Authored clip coordinates must remain finite and satisfy the exact
+`outlineProfile` limits even for unused definitions, but the integer
+design-coordinate bounds are enforced only after this complete transform is
+materialized for a reached reference. The existing paint subtree is
 preserved exactly in topology and values, then wrapped in one outer `PathClip`.
 The shape therefore remains under `T`; gradient geometry remains under its
 existing `T * G` or `T * B * G` mapping. A gradient retains its shape

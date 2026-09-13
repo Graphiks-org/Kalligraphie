@@ -308,8 +308,13 @@ imbriquée, référence, animation, autre élément ou autre attribut.
 
 Pour chaque utilisation atteinte, la transformation effective `T` de la forme
 matérialise la forme peinte, tandis que le chemin de la définition utilise
-`T * C`, où `C` est la transformation de la définition composée dans l’ordre
-déclaré. Le sous-graphe de peinture existant conserve exactement sa topologie
+`T * C * D`, où `C` est la transformation de la définition et `D` celle de son
+enfant, toutes deux composées dans l’ordre déclaré. Les coordonnées de découpe
+déclarées doivent rester finies et respecter exactement les limites de
+`outlineProfile` (profil de contours), même pour une définition inutilisée ;
+les bornes entières des coordonnées de conception ne sont toutefois imposées
+qu’après cette matérialisation complète pour une référence atteinte. Le
+sous-graphe de peinture existant conserve exactement sa topologie
 et ses valeurs, puis un `PathClip` (découpe par chemin) externe l’enveloppe. La
 forme reste donc sous `T` ; la géométrie du gradient conserve son repère
 existant `T * G` ou `T * B * G`. Un gradient conserve son `PathClip` de forme ;
