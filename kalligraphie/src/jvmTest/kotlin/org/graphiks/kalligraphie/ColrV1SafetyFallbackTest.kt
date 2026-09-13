@@ -6,6 +6,40 @@ import kotlin.test.*
 
 class ColrV1SafetyFallbackTest {
     @Test
+    fun unsupportedSvgPathDoesNotPreventAnUncoveredColrGlyphFromPublishingItsPaintCertificate() {
+        val complete = colrV1Profile()
+        val profile = PaintGraphProfile(
+            acceptedNodeKinds = complete.acceptedNodeKinds - GlyphPaintNodeKind.PATH,
+            acceptedCompositionModes = complete.acceptedCompositionModes,
+            acceptedGradientExtendModes = complete.acceptedGradientExtendModes,
+            limits = complete.limits,
+            outlineProfile = complete.outlineProfile,
+            schemaVersion = 2,
+        )
+        ColrV1Fixture(FontAccessRequirementsSnapshot.renderable(listOf(profile)),
+            mutateSource = ::addLiteralSvgForGlyphEight).use { fixture ->
+            val asset = fixture.asset()
+            try {
+                assertIs<FontError.UnsupportedRepresentationProfile>(
+                    assertIs<FontOperationResult.Failure>(asset.resolveGlyph(FontGlyphRequest(8))).error,
+                )
+                val paint = assertIs<GlyphRepresentation.Paint>(
+                    colrSuccess(asset.resolveGlyph(FontGlyphRequest(84))),
+                ).paint
+                val composite = assertIs<GlyphPaintNode.Composite>(paint.nodes[paint.rootNode])
+                assertEquals(GlyphPaintCompositionMode.DESTINATION_OVER, composite.mode)
+                assertEquals(GlyphAffineTransform(0.5, 0.0, 0.0, 1.5, 250.0, -250.0),
+                    assertIs<GlyphPaintNode.Transform>(paint.nodes[composite.source]).matrix)
+                val line = assertIs<EditableLineResult.Success>(fixture.layout(colrSnapshot(0xF0300))).line
+                val certificate = assertNotNull(line.positionedGlyphRuns.single().glyphs.single().materializationCertificate)
+                assertEquals(GlyphId(84), certificate.glyphId)
+                assertEquals(GlyphMaterializationRoute.PAINT_GRAPH, certificate.route)
+                assertIs<EditableLineResult.Failure>(fixture.layout(colrSnapshot(0xF0100)))
+            } finally { asset.close() }
+        }
+    }
+
+    @Test
     fun zeroColrLayersPublishACompleteBoundedNoPaintGraphAndCertificate() {
         ColrV1Fixture(mutateSource = { bytes ->
             // Audited root of glyph 84: PaintColrLayers, zero layers, first layer index zero.
@@ -202,6 +236,18 @@ class ColrV1SafetyFallbackTest {
             } finally { asset.close() }
         }
     }
+}
+
+private fun addLiteralSvgForGlyphEight(bytes: ByteArray) {
+    // Existing audited font: replace the optional post table at 8440, covering only glyph 8.
+    val xml = "<svg xmlns=\"http://www.w3.org/2000/svg\"><g id=\"glyph8\"><path fill=\"#112233\" d=\"M 10 20 L 40 20 L 40 60 Z\"/></g></svg>".encodeToByteArray()
+    val svg = ByteArray(24 + xml.size)
+    svg[5] = 10; svg[11] = 1; svg[13] = 8; svg[15] = 8; svg[19] = 14
+    svg[22] = (xml.size ushr 8).toByte(); svg[23] = xml.size.toByte()
+    xml.copyInto(svg, 24)
+    "SVG ".encodeToByteArray().copyInto(bytes, 188)
+    for (index in 0..3) bytes[200 + index] = (svg.size ushr (24 - index * 8)).toByte()
+    svg.copyInto(bytes, 8440)
 }
 
 internal fun assertLegacyCircles(paint: GlyphPaintIR) {

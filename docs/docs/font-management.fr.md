@@ -109,6 +109,11 @@ coordonnées de conception de la fonte. Pour
 comme `[backdrop, source]`, c’est-à-dire dans l’ordre de peinture. Un `Group`
 peint également ses enfants dans l’ordre de la liste avec `SOURCE_OVER`.
 
+Les angles de `SweepGradient` partent de l’axe x positif et croissent dans le
+sens antihoraire, avec l’axe y positif vers le haut. Des extrémités inversées
+conservent une progression horaire des couleurs ; ne les triez pas. Voir la
+[convention angulaire OpenType](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients).
+
 `GlyphPaintIR.clipBounds`, lorsqu’il existe, applique une découpe à tout le
 résultat de la racine. Sans ces limites racine, un graphe de schéma 2 n’est
 accepté que si sa racine atteignable est structurellement bornée :
@@ -150,6 +155,53 @@ limite, les profils de représentation ordonnés peuvent sélectionner un résul
 compatible pour ce glyphe. Si aucun n’y parvient, le repli de fonte configuré
 par l’éditeur suit sa politique d’unité de repli atomique. L’échec n’empoisonne
 pas les autres glyphes de la face.
+
+Dans une ressource mixte SVG/COLR v1, les limites de toute la source SVG et de
+son index sont vérifiées avant acquisition. Les capacités et limites du graphe
+sont vérifiées seulement lorsqu’un document SVG couvert est demandé. La
+priorité SVG reste inchangée pour ses glyphes ; un chemin SVG non accepté ne
+dégrade pas un autre glyphe COLR. La validation atomique de tout le document
+SVG sélectionné reste inchangée, même lorsqu’il cible plusieurs glyphes.
+
+### Migration des consommateurs de peinture
+
+La compatibilité de schéma ne signifie pas compatibilité binaire JVM.
+`GlyphPaintIR` ajoute `clipBounds`, `PaintGraphProfile` ajoute
+`acceptedGradientExtendModes` et `PaintGraphLimits` ajoute six champs, tous
+avec une valeur par défaut. Les appels ordinaires aux constructeurs Kotlin
+restent valides après recompilation, mais les anciens descripteurs de
+constructeur JVM, y compris ceux des arguments par défaut, ne sont pas
+conservés. Recompilez ensemble les applications et bibliothèques qui les
+utilisent avec cette version : l’ABI (interface binaire d’application) change.
+
+`PaintGraphLimits` est une data class (classe de données Kotlin) : les
+descripteurs générés `copy` et `copy$default` changent avec ses champs.
+`component1` à `component14` conservent leur position et leur type de retour
+`Int` ; les six composants ajoutés ne les décalent pas. Les appels `copy`
+nommés recompilés conservent les noms existants, mais les appels déjà compilés
+aux anciennes signatures générées nécessitent une recompilation. Aucune
+compatibilité binaire entre versions n’est promise.
+
+Complétez les `when` Kotlin exhaustifs sur `GlyphPaintNode`,
+`GlyphPaintNodeKind` et `GlyphPaintCompositionMode` pour les nouveaux cas.
+La hiérarchie sealed (scellée) de nœuds s’étend ; un gestionnaire exhaustif
+déjà compilé peut lancer `NoWhenBranchMatchedException` devant un nouveau cas.
+Ne persistez pas les positions ordinales des énumérations : `SOURCE_OVER`
+passe de 0 à 3. Préférez des noms ou identifiants explicitement versionnés.
+
+Les empreintes canoniques de profils incluent désormais `gradientExtend=`
+et les six nouvelles limites, même pour un profil de schéma 1 inchangé.
+Régénérez ou invalidez les empreintes persistées et entrées de cache dérivées ;
+ne supposez pas leur égalité entre versions de la bibliothèque. Rouvrez et
+certifiez avec les clés fraîches d’un fournisseur vivant, pas avec une empreinte
+persistée utilisée comme localisateur de ressource.
+
+`Group(emptyList())` est maintenant constructible pour représenter l’absence
+de peinture en schéma 2. Le refus en schéma 1 passe du constructeur `Group`
+au constructeur `GlyphPaintIR(schemaVersion = 1, ...)`, même pour un groupe
+vide imbriqué. Les applications dépendant de l’ancien point de validation
+doivent valider lors de la construction du graphe ; les routes non vides de
+schéma 1 restent inchangées.
 
 ```kotlin
 val catalogResult = Kalligraphie.embedded(bytes, provenance)

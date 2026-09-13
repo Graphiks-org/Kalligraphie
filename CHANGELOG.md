@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Static COLR v1 expands paint constructors, `PaintGraphLimits` generated `copy` signatures and sealed/enum cases: recompile consumers, update exhaustive handlers, never persist enum ordinals, and regenerate persisted profile fingerprints, including schema 1. Ordinary recompiled Kotlin constructor calls retain defaults; this is not JVM binary compatibility. Empty-group rejection now occurs when constructing schema-1 `GlyphPaintIR`, not `Group` alone; see the font-management migration notes.
 - FontMaterializationCachePolicy now uses structured per-face/per-catalog budgets: generated Kotlin copy/destructuring operations are source- and binary-incompatible with the former byte-only data class; migrate to perFace/perCatalog and recompile consumers that used the old generated operations. The historical byte-only constructor and getter remain available.
 - `FontError.CertificateNotInLayout` extends the sealed error surface used by the new font-asset handoff route. Add an arm when recompiling exhaustive Kotlin `when` handlers; existing method and JVM signatures remain available, but an already compiled exhaustive handler can throw `NoWhenBranchMatchedException` if this new member reaches it. Existing calls do not automatically emit this error.
 - Kotlin 2.4.0 → 2.4.10

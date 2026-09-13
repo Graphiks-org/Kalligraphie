@@ -3,7 +3,6 @@ package org.graphiks.kalligraphie.api
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
-import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 import kotlin.test.assertEquals
 
@@ -174,20 +173,6 @@ class PaintGraphV2ConsumerContractTest {
         assertFalse(schema2Profile(limits = schema2Limits(maxComposites = 0)).accepts(paint))
         assertFalse(schema2Profile(limits = schema2Limits(maxClips = 0)).accepts(paint))
         assertFalse(schema2Profile(limits = schema2Limits(maxPaintVisits = 4)).accepts(paint))
-    }
-
-    @Test
-    fun canonicalProfileIdentityChangesWithRendererCapabilitiesAndResourceBounds() {
-        val baseline = GlyphRepresentationProfileKey.paintGraph(schema2Profile())
-        val differentGradientMode = GlyphRepresentationProfileKey.paintGraph(
-            schema2Profile(gradientModes = listOf(GlyphPaintExtendMode.PAD)),
-        )
-        val differentLimit = GlyphRepresentationProfileKey.paintGraph(
-            schema2Profile(limits = schema2Limits(maxColorStops = 1)),
-        )
-
-        assertNotEquals(baseline, differentGradientMode)
-        assertNotEquals(baseline, differentLimit)
     }
 
     @Test

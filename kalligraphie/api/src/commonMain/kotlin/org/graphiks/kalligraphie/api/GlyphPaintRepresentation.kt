@@ -119,7 +119,10 @@ public data class GlyphPaintPoint(
     }
 }
 
-/** A finite two-dimensional affine transform in paint-graph design space. */
+/**
+ * A finite design-space affine transform: `x' = xx*x + xy*y + dx`,
+ * `y' = yx*x + yy*y + dy`.
+ */
 public data class GlyphAffineTransform(
     /** Horizontal scale and rotation coefficient. */
     public val xx: Double,
@@ -171,7 +174,13 @@ public data class GlyphPaintColorStop(
     }
 }
 
-/** Immutable ordered color stops and extension behavior for a portable gradient. */
+/**
+ * Immutable ordered stops, following [OpenType color lines](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#color-lines).
+ *
+ * Empty lines paint transparent black; one stop supplies its effective color everywhere.
+ * At duplicate offsets, the first stop applies below the offset and the last at/above it.
+ * A zero-span line with REPEAT or REFLECT paints nothing; PAD retains the duplicate-stop rule.
+ */
 public class GlyphPaintColorLine(
     /** Extension behavior outside the first and last stop. */
     public val extendMode: GlyphPaintExtendMode,
@@ -276,7 +285,13 @@ public sealed interface GlyphPaintNode {
         }
     }
 
-    /** Supplies a sweep gradient around one center point. */
+    /**
+     * Supplies an [OpenType sweep gradient](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients).
+     *
+     * Zero degrees points along positive x; positive angles turn counter-clockwise in y-up font
+     * design space. Start/end angles map color-line offsets 0/1 respectively. Reversed endpoints
+     * preserve clockwise color progression; consumers must not sort or swap them.
+     */
     public data class SweepGradient(
         /** Ordered colors and extension behavior. */
         public val colorLine: GlyphPaintColorLine,

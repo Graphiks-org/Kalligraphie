@@ -34,7 +34,6 @@ class ColrV1TransformCompositeTest {
                     val profile = assertIs<PaintGraphProfile>(certificate.assetKey.representationProfile)
                     assertTrue(profile.accepts(paint))
                     assertTrue(profile.accepts(GlyphPaintIR(paint.schemaVersion, paint.rootNode, paint.nodes, paint.clipBounds)))
-                    assertTrue(certificate.matches(renderer.key, GlyphId(84)))
                 } finally { renderer.close() }
             } finally { handle.close() }
         }

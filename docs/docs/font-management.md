@@ -92,6 +92,10 @@ For `GlyphAffineTransform(xx, yx, xy, yy, dx, dy)`, consumers apply
 `[backdrop, source]`, which is paint order. A `Group` likewise paints children
 in list order with `SOURCE_OVER`.
 
+Sweep angles use positive x as zero and increase counter-clockwise in y-up
+design space. Reversed endpoints retain clockwise color progression; do not
+sort them. See the [OpenType sweep convention](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients).
+
 `GlyphPaintIR.clipBounds`, when present, clips the complete root result. A
 schema-2 graph without root bounds is accepted only when its reachable root
 is structurally bounded: `SolidOutline`, `Path`, and `GlyphClip` are bounded;
@@ -128,6 +132,48 @@ capability is unsupported or over limit, ordered representation profiles may
 select a compatible result for that glyph. If none does, the editor's
 configured font fallback proceeds according to its atomic fallback-unit
 policy. The failure does not poison unrelated glyphs in the face.
+
+In a mixed SVG/COLR v1 asset, complete SVG source/index bounds are checked
+before acquisition, but payload capabilities and graph limits are checked only
+when a covered SVG document is requested. SVG priority is preserved for its
+covered glyphs; an unsupported SVG path cannot downgrade an uncovered COLR
+glyph. The existing all-or-nothing validation of a selected SVG document is
+unchanged, including documents targeting multiple glyphs.
+
+### Migrating paint consumers
+
+Graph-schema compatibility is not JVM binary compatibility. `GlyphPaintIR`
+adds defaulted `clipBounds`, `PaintGraphProfile` adds defaulted
+`acceptedGradientExtendModes`, and `PaintGraphLimits` adds six defaulted
+fields. Ordinary Kotlin constructor calls keep working when recompiled, but
+the previous JVM constructor descriptors, including default-argument
+descriptors, are not retained. Recompile applications and libraries using
+those constructors together with this version.
+
+`PaintGraphLimits` is a data class: generated `copy` and `copy$default`
+descriptors change with its fields. Existing `component1` through `component14`
+retain their positions and `Int` return types; the six appended components
+do not shift them. Recompiled named `copy` calls retain their existing field
+names, while already compiled calls to the old generated signatures require
+recompilation. This does not promise cross-version binary compatibility.
+
+Update exhaustive Kotlin `when` handlers over `GlyphPaintNode`,
+`GlyphPaintNodeKind` and `GlyphPaintCompositionMode` for the new cases. An
+already compiled exhaustive handler can throw `NoWhenBranchMatchedException`
+when supplied a new case. Do not persist enum ordinals: `SOURCE_OVER` moves
+from ordinal 0 to 3. Prefer explicit versioned names/tags for stored formats.
+
+Canonical profile fingerprints now include `gradientExtend=` and the six new
+limits, even for unchanged schema-1 profiles. Regenerate/invalidate persisted
+fingerprints and derived cache entries; do not assume equality across library
+versions. Reopen/certify using fresh live provider keys rather than treating
+persisted fingerprints as resource locators.
+
+`Group(emptyList())` can now be constructed to express schema-2 no-paint.
+The rejection for schema 1 moves from the `Group` constructor to
+`GlyphPaintIR(schemaVersion = 1, ...)`, including nested empty groups.
+Applications relying on the earlier validation point must validate at graph
+construction instead; nonempty schema-1 routes remain unchanged.
 
 ```kotlin
 val catalogResult = Kalligraphie.embedded(bytes, provenance)

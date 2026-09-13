@@ -241,7 +241,7 @@ internal data class TrueTypeFontInstance(
                     if (profile.schemaVersion == 2 && colrV1Supported) {
                         when (val colorData = readColrV1(profile, renderVariant)) {
                             is FontOperationResult.Success -> {
-                                val svgResult = if (svgRouteSupported) readSvgOpenType(profile)
+                                val svgResult = if (svgRouteSupported) readMixedSvgSource(profile)
                                     else FontOperationResult.Success(null)
                                 when (svgResult) {
                                     is FontOperationResult.Success -> FontOperationResult.Success(
@@ -251,7 +251,7 @@ internal data class TrueTypeFontInstance(
                                             key = FontRenderAssetKey(key, renderVariant.key, profile, resolver.generation, variantSnapshot = renderVariant.takeUnless { it == FontRenderVariantSnapshot.default }),
                                             profile = profile,
                                             colorData = colorData.value,
-                                            svgData = svgResult.value,
+                                            svgSource = svgResult.value,
                                         ),
                                     )
                                     is FontOperationResult.Failure -> svgResult
@@ -492,6 +492,21 @@ internal data class TrueTypeFontInstance(
         val svg = slice(resource.preparedFont.copySourceBytes(), svgRecord)
             ?: return failure(FontError.InvalidFontData("SVG table exceeds embedded source bytes.", FontDiagnosticLocation.Table("SVG ")))
         return SvgOpenTypeReader.read(svg, parsedFont.metadata.glyphCount, profile)
+    }
+
+    private fun readMixedSvgSource(profile: PaintGraphProfile): FontOperationResult<ColrV1SvgSource> {
+        val svgRecord = parsedFont.tableRecords["SVG "]
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no SVG table.", FontDiagnosticLocation.FaceId(faceId)))
+        if (svgRecord.length > profile.limits.maxSourceBytes.toLong()) {
+            return failure(FontError.ResourceLimitExceeded("SVG source-byte limit exceeded.", FontDiagnosticLocation.Table("SVG ")))
+        }
+        val svg = slice(resource.preparedFont.copySourceBytes(), svgRecord)
+            ?: return failure(FontError.InvalidFontData("SVG table exceeds embedded source bytes.", FontDiagnosticLocation.Table("SVG ")))
+        return when (val result = SvgOpenTypeReader.validateIndex(svg, parsedFont.metadata.glyphCount, profile)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(ColrV1SvgSource(svg, parsedFont.metadata.glyphCount), result.diagnostics)
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
     }
 
 }

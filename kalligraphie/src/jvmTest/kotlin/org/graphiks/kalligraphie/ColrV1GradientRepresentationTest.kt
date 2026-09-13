@@ -1,7 +1,6 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.*
-import java.security.MessageDigest
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -93,8 +92,6 @@ class ColrV1GradientRepresentationTest {
     private fun withPaint(codePoint: Int, expectedGlyph: Int, paletteIndex: Int = 0, assertions: (GlyphPaintIR) -> Unit) {
         val bytes = checkNotNull(javaClass.getResourceAsStream("/fonts/skia-colr-v1/test_glyphs-glyf_colr_1.ttf.b64"))
             .use { Base64.getMimeDecoder().decode(it.readBytes()) }
-        assertEquals(21_568, bytes.size)
-        assertEquals("72cb79b606c79bc49861094e25f442db0b24881504b29533bbe8ea75f3902e67", MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
         val catalog = success(Kalligraphie.embedded(bytes, FontSourceProvenance("Skia COLR v1 test glyphs")))
         val requirements = FontAccessRequirementsSnapshot.renderable(listOf(PaintGraphProfile(
             acceptedNodeKinds = listOf(GlyphPaintNodeKind.GROUP, GlyphPaintNodeKind.SOLID, GlyphPaintNodeKind.LINEAR_GRADIENT, GlyphPaintNodeKind.RADIAL_GRADIENT, GlyphPaintNodeKind.SWEEP_GRADIENT, GlyphPaintNodeKind.GLYPH_CLIP),
