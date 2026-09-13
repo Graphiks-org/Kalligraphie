@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BitmapLimits
@@ -388,6 +389,7 @@ class LayoutFontAssetHandoffTest {
                 success(stillBorrowed.close())
             }
         } finally {
+            closeCapturedAssets(captured)
             fixture.close()
         }
     }
@@ -410,6 +412,7 @@ class LayoutFontAssetHandoffTest {
             assertEquals(true, cancelled.diagnostics.any { it.code == "font.test-close-after-cancellation" })
             assertCapturedOwnersAreClosed(captured, fixture.certificate.glyphId)
         } finally {
+            closeCapturedAssets(captured)
             fixture.close()
         }
     }
@@ -434,6 +437,7 @@ class LayoutFontAssetHandoffTest {
                 assertIs<FontError.InvalidFontData>(assertIs<FontOperationResult.Failure>(opened).error)
                 assertCapturedOwnersAreClosed(captured, fixture.certificate.glyphId)
             } finally {
+                closeCapturedAssets(captured)
                 fixture.close()
             }
         }
@@ -465,6 +469,7 @@ class LayoutFontAssetHandoffTest {
             assertIs<FontError.UnsupportedRepresentationProfile>(assertIs<FontOperationResult.Failure>(opened).error)
             assertCapturedOwnersAreClosed(captured, fixture.certificates.first().glyphId)
         } finally {
+            closeCapturedAssets(captured)
             fixture.close()
         }
     }
@@ -487,6 +492,7 @@ class LayoutFontAssetHandoffTest {
             assertEquals(true, failure.diagnostics.any { it.code == "font.test-attached-close-failure" })
             assertCapturedOwnersAreClosed(captured, fixture.certificate.glyphId)
         } finally {
+            closeCapturedAssets(captured)
             fixture.close()
         }
     }
@@ -499,38 +505,36 @@ class LayoutFontAssetHandoffTest {
         val detachEntered = CountDownLatch(1)
         val releaseDetach = CountDownLatch(1)
         val workers = Executors.newSingleThreadExecutor()
+        var admitted: Future<FontOperationResult<FontRenderAssetHandle>>? = null
+        var handle: LayoutHandle<EditableLine>? = null
         try {
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
                 override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
                     gateRootDetach(fixture.resolver.reopen(key), detachEntered, releaseDetach, captured)
             }
-            val handle = success(fixture.line.openLayoutHandle(resolver))
-            var retained: FontRenderAssetHandle? = null
-            try {
-                val admitted = workers.submit<FontOperationResult<FontRenderAssetHandle>> {
-                    handle.retainFontAsset(fixture.certificate)
-                }
-                check(detachEntered.await(10, TimeUnit.SECONDS)) { "Admitted retention never reached real detach." }
-                success(handle.close())
-                assertIs<FontError.ResourceClosed>(
-                    assertIs<FontOperationResult.Failure>(handle.retainFontAsset(fixture.certificate)).error,
-                )
-                releaseDetach.countDown()
-
-                val result = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
-                    admitted.get(10, TimeUnit.SECONDS),
-                )
-                retained = result.value
-                assertBitmap(retained)
-                assertEquals(true, result.diagnostics.any { it.code == "font.test-deferred-root-close" })
-            } finally {
-                releaseDetach.countDown()
-                retained?.let { success(it.close()) }
-                success(handle.close())
+            val openedHandle = success(fixture.line.openLayoutHandle(resolver))
+            handle = openedHandle
+            admitted = workers.submit<FontOperationResult<FontRenderAssetHandle>> {
+                openedHandle.retainFontAsset(fixture.certificate)
             }
+            check(detachEntered.await(10, TimeUnit.SECONDS)) { "Admitted retention never reached real detach." }
+            success(openedHandle.close())
+            assertIs<FontError.ResourceClosed>(
+                assertIs<FontOperationResult.Failure>(openedHandle.retainFontAsset(fixture.certificate)).error,
+            )
+            releaseDetach.countDown()
+
+            val result = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
+                admitted.get(10, TimeUnit.SECONDS),
+            )
+            assertBitmap(result.value)
+            assertEquals(true, result.diagnostics.any { it.code == "font.test-deferred-root-close" })
         } finally {
             releaseDetach.countDown()
-            workers.shutdownNow()
+            drainRetainedAsset(admitted)
+            terminateWorkers(workers)
+            handle?.close()
+            closeCapturedAssets(captured)
             fixture.close()
         }
     }
@@ -664,6 +668,41 @@ class LayoutFontAssetHandoffTest {
             assertIs<FontError.ResourceClosed>(
                 assertIs<FontOperationResult.Failure>(asset.resolveGlyph(FontGlyphRequest(glyphId))).error,
             )
+        }
+    }
+
+    private fun closeCapturedAssets(captured: List<FontRenderAssetHandle>) {
+        captured.asReversed().forEach { asset ->
+            runCatching { asset.close() }
+        }
+    }
+
+    private fun drainRetainedAsset(result: Future<FontOperationResult<FontRenderAssetHandle>>?) {
+        if (result == null) return
+        try {
+            when (val completed = result.get(10, TimeUnit.SECONDS)) {
+                is FontOperationResult.Success -> runCatching { completed.value.close() }
+                is FontOperationResult.Failure, is FontOperationResult.Cancelled -> Unit
+            }
+        } catch (_: java.util.concurrent.CancellationException) {
+        } catch (_: java.util.concurrent.ExecutionException) {
+        } catch (_: java.util.concurrent.TimeoutException) {
+            result.cancel(true)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    private fun terminateWorkers(workers: java.util.concurrent.ExecutorService) {
+        workers.shutdown()
+        try {
+            if (!workers.awaitTermination(10, TimeUnit.SECONDS)) {
+                workers.shutdownNow()
+                workers.awaitTermination(10, TimeUnit.SECONDS)
+            }
+        } catch (_: InterruptedException) {
+            workers.shutdownNow()
+            Thread.currentThread().interrupt()
         }
     }
 
