@@ -83,12 +83,28 @@ The accepted paint-server subset consists of `defs` containing named
 self-closing `stop` elements.
 A self-closing `rect` may use an opaque `#RRGGBB` fill, `fill="none"`, or a
 `url(#id)` reference to a unique gradient defined earlier in the same
-document; an absent fill defaults to opaque black. Gradient coordinates use
-`objectBoundingBox` only: unitless values and percentages are resolved relative
-to the rectangle and are not clamped to its unit box. Linear defaults are
-`x1=0%`, `y1=0%`, `x2=100%`, and `y2=0%`. Radial defaults are `cx=50%`,
-`cy=50%`, `r=50%`, `fx=cx`, and `fy=cy`. Both kinds default to
-`spreadMethod=pad` and sRGB interpolation.
+document; an absent fill defaults to opaque black. A supported self-closing
+`path` may use the same fills when the referenced gradient explicitly uses
+`userSpaceOnUse`. Path references to `objectBoundingBox` gradients remain
+unsupported, including empty, one-stop, degenerate, and singularly transformed
+uses. With absent or explicit
+`gradientUnits=objectBoundingBox`, unitless values and percentages are resolved
+relative to the rectangle and are not clamped to its unit box. Linear defaults
+are `x1=0%`, `y1=0%`, `x2=100%`, and `y2=0%`. Radial defaults are `cx=50%`,
+`cy=50%`, `r=50%`, `fx=cx`, and `fy=cy`.
+
+`gradientUnits=userSpaceOnUse` is accepted only for viewport-independent,
+finite unitless coordinates. Linear definitions must explicitly provide all of
+`x1`, `y1`, `x2`, and `y2`. Radial definitions must explicitly provide `cx`,
+`cy`, and non-negative `r`; omitted `fx` and `fy` inherit the accepted absolute
+`cx` and `cy`, while explicit focus coordinates must also be unitless.
+Percentage coordinates and the percentage defaults selected by omitted required
+attributes remain outside this bounded subset because they depend on the
+current viewport and any `viewBox`. They yield
+`UnsupportedRepresentationProfile`, as do unknown `gradientUnits` values;
+malformed or non-finite absolute numbers and negative non-zero radial radii
+yield `FontDataFailure`. Both gradient kinds default to `spreadMethod=pad` and
+sRGB interpolation.
 
 `spreadMethod` accepts all three portable modes: `pad`, `repeat`, and `reflect`
 map to `PAD`, `REPEAT`, and `REFLECT`. An absent `color-interpolation` or the
@@ -161,26 +177,33 @@ operation, regardless of its operand count; in particular, each one-operand
 budget, and profile fallback restarts validation without publishing partial
 data.
 
-With column vectors, the paint mapping is `T * B * G`: `T` is the rectangle's
-effective group transform, `B` maps its normalized object bounding box, and
-`G` is the `gradientTransform` list composed in source order. The transform is
-applied only to gradient geometry; the rectangle's clipping path remains under
-`T`. Linear gradients bake the complete mapping into `p0`, `p1`, and `p2`
-without adding a graph transform. Radial gradients keep normalized circles and
-place the same mapping on their existing single `Transform` node.
+With column vectors, object-bounding-box paint uses `T * B * G`: `T` is the
+rectangle's effective group transform, `B` maps its normalized object bounding
+box, and `G` is the `gradientTransform` list composed in source order. Absolute
+user-space paint instead uses `T * G`, independently of rectangle bounds. The
+mapping is applied only to gradient geometry; the rectangle's clipping path
+remains under `T`. Linear gradients bake the selected mapping into `p0`, `p1`,
+and `p2` without adding a graph transform. Radial gradients retain either the
+normalized or absolute authored circles and place the selected mapping on their
+existing single `Transform` node.
 
-A definition with no stops contributes no ink. For a rectangle whose effective
+A definition's coordinate space and coordinates are fully validated before an
+empty or solid reduction, so viewport-dependent input cannot be hidden by a
+definition with no stops, one stop, or zero radius. A valid definition with no
+stops contributes no ink. For a rectangle or supported path whose effective
 group transform `T` preserves area, a one-stop linear gradient or a source
 vector with
 identical endpoints normalizes to the final stop as `Solid` under the
-rectangle's `PathClip`. For any other linear gradient with at least two stops,
+shape's `PathClip`. For any other linear gradient with at least two stops,
 Kalligraphie first resolves its normalized `p0` and `p1`; if those points
 coincide, it performs the same solid reduction, otherwise it emits a
-`LinearGradient` under that rectangle path. Before emission, normalized `p0`,
+`LinearGradient` under that shape path. Before emission, normalized `p0`,
 `p1`, and `p2` must form a non-collinear triplet. A collinear triplet returns
 `font.svg.invalid-gradient`, and no partial asset is published. A singular
 effective group transform `T` omits a rectangle or filled path after its
-geometry, fill, and any paint reference have been validated.
+geometry and fill have been validated. For path gradients, local-reference,
+coordinate-space, reached capability, and projected graph-limit validation
+also precede that omission.
 
 A radial definition with `r < 0` is invalid data. With one stop or `r == 0`,
 it likewise reduces to the final stop as `Solid` under `PathClip`. A radial
@@ -189,9 +212,11 @@ after numeric parsing (`fx == cx` and `fy == cy`); any off-center focus is
 valid SVG outside this subset and yields `UnsupportedRepresentationProfile`
 without clamping. A non-degenerate radial paint keeps its two normalized
 circles (`c0=(fx,fy), radius0=0`, `c1=(cx,cy), radius1=r`) below an explicit
-`Transform` that carries `T * B * G`, then clips that paint with the rectangle
-path transformed by `T` alone.
-This preserves the ellipse produced by a non-square rectangle.
+`Transform` that carries `T * B * G`; an absolute user-space radial keeps the
+same circle fields unscaled below `T * G`. Both are clipped by the referencing
+shape path transformed by `T` alone. The object-bounding-box form is available
+only to rectangles and preserves the ellipse produced by a non-square
+rectangle.
 
 Every authored linear or radial gradient requires an exact schema-3 `PaintGraphProfile`.
 When normalization actually emits `LinearGradient` or `RadialGradient`, the profile must accept
@@ -199,7 +224,7 @@ the reached interpolation space, `UNPREMULTIPLIED` alpha interpolation, and
 extend mode together with `PATH_CLIP` and the corresponding `LINEAR_GRADIENT`
 or `RADIAL_GRADIENT` node kind. Radial paint also requires `TRANSFORM`. A solid reduction instead requires `SOLID`
 and `PATH_CLIP`, but does not require the definition's interpolation space or
-alpha or extend mode. Solid rectangles use `PATH`. Documents with several
+alpha or extend mode. Solid rectangles and paths use `PATH`. Documents with several
 painted roots also require `GROUP` and `SOURCE_OVER`. Existing limits
 are checked before publication: source and decoded bytes, transforms, parsed
 gradient definitions and stops, and generated nodes, references, paths,
@@ -214,7 +239,7 @@ selected whole document during a lazy mixed SVG/COLR glyph request. It is
 charged when its definition is parsed, including identity operations and unused
 definitions. A three-operand `rotate(angle cx cy)` call still counts once;
 referencing one definition repeatedly does not charge it again.
-Each generated rectangle path must also satisfy the profile's `outlineProfile`.
+Each generated shape path must also satisfy the profile's `outlineProfile`.
 Ordered profile fallback may therefore skip a schema-3 profile that does not
 declare every reached capability and select a later compatible profile.
 
@@ -222,12 +247,12 @@ All element IDs accepted on `svg`, `g`, `linearGradient`, and `radialGradient` a
 unique. Glyph targets remain unique by glyph ID as a separate invariant.
 Paint references are local, fragment-only, and backward-only; unresolved,
 forward, external, or otherwise URI-bearing references fail before an asset is
-published, even when the rectangle would later contribute no ink. Malformed
+published, even when the referencing shape would later contribute no ink. Malformed
 or unsupported input never publishes a partial graph.
 
-The subset does not support `viewBox`, `userSpaceOnUse`, `href`, `xlink:href`,
-radial `fr`, non-concentric radial focus, gradient fills
-on `path`, CSS or `style` attributes,
+The subset does not support `viewBox`, viewport-dependent user-space percentage
+coordinates or defaults, `href`, `xlink:href`, radial `fr`, non-concentric radial focus,
+`objectBoundingBox` gradient fills on `path`, CSS or `style` attributes,
 general SVG clips or clip paths, masks, strokes, scripts, entities, animation,
 external resources, or unlisted elements and attributes. Compression formats
 other than the permitted single-member gzip transport remain rejected.

@@ -73,16 +73,19 @@ public class SvgOpenTypeData internal constructor(
  * `radialGradient`, self-closing `stop`, `path`, and `rect` elements. Groups may contain
  * `translate`, `scale`, `rotate(angle)`, `rotate(angle cx cy)`, `skewX(angle)`, `skewY(angle)`, and
  * six-coefficient SVG `matrix` transforms. Rotation and skew angles use SVG degrees.
- * Object-bounding-box gradients may additionally
- * declare an invertible `gradientTransform` list containing those same operations. Its matrix is
- * composed after the bounding-box mapping and affects only gradient geometry, never the shape
- * clip. Every non-singular composition must retain the exact determinant
+ * Object-bounding-box and absolute user-space gradients may additionally
+ * declare an invertible `gradientTransform` list containing those same operations. At reference
+ * time, object-bounding-box paint composes as `T * B * G`, while absolute user-space paint composes
+ * as `T * G`; both affect only gradient geometry, never the shape clip. Every non-singular
+ * composition must retain the exact determinant
  * orientation of its decoded `Double` factors in the stored result; numeric rank loss or
  * orientation inversion is rejected as invalid data. Paths may use `M`, `L`, `H`, `V`, `C`, `S`,
  * and `Z` commands (and their relative forms).
- * Shapes accept solid `#RRGGBB`, `fill="none"`, or a preceding local gradient reference for
- * rectangles. Object-bounding-box linear and concentric radial gradients normalize to schema-3
- * portable paints; a radial bounding-box mapping is represented by an explicit transform node.
+ * Shapes accept solid `#RRGGBB` or `fill="none"`. Rectangles additionally accept preceding local
+ * object-bounding-box or unitless absolute user-space gradients, while paths accept only the
+ * absolute user-space form. Supported linear and concentric radial gradients normalize to
+ * schema-3 portable paints; a radial coordinate mapping is represented by an explicit transform
+ * node.
  * Scripts, network or external references, entities, animation, XML declarations, strokes,
  * masks, and every unlisted element or attribute are rejected before any [SvgOpenTypeData] is
  * returned.
@@ -452,7 +455,7 @@ private class SvgDocumentParser(
                         return unsupported("SVG linear gradients require paint schema 3.")
                     }
                     if (attributes.keys.any { key -> key !in LINEAR_GRADIENT_ATTRIBUTES }) {
-                        return unsupported("SVG linear-gradient attributes outside the static object-bounding-box subset are not supported.")
+                        return unsupported("SVG linear-gradient attributes outside the static bounded subset are not supported.")
                     }
                     val id = attributes["id"]?.takeIf(String::isSvgDefinitionId)
                         ?: return invalid("font.svg.invalid-gradient-id", "SVG linearGradient requires a valid local id.")
@@ -462,22 +465,64 @@ private class SvgDocumentParser(
                     if (parsedGradientCount >= profile.limits.maxGradients) {
                         return limit("SVG gradient-definition limit exceeded.")
                     }
-                    if (attributes.getOrElse("gradientUnits") { "objectBoundingBox" } != "objectBoundingBox") {
-                        return unsupported("Only objectBoundingBox SVG linear gradients are supported.")
+                    val coordinateSpace = when (attributes.getOrElse("gradientUnits") { "objectBoundingBox" }) {
+                        "objectBoundingBox" -> SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX
+                        "userSpaceOnUse" -> SvgGradientCoordinateSpace.USER_SPACE_ON_USE
+                        else -> return unsupported("SVG linear-gradient coordinate space is not supported.")
                     }
                     val gradientTransform = when (val parsed = parseGradientTransform(attributes, "SVG linear-gradient")) {
                         is FontOperationResult.Success -> parsed.value
                         is FontOperationResult.Failure -> return parsed
                         is FontOperationResult.Cancelled -> return parsed
                     }
-                    val x1 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("x1") { "0%" })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient x1 is invalid.")
-                    val y1 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("y1") { "0%" })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient y1 is invalid.")
-                    val x2 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("x2") { "100%" })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient x2 is invalid.")
-                    val y2 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("y2") { "0%" })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient y2 is invalid.")
+                    val x1 = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("x1") { "0%" })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient x1 is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceCoordinate(attributes["x1"], "SVG linear-gradient x1")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
+                    val y1 = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("y1") { "0%" })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient y1 is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceCoordinate(attributes["y1"], "SVG linear-gradient y1")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
+                    val x2 = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("x2") { "100%" })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient x2 is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceCoordinate(attributes["x2"], "SVG linear-gradient x2")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
+                    val y2 = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("y2") { "0%" })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient y2 is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceCoordinate(attributes["y2"], "SVG linear-gradient y2")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
                     val extendMode = when (attributes.getOrElse("spreadMethod") { "pad" }) {
                         "pad" -> GlyphPaintExtendMode.PAD
                         "repeat" -> GlyphPaintExtendMode.REPEAT
@@ -492,6 +537,7 @@ private class SvgDocumentParser(
                     parsedGradientCount += 1
                     val builder = SvgLinearGradientBuilder(
                         id = id,
+                        coordinateSpace = coordinateSpace,
                         x1 = x1,
                         y1 = y1,
                         x2 = x2,
@@ -517,7 +563,7 @@ private class SvgDocumentParser(
                         return unsupported("SVG radial gradients require paint schema 3.")
                     }
                     if (attributes.keys.any { key -> key !in RADIAL_GRADIENT_ATTRIBUTES }) {
-                        return unsupported("SVG radial-gradient attributes outside the static object-bounding-box subset are not supported.")
+                        return unsupported("SVG radial-gradient attributes outside the static bounded subset are not supported.")
                     }
                     val id = attributes["id"]?.takeIf(String::isSvgDefinitionId)
                         ?: return invalid("font.svg.invalid-gradient-id", "SVG radialGradient requires a valid local id.")
@@ -527,28 +573,80 @@ private class SvgDocumentParser(
                     if (parsedGradientCount >= profile.limits.maxGradients) {
                         return limit("SVG gradient-definition limit exceeded.")
                     }
-                    if (attributes.getOrElse("gradientUnits") { "objectBoundingBox" } != "objectBoundingBox") {
-                        return unsupported("Only objectBoundingBox SVG radial gradients are supported.")
+                    val coordinateSpace = when (attributes.getOrElse("gradientUnits") { "objectBoundingBox" }) {
+                        "objectBoundingBox" -> SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX
+                        "userSpaceOnUse" -> SvgGradientCoordinateSpace.USER_SPACE_ON_USE
+                        else -> return unsupported("SVG radial-gradient coordinate space is not supported.")
                     }
                     val gradientTransform = when (val parsed = parseGradientTransform(attributes, "SVG radial-gradient")) {
                         is FontOperationResult.Success -> parsed.value
                         is FontOperationResult.Failure -> return parsed
                         is FontOperationResult.Cancelled -> return parsed
                     }
-                    val cx = parseObjectBoundingBoxCoordinate(attributes.getOrElse("cx") { "50%" })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient cx is invalid.")
-                    val cy = parseObjectBoundingBoxCoordinate(attributes.getOrElse("cy") { "50%" })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient cy is invalid.")
-                    val parsedRadius = parseSvgFractionWithLexicalSignificance(attributes.getOrElse("r") { "50%" })
-                        ?: return invalid("font.svg.invalid-gradient-radius", "SVG radial-gradient radius is invalid.")
+                    val cx = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("cx") { "50%" })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient cx is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceCoordinate(attributes["cx"], "SVG radial-gradient cx")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
+                    val cy = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("cy") { "50%" })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient cy is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceCoordinate(attributes["cy"], "SVG radial-gradient cy")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
+                    val parsedRadius = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseSvgFractionWithLexicalSignificance(attributes.getOrElse("r") { "50%" })
+                                ?: return invalid("font.svg.invalid-gradient-radius", "SVG radial-gradient radius is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> when (
+                            val parsed = parseUserSpaceRadius(attributes["r"])
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                    }
                     if (parsedRadius.hasNegativeNonZeroMantissa) {
                         return invalid("font.svg.invalid-gradient-radius", "SVG radial-gradient radius must be non-negative.")
                     }
                     val radius = parsedRadius.value
-                    val fx = parseObjectBoundingBoxCoordinate(attributes.getOrElse("fx") { attributes.getOrElse("cx") { "50%" } })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient fx is invalid.")
-                    val fy = parseObjectBoundingBoxCoordinate(attributes.getOrElse("fy") { attributes.getOrElse("cy") { "50%" } })
-                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient fy is invalid.")
+                    val fx = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("fx") { attributes.getOrElse("cx") { "50%" } })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient fx is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> attributes["fx"]?.let { value ->
+                            when (val parsed = parseUserSpaceCoordinate(value, "SVG radial-gradient fx")) {
+                                is FontOperationResult.Success -> parsed.value
+                                is FontOperationResult.Failure -> return parsed
+                                is FontOperationResult.Cancelled -> return parsed
+                            }
+                        } ?: cx
+                    }
+                    val fy = when (coordinateSpace) {
+                        SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                            parseObjectBoundingBoxCoordinate(attributes.getOrElse("fy") { attributes.getOrElse("cy") { "50%" } })
+                                ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG radial-gradient fy is invalid.")
+                        SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> attributes["fy"]?.let { value ->
+                            when (val parsed = parseUserSpaceCoordinate(value, "SVG radial-gradient fy")) {
+                                is FontOperationResult.Success -> parsed.value
+                                is FontOperationResult.Failure -> return parsed
+                                is FontOperationResult.Cancelled -> return parsed
+                            }
+                        } ?: cy
+                    }
                     if (radius > 0.0 && (fx != cx || fy != cy)) {
                         return unsupported("Only concentric SVG radial gradients are supported.")
                     }
@@ -566,6 +664,7 @@ private class SvgDocumentParser(
                     parsedGradientCount += 1
                     val builder = SvgRadialGradientBuilder(
                         id = id,
+                        coordinateSpace = coordinateSpace,
                         centerX = cx,
                         centerY = cy,
                         radius = radius,
@@ -617,15 +716,33 @@ private class SvgDocumentParser(
                     val pathData = attributes["d"] ?: return invalid("font.svg.missing-path-data", "SVG path is missing d data.")
                     val fill = attributes["fill"] ?: "#000000"
                     if (fill == "none") continue
-                    val color = parseColor(fill) ?: return unsupported("Only #RRGGBB SVG fills are supported.")
+                    val solid = parseColor(fill)
+                    val gradient = if (solid == null) {
+                        val reference = parseLocalPaintReference(fill)
+                            ?: return unsupported("Only #RRGGBB or preceding local gradient references are supported for SVG paths.")
+                        gradients[reference]
+                            ?: return unsupported("SVG path gradient references must resolve to a preceding local definition.")
+                    } else {
+                        null
+                    }
                     val path = when (val parsed = parsePath(pathData, stack.last().transform)) {
                         is FontOperationResult.Success -> parsed.value
                         is FontOperationResult.Failure -> return parsed
                         is FontOperationResult.Cancelled -> return parsed
                     }
-                    if (!stack.last().transform.preservesArea) continue
                     val target = stack.last().glyphTargetId?.let(glyphs::get) ?: unassignedPaint
-                    target.appendSolidPath(path, color, profile)?.let { failure -> return failure }
+                    if (solid != null) {
+                        if (!stack.last().transform.preservesArea) continue
+                        target.appendSolidPath(path, solid, profile)?.let { failure -> return failure }
+                        continue
+                    }
+                    target.appendGradientPath(
+                        path = path,
+                        definition = checkNotNull(gradient),
+                        rectangle = null,
+                        transform = stack.last().transform,
+                        profile = profile,
+                    )?.let { failure -> return failure }
                 }
 
                 "rect" -> {
@@ -670,7 +787,7 @@ private class SvgDocumentParser(
                         target.appendSolidPath(path, solid, profile)?.let { failure -> return failure }
                         continue
                     }
-                    target.appendGradientRect(
+                    target.appendGradientPath(
                         path = path,
                         definition = checkNotNull(gradient),
                         rectangle = SvgRectangle(x, y, width, height),
@@ -1025,21 +1142,37 @@ private class SvgGlyphPaintBuilder {
         return null
     }
 
-    fun appendGradientRect(
+    fun appendGradientPath(
         path: GlyphPaintPath,
         definition: SvgGradient,
-        rectangle: SvgRectangle,
+        rectangle: SvgRectangle?,
         transform: AffineTransform,
         profile: PaintGraphProfile,
-    ): FontOperationResult.Failure? = when (definition) {
-        is SvgLinearGradient -> appendLinearGradientRect(path, definition, rectangle, transform, profile)
-        is SvgRadialGradient -> appendRadialGradientRect(path, definition, rectangle, transform, profile)
+    ): FontOperationResult.Failure? {
+        if (rectangle == null && definition.coordinateSpace != SvgGradientCoordinateSpace.USER_SPACE_ON_USE) {
+            return unsupported("SVG object-bounding-box gradients are not supported for paths.")
+        }
+        if (
+            rectangle == null &&
+            definition.colorStops.isNotEmpty() &&
+            (
+                path.pointCount > profile.outlineProfile.maxPoints ||
+                    path.contourCount > profile.outlineProfile.maxContours ||
+                    path.estimatedByteSize > profile.outlineProfile.maxBytes
+            )
+        ) {
+            return unsupported("SVG paint graph exceeds the selected profile.")
+        }
+        return when (definition) {
+            is SvgLinearGradient -> appendLinearGradientPath(path, definition, rectangle, transform, profile)
+            is SvgRadialGradient -> appendRadialGradientPath(path, definition, rectangle, transform, profile)
+        }
     }
 
-    private fun appendLinearGradientRect(
+    private fun appendLinearGradientPath(
         path: GlyphPaintPath,
         definition: SvgLinearGradient,
-        rectangle: SvgRectangle,
+        rectangle: SvgRectangle?,
         transform: AffineTransform,
         profile: PaintGraphProfile,
     ): FontOperationResult.Failure? {
@@ -1048,14 +1181,15 @@ private class SvgGlyphPaintBuilder {
             return unsupported("The selected paint profile does not accept SVG path clips.")
         }
         val intrinsicallySolid = definition.colorStops.size == 1 || definition.hasDegenerateVector
-        val points = if (intrinsicallySolid) {
+        val omitPaint = !transform.preservesArea
+        val points = if (intrinsicallySolid || omitPaint) {
             null
         } else {
             definition.points(rectangle, transform)
                 ?: return invalid("font.svg.invalid-gradient", "SVG linear-gradient coordinates exceed the portable domain.")
         }
-        val useSolid = intrinsicallySolid || checkNotNull(points).let { resolved -> resolved.p0 == resolved.p1 }
-        if (!useSolid && !checkNotNull(points).formsPlane) {
+        val useSolid = intrinsicallySolid || (!omitPaint && checkNotNull(points).let { resolved -> resolved.p0 == resolved.p1 })
+        if (!omitPaint && !useSolid && !checkNotNull(points).formsPlane) {
             return invalid("font.svg.invalid-gradient", "SVG linear-gradient points are collinear after normalization.")
         }
         val requiredPaintKind = if (useSolid) GlyphPaintNodeKind.SOLID else GlyphPaintNodeKind.LINEAR_GRADIENT
@@ -1085,6 +1219,7 @@ private class SvgGlyphPaintBuilder {
             rootDepth = 2,
             profile = profile,
         )?.let { return it }
+        if (omitPaint) return null
         val paintIndex = nodes.size
         nodes += if (useSolid) {
             val finalStop = definition.colorStops.last()
@@ -1116,10 +1251,10 @@ private class SvgGlyphPaintBuilder {
         return null
     }
 
-    private fun appendRadialGradientRect(
+    private fun appendRadialGradientPath(
         path: GlyphPaintPath,
         definition: SvgRadialGradient,
-        rectangle: SvgRectangle,
+        rectangle: SvgRectangle?,
         transform: AffineTransform,
         profile: PaintGraphProfile,
     ): FontOperationResult.Failure? {
@@ -1134,7 +1269,7 @@ private class SvgGlyphPaintBuilder {
         }
         if (!useSolid) {
             if (GlyphPaintNodeKind.TRANSFORM !in profile.acceptedNodeKinds) {
-                return unsupported("The selected paint profile does not accept the object-bounding-box gradient transform.")
+                return unsupported("The selected paint profile does not accept the normalized SVG radial-gradient transform.")
             }
             if (definition.extendMode !in profile.acceptedGradientExtendModes) {
                 return unsupported("The selected paint profile does not accept the SVG gradient spread method.")
@@ -1146,13 +1281,16 @@ private class SvgGlyphPaintBuilder {
                 return unsupported("The selected paint profile does not accept SVG alpha interpolation.")
             }
         }
-        val objectBoundingBoxTransform = if (useSolid) {
+        val omitPaint = !transform.preservesArea
+        val paintTransform = if (useSolid || omitPaint) {
             null
         } else {
             try {
-                transform
-                    .then(AffineTransform.objectBoundingBox(rectangle))
-                    .then(definition.transform)
+                when (definition.coordinateSpace) {
+                    SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                        transform.then(AffineTransform.objectBoundingBox(checkNotNull(rectangle))).then(definition.transform)
+                    SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> transform.then(definition.transform)
+                }
             } catch (_: IllegalArgumentException) {
                 return invalid("font.svg.invalid-gradient", "SVG radial-gradient transform exceeds the portable domain.")
             }
@@ -1169,6 +1307,7 @@ private class SvgGlyphPaintBuilder {
             rootDepth = if (useSolid) 2 else 3,
             profile = profile,
         )?.let { return it }
+        if (omitPaint) return null
         val paintIndex = nodes.size
         nodes += if (useSolid) {
             val finalStop = definition.colorStops.last()
@@ -1192,7 +1331,7 @@ private class SvgGlyphPaintBuilder {
         } else {
             nodes += GlyphPaintNode.Transform(
                 paint = paintIndex,
-                matrix = checkNotNull(objectBoundingBoxTransform).toGlyphAffineTransform(),
+                matrix = checkNotNull(paintTransform).toGlyphAffineTransform(),
             )
             nodes.lastIndex
         }
@@ -1301,14 +1440,21 @@ private data class SvgGradientPoints(
 
 private sealed interface SvgGradient {
     val id: String
+    val coordinateSpace: SvgGradientCoordinateSpace
     val transform: AffineTransform
     val extendMode: GlyphPaintExtendMode
     val interpolationSpace: GlyphPaintInterpolationSpace
     val colorStops: List<GlyphPaintColorStop>
 }
 
+private enum class SvgGradientCoordinateSpace {
+    OBJECT_BOUNDING_BOX,
+    USER_SPACE_ON_USE,
+}
+
 private data class SvgLinearGradient(
     override val id: String,
+    override val coordinateSpace: SvgGradientCoordinateSpace,
     val x1: Double,
     val y1: Double,
     val x2: Double,
@@ -1321,12 +1467,14 @@ private data class SvgLinearGradient(
     val hasDegenerateVector: Boolean
         get() = x1 == x2 && y1 == y2
 
-    fun points(rectangle: SvgRectangle, shapeTransform: AffineTransform): SvgGradientPoints? = try {
+    fun points(rectangle: SvgRectangle?, shapeTransform: AffineTransform): SvgGradientPoints? = try {
         val dx = x2 - x1
         val dy = y2 - y1
-        val paintTransform = shapeTransform
-            .then(AffineTransform.objectBoundingBox(rectangle))
-            .then(transform)
+        val paintTransform = when (coordinateSpace) {
+            SvgGradientCoordinateSpace.OBJECT_BOUNDING_BOX ->
+                shapeTransform.then(AffineTransform.objectBoundingBox(checkNotNull(rectangle))).then(transform)
+            SvgGradientCoordinateSpace.USER_SPACE_ON_USE -> shapeTransform.then(transform)
+        }
         val p0 = paintTransform.apply(Point(x1, y1))
         val p1 = paintTransform.apply(Point(x2, y2))
         val p2 = paintTransform.apply(Point(x1 - dy, y1 + dx))
@@ -1342,6 +1490,7 @@ private data class SvgLinearGradient(
 
 private data class SvgRadialGradient(
     override val id: String,
+    override val coordinateSpace: SvgGradientCoordinateSpace,
     val centerX: Double,
     val centerY: Double,
     val radius: Double,
@@ -1363,6 +1512,7 @@ private sealed interface SvgGradientBuilder {
 
 private class SvgLinearGradientBuilder(
     override val id: String,
+    private val coordinateSpace: SvgGradientCoordinateSpace,
     private val x1: Double,
     private val y1: Double,
     private val x2: Double,
@@ -1377,6 +1527,7 @@ private class SvgLinearGradientBuilder(
 
     override fun build(): SvgLinearGradient = SvgLinearGradient(
         id = id,
+        coordinateSpace = coordinateSpace,
         x1 = x1,
         y1 = y1,
         x2 = x2,
@@ -1390,6 +1541,7 @@ private class SvgLinearGradientBuilder(
 
 private class SvgRadialGradientBuilder(
     override val id: String,
+    private val coordinateSpace: SvgGradientCoordinateSpace,
     private val centerX: Double,
     private val centerY: Double,
     private val radius: Double,
@@ -1405,6 +1557,7 @@ private class SvgRadialGradientBuilder(
 
     override fun build(): SvgRadialGradient = SvgRadialGradient(
         id = id,
+        coordinateSpace = coordinateSpace,
         centerX = centerX,
         centerY = centerY,
         radius = radius,
@@ -2010,6 +2163,41 @@ private fun parseSvgFractionWithLexicalSignificance(value: String): ParsedSvgNum
 }
 
 private fun parseObjectBoundingBoxCoordinate(value: String): Double? = parseSvgFraction(value)
+
+private fun parseUserSpaceCoordinate(value: String?, name: String): FontOperationResult<Double> {
+    if (value == null) {
+        return unsupported("$name uses a viewport-dependent default outside the supported subset.")
+    }
+    val text = value.trimSvgWhitespace()
+    if (text.endsWith('%')) {
+        return if (parseSvgFractionWithLexicalSignificance(value) != null) {
+            unsupported("$name percentages are outside the supported subset.")
+        } else {
+            invalid("font.svg.invalid-gradient-coordinate", "$name is invalid.")
+        }
+    }
+    val coordinate = parseSvgNumber(value)
+        ?: return invalid("font.svg.invalid-gradient-coordinate", "$name is invalid.")
+    return FontOperationResult.Success(coordinate)
+}
+
+private fun parseUserSpaceRadius(value: String?): FontOperationResult<ParsedSvgNumber> {
+    if (value == null) {
+        return unsupported("SVG radial-gradient radius uses a viewport-dependent default outside the supported subset.")
+    }
+    val text = value.trimSvgWhitespace()
+    if (text.endsWith('%')) {
+        val radius = parseSvgFractionWithLexicalSignificance(value)
+            ?: return invalid("font.svg.invalid-gradient-radius", "SVG radial-gradient radius is invalid.")
+        if (radius.hasNegativeNonZeroMantissa) {
+            return invalid("font.svg.invalid-gradient-radius", "SVG radial-gradient radius must be non-negative.")
+        }
+        return unsupported("SVG radial-gradient radius percentages are outside the supported subset.")
+    }
+    val radius = SvgNumberCursor(text).singleNumberWithLexicalSignificance()
+        ?: return invalid("font.svg.invalid-gradient-radius", "SVG radial-gradient radius is invalid.")
+    return FontOperationResult.Success(radius)
+}
 
 private fun parseLocalPaintReference(value: String): String? {
     val text = value.trim()
