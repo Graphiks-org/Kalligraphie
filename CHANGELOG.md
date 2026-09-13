@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - FontMaterializationCachePolicy now uses structured per-face/per-catalog budgets: generated Kotlin copy/destructuring operations are source- and binary-incompatible with the former byte-only data class; migrate to perFace/perCatalog and recompile consumers that used the old generated operations. The historical byte-only constructor and getter remain available.
+- `FontError.CertificateNotInLayout` extends the sealed error surface used by the new font-asset handoff route. Add an arm when recompiling exhaustive Kotlin `when` handlers; existing method and JVM signatures remain available, but an already compiled exhaustive handler can throw `NoWhenBranchMatchedException` if this new member reaches it. Existing calls do not automatically emit this error.
 - Kotlin 2.4.0 → 2.4.10
 - Gradle 9.5.0 → 9.6.1
 - Added blocking pull request policy checks aligned with `CONTRIBUTING.md`.

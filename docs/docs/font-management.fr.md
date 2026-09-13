@@ -244,6 +244,14 @@ durée de vie). Elle reste valide après la fermeture du `LayoutHandle` et doit
 rétentions et libère ses racines, mais n’invalide jamais `handle.layout` : le
 layout immuable reste lisible.
 
+Note de migration : `FontError.CertificateNotInLayout` est un nouveau membre
+de la sealed error surface (surface d’erreurs scellée) utilisée par ce parcours
+de handoff. Ajoutez une branche lors de la recompilation d’un `when` Kotlin
+exhaustif sur `FontError` ; les signatures de méthodes et JVM restent
+inchangées. Un gestionnaire exhaustif déjà compilé peut lancer
+`NoWhenBranchMatchedException` si le nouveau parcours lui fournit ce membre,
+alors que les appels existants ne commencent pas automatiquement à le retourner.
+
 Le gestionnaire possède de la mémoire externe du consommateur, hors du budget
 du cache (mémoire interne de réutilisation). L’annulation est observée entre
 les appels indivisibles au fournisseur ; elle n’interrompt pas un `reopen`,

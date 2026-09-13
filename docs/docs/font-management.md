@@ -238,6 +238,13 @@ the renderer. Closing the handle prevents new retentions and releases its
 roots, but never invalidates `handle.layout`; the immutable layout remains
 readable.
 
+Migration note: `FontError.CertificateNotInLayout` is a new member of the
+sealed error surface used by this handoff route. Add a branch when recompiling
+an exhaustive Kotlin `when` over `FontError`; method and JVM signatures remain
+unchanged. An already compiled exhaustive handler can throw
+`NoWhenBranchMatchedException` if new handoff code supplies this member, while
+existing calls do not automatically begin returning it.
+
 The handle owns external consumer memory, outside the internal cache budget.
 Cancellation is checked between indivisible provider calls; it does not
 interrupt a `reopen`, `detach`, or `close` already in progress. The initial

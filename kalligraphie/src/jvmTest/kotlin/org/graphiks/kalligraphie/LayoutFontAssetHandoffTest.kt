@@ -29,8 +29,10 @@ import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
+import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.GlyphColorSpace
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMaterializationCertificate
@@ -358,6 +360,313 @@ class LayoutFontAssetHandoffTest {
         }
     }
 
+    // Catches an abort that forgets an earlier detached root after a later public reopen failure.
+    @Test
+    fun laterRootFailurePublishesNoHandleClosesCapturedOwnersAndLeavesResolverBorrowed() {
+        val fixture = openMultiFontParagraphFixture()
+        val captured = mutableListOf<FontRenderAssetHandle>()
+        try {
+            val certificates = fixture.certificates
+            val failedKey = certificates.last().assetKey
+            val resolver = object : FontAssetResolverHandle by fixture.resolver {
+                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
+                    if (key == failedKey) {
+                        FontOperationResult.Failure(FontError.InvalidFontData("Later certified root is unavailable."))
+                    } else {
+                        captureAssets(fixture.resolver.reopen(key), captured)
+                    }
+            }
+
+            val opened = fixture.paragraph.openLayoutHandle(resolver)
+
+            assertIs<FontError.InvalidFontData>(assertIs<FontOperationResult.Failure>(opened).error)
+            assertCapturedOwnersAreClosed(captured, certificates.first().glyphId)
+            val stillBorrowed = success(fixture.resolver.reopen(certificates.first().assetKey))
+            try {
+                assertAuditedOutline(stillBorrowed, GlyphId(36), 2048, DesignBounds(4, 0, 1362, 1409))
+            } finally {
+                success(stillBorrowed.close())
+            }
+        } finally {
+            fixture.close()
+        }
+    }
+
+    // Catches cancellation cleanup that loses its Cancelled primary result or leaves acquired owners live.
+    @Test
+    fun cancellationAfterActualAcquisitionClosesOwnersAndKeepsCancellationWithCleanupDiagnostics() {
+        val fixture = openFixture()
+        val captured = mutableListOf<FontRenderAssetHandle>()
+        val cancellation = SwitchableCancellationToken()
+        try {
+            val resolver = object : FontAssetResolverHandle by fixture.resolver {
+                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
+                    cancelAfterActualDetach(fixture.resolver.reopen(key), cancellation, captured)
+            }
+
+            val opened = fixture.line.openLayoutHandle(resolver, cancellation)
+
+            val cancelled = assertIs<FontOperationResult.Cancelled>(opened)
+            assertEquals(true, cancelled.diagnostics.any { it.code == "font.test-close-after-cancellation" })
+            assertCapturedOwnersAreClosed(captured, fixture.certificate.glyphId)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    // Catches acceptance of either an attached or detached owner whose complete asset key is not certified.
+    @Test
+    fun attachedAndDetachedCompleteKeyMismatchesAreRejectedInsteadOfServingAnotherGlyphAsset() {
+        for (case in listOf("attached", "detached")) {
+            val fixture = openFixture()
+            val captured = mutableListOf<FontRenderAssetHandle>()
+            try {
+                val resolver = object : FontAssetResolverHandle by fixture.resolver {
+                    override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> = when (case) {
+                        "attached" -> reportWrongAttachedKey(fixture.resolver.reopen(key), captured)
+                        "detached" -> reportWrongDetachedKey(fixture.resolver.reopen(key), captured)
+                        else -> error("Unknown complete-key case: $case")
+                    }
+                }
+
+                val opened = fixture.line.openLayoutHandle(resolver)
+
+                assertIs<FontError.InvalidFontData>(assertIs<FontOperationResult.Failure>(opened).error)
+                assertCapturedOwnersAreClosed(captured, fixture.certificate.glyphId)
+            } finally {
+                fixture.close()
+            }
+        }
+    }
+
+    // Catches unsupported detachment that publishes a partial handle or forgets roots acquired before it.
+    @Test
+    fun unsupportedDetachClosesAttachedAndPreviouslyAcquiredRoots() {
+        val fixture = openMultiFontParagraphFixture()
+        val captured = mutableListOf<FontRenderAssetHandle>()
+        try {
+            val unsupportedKey = fixture.certificates.last().assetKey
+            val resolver = object : FontAssetResolverHandle by fixture.resolver {
+                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> = when (
+                    val reopened = fixture.resolver.reopen(key)
+                ) {
+                    is FontOperationResult.Success -> FontOperationResult.Success(
+                        if (key == unsupportedKey) UnsupportedDetachAsset(reopened.value, captured)
+                        else CapturedAsset(reopened.value, captured),
+                        reopened.diagnostics,
+                    )
+                    is FontOperationResult.Failure -> reopened
+                    is FontOperationResult.Cancelled -> reopened
+                }
+            }
+
+            val opened = fixture.paragraph.openLayoutHandle(resolver)
+
+            assertIs<FontError.UnsupportedRepresentationProfile>(assertIs<FontOperationResult.Failure>(opened).error)
+            assertCapturedOwnersAreClosed(captured, fixture.certificates.first().glyphId)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    // Catches an attached-close failure path that retains the detached renderer root after aborting.
+    @Test
+    fun attachedCloseFailureAbortsAndClosesDetachedRootWithDiagnostics() {
+        val fixture = openFixture()
+        val captured = mutableListOf<FontRenderAssetHandle>()
+        try {
+            val resolver = object : FontAssetResolverHandle by fixture.resolver {
+                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
+                    closeFailingAssets(fixture.resolver.reopen(key), captured)
+            }
+
+            val opened = fixture.line.openLayoutHandle(resolver)
+
+            val failure = assertIs<FontOperationResult.Failure>(opened)
+            assertEquals("font.test-attached-close-failure", assertIs<FontError.FontDataFailure>(failure.error).code)
+            assertEquals(true, failure.diagnostics.any { it.code == "font.test-attached-close-failure" })
+            assertCapturedOwnersAreClosed(captured, fixture.certificate.glyphId)
+        } finally {
+            fixture.close()
+        }
+    }
+
+    // Catches closing roots before an admitted retention detaches, or discarding its deferred cleanup diagnostics.
+    @Test
+    fun admittedRetentionSurvivesCloseWithAuditedGlyphAndDeferredRootCleanupDiagnostics() {
+        val fixture = openFixture()
+        val captured = mutableListOf<FontRenderAssetHandle>()
+        val detachEntered = CountDownLatch(1)
+        val releaseDetach = CountDownLatch(1)
+        val workers = Executors.newSingleThreadExecutor()
+        try {
+            val resolver = object : FontAssetResolverHandle by fixture.resolver {
+                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
+                    gateRootDetach(fixture.resolver.reopen(key), detachEntered, releaseDetach, captured)
+            }
+            val handle = success(fixture.line.openLayoutHandle(resolver))
+            var retained: FontRenderAssetHandle? = null
+            try {
+                val admitted = workers.submit<FontOperationResult<FontRenderAssetHandle>> {
+                    handle.retainFontAsset(fixture.certificate)
+                }
+                check(detachEntered.await(10, TimeUnit.SECONDS)) { "Admitted retention never reached real detach." }
+                success(handle.close())
+                assertIs<FontError.ResourceClosed>(
+                    assertIs<FontOperationResult.Failure>(handle.retainFontAsset(fixture.certificate)).error,
+                )
+                releaseDetach.countDown()
+
+                val result = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
+                    admitted.get(10, TimeUnit.SECONDS),
+                )
+                retained = result.value
+                assertBitmap(retained)
+                assertEquals(true, result.diagnostics.any { it.code == "font.test-deferred-root-close" })
+            } finally {
+                releaseDetach.countDown()
+                retained?.let { success(it.close()) }
+                success(handle.close())
+            }
+        } finally {
+            releaseDetach.countDown()
+            workers.shutdownNow()
+            fixture.close()
+        }
+    }
+
+    private fun openMultiFontParagraphFixture(): MultiFontParagraphFixture {
+        val fixture = incrementalRealFontFixture(
+            "A\u0633",
+            fonts = listOf(
+                IncrementalFontFixture("liberation/LiberationSans-Regular.ttf", "Liberation Sans"),
+                IncrementalFontFixture("amiri/Amiri-Regular.ttf", "Amiri"),
+            ),
+        )
+        val resolver = success(fixture.catalog.openAssetResolver())
+        val backend = success(JvmHarfBuzzShapingBackend.open())
+        try {
+            val paragraph = assertIs<ParagraphLayoutResult.Success>(
+                JvmEditableParagraphFacade.layoutBorrowing(JvmEditableParagraphFacadeRequest(
+                    snapshot = fixture.snapshot,
+                    sourceRange = fixture.snapshot.range,
+                    constraints = incrementalTestConstraints(width = 10_000f, top = 0f, height = 2_400f),
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    fontCatalog = fixture.catalog,
+                    resolutionPolicy = fixture.policy,
+                    fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+                    materialization = EditableLineMaterialization.Renderable(
+                        resolver,
+                        FontRenderVariantSnapshot.default,
+                        FontAccessRequirementsSnapshot.renderable(auditedOutlineProfile()),
+                    ),
+                ), backend),
+            ).layout
+            return MultiFontParagraphFixture(
+                paragraph = paragraph,
+                resolver = resolver,
+                backend = backend,
+                certificates = paragraph.lines.flatMap { line ->
+                    line.positionedGlyphRuns.flatMap { run ->
+                        run.glyphs.mapNotNull { glyph -> glyph.materializationCertificate }
+                    }
+                }.distinctBy { certificate -> certificate.assetKey },
+            )
+        } catch (error: Throwable) {
+            resolver.close()
+            backend.close()
+            throw error
+        }
+    }
+
+    private fun captureAssets(
+        result: FontOperationResult<FontRenderAssetHandle>,
+        captured: MutableList<FontRenderAssetHandle>,
+    ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+        is FontOperationResult.Success -> FontOperationResult.Success(CapturedAsset(result.value, captured), result.diagnostics)
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun cancelAfterActualDetach(
+        result: FontOperationResult<FontRenderAssetHandle>,
+        cancellation: SwitchableCancellationToken,
+        captured: MutableList<FontRenderAssetHandle>,
+    ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+        is FontOperationResult.Success -> FontOperationResult.Success(
+            CancelAfterDetachAsset(result.value, cancellation, captured),
+            result.diagnostics,
+        )
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun reportWrongAttachedKey(
+        result: FontOperationResult<FontRenderAssetHandle>,
+        captured: MutableList<FontRenderAssetHandle>,
+    ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+        is FontOperationResult.Success -> FontOperationResult.Success(
+            WrongKeyAsset(result.value, wrongKey(result.value.key), captured),
+            result.diagnostics,
+        )
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun reportWrongDetachedKey(
+        result: FontOperationResult<FontRenderAssetHandle>,
+        captured: MutableList<FontRenderAssetHandle>,
+    ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+        is FontOperationResult.Success -> FontOperationResult.Success(
+            WrongDetachedKeyAsset(result.value, wrongKey(result.value.key), captured),
+            result.diagnostics,
+        )
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun closeFailingAssets(
+        result: FontOperationResult<FontRenderAssetHandle>,
+        captured: MutableList<FontRenderAssetHandle>,
+    ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+        is FontOperationResult.Success -> FontOperationResult.Success(
+            CloseFailingAsset(result.value, "font.test-attached-close-failure", captured),
+            result.diagnostics,
+        )
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun gateRootDetach(
+        result: FontOperationResult<FontRenderAssetHandle>,
+        entered: CountDownLatch,
+        release: CountDownLatch,
+        captured: MutableList<FontRenderAssetHandle>,
+    ): FontOperationResult<FontRenderAssetHandle> = when (result) {
+        is FontOperationResult.Success -> FontOperationResult.Success(
+            GateRootDetachAttachedAsset(result.value, entered, release, captured),
+            result.diagnostics,
+        )
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun wrongKey(key: FontRenderAssetKey): FontRenderAssetKey =
+        key.copy(representationProfile = auditedOutlineProfile())
+
+    private fun assertCapturedOwnersAreClosed(
+        captured: List<FontRenderAssetHandle>,
+        glyphId: GlyphId,
+    ) {
+        check(captured.isNotEmpty()) { "The public resolver did not return a capturable owner." }
+        captured.forEach { asset ->
+            assertIs<FontError.ResourceClosed>(
+                assertIs<FontOperationResult.Failure>(asset.resolveGlyph(FontGlyphRequest(glyphId))).error,
+            )
+        }
+    }
+
     private fun openFixture(): Fixture {
         val bytes = checkNotNull(javaClass.getResourceAsStream("/fonts/skia-ebdt-format1/ebdt_fmt1.ttf"))
             .use { it.readBytes() }
@@ -460,6 +769,182 @@ class LayoutFontAssetHandoffTest {
             session.close()
             resolver.close()
         }
+    }
+
+    private data class MultiFontParagraphFixture(
+        val paragraph: org.graphiks.kalligraphie.api.ParagraphLayout,
+        val resolver: FontAssetResolverHandle,
+        val backend: org.graphiks.kalligraphie.api.ShapingBackend,
+        val certificates: List<GlyphMaterializationCertificate>,
+    ) {
+        fun close() {
+            resolver.close()
+            backend.close()
+        }
+    }
+
+    private open class CapturedAsset(
+        protected val delegate: FontRenderAssetHandle,
+        protected val captured: MutableList<FontRenderAssetHandle>,
+    ) : FontRenderAssetHandle {
+        init {
+            captured += this
+        }
+
+        override val key: FontRenderAssetKey
+            get() = delegate.key
+
+        override val faceId
+            get() = delegate.faceId
+
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> = when (val detached = delegate.detach()) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                CapturedAsset(detached.value, captured),
+                detached.diagnostics,
+            )
+            is FontOperationResult.Failure -> detached
+            is FontOperationResult.Cancelled -> detached
+        }
+
+        override fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation> =
+            delegate.resolveGlyph(request)
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
+
+    private class WrongKeyAsset(
+        delegate: FontRenderAssetHandle,
+        private val reportedKey: FontRenderAssetKey,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : CapturedAsset(delegate, captured) {
+        override val key: FontRenderAssetKey
+            get() = reportedKey
+    }
+
+    private class WrongDetachedKeyAsset(
+        delegate: FontRenderAssetHandle,
+        private val reportedKey: FontRenderAssetKey,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : CapturedAsset(delegate, captured) {
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> = when (val detached = delegate.detach()) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                WrongKeyAsset(detached.value, reportedKey, captured),
+                detached.diagnostics,
+            )
+            is FontOperationResult.Failure -> detached
+            is FontOperationResult.Cancelled -> detached
+        }
+    }
+
+    private class UnsupportedDetachAsset(
+        private val delegate: FontRenderAssetHandle,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : FontRenderAssetHandle {
+        init {
+            captured += this
+        }
+
+        override val key: FontRenderAssetKey
+            get() = delegate.key
+
+        override val faceId
+            get() = delegate.faceId
+
+        override fun resolveGlyph(request: FontGlyphRequest): FontOperationResult<GlyphRepresentation> =
+            delegate.resolveGlyph(request)
+
+        override fun close(): FontOperationResult<Unit> = delegate.close()
+    }
+
+    private open class CloseFailingAsset(
+        delegate: FontRenderAssetHandle,
+        private val failureCode: String,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : CapturedAsset(delegate, captured) {
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> = when (val detached = delegate.detach()) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                CloseFailingAsset(detached.value, failureCode, captured),
+                detached.diagnostics,
+            )
+            is FontOperationResult.Failure -> detached
+            is FontOperationResult.Cancelled -> detached
+        }
+
+        override fun close(): FontOperationResult<Unit> = when (val closed = delegate.close()) {
+            is FontOperationResult.Success -> FontOperationResult.Failure(
+                FontError.FontDataFailure(
+                    failureCode,
+                    "Injected public asset close failure.",
+                    FontDiagnosticLocation.Source,
+                ),
+            )
+            is FontOperationResult.Failure -> closed
+            is FontOperationResult.Cancelled -> closed
+        }
+    }
+
+    private class CancelAfterDetachAsset(
+        delegate: FontRenderAssetHandle,
+        private val cancellation: SwitchableCancellationToken,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : CloseFailingAsset(delegate, "font.test-close-after-cancellation", captured) {
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> = when (val detached = delegate.detach()) {
+            is FontOperationResult.Success -> {
+                cancellation.cancel()
+                FontOperationResult.Success(
+                    CloseFailingAsset(detached.value, "font.test-close-after-cancellation", captured),
+                    detached.diagnostics,
+                )
+            }
+            is FontOperationResult.Failure -> detached
+            is FontOperationResult.Cancelled -> detached
+        }
+    }
+
+    private class GateRootDetachAttachedAsset(
+        delegate: FontRenderAssetHandle,
+        private val entered: CountDownLatch,
+        private val release: CountDownLatch,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : CapturedAsset(delegate, captured) {
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> = when (val detached = delegate.detach()) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                GateRootDetachAsset(detached.value, entered, release, captured),
+                detached.diagnostics,
+            )
+            is FontOperationResult.Failure -> detached
+            is FontOperationResult.Cancelled -> detached
+        }
+    }
+
+    private class GateRootDetachAsset(
+        delegate: FontRenderAssetHandle,
+        private val entered: CountDownLatch,
+        private val release: CountDownLatch,
+        captured: MutableList<FontRenderAssetHandle>,
+    ) : CloseFailingAsset(delegate, "font.test-deferred-root-close", captured) {
+        override fun detach(): FontOperationResult<FontRenderAssetHandle> {
+            entered.countDown()
+            check(release.await(10, TimeUnit.SECONDS)) { "The test did not release the admitted real detach." }
+            return when (val detached = delegate.detach()) {
+                is FontOperationResult.Success -> FontOperationResult.Success(
+                    CapturedAsset(detached.value, captured),
+                    detached.diagnostics,
+                )
+                is FontOperationResult.Failure -> detached
+                is FontOperationResult.Cancelled -> detached
+            }
+        }
+    }
+
+    private class SwitchableCancellationToken : CancellationToken {
+        private var cancelled: Boolean = false
+
+        fun cancel() {
+            cancelled = true
+        }
+
+        override fun isCancellationRequested(): Boolean = cancelled
     }
 
     private class TestFlowRegion(
