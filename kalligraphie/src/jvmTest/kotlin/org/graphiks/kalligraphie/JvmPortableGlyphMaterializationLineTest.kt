@@ -22,6 +22,7 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
@@ -147,36 +148,51 @@ class JvmPortableGlyphMaterializationLineTest {
 
     @Test
     fun certifiesAnEmbeddedBitmapGlyphWhoseReopenedAssetReturnsTheDecodedPixels() {
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile()))
-        val fixture = openFixture(
-            bytes = resourceBytes("/fonts/skia-ebdt-format1/ebdt_fmt1.ttf"),
-            provenance = "Skia EBDT format 1",
-            requirements = requirements,
-            layoutSize = 16f,
-        )
-        val snapshot = Kalligraphie.decodeUtf8(
-            version = TextVersion.create(),
-            slices = listOf(TextSlice.Utf8("😀".encodeToByteArray())),
-        ).snapshot
+        materializationCachePolicies().forEach { cachePolicy ->
+            val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile()))
+            val fixture = openFixture(
+                bytes = resourceBytes("/fonts/skia-ebdt-format1/ebdt_fmt1.ttf"),
+                provenance = "Skia EBDT format 1",
+                requirements = requirements,
+                layoutSize = 16f,
+                cachePolicy = cachePolicy,
+            )
+            val snapshot = Kalligraphie.decodeUtf8(
+                version = TextVersion.create(),
+                slices = listOf(TextSlice.Utf8("😀".encodeToByteArray())),
+            ).snapshot
 
-        try {
-            val line = layout(snapshot, fixture, FontRenderVariantSnapshot.default, requirements)
-            val glyph = line.positionedGlyphRuns.single().glyphs.single()
-            val certificate = checkNotNull(glyph.materializationCertificate)
-
-            assertEquals(GlyphId(3), glyph.shapedGlyph.glyphId)
-            assertEquals(GlyphMaterializationRoute.BITMAP, certificate.route)
-            val reopened = success(fixture.resolver.reopen(certificate.assetKey))
             try {
-                val bitmap = assertIs<GlyphRepresentation.Bitmap>(
-                    success(reopened.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(certificate.glyphId))),
-                ).bitmap
-                assertDecodedBitmap(bitmap)
+                val line = layout(snapshot, fixture, FontRenderVariantSnapshot.default, requirements)
+                val glyph = line.positionedGlyphRuns.single().glyphs.single()
+                val certificate = checkNotNull(glyph.materializationCertificate)
+
+                assertEquals(GlyphId(3), glyph.shapedGlyph.glyphId)
+                assertEquals(GlyphMaterializationRoute.BITMAP, certificate.route)
+                val reopened = success(fixture.resolver.reopen(certificate.assetKey))
+                try {
+                    val bitmap = assertIs<GlyphRepresentation.Bitmap>(
+                        success(reopened.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(certificate.glyphId))),
+                    ).bitmap
+                    assertDecodedBitmap(bitmap)
+                    val detached = success(reopened.detach())
+                    try {
+                        reopened.close()
+                        fixture.resolver.close()
+                        val deferred = assertIs<GlyphRepresentation.Bitmap>(
+                            success(detached.resolveGlyph(org.graphiks.kalligraphie.api.FontGlyphRequest(certificate.glyphId))),
+                        ).bitmap
+                        assertDecodedBitmap(deferred)
+                        assertContentEquals(bitmap.copyDecodedPixels(), deferred.copyDecodedPixels())
+                    } finally {
+                        detached.close()
+                    }
+                } finally {
+                    reopened.close()
+                }
             } finally {
-                reopened.close()
+                assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
             }
-        } finally {
-            assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
         }
     }
 
@@ -486,8 +502,9 @@ class JvmPortableGlyphMaterializationLineTest {
         provenance: String,
         requirements: FontAccessRequirementsSnapshot,
         layoutSize: Float,
+        cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
     ): Fixture {
-        val catalog = success(Kalligraphie.embedded(bytes, FontSourceProvenance(provenance)))
+        val catalog = success(Kalligraphie.embedded(bytes, FontSourceProvenance(provenance), cachePolicy))
         val resolver = success(catalog.openAssetResolver())
         val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
         val descriptor = FontInstanceDescriptor(LayoutUnit(layoutSize))

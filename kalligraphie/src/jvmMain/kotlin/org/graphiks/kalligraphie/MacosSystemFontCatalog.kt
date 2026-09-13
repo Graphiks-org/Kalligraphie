@@ -42,7 +42,11 @@ public class MacosSystemFontCatalogOptions(
     public val maxSourceBytes: Int = 16 * 1024 * 1024,
     /** Maximum aggregate source bytes retained by one snapshot. */
     public val maxTotalSourceBytes: Int = 64 * 1024 * 1024,
-    /** Bounded portable representation retention applied independently to every captured face. */
+    /**
+     * Simultaneous per-face and aggregate per-snapshot bounds for portable representation retention.
+     * Each successful [MacosSystemFontCatalog.open] owns an independent budget; source-byte discovery
+     * limits and caller-owned render assets are separate from this evictable retention policy.
+     */
     public val materializationCachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
 ) {
     /** Immutable system font roots searched in their supplied order. */

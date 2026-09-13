@@ -6,7 +6,6 @@ import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
-import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -28,58 +27,61 @@ import kotlin.test.assertTrue
 class SvgInOpenTypeGlyphRepresentationTest {
     @Test
     fun normalizesTheVersionedSvgInOpenTypeGlyphIntoPortableCubicPaths() {
-        val catalog = success(
-            Kalligraphie.embedded(
-                fixtureBytes(),
-                FontSourceProvenance("TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf"),
-                FontMaterializationCachePolicy(maxEvictableBytesPerFace = 10_000),
-            ),
-        )
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
-        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
-        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
-        val resolver = success(catalog.openAssetResolver())
-        try {
-            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+        materializationCachePolicies().forEach { cachePolicy ->
+            val catalog = success(
+                Kalligraphie.embedded(
+                    fixtureBytes(),
+                    FontSourceProvenance("TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf"),
+                    cachePolicy,
+                ),
+            )
+            val requirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val resolver = success(catalog.openAssetResolver())
             try {
-                val paint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(1))))).paint
-                val warmPaint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(1))))).paint
-                repeat(5) { index ->
-                    val pressureRequirements = FontAccessRequirementsSnapshot.renderable(
-                        listOf(paintProfile(maxSourceBytes = 16 * 1024 + index + 1)),
-                    )
-                    val pressureAsset = success(
-                        instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, pressureRequirements),
-                    )
-                    try {
-                        assertIs<GlyphRepresentation.Paint>(success(pressureAsset.resolveGlyph(FontGlyphRequest(GlyphId(1)))))
-                    } finally {
-                        pressureAsset.close()
+                val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+                try {
+                    val paint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(1))))).paint
+                    val warmPaint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(1))))).paint
+                    repeat(5) { index ->
+                        val pressureRequirements = FontAccessRequirementsSnapshot.renderable(
+                            listOf(paintProfile(maxSourceBytes = 16 * 1024 + index + 1)),
+                        )
+                        val pressureAsset = success(
+                            instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, pressureRequirements),
+                        )
+                        try {
+                            assertIs<GlyphRepresentation.Paint>(success(pressureAsset.resolveGlyph(FontGlyphRequest(GlyphId(1)))))
+                        } finally {
+                            pressureAsset.close()
+                        }
                     }
+                    val afterPressurePaint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(1))))).paint
+
+                    assertTrue(catalog.faces.single().capabilities.paintGraph)
+                    assertEquals(paint, warmPaint)
+                    assertEquals(paint, afterPressurePaint)
+                    for (resolved in listOf(paint, warmPaint, afterPressurePaint)) {
+                        assertEquals(1, resolved.schemaVersion)
+                        assertEquals(2, resolved.rootNode)
+                        assertEquals(3, resolved.nodes.size)
+                        assertEquals(GlyphPaintNode.Group(listOf(0, 1)), resolved.nodes[2])
+                        val path = assertIs<GlyphPaintNode.Path>(resolved.nodes[0])
+                        val secondPath = assertIs<GlyphPaintNode.Path>(resolved.nodes[1])
+                        assertEquals(GlyphColor(49, 55, 61), path.color)
+                        assertEquals(GlyphColor(49, 55, 61), secondPath.color)
+                        val move = assertIs<GlyphPaintPathCommand.MoveTo>(path.path.commands.first())
+                        assertEquals(18.0 * 56.888888888888886, move.x, absoluteTolerance = 0.000_000_1)
+                        assertEquals(-6.75 - 1638.4, move.y, absoluteTolerance = 0.000_000_1)
+                        assertIs<GlyphPaintPathCommand.CubicTo>(path.path.commands[1])
+                    }
+                } finally {
+                    asset.close()
                 }
-                val afterPressurePaint = assertIs<GlyphRepresentation.Paint>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(1))))).paint
-
-                assertTrue(catalog.faces.single().capabilities.paintGraph)
-                assertEquals(paint, warmPaint)
-                assertEquals(paint, afterPressurePaint)
-                assertEquals(1, paint.schemaVersion)
-                assertEquals(2, paint.rootNode)
-                assertEquals(3, paint.nodes.size)
-                assertEquals(GlyphPaintNode.Group(listOf(0, 1)), paint.nodes[2])
-                val firstPath = assertIs<GlyphPaintNode.Path>(paint.nodes[0])
-                val secondPath = assertIs<GlyphPaintNode.Path>(paint.nodes[1])
-                assertEquals(GlyphColor(49, 55, 61), firstPath.color)
-                assertEquals(GlyphColor(49, 55, 61), secondPath.color)
-
-                val move = assertIs<GlyphPaintPathCommand.MoveTo>(firstPath.path.commands.first())
-                assertEquals(18.0 * 56.888888888888886, move.x, absoluteTolerance = 0.000_000_1)
-                assertEquals(-6.75 - 1638.4, move.y, absoluteTolerance = 0.000_000_1)
-                assertIs<GlyphPaintPathCommand.CubicTo>(firstPath.path.commands[1])
             } finally {
-                asset.close()
+                resolver.close()
             }
-        } finally {
-            resolver.close()
         }
     }
 

@@ -1,22 +1,39 @@
 package org.graphiks.kalligraphie.api
 
 /**
- * Bounded retention policy for portable glyph representations materialized by one font face.
+ * Simultaneous per-face and per-catalog bounds for portable representation retention.
  *
- * The budget controls only an implementation cache: it never changes route selection,
- * [GlyphRepresentationKey] identity, certificates, diagnostics, or the representation returned
- * to a caller. Providers retain only complete immutable portable successes; cancellation and
- * operational failures are never cache entries. A value is applied when opening a catalog and is
- * shared only by assets of the same captured face and catalog generation. Closing the last such
- * asset or resolver releases its evictable cache entries.
+ * Admission and least-recently-used eviction are coordinated atomically within one captured
+ * catalog. An oversized result is returned without retention. Only complete immutable
+ * successes are eligible; cancellation and operational failures are never cached. Retention
+ * never changes route selection, representation identity, certificates or diagnostics.
+ * Closing the last resolver or asset lease of a face releases that face's evictable entries.
+ * Catalogs do not share a provider-wide or engine-wide budget.
+ *
+ * The historical byte-only constructor and [maxEvictableBytesPerFace] getter remain available.
+ * This data class intentionally does not retain source or binary compatibility for its generated
+ * [copy] and destructuring operations: the first component is now [FontCacheBudget], not [Long],
+ * and [copy] takes [perFace] and [perCatalog]. JVM consumers compiled against the former generated
+ * operations must migrate to the structured budgets and recompile.
  */
 public data class FontMaterializationCachePolicy(
-    /** Maximum estimated bytes that may be retained for one captured face, or zero to disable retention. */
-    public val maxEvictableBytesPerFace: Long,
+    /** Limits shared by all retained representations of one captured face. */
+    public val perFace: FontCacheBudget,
+    /** Aggregate limits shared by all captured faces of one catalog. */
+    public val perCatalog: FontCacheBudget,
 ) {
-    init {
-        require(maxEvictableBytesPerFace >= 0L) { "maxEvictableBytesPerFace must not be negative." }
-    }
+    /**
+     * Preserves the byte-only per-face policy. Other dimensions and the catalog aggregate
+     * remain practically unbounded. Zero disables retention; negative values are rejected.
+     */
+    public constructor(maxEvictableBytesPerFace: Long) : this(
+        perFace = FontCacheBudget(maxEvictableBytesPerFace, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE),
+        perCatalog = FontCacheBudget(Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE),
+    )
+
+    /** Historical per-face byte limit; use [perFace] and [perCatalog] for all configured bounds. */
+    public val maxEvictableBytesPerFace: Long
+        get() = perFace.retainedBytes
 
     /** Standard policies for portable font materialization caches. */
     public companion object {

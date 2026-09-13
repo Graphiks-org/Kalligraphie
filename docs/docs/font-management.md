@@ -48,22 +48,66 @@ resolver or render asset is idempotent. New acquisitions after closure return
 ### Bounded representation retention
 
 `FontMaterializationCachePolicy` optionally retains complete immutable portable outline,
-paint-graph, and decoded-bitmap results for one captured face. The policy is disabled by default and can be passed to
-`Kalligraphie.embedded(...)` or `MacosSystemFontCatalogOptions`. Its byte budget is a cost policy
-only: it neither changes route selection nor any representation key, certificate, diagnostic, or
-glyph result. Entries are scoped to one provider generation and face, weighted by retained
-normalized contour and paint data plus decoded bitmap pixels, and evicted least-recently-used first. Cancellation and operational
-errors are never retained; a result larger than the budget is returned normally without being
-retained. No cache entry holds a resolver, render asset, catalog, or native resource.
+paint and bitmap successes. Retention is disabled by default. Pass the policy to
+`Kalligraphie.embedded(...)` or `MacosSystemFontCatalogOptions`.
+
+`FontCacheBudget` sets four independent non-negative limits: estimated retained bytes,
+decoded bitmap pixels, native bytes and native allocations. Both `perFace` and `perCatalog`
+must fit simultaneously. Bitmap pixels are width × height; outlines and paint charge zero
+pixels. Portable entries charge zero native bytes and allocations. `Long.MAX_VALUE` leaves
+a dimension practically unbounded.
+
+Each catalog coordinates admission and least-recently-used (LRU) order atomically across
+all its faces. Face pressure removes the oldest entry of that face; aggregate pressure
+removes the oldest entry globally. Oversized results are returned without retention.
+Route selection, representation identities, certificates and diagnostics remain unchanged.
+Cancellation and operational failures are never retained.
 
 ```kotlin
-val cachePolicy = FontMaterializationCachePolicy(maxEvictableBytesPerFace = 4L * 1024L * 1024L)
+val cachePolicy = FontMaterializationCachePolicy(
+    perFace = FontCacheBudget(
+        retainedBytes = 4L * 1024L * 1024L,
+        decodedPixels = 1_000_000L,
+        nativeBytes = 0L,
+        nativeAllocations = 0L,
+    ),
+    perCatalog = FontCacheBudget(
+        retainedBytes = 16L * 1024L * 1024L,
+        decodedPixels = 4_000_000L,
+        nativeBytes = 0L,
+        nativeAllocations = 0L,
+    ),
+)
 val catalogResult = Kalligraphie.embedded(bytes, provenance, cachePolicy)
 ```
 
-The cache is released after the last resolver or render asset using that face closes. Detached
-assets keep their ordinary resource lease, so detaching does not change an already-admitted
-operation or expose a closed cache entry.
+The historical `FontMaterializationCachePolicy(maxEvictableBytesPerFace = 4L * 1024L * 1024L)`
+constructor and `maxEvictableBytesPerFace` getter remain available. That constructor limits
+only retained bytes per face; its other dimensions and catalog aggregate remain unbounded.
+`FontMaterializationCachePolicy.disabled` retains no representation.
+
+This is a source and binary breaking change for generated Kotlin operations despite preserving the
+constructor and getter. Migrate `copy(maxEvictableBytesPerFace = …)` to `perFace`/`perCatalog`:
+the first destructuring component changes from `Long` to `FontCacheBudget`, and JVM consumers that
+used the old generated `copy`, `copy$default`, or `component1` operations must recompile.
+
+```kotlin
+val updatedPolicy = cachePolicy.copy(
+    perFace = cachePolicy.perFace.copy(retainedBytes = 8L * 1024L * 1024L),
+)
+val (perFaceBudget, perCatalogBudget) = updatedPolicy
+val retainedBytesPerFace = perFaceBudget.retainedBytes
+```
+
+These bounds cover evictable representations, keys and diagnostics, not source snapshots,
+caller-owned assets or total process memory. No entry owns a resolver, asset, catalog or
+native resource. Closing the last resolver or asset lease of a face releases that face's
+entries; detached assets keep their ordinary independent lease. Other faces remain usable.
+
+Catalogs do not share a provider-wide or engine-wide budget. Native resource participation
+and that shared ownership scope will be introduced with a native route. Functional glyph
+tests establish observable transparency; they do not measure retention or prove cache
+admission. Accounting belongs to future opt-in instrumentation, outside `check`.
 
 On macOS, the JVM artifact also exposes `MacosSystemFontCatalog.open()`. It
 captures bounded, regular `.ttf` files into a portable snapshot and uses the

@@ -107,7 +107,8 @@ public object Kalligraphie {
      * @param sourceBytes bytes containing exactly one supported SFNT face.
      * @param provenance caller-declared name or origin used for diagnostics and
      * audit trails.
-     * @param cachePolicy bounded portable representation retention applied per captured face.
+     * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
+     * complete portable representations; this does not bound sources or caller-owned assets.
      * @return a catalog snapshot, or a typed failure describing why the bytes
      * cannot be consumed.
      */
@@ -132,8 +133,8 @@ public object Kalligraphie {
      * retention budget only: it never changes catalog, face, instance, asset, or representation
      * identity and never retains a caller's resolver or asset handle.
      *
-     * @param cachePolicy bounded portable representation retention applied independently to every
-     * captured face.
+     * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
+     * complete portable representations; this does not bound sources or caller-owned assets.
      */
     public fun embedded(
         sources: List<FontSource>,

@@ -9,7 +9,6 @@ import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
-import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -50,48 +49,86 @@ class EbdtFormatOneGlyphRepresentationTest {
 
     @Test
     fun decodesSkiaEbdtFormatOneGrinningFaceAtTheExplicitSixteenPixelStrike() {
-        val catalog = success(
-            Kalligraphie.embedded(
-                fixtureBytes(),
-                FontSourceProvenance("Skia EBDT format 1"),
-                FontMaterializationCachePolicy(maxEvictableBytesPerFace = 10_000),
-            ),
-        )
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile()))
-        val resolver = success(catalog.openAssetResolver())
-        val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
-        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+        materializationCachePolicies().forEach { cachePolicy ->
+            val catalog = success(
+                Kalligraphie.embedded(
+                    sources = listOf(
+                        org.graphiks.kalligraphie.api.FontSource(
+                            fixtureBytes(), FontSourceProvenance("Skia EBDT format 1"),
+                        ),
+                        org.graphiks.kalligraphie.api.FontSource(
+                            checkNotNull(javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf"))
+                                .use { it.readBytes() },
+                            FontSourceProvenance("Liberation Sans Regular"),
+                        ),
+                    ),
+                    cachePolicy = cachePolicy,
+                ),
+            )
+            val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile()))
+            val resolver = success(catalog.openAssetResolver())
+            val face = success(catalog.resolveFace(catalog.faces[0].id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
 
-        try {
-            val glyph = success(instance.resolveGlyph(0x1F600)).glyphId
-            assertEquals(GlyphId(3), glyph)
-            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
             try {
-                val bitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
-                val warmBitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
-                repeat(5) { index ->
-                    val pressureRequirements = FontAccessRequirementsSnapshot.renderable(
-                        listOf(bitmapProfile(maxBitmapTableBytes = 16_384 + index + 1)),
+                val glyph = success(instance.resolveGlyph(0x1F600)).glyphId
+                assertEquals(GlyphId(3), glyph)
+                val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+                try {
+                    val bitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
+                    val warmBitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
+                    repeat(5) { index ->
+                        val pressureRequirements = FontAccessRequirementsSnapshot.renderable(
+                            listOf(bitmapProfile(maxBitmapTableBytes = 16_384 + index + 1)),
+                        )
+                        val pressureAsset = success(
+                            instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, pressureRequirements),
+                        )
+                        try {
+                            assertIs<GlyphRepresentation.Bitmap>(success(pressureAsset.resolveGlyph(FontGlyphRequest(glyph))))
+                        } finally {
+                            pressureAsset.close()
+                        }
+                    }
+                    val outlineRequirements = FontAccessRequirementsSnapshot.renderable(
+                        org.graphiks.kalligraphie.api.OutlineProfile(
+                            maxBytes = 1_000_000, maxContours = 256, maxPoints = 16_384,
+                            maxCompositeDepth = 8, maxCompositeComponents = 256,
+                        ),
                     )
-                    val pressureAsset = success(
-                        instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, pressureRequirements),
+                    val outlineFace = success(catalog.resolveFace(catalog.faces[1].id, outlineRequirements))
+                    val outlineInstance = success(outlineFace.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+                    val outlineAsset = success(
+                        outlineInstance.acquireRenderAsset(resolver, FontRenderVariantKey.default, outlineRequirements),
                     )
                     try {
-                        assertIs<GlyphRepresentation.Bitmap>(success(pressureAsset.resolveGlyph(FontGlyphRequest(glyph))))
+                        for (codePoint in listOf('A'.code, '$'.code, 'Ä'.code, 'A'.code)) {
+                            val glyphId = success(outlineInstance.resolveGlyph(codePoint)).glyphId
+                            val outline = assertIs<GlyphRepresentation.Outline>(
+                                success(outlineAsset.resolveGlyph(FontGlyphRequest(glyphId))),
+                            ).outline
+                            assertEquals(2048, outline.unitsPerEm)
+                            if (codePoint == 'A'.code) {
+                                assertEquals(36, outline.glyphId)
+                                assertEquals(4, outline.bounds.minX)
+                                assertEquals(1362, outline.bounds.maxX)
+                                assertEquals(1409, outline.bounds.maxY)
+                            }
+                        }
                     } finally {
-                        pressureAsset.close()
+                        outlineAsset.close()
                     }
-                }
-                val afterPressureBitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
+                    val afterPressureBitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
 
-                assertBitmap(bitmap)
-                assertEquals(bitmap, warmBitmap)
-                assertEquals(bitmap, afterPressureBitmap)
+                    for (resolved in listOf(bitmap, warmBitmap, afterPressureBitmap)) assertBitmap(resolved)
+                    assertEquals(bitmap, warmBitmap)
+                    assertEquals(bitmap, afterPressureBitmap)
+                } finally {
+                    asset.close()
+                }
             } finally {
-                asset.close()
+                resolver.close()
             }
-        } finally {
-            resolver.close()
         }
     }
 
