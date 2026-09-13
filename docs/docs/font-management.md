@@ -123,9 +123,10 @@ Kalligraphie inserts copies of the corresponding terminal stops at those
 endpoints. Equal-offset discontinuities remain in source order, and inserted
 stops count toward the reached graph's `maxColorStops` limit.
 
-Group `transform` attributes and both gradient kinds use the same supported SVG
-transform operations. A gradient may declare an absent, empty, or
-whitespace-only `gradientTransform` as the identity, or a transform list
+Group `transform` attributes, both gradient kinds, and bounded user-space clip
+definitions use the same supported SVG transform operations. A gradient may
+declare an absent, empty, or whitespace-only `gradientTransform` as the
+identity, or a transform list
 containing `translate`, `scale`, `rotate(angle)`, `rotate(angle cx cy)`,
 `skewX(angle)`, `skewY(angle)`, and `matrix`. These are all six SVG 1.1
 transform function names accepted by this bounded list. A matrix has exactly six
@@ -173,9 +174,9 @@ rounding its stored coefficients would otherwise appear to restore area.
 
 Every complete transform function call consumes one authored SVG transform
 operation, regardless of its operand count; in particular, each one-operand
-`skewX` or `skewY` call costs exactly one. Group and gradient lists share this
-budget, and profile fallback restarts validation without publishing partial
-data.
+`skewX` or `skewY` call costs exactly one. Group, gradient, and clip-definition
+lists share this budget, and profile fallback restarts validation without
+publishing partial data.
 
 With column vectors, object-bounding-box paint uses `T * B * G`: `T` is the
 rectangle's effective group transform, `B` maps its normalized object bounding
@@ -243,19 +244,69 @@ Each generated shape path must also satisfy the profile's `outlineProfile`.
 Ordered profile fallback may therefore skip a schema-3 profile that does not
 declare every reached capability and select a later compatible profile.
 
-All element IDs accepted on `svg`, `g`, `linearGradient`, and `radialGradient` are globally
-unique. Glyph targets remain unique by glyph ID as a separate invariant.
-Paint references are local, fragment-only, and backward-only; unresolved,
-forward, external, or otherwise URI-bearing references fail before an asset is
-published, even when the referencing shape would later contribute no ink. Malformed
-or unsupported input never publishes a partial graph.
+### Bounded user-space SVG clipping
+
+The clipping subset accepts a non-self-closing `clipPath` directly inside
+`defs`. It must have a valid, globally unique `id`, and `clipPathUnits` must be
+absent or exactly `userSpaceOnUse`. Its only child is exactly one self-closing
+`path` with only a `d` attribute, using the supported static path commands and
+the non-zero fill rule. A supported painted `path` or `rect` may add one
+`clip-path="url(#id)"` attribute that refers to a preceding local `clipPath`.
+The definition may declare an absent, empty, or whitespace-only `transform` as
+the identity, or a transform list using the same bounded grammar described
+above. It cannot contain fills, styles, `clip-rule`, IDs on its child, groups,
+shapes, nested clips, references, animation, or any other element or attribute.
+
+For each reached use, the shape's effective transform `T` materializes the
+painted shape while the definition's path uses `T * C`, where `C` is the
+definition transform composed in authored order. The existing paint subtree is
+preserved exactly in topology and values, then wrapped in one outer `PathClip`.
+The shape therefore remains under `T`; gradient geometry remains under its
+existing `T * G` or `T * B * G` mapping. A gradient retains its shape
+`PathClip`, and a radial gradient also retains its optional `Transform` below
+that shape clip. The outer clip represents intersection through nesting,
+without path unions or bounding-box calculations. Reusing one definition under
+different transforms materializes and accounts for a distinct clip at every
+reference without reparsing or recapturing `T`.
+
+This subset requires exact paint schema 3 and `PATH_CLIP` for every reached
+clip. Each use adds one generated node, reference, path, clip, and depth level,
+and is charged independently against `maxNodes`, `maxReferences`, `maxPaths`,
+`maxClips`, `maxDepth`, and `maxPaintVisits`; its path and the painted path
+must both satisfy the exact `outlineProfile`. Authored clip operations consume
+the shared table-wide `maxSvgTransformOperations` source budget once when the
+definition is parsed, including unused definitions; reuse consumes no further
+source operations. Clip materialization emits no `Transform` node and does not
+charge `maxTransforms`, so existing child-paint gradient, stop, and transform
+budgets remain unchanged. A singular `T` or effective `T * C` omits paint only
+after the shape, definition, reference, capabilities, outline limits, and
+projected graph limits validate. `fill="none"` and zero-area rectangles retain
+their no-ink result after source attributes and any local clip reference
+validate.
+
+`objectBoundingBox`, unknown units, empty or multiple-path definitions,
+forbidden content, and malformed, external, forward, unresolved, or non-clip
+references remain unsupported even when unused or when the shape would emit no
+ink. Malformed transform syntax or composition, malformed path data, invalid
+XML, and duplicate IDs remain typed `FontDataFailure`. Every failure is atomic
+across the complete public acquisition, and ordered profile fallback may select
+a later exact compatible profile.
+
+All element IDs accepted on `svg`, `g`, `linearGradient`, `radialGradient`, and
+`clipPath` are globally unique. Glyph targets remain unique by glyph ID as a
+separate invariant. Paint and clip references are local, fragment-only, and
+backward-only; unresolved, forward, external, or otherwise URI-bearing
+references fail before an asset is published, even when the referencing shape
+would later contribute no ink. Malformed or unsupported input never publishes
+a partial graph.
 
 The subset does not support `viewBox`, viewport-dependent user-space percentage
 coordinates or defaults, `href`, `xlink:href`, radial `fr`, non-concentric radial focus,
-`objectBoundingBox` gradient fills on `path`, CSS or `style` attributes,
-general SVG clips or clip paths, masks, strokes, scripts, entities, animation,
-external resources, or unlisted elements and attributes. Compression formats
-other than the permitted single-member gzip transport remain rejected.
+`objectBoundingBox` gradient fills on `path`, CSS or `style` attributes, SVG
+clipping beyond the exact single-path `userSpaceOnUse` subset above, masks,
+strokes, scripts, entities, animation, external resources, or unlisted
+elements and attributes. Compression formats other than the permitted
+single-member gzip transport remain rejected.
 
 ### Paint-graph schemas and static COLR version 1
 
@@ -313,9 +364,9 @@ graph containing an empty `Group`; it is not collapsed to
 `GlyphRepresentation.Empty`. ClipList format 1 with ClipBox format 1 is
 accepted. Variable `PaintVar*` formats, ClipBox format 2, variation stores and
 maps, CFF/CFF2, and variable CPAL/COLR values are not supported. The separate
-SVG-in-OpenType route supports the rectangle-bound static linear and concentric
-radial gradients described above through schema 3; it does not gain general SVG clips, masks,
-strokes, or animation.
+SVG-in-OpenType route supports the static linear and concentric radial
+gradients plus the bounded single-path user-space clips described above through
+schema 3; it does not gain general SVG clips, masks, strokes, or animation.
 
 This schema extension adds no rendering backend. The consumer still owns
 rasterization, GPU integration, and final display.

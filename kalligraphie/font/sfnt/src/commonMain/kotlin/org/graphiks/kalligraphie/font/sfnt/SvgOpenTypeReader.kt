@@ -70,25 +70,35 @@ public class SvgOpenTypeData internal constructor(
  * Only SVG table version 0 with raw UTF-8 or gzip-encoded UTF-8 documents is accepted. Every glyph in a document record
  * is targeted exactly once by either the root `svg` or a descendant `g` whose `id` is exactly
  * `glyph<N>`. Supported documents contain `svg`, `g`, `defs`, `linearGradient`, concentric
- * `radialGradient`, self-closing `stop`, `path`, and `rect` elements. Groups may contain
+ * `radialGradient`, bounded single-child `clipPath`, self-closing `stop`, `path`, and `rect`
+ * elements. Groups may contain
  * `translate`, `scale`, `rotate(angle)`, `rotate(angle cx cy)`, `skewX(angle)`, `skewY(angle)`, and
  * six-coefficient SVG `matrix` transforms. Rotation and skew angles use SVG degrees.
  * Object-bounding-box and absolute user-space gradients may additionally
- * declare an invertible `gradientTransform` list containing those same operations. At reference
+ * declare an invertible `gradientTransform` list containing those same operations. A bounded
+ * user-space clip definition and its single `path` or sharp-cornered `rect` child may declare the same transform list. At reference
  * time, object-bounding-box paint composes as `T * B * G`, while absolute user-space paint composes
  * as `T * G`; both affect only gradient geometry, never the shape clip. Every non-singular
  * composition must retain the exact determinant
  * orientation of its decoded `Double` factors in the stored result; numeric rank loss or
  * orientation inversion is rejected as invalid data. Paths may use `M`, `L`, `H`, `V`, `C`, `S`,
  * and `Z` commands (and their relative forms).
- * Shapes accept solid `#RRGGBB` or `fill="none"`. Rectangles additionally accept preceding local
+ * Shapes accept solid `#RRGGBB` or `fill="none"`. Their optional `fill-opacity` is a finite
+ * unitless number or percentage, clamped to `0.0..1.0`. A translucent solid normalizes to an
+ * unbounded solid under the shape's path clip, while a gradient multiplies each immutable,
+ * per-reference color-stop opacity by the shape opacity. A painted shape may reference one
+ * preceding local `userSpaceOnUse` clip definition, which wraps the normalized shape paint subtree
+ * in an outer path clip under `T * C * P`, where `T` is the shape's effective transform, `C` is the
+ * clip definition's transform, and `P` is the clip child transform. The painted shape remains under
+ * `T`, and gradient geometry retains its
+ * existing `T * G` or `T * B * G` space. Rectangles additionally accept preceding local
  * object-bounding-box or unitless absolute user-space gradients, while paths accept only the
  * absolute user-space form. Supported linear and concentric radial gradients normalize to
  * schema-3 portable paints; a radial coordinate mapping is represented by an explicit transform
  * node.
  * Scripts, network or external references, entities, animation, XML declarations, strokes,
- * masks, and every unlisted element or attribute are rejected before any [SvgOpenTypeData] is
- * returned.
+ * masks, other SVG clipping forms, and every unlisted element or attribute are rejected before
+ * any [SvgOpenTypeData] is returned.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object SvgOpenTypeReader {
@@ -96,9 +106,9 @@ public object SvgOpenTypeReader {
      * Decodes and validates every document in an OpenType `SVG ` table.
      *
      * [profile] bounds source bytes, document records, authored transform operations, graph nodes,
-     * paths, depth, and path geometry before publication. Authored group and gradient operations,
-     * including every complete SVG function call regardless of operand count, share the same
-     * source-operation budget independently of generated paint-graph transform nodes. The operation
+     * paths, depth, and path geometry before publication. Every complete authored group, gradient,
+     * or clip-path definition function call shares the same source-operation budget regardless of
+     * operand count and independently of generated paint-graph transform nodes. The operation
      * is all-or-nothing:
      * malformed or unsupported content returns a typed failure and no partial data. The returned
      * value contains no source XML and is safe to retain after the caller releases the source
@@ -316,10 +326,12 @@ private class SvgDocumentParser(
     private val glyphs = linkedMapOf<Int, SvgGlyphPaintBuilder>()
     private val unassignedPaint = SvgGlyphPaintBuilder()
     private val gradients = linkedMapOf<String, SvgGradient>()
+    private val clipPaths = linkedMapOf<String, SvgClipPath>()
     private val elementIds = mutableSetOf<String>()
     private var parsedGradientCount: Int = 0
     private var parsedColorStopCount: Int = 0
     private var pendingGradient: SvgGradientBuilder? = null
+    private var pendingClipPath: SvgClipPathBuilder? = null
 
     fun parse(xml: String): FontOperationResult<ParsedSvgDocument> {
         if (xml.contains("<!") || xml.contains("<?") || xml.contains('&')) {
@@ -349,6 +361,12 @@ private class SvgDocumentParser(
                         ?: return invalid("font.svg.invalid-gradient", "SVG gradient state is invalid.")
                     gradients[definition.id] = definition
                     pendingGradient = null
+                }
+                if (name == "clipPath") {
+                    val definition = pendingClipPath?.build()
+                        ?: return unsupported("SVG clipPath must contain exactly one supported path or rect child.")
+                    clipPaths[definition.id] = definition
+                    pendingClipPath = null
                 }
                 stack.removeLast()
                 continue
@@ -445,6 +463,38 @@ private class SvgDocumentParser(
                         if (stack.size + 1 > profile.limits.maxDepth) return limit("SVG nesting-depth limit exceeded.")
                         stack.addLast(SvgElement("defs", AffineTransform.identity, null))
                     }
+                }
+
+                "clipPath" -> {
+                    if (
+                        stack.lastOrNull()?.name != "defs" ||
+                        selfClosing ||
+                        attributes.keys.any { key -> key !in CLIP_PATH_ATTRIBUTES }
+                    ) {
+                        return unsupported("Only non-empty user-space clipPath definitions directly inside defs are supported.")
+                    }
+                    if (profile.schemaVersion != 3) {
+                        return unsupported("SVG clip paths require paint schema 3.")
+                    }
+                    val id = attributes["id"]?.takeIf(String::isSvgDefinitionId)
+                        ?: return invalid("font.svg.invalid-clip-id", "SVG clipPath requires a valid local id.")
+                    if (!elementIds.add(id)) {
+                        return invalid("font.svg.duplicate-id", "SVG element ids must be globally unique within a document.")
+                    }
+                    when (attributes["clipPathUnits"] ?: "userSpaceOnUse") {
+                        "userSpaceOnUse" -> Unit
+                        else -> return unsupported("Only userSpaceOnUse SVG clip paths are supported.")
+                    }
+                    val transform = when (
+                        val parsed = parseTransform(attributes.getOrElse("transform") { "" }, "SVG clipPath")
+                    ) {
+                        is FontOperationResult.Success -> parsed.value
+                        is FontOperationResult.Failure -> return parsed
+                        is FontOperationResult.Cancelled -> return parsed
+                    }
+                    if (stack.size + 1 > profile.limits.maxDepth) return limit("SVG nesting-depth limit exceeded.")
+                    pendingClipPath = SvgClipPathBuilder(id, transform)
+                    stack.addLast(SvgElement("clipPath", AffineTransform.identity, null))
                 }
 
                 "linearGradient" -> {
@@ -706,6 +756,40 @@ private class SvgDocumentParser(
                 }
 
                 "path" -> {
+                    if (stack.lastOrNull()?.name == "clipPath") {
+                        if (
+                            !selfClosing ||
+                            "d" !in attributes ||
+                            attributes.keys.any { key -> key !in CLIP_PATH_CHILD_PATH_ATTRIBUTES }
+                        ) {
+                            return unsupported("SVG clipPath path child must be self-closing with d and optional transform.")
+                        }
+                        val pathData = attributes.getValue("d")
+                        val commands = when (val parsed = parseRawPath(pathData)) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                        val authoredPath = when (val materialized = materializePath(commands, AffineTransform.identity)) {
+                            is FontOperationResult.Success -> materialized.value
+                            is FontOperationResult.Failure -> return materialized
+                            is FontOperationResult.Cancelled -> return materialized
+                        }
+                        if (!authoredPath.fits(profile)) {
+                            return unsupported("SVG clip path exceeds the selected outline profile.")
+                        }
+                        val childTransform = when (
+                            val parsed = parseTransform(attributes.getOrElse("transform") { "" }, "SVG clip path")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                        if (pendingClipPath?.addPath(commands, childTransform) != true) {
+                            return unsupported("SVG clipPath must contain exactly one supported path or rect child.")
+                        }
+                        continue
+                    }
                     if (
                         stack.lastOrNull()?.name !in PAINT_CONTAINER_ELEMENTS ||
                         !selfClosing ||
@@ -714,6 +798,18 @@ private class SvgDocumentParser(
                         return unsupported("Only self-closing paths with d and fill attributes are supported.")
                     }
                     val pathData = attributes["d"] ?: return invalid("font.svg.missing-path-data", "SVG path is missing d data.")
+                    val fillOpacity = parseSvgFraction(attributes.getOrElse("fill-opacity") { "1" })
+                        ?.coerceIn(0.0, 1.0)
+                        ?: return invalid("font.svg.invalid-fill-opacity", "SVG fill opacity is invalid.")
+                    val clipPath = when (val reference = attributes["clip-path"]) {
+                        null -> null
+                        else -> {
+                            val id = parseLocalPaintReference(reference)
+                                ?: return unsupported("SVG clip-path must be a local url(#id) reference.")
+                            clipPaths[id]
+                                ?: return unsupported("SVG clip-path references must resolve to a preceding local clipPath definition.")
+                        }
+                    }
                     val fill = attributes["fill"] ?: "#000000"
                     if (fill == "none") continue
                     val solid = parseColor(fill)
@@ -730,22 +826,90 @@ private class SvgDocumentParser(
                         is FontOperationResult.Failure -> return parsed
                         is FontOperationResult.Cancelled -> return parsed
                     }
+                    val clip = when (val materialized = clipPath?.materialize(stack.last().transform)) {
+                        null -> null
+                        is FontOperationResult.Success -> materialized.value
+                        is FontOperationResult.Failure -> return materialized
+                        is FontOperationResult.Cancelled -> return materialized
+                    }
                     val target = stack.last().glyphTargetId?.let(glyphs::get) ?: unassignedPaint
                     if (solid != null) {
-                        if (!stack.last().transform.preservesArea) continue
-                        target.appendSolidPath(path, solid, profile)?.let { failure -> return failure }
+                        if (fillOpacity != 0.0 && clip == null && !stack.last().transform.preservesArea) continue
+                        target.appendSolidPath(
+                            path = path,
+                            color = solid,
+                            opacity = fillOpacity,
+                            clipPath = clip?.path,
+                            omitPaint = !stack.last().transform.preservesArea || clip?.preservesArea == false,
+                            profile = profile,
+                        )?.let { failure -> return failure }
                         continue
                     }
                     target.appendGradientPath(
                         path = path,
-                        definition = checkNotNull(gradient),
+                        clipPath = clip?.path,
+                        clipPathPreservesArea = clip?.preservesArea != false,
+                        definition = checkNotNull(gradient).withFillOpacity(fillOpacity),
                         rectangle = null,
                         transform = stack.last().transform,
+                        omitPaint = fillOpacity == 0.0,
                         profile = profile,
                     )?.let { failure -> return failure }
                 }
 
                 "rect" -> {
+                    if (stack.lastOrNull()?.name == "clipPath") {
+                        if (
+                            !selfClosing ||
+                            attributes.keys.any { key -> key !in CLIP_PATH_CHILD_RECT_ATTRIBUTES }
+                        ) {
+                            return unsupported("SVG clipPath rect child must be a self-closing sharp-cornered rectangle with optional transform.")
+                        }
+                        val x = parseSvgNumber(attributes.getOrElse("x") { "0" })
+                            ?: return invalid("font.svg.invalid-rect", "SVG clip rectangle x is invalid.")
+                        val y = parseSvgNumber(attributes.getOrElse("y") { "0" })
+                            ?: return invalid("font.svg.invalid-rect", "SVG clip rectangle y is invalid.")
+                        val parsedWidth = attributes["width"]?.let(::parseSvgNumberWithLexicalSignificance)
+                            ?: return invalid("font.svg.invalid-rect", "SVG clip rectangle width is required and must be finite.")
+                        val parsedHeight = attributes["height"]?.let(::parseSvgNumberWithLexicalSignificance)
+                            ?: return invalid("font.svg.invalid-rect", "SVG clip rectangle height is required and must be finite.")
+                        if (
+                            parsedWidth.value < 0.0 ||
+                            parsedHeight.value < 0.0 ||
+                            parsedWidth.hasNegativeNonZeroMantissa ||
+                            parsedHeight.hasNegativeNonZeroMantissa
+                        ) {
+                            return invalid("font.svg.invalid-rect", "SVG clip rectangle dimensions must be non-negative.")
+                        }
+                        val width = parsedWidth.value
+                        val height = parsedHeight.value
+                        val commands = rectangleRawPath(x, y, width, height)
+                        val authoredPath = when (val materialized = materializePath(commands, AffineTransform.identity)) {
+                            is FontOperationResult.Success -> materialized.value
+                            is FontOperationResult.Failure -> return materialized
+                            is FontOperationResult.Cancelled -> return materialized
+                        }
+                        if (!authoredPath.fits(profile)) {
+                            return unsupported("SVG clip rectangle exceeds the selected outline profile.")
+                        }
+                        val childTransform = when (
+                            val parsed = parseTransform(attributes.getOrElse("transform") { "" }, "SVG clip rectangle")
+                        ) {
+                            is FontOperationResult.Success -> parsed.value
+                            is FontOperationResult.Failure -> return parsed
+                            is FontOperationResult.Cancelled -> return parsed
+                        }
+                        if (
+                            pendingClipPath?.addPath(
+                                commands,
+                                childTransform,
+                                hasArea = width > 0.0 && height > 0.0,
+                            ) != true
+                        ) {
+                            return unsupported("SVG clipPath must contain exactly one supported path or rect child.")
+                        }
+                        continue
+                    }
                     if (
                         stack.lastOrNull()?.name !in PAINT_CONTAINER_ELEMENTS ||
                         !selfClosing ||
@@ -764,7 +928,19 @@ private class SvgDocumentParser(
                     if (width < 0.0 || height < 0.0) {
                         return invalid("font.svg.invalid-rect", "SVG rectangle dimensions must be non-negative.")
                     }
+                    val fillOpacity = parseSvgFraction(attributes.getOrElse("fill-opacity") { "1" })
+                        ?.coerceIn(0.0, 1.0)
+                        ?: return invalid("font.svg.invalid-fill-opacity", "SVG fill opacity is invalid.")
                     val fill = attributes.getOrElse("fill") { "#000000" }
+                    val clipPath = when (val reference = attributes["clip-path"]) {
+                        null -> null
+                        else -> {
+                            val id = parseLocalPaintReference(reference)
+                                ?: return unsupported("SVG clip-path must be a local url(#id) reference.")
+                            clipPaths[id]
+                                ?: return unsupported("SVG clip-path references must resolve to a preceding local clipPath definition.")
+                        }
+                    }
                     if (fill == "none") continue
                     val solid = parseColor(fill)
                     val gradient = if (solid == null) {
@@ -776,22 +952,38 @@ private class SvgDocumentParser(
                         null
                     }
                     if (width == 0.0 || height == 0.0) continue
-                    if (!stack.last().transform.preservesArea) continue
+                    if (fillOpacity != 0.0 && clipPath == null && !stack.last().transform.preservesArea) continue
                     val path = when (val result = rectanglePath(x, y, width, height, stack.last().transform)) {
                         is FontOperationResult.Success -> result.value
                         is FontOperationResult.Failure -> return result
                         is FontOperationResult.Cancelled -> return result
                     }
+                    val clip = when (val materialized = clipPath?.materialize(stack.last().transform)) {
+                        null -> null
+                        is FontOperationResult.Success -> materialized.value
+                        is FontOperationResult.Failure -> return materialized
+                        is FontOperationResult.Cancelled -> return materialized
+                    }
                     val target = stack.last().glyphTargetId?.let(glyphs::get) ?: unassignedPaint
                     if (solid != null) {
-                        target.appendSolidPath(path, solid, profile)?.let { failure -> return failure }
+                        target.appendSolidPath(
+                            path = path,
+                            color = solid,
+                            opacity = fillOpacity,
+                            clipPath = clip?.path,
+                            omitPaint = !stack.last().transform.preservesArea || clip?.preservesArea == false,
+                            profile = profile,
+                        )?.let { failure -> return failure }
                         continue
                     }
                     target.appendGradientPath(
                         path = path,
-                        definition = checkNotNull(gradient),
+                        clipPath = clip?.path,
+                        clipPathPreservesArea = clip?.preservesArea != false,
+                        definition = checkNotNull(gradient).withFillOpacity(fillOpacity),
                         rectangle = SvgRectangle(x, y, width, height),
                         transform = stack.last().transform,
+                        omitPaint = fillOpacity == 0.0,
                         profile = profile,
                     )?.let { failure -> return failure }
                 }
@@ -964,6 +1156,15 @@ private class SvgDocumentParser(
     }
 
     private fun parsePath(data: String, transform: AffineTransform): FontOperationResult<GlyphPaintPath> {
+        val commands = when (val parsed = parseRawPath(data)) {
+            is FontOperationResult.Success -> parsed.value
+            is FontOperationResult.Failure -> return parsed
+            is FontOperationResult.Cancelled -> return parsed
+        }
+        return materializePath(commands, transform)
+    }
+
+    private fun parseRawPath(data: String): FontOperationResult<List<RawPathCommand>> {
         val cursor = SvgNumberCursor(data)
         val commands = mutableListOf<RawPathCommand>()
         var activeCommand: Char? = null
@@ -1090,11 +1291,7 @@ private class SvgDocumentParser(
         }
         if (contourOpen) commands += RawPathCommand.Close
         if (commands.isEmpty()) return invalid("font.svg.empty-path", "SVG path data must contain commands.")
-        return try {
-            FontOperationResult.Success(GlyphPaintPath(commands.map { command -> command.materialize(transform) }))
-        } catch (_: IllegalArgumentException) {
-            invalid("font.svg.invalid-path", "SVG path coordinates exceed the portable path domain.")
-        }
+        return FontOperationResult.Success(commands.toList())
     }
 }
 
@@ -1102,6 +1299,62 @@ private data class SvgElement(
     val name: String,
     val transform: AffineTransform,
     val glyphTargetId: Int?,
+)
+
+private data class SvgClipPath(
+    val id: String,
+    val commands: List<RawPathCommand>,
+    val transform: AffineTransform,
+    val childTransform: AffineTransform,
+    val hasArea: Boolean,
+) {
+    fun materialize(referenceTransform: AffineTransform): FontOperationResult<MaterializedSvgClipPath> {
+        val effectiveTransform = try {
+            referenceTransform.then(transform).then(childTransform)
+        } catch (_: IllegalArgumentException) {
+            return invalid(
+                "font.svg.invalid-transform",
+                "SVG clipPath transform composition exceeds the portable coordinate domain.",
+            )
+        }
+        return when (val materialized = materializePath(commands, effectiveTransform)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                MaterializedSvgClipPath(materialized.value, hasArea && effectiveTransform.preservesArea),
+            )
+            is FontOperationResult.Failure -> materialized
+            is FontOperationResult.Cancelled -> materialized
+        }
+    }
+}
+
+private class SvgClipPathBuilder(
+    private val id: String,
+    private val transform: AffineTransform,
+) {
+    private var commands: List<RawPathCommand>? = null
+    private var childTransform: AffineTransform? = null
+    private var hasArea: Boolean? = null
+
+    fun addPath(
+        pathCommands: List<RawPathCommand>,
+        pathTransform: AffineTransform,
+        hasArea: Boolean = true,
+    ): Boolean {
+        if (commands != null) return false
+        commands = pathCommands.toList()
+        childTransform = pathTransform
+        this.hasArea = hasArea
+        return true
+    }
+
+    fun build(): SvgClipPath? = commands?.let { pathCommands ->
+        SvgClipPath(id, pathCommands.toList(), transform, checkNotNull(childTransform), checkNotNull(hasArea))
+    }
+}
+
+private data class MaterializedSvgClipPath(
+    val path: GlyphPaintPath,
+    val preservesArea: Boolean,
 )
 
 private class SvgGlyphPaintBuilder {
@@ -1118,54 +1371,87 @@ private class SvgGlyphPaintBuilder {
     fun appendSolidPath(
         path: GlyphPaintPath,
         color: GlyphColor,
+        opacity: Double = 1.0,
+        clipPath: GlyphPaintPath? = null,
+        omitPaint: Boolean = false,
         profile: PaintGraphProfile,
     ): FontOperationResult.Failure? {
-        if (GlyphPaintNodeKind.PATH !in profile.acceptedNodeKinds) {
-            return unsupported("The selected paint profile does not accept SVG solid paths.")
+        val usesUnboundedSolid = opacity < 1.0
+        val requiredPaintKind = if (usesUnboundedSolid) GlyphPaintNodeKind.SOLID else GlyphPaintNodeKind.PATH
+        if (requiredPaintKind !in profile.acceptedNodeKinds) {
+            return unsupported("The selected paint profile does not accept the normalized SVG solid paint.")
+        }
+        if ((usesUnboundedSolid || clipPath != null) && GlyphPaintNodeKind.PATH_CLIP !in profile.acceptedNodeKinds) {
+            return unsupported("The selected paint profile does not accept SVG path clips.")
         }
         pathLimitFailure(path, profile)?.let { return it }
+        if (!path.fits(profile) || clipPath?.fits(profile) == false) {
+            return unsupported("SVG paint graph exceeds the selected outline profile.")
+        }
+        val clipIncrement = if (clipPath == null) 0 else 1
+        val shapeClipIncrement = if (usesUnboundedSolid) 1 else 0
         projectedLimitFailure(
-            additionalNodes = 1,
-            additionalReferences = 0,
-            additionalPaths = 1,
+            additionalNodes = 1 + shapeClipIncrement + clipIncrement,
+            additionalReferences = shapeClipIncrement + clipIncrement,
+            additionalPaths = 1 + clipIncrement,
             additionalGradients = 0,
             additionalColorStops = 0,
             additionalTransforms = 0,
-            additionalClips = 0,
-            rootDepth = 1,
+            additionalClips = shapeClipIncrement + clipIncrement,
+            rootDepth = 1 + shapeClipIncrement + clipIncrement,
             profile = profile,
         )?.let { return it }
-        nodes += GlyphPaintNode.Path(path, color)
+        if (omitPaint || opacity == 0.0) return null
+        nodes += if (usesUnboundedSolid) GlyphPaintNode.Solid(color, opacity) else GlyphPaintNode.Path(path, color)
+        val shapeIndex = nodes.lastIndex
+        if (usesUnboundedSolid) {
+            nodes += GlyphPaintNode.PathClip(path, shapeIndex)
+        }
+        if (clipPath != null) {
+            nodes += GlyphPaintNode.PathClip(clipPath, nodes.lastIndex)
+        }
         roots += nodes.lastIndex
-        pathCount += 1
-        deepestRoot = maxOf(deepestRoot, 1)
+        internalReferences += shapeClipIncrement + clipIncrement
+        pathCount += 1 + clipIncrement
+        clipCount += shapeClipIncrement + clipIncrement
+        deepestRoot = maxOf(deepestRoot, 1 + shapeClipIncrement + clipIncrement)
         return null
     }
 
     fun appendGradientPath(
         path: GlyphPaintPath,
+        clipPath: GlyphPaintPath? = null,
+        clipPathPreservesArea: Boolean = true,
         definition: SvgGradient,
         rectangle: SvgRectangle?,
         transform: AffineTransform,
+        omitPaint: Boolean = false,
         profile: PaintGraphProfile,
     ): FontOperationResult.Failure? {
         if (rectangle == null && definition.coordinateSpace != SvgGradientCoordinateSpace.USER_SPACE_ON_USE) {
             return unsupported("SVG object-bounding-box gradients are not supported for paths.")
         }
-        if (rectangle == null && definition.colorStops.isNotEmpty()) {
-            pathLimitFailure(path, profile)?.let { return it }
+        if (definition.colorStops.isEmpty()) return null
+        pathLimitFailure(path, profile)?.let { return it }
+        if (!path.fits(profile) || clipPath?.fits(profile) == false) {
+            return unsupported("SVG paint graph exceeds the selected outline profile.")
         }
         return when (definition) {
-            is SvgLinearGradient -> appendLinearGradientPath(path, definition, rectangle, transform, profile)
-            is SvgRadialGradient -> appendRadialGradientPath(path, definition, rectangle, transform, profile)
+            is SvgLinearGradient ->
+                appendLinearGradientPath(path, clipPath, clipPathPreservesArea, definition, rectangle, transform, omitPaint, profile)
+            is SvgRadialGradient ->
+                appendRadialGradientPath(path, clipPath, clipPathPreservesArea, definition, rectangle, transform, omitPaint, profile)
         }
     }
 
     private fun appendLinearGradientPath(
         path: GlyphPaintPath,
+        clipPath: GlyphPaintPath?,
+        clipPathPreservesArea: Boolean,
         definition: SvgLinearGradient,
         rectangle: SvgRectangle?,
         transform: AffineTransform,
+        omitPaint: Boolean,
         profile: PaintGraphProfile,
     ): FontOperationResult.Failure? {
         if (definition.colorStops.isEmpty()) return null
@@ -1173,15 +1459,16 @@ private class SvgGlyphPaintBuilder {
             return unsupported("The selected paint profile does not accept SVG path clips.")
         }
         val intrinsicallySolid = definition.colorStops.size == 1 || definition.hasDegenerateVector
-        val omitPaint = !transform.preservesArea
-        val points = if (intrinsicallySolid || omitPaint) {
+        val shapeTransformOmitsPaint = !transform.preservesArea
+        val points = if (intrinsicallySolid || shapeTransformOmitsPaint) {
             null
         } else {
             definition.points(rectangle, transform)
                 ?: return invalid("font.svg.invalid-gradient", "SVG linear-gradient coordinates exceed the portable domain.")
         }
-        val useSolid = intrinsicallySolid || (!omitPaint && checkNotNull(points).let { resolved -> resolved.p0 == resolved.p1 })
-        if (!omitPaint && !useSolid && !checkNotNull(points).formsPlane) {
+        val useSolid = intrinsicallySolid ||
+            (!shapeTransformOmitsPaint && checkNotNull(points).let { resolved -> resolved.p0 == resolved.p1 })
+        if (!shapeTransformOmitsPaint && !useSolid && !checkNotNull(points).formsPlane) {
             return invalid("font.svg.invalid-gradient", "SVG linear-gradient points are collinear after normalization.")
         }
         val requiredPaintKind = if (useSolid) GlyphPaintNodeKind.SOLID else GlyphPaintNodeKind.LINEAR_GRADIENT
@@ -1200,18 +1487,19 @@ private class SvgGlyphPaintBuilder {
             }
         }
         pathLimitFailure(path, profile)?.let { return it }
+        val clipIncrement = if (clipPath == null) 0 else 1
         projectedLimitFailure(
-            additionalNodes = 2,
-            additionalReferences = 1,
-            additionalPaths = 1,
+            additionalNodes = 2 + clipIncrement,
+            additionalReferences = 1 + clipIncrement,
+            additionalPaths = 1 + clipIncrement,
             additionalGradients = if (useSolid) 0 else 1,
             additionalColorStops = if (useSolid) 0 else definition.colorStops.size,
             additionalTransforms = 0,
-            additionalClips = 1,
-            rootDepth = 2,
+            additionalClips = 1 + clipIncrement,
+            rootDepth = 2 + clipIncrement,
             profile = profile,
         )?.let { return it }
-        if (omitPaint) return null
+        if (omitPaint || shapeTransformOmitsPaint || !clipPathPreservesArea) return null
         val paintIndex = nodes.size
         nodes += if (useSolid) {
             val finalStop = definition.colorStops.last()
@@ -1231,23 +1519,30 @@ private class SvgGlyphPaintBuilder {
             )
         }
         nodes += GlyphPaintNode.PathClip(path, paintIndex)
+        val shapeClipIndex = nodes.lastIndex
+        if (clipPath != null) {
+            nodes += GlyphPaintNode.PathClip(clipPath, shapeClipIndex)
+        }
         roots += nodes.lastIndex
-        internalReferences += 1
-        pathCount += 1
+        internalReferences += 1 + clipIncrement
+        pathCount += 1 + clipIncrement
         if (!useSolid) {
             gradientCount += 1
             colorStopCount += definition.colorStops.size
         }
-        clipCount += 1
-        deepestRoot = maxOf(deepestRoot, 2)
+        clipCount += 1 + clipIncrement
+        deepestRoot = maxOf(deepestRoot, 2 + clipIncrement)
         return null
     }
 
     private fun appendRadialGradientPath(
         path: GlyphPaintPath,
+        clipPath: GlyphPaintPath?,
+        clipPathPreservesArea: Boolean,
         definition: SvgRadialGradient,
         rectangle: SvgRectangle?,
         transform: AffineTransform,
+        omitPaint: Boolean,
         profile: PaintGraphProfile,
     ): FontOperationResult.Failure? {
         if (definition.colorStops.isEmpty()) return null
@@ -1273,8 +1568,8 @@ private class SvgGlyphPaintBuilder {
                 return unsupported("The selected paint profile does not accept SVG alpha interpolation.")
             }
         }
-        val omitPaint = !transform.preservesArea
-        val paintTransform = if (useSolid || omitPaint) {
+        val shapeTransformOmitsPaint = !transform.preservesArea
+        val paintTransform = if (useSolid || shapeTransformOmitsPaint) {
             null
         } else {
             try {
@@ -1288,18 +1583,19 @@ private class SvgGlyphPaintBuilder {
             }
         }
         pathLimitFailure(path, profile)?.let { return it }
+        val clipIncrement = if (clipPath == null) 0 else 1
         projectedLimitFailure(
-            additionalNodes = if (useSolid) 2 else 3,
-            additionalReferences = if (useSolid) 1 else 2,
-            additionalPaths = 1,
+            additionalNodes = (if (useSolid) 2 else 3) + clipIncrement,
+            additionalReferences = (if (useSolid) 1 else 2) + clipIncrement,
+            additionalPaths = 1 + clipIncrement,
             additionalGradients = if (useSolid) 0 else 1,
             additionalColorStops = if (useSolid) 0 else definition.colorStops.size,
             additionalTransforms = if (useSolid) 0 else 1,
-            additionalClips = 1,
-            rootDepth = if (useSolid) 2 else 3,
+            additionalClips = 1 + clipIncrement,
+            rootDepth = (if (useSolid) 2 else 3) + clipIncrement,
             profile = profile,
         )?.let { return it }
-        if (omitPaint) return null
+        if (omitPaint || shapeTransformOmitsPaint || !clipPathPreservesArea) return null
         val paintIndex = nodes.size
         nodes += if (useSolid) {
             val finalStop = definition.colorStops.last()
@@ -1328,16 +1624,20 @@ private class SvgGlyphPaintBuilder {
             nodes.lastIndex
         }
         nodes += GlyphPaintNode.PathClip(path, clippedPaintIndex)
+        val shapeClipIndex = nodes.lastIndex
+        if (clipPath != null) {
+            nodes += GlyphPaintNode.PathClip(clipPath, shapeClipIndex)
+        }
         roots += nodes.lastIndex
-        internalReferences += if (useSolid) 1 else 2
-        pathCount += 1
+        internalReferences += (if (useSolid) 1 else 2) + clipIncrement
+        pathCount += 1 + clipIncrement
         if (!useSolid) {
             gradientCount += 1
             colorStopCount += definition.colorStops.size
             transformCount += 1
         }
-        clipCount += 1
-        deepestRoot = maxOf(deepestRoot, if (useSolid) 2 else 3)
+        clipCount += 1 + clipIncrement
+        deepestRoot = maxOf(deepestRoot, (if (useSolid) 2 else 3) + clipIncrement)
         return null
     }
 
@@ -1494,6 +1794,16 @@ private data class SvgRadialGradient(
     override val colorStops: List<GlyphPaintColorStop>,
 ) : SvgGradient
 
+private fun SvgGradient.withFillOpacity(fillOpacity: Double): SvgGradient {
+    val effectiveColorStops = colorStops.map { stop ->
+        stop.copy(opacity = stop.opacity * fillOpacity)
+    }
+    return when (this) {
+        is SvgLinearGradient -> copy(colorStops = effectiveColorStops)
+        is SvgRadialGradient -> copy(colorStops = effectiveColorStops)
+    }
+}
+
 private sealed interface SvgGradientBuilder {
     val id: String
 
@@ -1607,6 +1917,33 @@ private sealed interface RawPathCommand {
     data class CubicTo(val control1: Point, val control2: Point, val endpoint: Point) : RawPathCommand
     data object Close : RawPathCommand
 }
+
+private fun rectangleRawPath(
+    x: Double,
+    y: Double,
+    width: Double,
+    height: Double,
+): List<RawPathCommand> = listOf(
+    RawPathCommand.MoveTo(Point(x, y)),
+    RawPathCommand.LineTo(Point(x + width, y)),
+    RawPathCommand.LineTo(Point(x + width, y + height)),
+    RawPathCommand.LineTo(Point(x, y + height)),
+    RawPathCommand.Close,
+)
+
+private fun materializePath(
+    commands: List<RawPathCommand>,
+    transform: AffineTransform,
+): FontOperationResult<GlyphPaintPath> = try {
+    FontOperationResult.Success(GlyphPaintPath(commands.map { command -> command.materialize(transform) }))
+} catch (_: IllegalArgumentException) {
+    invalid("font.svg.invalid-path", "SVG path coordinates exceed the portable path domain.")
+}
+
+private fun GlyphPaintPath.fits(profile: PaintGraphProfile): Boolean =
+    pointCount <= profile.outlineProfile.maxPoints &&
+        contourCount <= profile.outlineProfile.maxContours &&
+        estimatedByteSize <= profile.outlineProfile.maxBytes
 
 private fun RawPathCommand.materialize(transform: AffineTransform): GlyphPaintPathCommand = when (this) {
     is RawPathCommand.MoveTo -> transform.apply(point).let { point -> GlyphPaintPathCommand.MoveTo(point.x, point.y) }
@@ -2135,9 +2472,13 @@ private fun rectanglePath(
 }
 
 private fun parseSvgNumber(value: String): Double? {
+    return parseSvgNumberWithLexicalSignificance(value)?.value
+}
+
+private fun parseSvgNumberWithLexicalSignificance(value: String): ParsedSvgNumber? {
     val text = value.trimSvgWhitespace()
     if (text.isEmpty() || text.endsWith('%')) return null
-    return SvgNumberCursor(text).singleNumber()
+    return SvgNumberCursor(text).singleNumberWithLexicalSignificance()
 }
 
 private fun parseSvgFraction(value: String): Double? {
@@ -2235,8 +2576,11 @@ private const val DOCUMENT_RECORD_LENGTH: Int = 12
 private const val SVG_NAMESPACE: String = "http://www.w3.org/2000/svg"
 private val SVG_ATTRIBUTES: Set<String> = setOf("xmlns", "id")
 private val GROUP_ATTRIBUTES: Set<String> = setOf("transform", "id")
-private val PATH_ATTRIBUTES: Set<String> = setOf("d", "fill")
-private val RECT_ATTRIBUTES: Set<String> = setOf("x", "y", "width", "height", "fill")
+private val PATH_ATTRIBUTES: Set<String> = setOf("d", "fill", "fill-opacity", "clip-path")
+private val RECT_ATTRIBUTES: Set<String> = setOf("x", "y", "width", "height", "fill", "fill-opacity", "clip-path")
+private val CLIP_PATH_ATTRIBUTES: Set<String> = setOf("id", "clipPathUnits", "transform")
+private val CLIP_PATH_CHILD_PATH_ATTRIBUTES: Set<String> = setOf("d", "transform")
+private val CLIP_PATH_CHILD_RECT_ATTRIBUTES: Set<String> = setOf("x", "y", "width", "height", "transform")
 private val LINEAR_GRADIENT_ATTRIBUTES: Set<String> = setOf(
     "id",
     "x1",
@@ -2262,7 +2606,7 @@ private val RADIAL_GRADIENT_ATTRIBUTES: Set<String> = setOf(
 )
 private val STOP_ATTRIBUTES: Set<String> = setOf("offset", "stop-color", "stop-opacity")
 private val GRADIENT_ELEMENTS: Set<String> = setOf("linearGradient", "radialGradient")
-private val CONTAINER_ELEMENTS: Set<String> = setOf("svg", "g", "defs") + GRADIENT_ELEMENTS
+private val CONTAINER_ELEMENTS: Set<String> = setOf("svg", "g", "defs", "clipPath") + GRADIENT_ELEMENTS
 private val PAINT_CONTAINER_ELEMENTS: Set<String> = setOf("svg", "g")
 private const val DOUBLE_SIGNIFICAND_BITS: Int = 52
 private const val DOUBLE_EXPONENT_BIAS: Int = 1023
