@@ -86,6 +86,19 @@ constructor and `maxEvictableBytesPerFace` getter remain available. That constru
 only retained bytes per face; its other dimensions and catalog aggregate remain unbounded.
 `FontMaterializationCachePolicy.disabled` retains no representation.
 
+This is a source and binary breaking change for generated Kotlin operations despite preserving the
+constructor and getter. Migrate `copy(maxEvictableBytesPerFace = …)` to `perFace`/`perCatalog`:
+the first destructuring component changes from `Long` to `FontCacheBudget`, and JVM consumers that
+used the old generated `copy`, `copy$default`, or `component1` operations must recompile.
+
+```kotlin
+val updatedPolicy = cachePolicy.copy(
+    perFace = cachePolicy.perFace.copy(retainedBytes = 8L * 1024L * 1024L),
+)
+val (perFaceBudget, perCatalogBudget) = updatedPolicy
+val retainedBytesPerFace = perFaceBudget.retainedBytes
+```
+
 These bounds cover evictable representations, keys and diagnostics, not source snapshots,
 caller-owned assets or total process memory. No entry owns a resolver, asset, catalog or
 native resource. Closing the last resolver or asset lease of a face releases that face's

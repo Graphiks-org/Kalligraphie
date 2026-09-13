@@ -78,6 +78,16 @@ val catalogResult = Kalligraphie.embedded(bytes, provenance, cachePolicy)
 
 Le constructeur historique `FontMaterializationCachePolicy(maxEvictableBytesPerFace = 4L * 1024L * 1024L)` et le getter (accesseur) `maxEvictableBytesPerFace` restent disponibles. Ce constructeur borne uniquement les octets retenus par face ; ses autres dimensions et le cumul du catalogue restent non bornés. `FontMaterializationCachePolicy.disabled` ne conserve aucune représentation.
 
+Malgré la conservation du constructeur et de l'accesseur, il s'agit d'un changement incompatible de l'API source et binaire pour les opérations Kotlin générées. Migrer `copy(maxEvictableBytesPerFace = …)` vers `perFace`/`perCatalog` : le premier composant passe de `Long` à `FontCacheBudget` et la déstructuration est un accès positionnel aux composants ; les consommateurs JVM compilés contre les anciennes opérations générées `copy`, `copy$default` ou `component1` doivent être recompilés.
+
+```kotlin
+val updatedPolicy = cachePolicy.copy(
+    perFace = cachePolicy.perFace.copy(retainedBytes = 8L * 1024L * 1024L),
+)
+val (perFaceBudget, perCatalogBudget) = updatedPolicy
+val retainedBytesPerFace = perFaceBudget.retainedBytes
+```
+
 Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource native. La fermeture du dernier lease (droit de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
 
 Les catalogues ne partagent pas encore de budget au niveau provider/engine (fournisseur/moteur). Cette portée de propriété et la participation des ressources natives seront introduites avec une route native. Les tests de glyphes démontrent la transparence observable ; ils ne mesurent pas la rétention et ne prouvent pas l'admission du cache. La comptabilité appartient à une future instrumentation opt-in (activée explicitement), hors `check`.

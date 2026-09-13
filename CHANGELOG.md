@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- FontMaterializationCachePolicy now uses structured per-face/per-catalog budgets: generated Kotlin copy/destructuring operations are source- and binary-incompatible with the former byte-only data class; migrate to perFace/perCatalog and recompile consumers that used the old generated operations. The historical byte-only constructor and getter remain available.
 - Kotlin 2.4.0 → 2.4.10
 - Gradle 9.5.0 → 9.6.1
 - Added blocking pull request policy checks aligned with `CONTRIBUTING.md`.

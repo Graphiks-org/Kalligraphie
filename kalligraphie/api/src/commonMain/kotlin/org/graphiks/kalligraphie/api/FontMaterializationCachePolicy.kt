@@ -9,6 +9,12 @@ package org.graphiks.kalligraphie.api
  * never changes route selection, representation identity, certificates or diagnostics.
  * Closing the last resolver or asset lease of a face releases that face's evictable entries.
  * Catalogs do not share a provider-wide or engine-wide budget.
+ *
+ * The historical byte-only constructor and [maxEvictableBytesPerFace] getter remain available.
+ * This data class intentionally does not retain source or binary compatibility for its generated
+ * [copy] and destructuring operations: the first component is now [FontCacheBudget], not [Long],
+ * and [copy] takes [perFace] and [perCatalog]. JVM consumers compiled against the former generated
+ * operations must migrate to the structured budgets and recompile.
  */
 public data class FontMaterializationCachePolicy(
     /** Limits shared by all retained representations of one captured face. */
