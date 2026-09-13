@@ -13,13 +13,13 @@ The supported functional scope is intentionally narrow:
 - static SFNT TrueType only: `0x00010000` and `true`;
 - embedded OpenType sources with face index `0` for each source;
 - `LAYOUT_ONLY` for cmap and metrics;
-- `RENDERABLE` with schema version `1` `OutlineProfile`, `PaintGraphProfile`,
-  or `BitmapProfile` when the selected face advertises the matching route;
+- `RENDERABLE` with an explicit `OutlineProfile`, `PaintGraphProfile`, or
+  `BitmapProfile` when the selected face advertises the matching route;
 - `glyf` outlines in design units, with separately scaled `LayoutUnit`
   metrics;
-- COLR version 0 and CPAL version 0 paint graphs made from solid outlines,
-  ordered groups, exact CPAL palette selection, and an explicit foreground
-  color;
+- schema 1 COLR version 0 / CPAL version 0 paint graphs made from solid
+  outlines and ordered groups, plus schema 2 static COLR version 1 paint
+  graphs backed by CPAL version 0 or 1;
 - SVG-in-OpenType table version 0 with raw UTF-8 documents only: `svg`, `g`,
   and self-closing `path` elements; `translate` and `scale`; `M`, `L`, `H`,
   `V`, `C`, `S`, and `Z` path commands; opaque `#RRGGBB` fills; and `fill="none"`
@@ -32,6 +32,102 @@ The supported functional scope is intentionally narrow:
   sRGB, with an exact requested strike;
 - detached render assets that keep resolving after the owning resolver or
   attached handle is closed.
+
+### Paint-graph schemas and static COLR version 1
+
+A `GlyphPaintIR` is a complete immutable paint graph, not pixels or drawing
+commands sent to a platform API. `GlyphRepresentation.Paint` and a
+`GlyphMaterializationRoute.PAINT_GRAPH` certificate are the public boundary;
+Kalligraphie validates and materializes the portable graph but supplies no
+renderer or rasterizer.
+
+Schema versions are exact consumer capabilities:
+
+- schema 1 retains `SolidOutline`, `Path`, and source-ordered `Group` nodes.
+  Groups use `SOURCE_OVER`; schema 1 cannot advertise schema-2 node kinds,
+  gradient extend modes, or another composition mode, and a schema-1 `Group`
+  must contain at least one child. Existing COLR version 0 and restricted
+  SVG-in-OpenType graphs remain representable with this schema;
+- schema 2 adds unbounded `Solid`, `LinearGradient`, `RadialGradient`, and
+  `SweepGradient` paints; `GlyphClip`, `Transform`, and `Composite`; gradient
+  extension through `PAD`, `REPEAT`, and `REFLECT`; and all 28 named
+  `GlyphPaintCompositionMode` values. A provider certifies a graph only when
+  its complete reachable contents match the node kinds, extend modes,
+  composition modes, and limits declared by the exact `PaintGraphProfile`. An
+  empty schema-2 `Group` represents no paint and is structurally bounded.
+
+The JVM embedded and captured-`.ttf` routes accept static COLR version 1
+global structures and paint formats `1`, `2`, `4`, `6`, `8`, `10`, `11`,
+`12`, `14`, `16`, `18`, `20`, `22`, `24`, `26`, `28`, `30`, and `32`.
+Specialized affine, translate, scale, rotate, and skew paints normalize to one
+finite `GlyphAffineTransform`; referenced COLR glyph paints are resolved into
+the graph rather than exposed as source-table references. A valid format-1
+`PaintColrLayers` record with zero layers is preserved as a one-node paint
+graph containing an empty `Group`; it is not collapsed to
+`GlyphRepresentation.Empty`. ClipList format 1 with ClipBox format 1 is
+accepted. Variable `PaintVar*` formats, ClipBox format 2, variation stores and
+maps, CFF/CFF2, and variable CPAL/COLR values are not supported. The
+SVG-in-OpenType subset remains unchanged and does not gain SVG gradients,
+clips, masks, strokes, or animation.
+
+Palette and foreground selection are resolved before publication. A null
+`FontRenderVariantSnapshot.cpalPaletteIndex` selects palette 0; an explicit
+index selects that exact CPAL palette or fails. CPAL index `0xFFFF` resolves
+to the variant's exact `foregroundColor`, or opaque black when it is null.
+The graph therefore contains literal eight-bit, non-premultiplied sRGB
+`GlyphColor` values, not palette indexes. Node and stop opacity remain
+separate finite values in `0.0..1.0`. To interpolate a gradient, a renderer
+must linearize each stop's sRGB components, compute its effective alpha as
+`color.alpha / 255 * opacity`, and premultiply the linear RGB components by
+that alpha before interpolation. It interpolates premultiplied RGB and alpha
+separately, then unpremultiplies with zero-alpha handling and converts from
+linear light to the required output encoding. Palette or foreground changes
+affect paint literals and asset identity, not shaping, advances, caret
+positions, hit testing, or selection geometry.
+
+All points, root bounds, outlines, and transforms use font design coordinates.
+For `GlyphAffineTransform(xx, yx, xy, yy, dx, dy)`, consumers apply
+`x' = xx*x + xy*y + dx` and `y' = yx*x + yy*y + dy`. `Composite.source` and
+`Composite.backdrop` preserve the two OpenType roles; `children` is ordered
+`[backdrop, source]`, which is paint order. A `Group` likewise paints children
+in list order with `SOURCE_OVER`.
+
+`GlyphPaintIR.clipBounds`, when present, clips the complete root result. A
+schema-2 graph without root bounds is accepted only when its reachable root
+is structurally bounded: `SolidOutline`, `Path`, and `GlyphClip` are bounded;
+`Solid` and the three gradients are unbounded; `Transform` preserves its
+child's boundedness; and `Group` is bounded only when every child is bounded.
+Consequently, an empty schema-2 `Group` is bounded. For composites, `CLEAR` is
+always bounded; `SOURCE` and `SOURCE_OUT` follow the source; `DESTINATION` and
+`DESTINATION_OUT` follow the backdrop;
+`SOURCE_IN` and `DESTINATION_IN` are bounded when either input is bounded;
+every other composition mode requires both inputs to be bounded. A root clip
+makes any otherwise accepted combination bounded.
+
+`PaintGraphLimits` is enforced before certification. It bounds graph nodes,
+references, depth and expanded paint visits; paths, gradients, color stops,
+transforms, composites and glyph clips; source bytes; CPAL palettes, entries,
+color records and decoded palette bytes; COLR base-glyph, layer and clip
+records; and every referenced outline through `outlineProfile`. Exceeding a
+bound returns `FontError.ResourceLimitExceeded`. A reached but unadvertised
+capability, or a CPAL palette selected by the consumer but unavailable in the
+font, returns `FontError.UnsupportedRepresentationProfile`. Malformed COLR
+references, cycles, geometry, or indexes return `FontError.InvalidFontData`.
+Malformed or truncated CPAL structure returns `FontError.FontDataFailure` with
+a stable code such as `font.cpal.truncated`, `font.cpal.invalid-table`, or
+`font.cpal.invalid-palette-index`. None of these cases publishes a partial
+graph or certificate.
+
+Paint-route resolution and representation fallback are per final glyph. An
+SVG-covered glyph keeps the existing SVG priority. Otherwise, a version-1
+base-paint record is used when present;
+when it is absent, a version-0 layer record is used when present; and only a
+glyph absent from both color maps uses its `glyf` outline or an explicitly
+inkless result. When a reached COLR v1
+capability is unsupported or over limit, ordered representation profiles may
+select a compatible result for that glyph. If none does, the editor's
+configured font fallback proceeds according to its atomic fallback-unit
+policy. The failure does not poison unrelated glyphs in the face.
 
 ```kotlin
 val catalogResult = Kalligraphie.embedded(bytes, provenance)
@@ -192,6 +288,12 @@ resolver is still open, call `openLayoutHandle(resolver)`. This is a second,
 fallible and atomic success: it either returns a `LayoutHandle` owning every
 certified root or publishes no handle. The same extension is available on
 `EditableLine`, `ParagraphLayout`, and `FlowLayout`.
+
+This ownership contract also covers schema-2 COLR version 1. The certificate
+and immutable layout own no font asset. Each asset retained from the open
+`LayoutHandle` owns the data needed to resolve its certified paint graphs after
+the layout session, original resolver, attached asset, and layout handle have
+all closed.
 
 ```kotlin
 val layout = (renderableResult as EditableLineResult.Success).line

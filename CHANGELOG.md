@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
+- Portable `PaintGraphProfile` schema 2 for static COLR version 1 and CPAL 0/1, including resolved palette and foreground colors, gradients, affine transforms, clips, all composition modes, bounded certification, per-glyph fallback, resource limits, and retained-asset handoff; schema 1 remains compatible with existing COLR version 0 and SVG-in-OpenType routes.
 - Opt-in public font-asset handoff and four-worker resolution measurements, with stage percentiles and an observational Apple M2 Max reference outside functional checks.
 - Immutable layouts can now be paired with an explicit closable handle that atomically retains all certified font roots and hands independent assets to delayed renderers.
 - Structured portable font materialization cache budgets for estimated retained bytes, decoded pixels, native bytes and native allocations, enforced atomically per face and per catalog with global LRU ordering; preserves the historical byte-only constructor and observable glyph results. Native charges remain zero until a native route owns cacheable resources.

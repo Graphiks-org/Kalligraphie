@@ -16,13 +16,14 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 - `LAYOUT_ONLY` pour la table `cmap` (correspondance entre caractères et
   glyphes) et les métriques ;
 - `RENDERABLE` avec un `OutlineProfile`, un `PaintGraphProfile` ou un
-  `BitmapProfile` de version de schéma `1`, si la face sélectionnée déclare la
-  route correspondante ;
+  `BitmapProfile` explicite, si la face sélectionnée déclare la route
+  correspondante ;
 - contours `glyf` exprimés en unités de conception (unités internes de la
   fonte), avec des métriques mises à l’échelle séparément en `LayoutUnit` ;
-- graphes de peinture COLR version 0 et CPAL version 0, composés de contours
-  pleins, de groupes ordonnés, d’une sélection exacte de palette CPAL et d’une
-  couleur de premier plan explicite ;
+- `paint graph` (graphe de peinture portable) de schéma 1 pour COLR version 0 /
+  CPAL version 0, composé de contours pleins et de groupes ordonnés, ainsi
+  qu’un graphe de schéma 2 pour COLR version 1 statique avec CPAL version 0 ou
+  1 ;
 - table SVG-in-OpenType version 0 avec documents UTF-8 bruts uniquement :
   éléments `svg` et `g` non auto-fermants, et éléments `path` auto-fermants ;
   transformations `translate` et `scale` ; commandes de chemin `M`, `L`, `H`,
@@ -36,6 +37,119 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   l’identique ;
 - ressources de rendu détachées qui restent utilisables après la fermeture du
   gestionnaire propriétaire ou de la ressource attachée.
+
+### Schémas de graphe de peinture et COLR version 1 statique
+
+Un `GlyphPaintIR` est un graphe de peinture complet et immuable, pas des pixels
+ni des commandes envoyées à une API de dessin de plateforme.
+`GlyphRepresentation.Paint` et un certificat
+`GlyphMaterializationRoute.PAINT_GRAPH` forment la frontière publique :
+Kalligraphie valide et matérialise le graphe portable, mais ne fournit ni
+`renderer` (moteur de rendu consommateur) ni rastériseur.
+
+Les versions de schéma expriment des capacités exactes du consommateur :
+
+- le schéma 1 conserve les nœuds `SolidOutline`, `Path` et `Group`, dans
+  l’ordre source. Les groupes utilisent `SOURCE_OVER` ; ce schéma ne peut
+  annoncer ni nœud du schéma 2, ni mode d’extension de gradient, ni autre mode
+  de composition, et un `Group` de schéma 1 doit contenir au moins un enfant.
+  Les graphes COLR version 0 et SVG-in-OpenType restreint existants restent
+  représentables avec ce schéma ;
+- le schéma 2 ajoute les peintures non bornées `Solid`, `LinearGradient`,
+  `RadialGradient` et `SweepGradient`, ainsi que `GlyphClip`, `Transform` et
+  `Composite`, les extensions de gradient `PAD`, `REPEAT` et `REFLECT`, et les
+  28 valeurs nommées de `GlyphPaintCompositionMode`. Le fournisseur ne
+  certifie le graphe que si tout son contenu atteignable respecte les types de
+  nœud, extensions, modes de composition et limites du `PaintGraphProfile`
+  exact. Un `Group` vide de schéma 2 représente `no paint` (absence de
+  peinture) et reste structurellement borné.
+
+Les parcours JVM pour fontes embarquées et fichiers `.ttf` capturés acceptent
+les structures globales COLR version 1 statiques et les formats de peinture
+`1`, `2`, `4`, `6`, `8`, `10`, `11`, `12`, `14`, `16`, `18`, `20`, `22`,
+`24`, `26`, `28`, `30` et `32`. Les peintures affine, translation, mise à
+l’échelle, rotation et inclinaison spécialisées sont normalisées en un
+`GlyphAffineTransform` fini ; les références à d’autres glyphes COLR sont
+résolues dans le graphe et ne sont pas exposées comme références à la table
+source. Un enregistrement `PaintColrLayers` valide de format 1 avec zéro couche
+est préservé sous forme d’un graphe de peinture à un seul nœud `Group` vide ;
+il n’est pas réduit à `GlyphRepresentation.Empty`. La `ClipList` (liste de
+découpes) de format 1 avec une `ClipBox` (boîte de découpe) de format 1 est
+acceptée. Les formats variables `PaintVar*`, `ClipBox` format 2, les magasins
+et tables d’index de variations, CFF/CFF2 et les valeurs CPAL/COLR variables ne
+sont pas pris en charge. Le sous-ensemble SVG-in-OpenType reste inchangé et
+n’acquiert ni gradients SVG, ni `clip` (découpe), masque, contour tracé ou
+animation.
+
+La palette et la couleur de premier plan sont résolues avant publication. Une
+valeur nulle de `FontRenderVariantSnapshot.cpalPaletteIndex` sélectionne la
+palette 0 ; un index explicite sélectionne cette palette CPAL exacte ou échoue.
+L’index CPAL `0xFFFF` est remplacé par la valeur exacte de `foregroundColor`
+(couleur de premier plan) de la variante, ou par du noir opaque si elle est
+nulle. Le graphe contient donc des couleurs sRGB huit bits littérales et non
+prémultipliées dans `GlyphColor`, jamais des index de palette. L’opacité d’un
+nœud ou d’un arrêt reste une valeur finie séparée dans `0.0..1.0`. Pour
+interpoler un gradient, le moteur de rendu doit linéariser les composantes sRGB
+de chaque arrêt, calculer son alpha effectif comme
+`color.alpha / 255 * opacity`, puis prémultiplier les composantes RGB
+linéaires par cet alpha avant l’interpolation. Il interpole séparément le RGB
+prémultiplié et l’alpha, puis déprémultiplie en traitant l’alpha nul et convertit
+depuis la lumière linéaire vers l’encodage de sortie requis. Changer la palette
+ou le premier plan modifie les couleurs littérales et l’identité de la
+ressource, mais pas la composition, les avances, les positions du `caret`
+(curseur d’insertion), le hit-testing (test de point) ni la géométrie de
+sélection.
+
+Tous les points, limites de racine, contours et transformations utilisent les
+coordonnées de conception de la fonte. Pour
+`GlyphAffineTransform(xx, yx, xy, yy, dx, dy)`, le consommateur applique
+`x' = xx*x + xy*y + dx` et `y' = yx*x + yy*y + dy`.
+`Composite.source` désigne la `source` (peinture avant) et
+`Composite.backdrop` le `backdrop` (fond déjà peint) ; `children` les ordonne
+comme `[backdrop, source]`, c’est-à-dire dans l’ordre de peinture. Un `Group`
+peint également ses enfants dans l’ordre de la liste avec `SOURCE_OVER`.
+
+`GlyphPaintIR.clipBounds`, lorsqu’il existe, applique une découpe à tout le
+résultat de la racine. Sans ces limites racine, un graphe de schéma 2 n’est
+accepté que si sa racine atteignable est structurellement bornée :
+`SolidOutline`, `Path` et `GlyphClip` sont bornés ; `Solid` et les trois
+gradients ne le sont pas ; `Transform` conserve la bornitude de son enfant ;
+un `Group` n’est borné que si tous ses enfants le sont. Un `Group` vide de
+schéma 2 est donc borné. Pour les compositions, `CLEAR` est toujours borné ;
+`SOURCE` et `SOURCE_OUT` suivent la source ;
+`DESTINATION` et `DESTINATION_OUT` suivent le fond ; `SOURCE_IN` et
+`DESTINATION_IN` sont bornés si l’une des deux entrées l’est ; tous les autres
+modes exigent que les deux entrées soient bornées. Une découpe racine borne
+toute combinaison par ailleurs acceptée.
+
+`PaintGraphLimits` est appliqué avant la certification. Il borne les nœuds,
+références, profondeurs et visites développées du graphe ; les chemins,
+gradients, arrêts de couleur, transformations, compositions et découpes de
+glyphe ; les octets source ; les palettes CPAL, leurs entrées, leurs
+enregistrements de couleur et leurs octets décodés ; les enregistrements COLR
+de glyphes de base, de couches et de découpes ; ainsi que chaque contour
+référencé via `outlineProfile`. Un dépassement renvoie
+`FontError.ResourceLimitExceeded`. Une capacité atteinte mais non annoncée, ou
+une palette CPAL sélectionnée par le consommateur mais indisponible dans la
+fonte, renvoie `FontError.UnsupportedRepresentationProfile`. Une référence, un
+cycle, une géométrie ou un index COLR mal formé renvoie
+`FontError.InvalidFontData`. Une structure CPAL mal formée ou tronquée renvoie
+`FontError.FontDataFailure` avec un code stable tel que
+`font.cpal.truncated`, `font.cpal.invalid-table` ou
+`font.cpal.invalid-palette-index`. Aucun de ces cas ne publie de graphe partiel
+ni de certificat.
+
+La résolution de route et le `fallback` (repli déterministe) de représentation
+s’effectuent pour chaque glyphe final. Un glyphe couvert par SVG conserve la
+priorité SVG existante. Sinon, son enregistrement de peinture version 1 est
+utilisé s’il existe ; s’il est absent, un enregistrement de couches version 0
+est utilisé s’il existe ; seul un glyphe absent des deux tables de couleurs
+utilise son contour `glyf` ou un résultat explicitement sans encre.
+Lorsqu’une capacité COLR v1 atteinte n’est pas prise en charge ou dépasse une
+limite, les profils de représentation ordonnés peuvent sélectionner un résultat
+compatible pour ce glyphe. Si aucun n’y parvient, le repli de fonte configuré
+par l’éditeur suit sa politique d’unité de repli atomique. L’échec n’empoisonne
+pas les autres glyphes de la face.
 
 ```kotlin
 val catalogResult = Kalligraphie.embedded(bytes, provenance)
@@ -98,12 +212,6 @@ portable et utilise les mêmes routes que les fontes embarquées. Il n’expose 
 de handle (gestionnaire de durée de vie ; ici, poignée native) CoreText et ne
 déclare pas de prise en charge de `.otf` ni
 de `.ttc`.
-
-Hors périmètre : TTC/OTC, CFF/CFF2, variations, styles synthétiques, versions
-de COLR autres que 0, contenu SVG hors du sous-ensemble déclaré, codecs et
-formats bitmap autres que la route EBLC/EBDT déclarée, ajustement des contours
-aux pixels (hinting), rastérisation, moteurs natifs de gestion des fontes et
-descripteurs de fonte propres à la plateforme.
 
 ## Lignes Unicode éditables exactes
 
@@ -196,6 +304,13 @@ tard. Tant que le résolveur est ouvert, appelez
 soit un `LayoutHandle`, handle (gestionnaire de durée de vie) qui possède
 toutes les racines certifiées, soit aucun gestionnaire. La même extension
 existe sur `EditableLine`, `ParagraphLayout` et `FlowLayout`.
+
+Ce contrat de propriété couvre aussi COLR version 1 au schéma 2. Le certificat
+et le résultat de composition immuable ne possèdent aucune ressource de fonte.
+Chaque ressource conservée depuis le `LayoutHandle` ouvert possède les données
+nécessaires pour résoudre ses graphes certifiés après la fermeture de la
+session de composition, du résolveur d’origine, de la ressource attachée et du
+gestionnaire de résultat.
 
 ```kotlin
 val layout = (renderableResult as EditableLineResult.Success).line
@@ -293,5 +408,5 @@ façon indépendante après la fermeture de son gestionnaire d’origine.
 Hors périmètre de l’API de ligne éditable : césure,
 justification, écriture verticale, rendu en pixels, API GPU, TTC/OTC,
 CFF/CFF2, variations et styles synthétiques. Consultez
-[Paragraphes éditables](editable-paragraphs.md) pour le parcours multiligne
+[Paragraphes éditables](editable-paragraphs.fr.md) pour le parcours multiligne
 JVM.

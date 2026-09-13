@@ -175,73 +175,11 @@ public object ColrCpalReader {
         return FontOperationResult.Success(ColrCpalV0Data(palettes, layersByGlyph))
     }
 
-    private fun readCpal(
-        table: ByteArray,
-        limits: ColrCpalV0Limits,
-    ): FontOperationResult<List<List<GlyphColor>>> {
-        if (table.size < CPAL_V0_HEADER_LENGTH) return invalid("font.cpal.truncated", "CPAL version 0 header is truncated.", "CPAL")
-        val version = readUInt16(table, 0)?.toInt() ?: return invalid("font.cpal.truncated", "CPAL version is truncated.", "CPAL")
-        if (version != 0) return invalid("font.cpal.unsupported-version", "Only CPAL version 0 is supported.", "CPAL")
-        val entryCount = readUInt16(table, 2)?.toInt() ?: return invalid("font.cpal.truncated", "CPAL entry count is truncated.", "CPAL")
-        val paletteCount = readUInt16(table, 4)?.toInt() ?: return invalid("font.cpal.truncated", "CPAL palette count is truncated.", "CPAL")
-        val colorRecordCount = readUInt16(table, 6)?.toInt() ?: return invalid("font.cpal.truncated", "CPAL color-record count is truncated.", "CPAL")
-        val colorRecordsOffset = readUInt32(table, 8)?.toLong() ?: return invalid("font.cpal.truncated", "CPAL color-record offset is truncated.", "CPAL")
-        if (entryCount == 0 || paletteCount == 0) return invalid("font.cpal.invalid-table", "CPAL must contain at least one non-empty palette.", "CPAL")
-        limit(entryCount, limits.maxPaletteEntries, "CPAL palette entry limit exceeded.", "CPAL")?.let { return it }
-        limit(paletteCount, limits.maxPalettes, "CPAL palette limit exceeded.", "CPAL")?.let { return it }
-        limit(colorRecordCount, limits.maxColorRecords, "CPAL color-record limit exceeded.", "CPAL")?.let { return it }
-        val decodedPaletteBytes = paletteCount.toLong() * entryCount.toLong() * COLOR_RECORD_LENGTH
-        if (decodedPaletteBytes > limits.maxDecodedPaletteBytes.toLong()) {
-            return FontOperationResult.Failure(
-                FontError.ResourceLimitExceeded("CPAL decoded-palette byte limit exceeded.", FontDiagnosticLocation.Table("CPAL")),
-            )
-        }
+    private fun readCpal(table: ByteArray, limits: ColrCpalV0Limits): FontOperationResult<List<List<GlyphColor>>> =
+        CpalPaletteReader.read(table, limits, allowVersionOne = false)
 
-        val paletteIndicesEnd = checkedRangeEnd(CPAL_V0_HEADER_LENGTH, paletteCount * 2, table.size)
-            ?: return invalid("font.cpal.truncated", "CPAL palette indices are truncated.", "CPAL")
-        val colorRecordsEnd = checkedRangeEnd(colorRecordsOffset, colorRecordCount.toLong() * COLOR_RECORD_LENGTH, table.size)
-            ?: return invalid("font.cpal.truncated", "CPAL color records are truncated.", "CPAL")
-        if (colorRecordsEnd < paletteIndicesEnd) return invalid("font.cpal.invalid-table", "CPAL color records overlap the palette-index header.", "CPAL")
-
-        val palettes = ArrayList<List<GlyphColor>>(paletteCount)
-        repeat(paletteCount) { paletteIndex ->
-            val firstColorRecord = readUInt16(table, CPAL_V0_HEADER_LENGTH + paletteIndex * 2)?.toInt()
-                ?: return invalid("font.cpal.truncated", "CPAL palette index is truncated.", "CPAL")
-            if (firstColorRecord > colorRecordCount || entryCount > colorRecordCount - firstColorRecord) {
-                return invalid("font.cpal.invalid-palette-index", "CPAL palette references unavailable color records.", "CPAL")
-            }
-            val colors = ArrayList<GlyphColor>(entryCount)
-            repeat(entryCount) { entryIndex ->
-                val offset = colorRecordsOffset + (firstColorRecord + entryIndex).toLong() * COLOR_RECORD_LENGTH
-                colors += GlyphColor(
-                    red = table[offset.toInt() + 2].toInt() and 0xFF,
-                    green = table[offset.toInt() + 1].toInt() and 0xFF,
-                    blue = table[offset.toInt()].toInt() and 0xFF,
-                    alpha = table[offset.toInt() + 3].toInt() and 0xFF,
-                )
-            }
-            palettes += colors
-        }
-        return FontOperationResult.Success(palettes)
-    }
-
-    private fun validateCpalStructure(table: ByteArray): Int? {
-        if (table.size < CPAL_V0_HEADER_LENGTH) return null
-        if (readUInt16(table, 0)?.toInt() != 0) return null
-        val entryCount = readUInt16(table, 2)?.toInt() ?: return null
-        val paletteCount = readUInt16(table, 4)?.toInt() ?: return null
-        val colorRecordCount = readUInt16(table, 6)?.toInt() ?: return null
-        val colorRecordsOffset = readUInt32(table, 8)?.toLong() ?: return null
-        if (entryCount == 0 || paletteCount == 0) return null
-        val paletteIndicesEnd = checkedRangeEnd(CPAL_V0_HEADER_LENGTH, paletteCount * 2, table.size) ?: return null
-        val colorRecordsEnd = checkedRangeEnd(colorRecordsOffset, colorRecordCount.toLong() * COLOR_RECORD_LENGTH, table.size) ?: return null
-        if (colorRecordsEnd < paletteIndicesEnd) return null
-        repeat(paletteCount) { paletteIndex ->
-            val firstColorRecord = readUInt16(table, CPAL_V0_HEADER_LENGTH + paletteIndex * 2)?.toInt() ?: return null
-            if (firstColorRecord > colorRecordCount || entryCount > colorRecordCount - firstColorRecord) return null
-        }
-        return entryCount
-    }
+    private fun validateCpalStructure(table: ByteArray): Int? =
+        CpalPaletteReader.validateStructure(table, allowVersionOne = false)
 
     private fun readColr(
         table: ByteArray,

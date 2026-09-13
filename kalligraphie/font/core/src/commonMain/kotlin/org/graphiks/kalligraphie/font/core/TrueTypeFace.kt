@@ -39,6 +39,8 @@ import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.glyph.OutlineMaterializer
 import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
+import org.graphiks.kalligraphie.font.sfnt.ColrV1Reader
+import org.graphiks.kalligraphie.font.sfnt.ColrV1Data
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalV0Data
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalV0Limits
@@ -65,6 +67,7 @@ internal class TrueTypeFace(
     private val resource: PreparedFontResource,
     private val outlineRouteSupported: Boolean,
     private val paintGraphSupported: Boolean,
+    private val colrV1Supported: Boolean = false,
     private val svgRouteSupported: Boolean,
     private val bitmapRouteSupported: Boolean,
 ) : FontFace {
@@ -102,6 +105,7 @@ internal class TrueTypeFace(
                 parsedFont = parsedFont,
                 outlineRouteSupported = outlineRouteSupported,
                 paintGraphSupported = paintGraphSupported,
+                colrV1Supported = colrV1Supported,
                 svgRouteSupported = svgRouteSupported,
                 bitmapRouteSupported = bitmapRouteSupported,
             ),
@@ -129,6 +133,7 @@ internal data class TrueTypeFontInstance(
     private val parsedFont: ParsedTrueTypeFont,
     private val outlineRouteSupported: Boolean,
     private val paintGraphSupported: Boolean,
+    private val colrV1Supported: Boolean = false,
     private val svgRouteSupported: Boolean,
     private val bitmapRouteSupported: Boolean,
 ) : FontInstance {
@@ -233,7 +238,30 @@ internal data class TrueTypeFontInstance(
                 }
 
                 is PaintGraphProfile -> {
-                    if (profile.schemaVersion != 1) {
+                    if (profile.schemaVersion == 2 && colrV1Supported) {
+                        when (val colorData = readColrV1(profile, renderVariant)) {
+                            is FontOperationResult.Success -> {
+                                val svgResult = if (svgRouteSupported) readSvgOpenType(profile)
+                                    else FontOperationResult.Success(null)
+                                when (svgResult) {
+                                    is FontOperationResult.Success -> FontOperationResult.Success(
+                                        ColrV1RenderAssetHandle(
+                                            faceId = faceId,
+                                            resourceLease = lease,
+                                            key = FontRenderAssetKey(key, renderVariant.key, profile, resolver.generation, variantSnapshot = renderVariant.takeUnless { it == FontRenderVariantSnapshot.default }),
+                                            profile = profile,
+                                            colorData = colorData.value,
+                                            svgData = svgResult.value,
+                                        ),
+                                    )
+                                    is FontOperationResult.Failure -> svgResult
+                                    is FontOperationResult.Cancelled -> svgResult
+                                }
+                            }
+                            is FontOperationResult.Failure -> colorData
+                            is FontOperationResult.Cancelled -> colorData
+                        }
+                    } else if (profile.schemaVersion != 1 && !(profile.schemaVersion == 2 && svgRouteSupported)) {
                         failure(FontError.UnsupportedRepresentationProfile("Only paint-graph schema version 1 is supported.", FontDiagnosticLocation.FaceId(faceId)))
                     } else {
                         when (val colorData = if (paintGraphSupported) readColrCpalV0(profile) else null) {
@@ -390,11 +418,28 @@ internal data class TrueTypeFontInstance(
         when (profile) {
             is org.graphiks.kalligraphie.api.OutlineProfile ->
                 profile.schemaVersion == 1 && outlineRouteSupported
-            is PaintGraphProfile -> profile.schemaVersion == 1 && (paintGraphSupported || svgRouteSupported)
+            is PaintGraphProfile -> (profile.schemaVersion == 1 && (paintGraphSupported || svgRouteSupported)) ||
+                (profile.schemaVersion == 2 && (colrV1Supported || svgRouteSupported))
             is BitmapProfile ->
                 profile.schemaVersion == 1 && bitmapRouteSupported
             else -> false
         }
+
+    private fun readColrV1(profile: PaintGraphProfile, variant: FontRenderVariantSnapshot): FontOperationResult<ColrV1Data> {
+        val colrRecord = parsedFont.tableRecords["COLR"]
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no COLR table.", FontDiagnosticLocation.FaceId(faceId)))
+        val cpalRecord = parsedFont.tableRecords["CPAL"]
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no CPAL table.", FontDiagnosticLocation.FaceId(faceId)))
+        if (colrRecord.length > profile.limits.maxSourceBytes.toLong() - cpalRecord.length) {
+            return failure(FontError.ResourceLimitExceeded("COLR and CPAL source-byte limit exceeded.", FontDiagnosticLocation.Table("COLR")))
+        }
+        val source = resource.preparedFont.copySourceBytes()
+        val colr = slice(source, colrRecord)
+            ?: return failure(FontError.InvalidFontData("COLR table exceeds embedded source bytes.", FontDiagnosticLocation.Table("COLR")))
+        val cpal = slice(source, cpalRecord)
+            ?: return failure(FontError.InvalidFontData("CPAL table exceeds embedded source bytes.", FontDiagnosticLocation.Table("CPAL")))
+        return ColrV1Reader.read(colr, cpal, parsedFont.metadata.glyphCount, profile, variant.cpalPaletteIndex ?: 0, variant.foregroundColor ?: GlyphColor(0, 0, 0))
+    }
 
     private fun readColrCpalV0(profile: PaintGraphProfile): FontOperationResult<ColrCpalV0Data> {
         val colrRecord = parsedFont.tableRecords["COLR"]
