@@ -163,7 +163,7 @@ Aucun compteur interne de cache ni aucune estimation native ne les remplace.
 ## Reproduction et limites
 
 ```sh
-rtk env \
+env \
   KALLIGRAPHIE_GLYPH_MATERIALIZATION_MEASUREMENT=true \
   KALLIGRAPHIE_GLYPH_MATERIALIZATION_WARMUP=5 \
   KALLIGRAPHIE_GLYPH_MATERIALIZATION_ITERATIONS=20 \

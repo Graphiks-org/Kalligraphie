@@ -148,7 +148,7 @@ No internal cache counters or native estimates are substituted.
 ## Reproduction and limits
 
 ```sh
-rtk env \
+env \
   KALLIGRAPHIE_GLYPH_MATERIALIZATION_MEASUREMENT=true \
   KALLIGRAPHIE_GLYPH_MATERIALIZATION_WARMUP=5 \
   KALLIGRAPHIE_GLYPH_MATERIALIZATION_ITERATIONS=20 \

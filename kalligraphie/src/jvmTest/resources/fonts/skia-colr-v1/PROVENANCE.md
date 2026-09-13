@@ -15,8 +15,8 @@ records the generation command `python3 config/test_glyphs-glyf_colr_1.py -vvv -
 Audited with fontTools 4.65.0. Given the original downloaded font as `test_glyphs-glyf_colr_1.ttf`:
 
 ```sh
-rtk proxy shasum -a 256 test_glyphs-glyf_colr_1.ttf
-rtk proxy uv run --with fonttools==4.65.0 python -c 'import fontTools; from fontTools.ttLib import TTFont; print(fontTools.__version__); f=TTFont("test_glyphs-glyf_colr_1.ttf"); print(f["head"].unitsPerEm); print(f["CPAL"].version, len(f["CPAL"].palettes), f["CPAL"].numPaletteEntries); cmap=f.getBestCmap(); print([(hex(c),cmap[c],f.getGlyphID(cmap[c])) for c in (0xF0100,0xF0200,0xF0503)]); ps=[r.Paint for r in f["COLR"].table.BaseGlyphList.BaseGlyphPaintRecord if r.BaseGlyph in [cmap[c] for c in (0xF0100,0xF0200,0xF0503)]]; print([(p.__dict__,p.Paint.__dict__,p.Paint.ColorLine.__dict__,[s.__dict__ for s in p.Paint.ColorLine.ColorStop]) for p in ps]); print(f["CPAL"].palettes[:2]); print(f["COLR"].table.ClipList.clips[cmap[0xF0100]].__dict__); print([(p.Glyph,f.getGlyphID(p.Glyph)) for p in ps])'
+shasum -a 256 test_glyphs-glyf_colr_1.ttf
+uv run --with fonttools==4.65.0 python -c 'import fontTools; from fontTools.ttLib import TTFont; print(fontTools.__version__); f=TTFont("test_glyphs-glyf_colr_1.ttf"); print(f["head"].unitsPerEm); print(f["CPAL"].version, len(f["CPAL"].palettes), f["CPAL"].numPaletteEntries); cmap=f.getBestCmap(); print([(hex(c),cmap[c],f.getGlyphID(cmap[c])) for c in (0xF0100,0xF0200,0xF0503)]); ps=[r.Paint for r in f["COLR"].table.BaseGlyphList.BaseGlyphPaintRecord if r.BaseGlyph in [cmap[c] for c in (0xF0100,0xF0200,0xF0503)]]; print([(p.__dict__,p.Paint.__dict__,p.Paint.ColorLine.__dict__,[s.__dict__ for s in p.Paint.ColorLine.ColorStop]) for p in ps]); print(f["CPAL"].palettes[:2]); print(f["COLR"].table.ClipList.clips[cmap[0xF0100]].__dict__); print([(p.Glyph,f.getGlyphID(p.Glyph)) for p in ps])'
 ```
 
 Literal oracles (independent of the Kotlin parser):
