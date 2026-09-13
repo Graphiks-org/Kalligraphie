@@ -507,6 +507,8 @@ class LayoutFontAssetHandoffTest {
         val workers = Executors.newSingleThreadExecutor()
         var admitted: Future<FontOperationResult<FontRenderAssetHandle>>? = null
         var handle: LayoutHandle<EditableLine>? = null
+        val cleanup = CleanupState()
+        var primaryFailure: Throwable? = null
         try {
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
                 override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
@@ -529,13 +531,22 @@ class LayoutFontAssetHandoffTest {
             )
             assertBitmap(result.value)
             assertEquals(true, result.diagnostics.any { it.code == "font.test-deferred-root-close" })
+        } catch (error: Throwable) {
+            primaryFailure = error
+            if (error is InterruptedException) cleanup.markInterrupted()
+            throw error
         } finally {
+            cleanup.clearAndRecordInterrupt()
             releaseDetach.countDown()
-            drainRetainedAsset(admitted)
-            terminateWorkers(workers)
-            handle?.close()
-            closeCapturedAssets(captured)
-            fixture.close()
+            drainRetainedAsset(admitted, cleanup)
+            if (terminateWorkers(workers, cleanup)) {
+                handle?.let { opened -> runCatching { opened.close() }.onFailure { cleanup.record(it) } }
+                closeCapturedAssets(captured, cleanup)
+                runCatching { fixture.close() }.onFailure { cleanup.record(it) }
+            }
+            primaryFailure?.let { primary -> cleanup.failure?.let(primary::addSuppressed) }
+            cleanup.restoreInterrupt()
+            if (primaryFailure == null) cleanup.failure?.let { throw it }
         }
     }
 
@@ -671,38 +682,94 @@ class LayoutFontAssetHandoffTest {
         }
     }
 
-    private fun closeCapturedAssets(captured: List<FontRenderAssetHandle>) {
+    private fun closeCapturedAssets(
+        captured: List<FontRenderAssetHandle>,
+        cleanup: CleanupState? = null,
+    ) {
         captured.asReversed().forEach { asset ->
-            runCatching { asset.close() }
+            runCatching { asset.close() }.exceptionOrNull()?.let { cleanup?.record(it) }
         }
     }
 
-    private fun drainRetainedAsset(result: Future<FontOperationResult<FontRenderAssetHandle>>?) {
+    private fun drainRetainedAsset(
+        result: Future<FontOperationResult<FontRenderAssetHandle>>?,
+        cleanup: CleanupState,
+    ) {
         if (result == null) return
-        try {
-            when (val completed = result.get(10, TimeUnit.SECONDS)) {
-                is FontOperationResult.Success -> runCatching { completed.value.close() }
-                is FontOperationResult.Failure, is FontOperationResult.Cancelled -> Unit
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (true) {
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0L) {
+                result.cancel(true)
+                cleanup.record(IllegalStateException("Admitted retention did not finish during cleanup."))
+                return
             }
-        } catch (_: java.util.concurrent.CancellationException) {
-        } catch (_: java.util.concurrent.ExecutionException) {
-        } catch (_: java.util.concurrent.TimeoutException) {
-            result.cancel(true)
-        } catch (_: InterruptedException) {
-            Thread.currentThread().interrupt()
+            try {
+                when (val completed = result.get(remaining, TimeUnit.NANOSECONDS)) {
+                    is FontOperationResult.Success -> {
+                        runCatching { completed.value.close() }.exceptionOrNull()?.let { cleanup.record(it) }
+                    }
+                    is FontOperationResult.Failure, is FontOperationResult.Cancelled -> Unit
+                }
+                return
+            } catch (_: java.util.concurrent.CancellationException) {
+                return
+            } catch (error: java.util.concurrent.ExecutionException) {
+                cleanup.record(error.cause ?: error)
+                return
+            } catch (_: java.util.concurrent.TimeoutException) {
+                result.cancel(true)
+                cleanup.record(IllegalStateException("Admitted retention did not finish during cleanup."))
+                return
+            } catch (_: InterruptedException) {
+                cleanup.markInterrupted()
+            }
         }
     }
 
-    private fun terminateWorkers(workers: java.util.concurrent.ExecutorService) {
+    private fun terminateWorkers(
+        workers: java.util.concurrent.ExecutorService,
+        cleanup: CleanupState,
+    ): Boolean {
         workers.shutdown()
-        try {
-            if (!workers.awaitTermination(10, TimeUnit.SECONDS)) {
-                workers.shutdownNow()
-                workers.awaitTermination(10, TimeUnit.SECONDS)
+        workers.shutdownNow()
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (!workers.isTerminated) {
+            val remaining = deadline - System.nanoTime()
+            if (remaining <= 0L) {
+                cleanup.record(IllegalStateException("Handoff cleanup worker did not terminate."))
+                return false
             }
-        } catch (_: InterruptedException) {
-            workers.shutdownNow()
-            Thread.currentThread().interrupt()
+            try {
+                val terminated = workers.awaitTermination(remaining, TimeUnit.NANOSECONDS)
+                if (terminated || workers.isTerminated) return true
+            } catch (_: InterruptedException) {
+                cleanup.markInterrupted()
+            }
+        }
+        return true
+    }
+
+    private class CleanupState {
+        private var interrupted: Boolean = false
+        var failure: Throwable? = null
+            private set
+
+        fun clearAndRecordInterrupt() {
+            interrupted = Thread.interrupted() || interrupted
+        }
+
+        fun markInterrupted() {
+            interrupted = true
+        }
+
+        fun record(error: Throwable) {
+            val existing = failure
+            if (existing == null) failure = error else existing.addSuppressed(error)
+        }
+
+        fun restoreInterrupt() {
+            if (interrupted) Thread.currentThread().interrupt()
         }
     }
 
