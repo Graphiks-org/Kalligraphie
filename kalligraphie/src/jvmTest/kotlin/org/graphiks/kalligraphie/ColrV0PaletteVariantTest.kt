@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
@@ -23,6 +24,53 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 
 class ColrV0PaletteVariantTest {
+    @Test
+    fun restrictiveOutlineLimitsCannotReuseAPermissiveWarmColrResult() {
+        val catalog = catalog(bungeeFixtureBytes())
+        val permissiveRequirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
+        val face = success(catalog.resolveFace(catalog.faces.single().id, permissiveRequirements))
+        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
+        val resolver = success(catalog.openAssetResolver())
+
+        try {
+            val glyph = success(instance.resolveGlyph('A'.code)).glyphId
+            val permissiveAsset = success(
+                instance.acquireRenderAsset(
+                    resolver,
+                    FontRenderVariantSnapshot(cpalPaletteIndex = 0),
+                    permissiveRequirements,
+                ),
+            )
+            try {
+                val paint = paint(permissiveAsset, glyph)
+                assertEquals(listOf(292, 293), solidOutlines(paint).map { it.outline.glyphId })
+            } finally {
+                permissiveAsset.close()
+            }
+
+            val restrictiveRequirements = FontAccessRequirementsSnapshot.renderable(
+                listOf(paintProfile(maxOutlinePoints = 1)),
+            )
+            val restrictiveAsset = success(
+                instance.acquireRenderAsset(
+                    resolver,
+                    FontRenderVariantSnapshot(cpalPaletteIndex = 0),
+                    restrictiveRequirements,
+                ),
+            )
+            try {
+                val failure = assertIs<FontOperationResult.Failure>(
+                    restrictiveAsset.resolveGlyph(FontGlyphRequest(glyph)),
+                )
+                assertIs<FontError.ResourceLimitExceeded>(failure.error)
+            } finally {
+                restrictiveAsset.close()
+            }
+        } finally {
+            resolver.close()
+        }
+    }
+
     @Test
     fun reopensTheExactSecondCpalPaletteWithoutChangingTheSelectedGlyphOrMetrics() {
         val catalog = catalog(bungeeFixtureBytes())
@@ -116,7 +164,7 @@ class ColrV0PaletteVariantTest {
         ),
     )
 
-    private fun paintProfile(): PaintGraphProfile = PaintGraphProfile(
+    private fun paintProfile(maxOutlinePoints: Int = 65_536): PaintGraphProfile = PaintGraphProfile(
         acceptedNodeKinds = listOf(GlyphPaintNodeKind.SOLID_OUTLINE, GlyphPaintNodeKind.GROUP),
         acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
         limits = PaintGraphLimits(
@@ -135,7 +183,7 @@ class ColrV0PaletteVariantTest {
         outlineProfile = OutlineProfile(
             maxBytes = 1_000_000,
             maxContours = 1_024,
-            maxPoints = 65_536,
+            maxPoints = maxOutlinePoints,
             maxCompositeDepth = 16,
             maxCompositeComponents = 256,
         ),

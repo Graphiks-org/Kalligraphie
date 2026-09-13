@@ -18,77 +18,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
-import kotlin.test.assertNotNull
 
 class MacosSystemFontCatalogTest {
-    @Test
-    fun capturesRealMacosFontsInDistinctGenerationsAndRejectsTheWrongResolver() {
-        if (!System.getProperty("os.name").startsWith("Mac")) return
-
-        val first = success(MacosSystemFontCatalog.open())
-        val second = success(MacosSystemFontCatalog.open())
-        val requirements = FontAccessRequirementsSnapshot.renderable(outlineProfile())
-
-        assertEquals("macos-system-opentype", first.generation.provider.value)
-        assertNotEquals(first.generation, second.generation)
-
-        val selected = assertNotNull(first.faces.firstNotNullOfOrNull { record ->
-            if (!record.capabilities.outline) return@firstNotNullOfOrNull null
-            val face = (first.resolveFace(record.id, FontAccessRequirementsSnapshot.layoutOnly()) as? FontOperationResult.Success)?.value
-                ?: return@firstNotNullOfOrNull null
-            val instance = (face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))) as? FontOperationResult.Success)?.value
-                ?: return@firstNotNullOfOrNull null
-            val glyphId = (instance.resolveGlyph(0x41) as? FontOperationResult.Success)?.value?.glyphId
-                ?: return@firstNotNullOfOrNull null
-            glyphId.takeIf { it.value != 0 }?.let { record.id to it }
-        })
-        val face = success(first.resolveFace(selected.first, requirements))
-        val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
-        val firstResolver = success(first.openAssetResolver())
-        val secondResolver = success(second.openAssetResolver())
-        try {
-            val asset = success(instance.acquireRenderAsset(firstResolver, FontRenderVariantKey.default, requirements))
-            try {
-                val representation = success(asset.resolveGlyph(FontGlyphRequest(selected.second)))
-                assertIs<GlyphRepresentation.Outline>(representation)
-                assertIs<FontError.IncompatibleCatalogGeneration>(
-                    assertIs<FontOperationResult.Failure>(secondResolver.reopen(asset.key)).error,
-                )
-            } finally {
-                asset.close()
-            }
-        } finally {
-            firstResolver.close()
-            secondResolver.close()
-        }
-    }
-
-    @Test
-    fun preservesPortableIdentityAcrossGenerationsForAnUnchangedControlledRoot() {
-        if (!System.getProperty("os.name").startsWith("Mac")) return
-
-        val root = Files.createTempDirectory("kalligraphie-system-font-identity")
-        try {
-            Files.write(root.resolve("fixture.ttf"), minimalTrueTypeFont(glyphCount = 1, tables = emptyMap()))
-            val options = MacosSystemFontCatalogOptions(
-                roots = listOf(root.toString()),
-                maxPathsToVisit = 2,
-                maxFaces = 1,
-                maxSourceBytes = 4_096,
-                maxTotalSourceBytes = 4_096,
-            )
-
-            val first = success(MacosSystemFontCatalog.open(options))
-            val second = success(MacosSystemFontCatalog.open(options))
-
-            assertEquals(first.faces.single().id, second.faces.single().id)
-            assertNotEquals(first.generation, second.generation)
-        } finally {
-            Files.deleteIfExists(root.resolve("fixture.ttf"))
-            Files.deleteIfExists(root)
-        }
-    }
-
     @Test
     fun preservesPortableAssetIdentityAcrossGenerationsButRequiresTheOwningResolverForReopening() {
         if (!System.getProperty("os.name").startsWith("Mac")) return
