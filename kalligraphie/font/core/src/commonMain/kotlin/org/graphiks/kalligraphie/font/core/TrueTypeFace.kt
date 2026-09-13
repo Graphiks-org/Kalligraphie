@@ -238,7 +238,7 @@ internal data class TrueTypeFontInstance(
                 }
 
                 is PaintGraphProfile -> {
-                    if (profile.schemaVersion == 2 && colrV1Supported) {
+                    if (profile.schemaVersion in 2..3 && colrV1Supported) {
                         when (val colorData = readColrV1(profile, renderVariant)) {
                             is FontOperationResult.Success -> {
                                 val svgResult = if (svgRouteSupported) readMixedSvgSource(profile)
@@ -261,8 +261,8 @@ internal data class TrueTypeFontInstance(
                             is FontOperationResult.Failure -> colorData
                             is FontOperationResult.Cancelled -> colorData
                         }
-                    } else if (profile.schemaVersion != 1 && !(profile.schemaVersion == 2 && svgRouteSupported)) {
-                        failure(FontError.UnsupportedRepresentationProfile("Only paint-graph schema version 1 is supported.", FontDiagnosticLocation.FaceId(faceId)))
+                    } else if (profile.schemaVersion != 1 && !(profile.schemaVersion in 2..3 && svgRouteSupported)) {
+                        failure(FontError.UnsupportedRepresentationProfile("Only paint-graph schema versions 1, 2, and 3 are supported by embedded routes.", FontDiagnosticLocation.FaceId(faceId)))
                     } else {
                         when (val colorData = if (paintGraphSupported) readColrCpalV0(profile) else null) {
                             is FontOperationResult.Failure -> colorData
@@ -388,7 +388,7 @@ internal data class TrueTypeFontInstance(
 
                     else -> failure(
                         FontError.UnsupportedRepresentationProfile(
-                            "The embedded TrueType provider supports only outline, COLR version 0 or SVG-in-OpenType paint, and EBDT format 1 bitmap profiles.",
+                            "The embedded TrueType provider supports only outline, COLR version 0 or 1, SVG-in-OpenType paint, and EBDT format 1 bitmap profiles.",
                             FontDiagnosticLocation.FaceId(faceId),
                         ),
                     )
@@ -419,7 +419,7 @@ internal data class TrueTypeFontInstance(
             is org.graphiks.kalligraphie.api.OutlineProfile ->
                 profile.schemaVersion == 1 && outlineRouteSupported
             is PaintGraphProfile -> (profile.schemaVersion == 1 && (paintGraphSupported || svgRouteSupported)) ||
-                (profile.schemaVersion == 2 && (colrV1Supported || svgRouteSupported))
+                (profile.schemaVersion in 2..3 && (colrV1Supported || svgRouteSupported))
             is BitmapProfile ->
                 profile.schemaVersion == 1 && bitmapRouteSupported
             else -> false

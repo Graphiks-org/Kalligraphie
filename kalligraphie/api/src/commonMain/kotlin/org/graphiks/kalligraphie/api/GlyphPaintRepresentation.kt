@@ -159,6 +159,24 @@ public enum class GlyphPaintExtendMode {
     REFLECT,
 }
 
+/** RGB interpolation space used between the stops of a portable gradient. */
+public enum class GlyphPaintInterpolationSpace {
+    /** Interpolates RGB components in linear-light sRGB. */
+    LINEAR_SRGB,
+
+    /** Interpolates RGB components directly in the sRGB transfer space. */
+    SRGB,
+}
+
+/** Alpha treatment used while interpolating the stops of a portable gradient. */
+public enum class GlyphPaintAlphaInterpolationMode {
+    /** Premultiplies RGB by each stop's effective alpha before interpolation. */
+    PREMULTIPLIED,
+
+    /** Interpolates non-premultiplied RGB and alpha separately before later compositing. */
+    UNPREMULTIPLIED,
+}
+
 /** One finite color stop in a portable paint color line. */
 public data class GlyphPaintColorStop(
     /** Position along the color line. */
@@ -176,6 +194,7 @@ public data class GlyphPaintColorStop(
 
 /**
  * Immutable ordered stops, following [OpenType color lines](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#color-lines).
+ * Extension behavior and interpolation semantics are explicit consumer capabilities.
  *
  * Empty lines paint transparent black; one stop supplies its effective color everywhere.
  * At duplicate offsets, the first stop applies below the offset and the last at/above it.
@@ -185,6 +204,25 @@ public class GlyphPaintColorLine(
     /** Extension behavior outside the first and last stop. */
     public val extendMode: GlyphPaintExtendMode,
     colorStops: List<GlyphPaintColorStop>,
+    /**
+     * RGB space in which stop components are interpolated.
+     *
+     * [GlyphColor] remains an eight-bit, non-premultiplied sRGB literal. Consumers first convert
+     * those literals to the declared space and then apply [alphaInterpolationMode].
+     */
+    public val interpolationSpace: GlyphPaintInterpolationSpace = GlyphPaintInterpolationSpace.LINEAR_SRGB,
+    /**
+     * Alpha treatment applied during interpolation.
+     *
+     * Effective alpha is `color.alpha / 255.0 * opacity`, where `color.alpha` is
+     * [GlyphColor.alpha] and `opacity` is [GlyphPaintColorStop.opacity]. [GlyphPaintAlphaInterpolationMode.PREMULTIPLIED]
+     * multiplies RGB by effective alpha before interpolation. [GlyphPaintAlphaInterpolationMode.UNPREMULTIPLIED]
+     * interpolates RGB and effective alpha separately; consumers premultiply the interpolated RGB
+     * only when required for subsequent compositing. The default preserves historical COLR
+     * semantics.
+     */
+    public val alphaInterpolationMode: GlyphPaintAlphaInterpolationMode =
+        GlyphPaintAlphaInterpolationMode.PREMULTIPLIED,
 ) {
     /** Immutable stops in stable non-decreasing offset order. */
     public val colorStops: List<GlyphPaintColorStop> = colorStops.immutableListSnapshot()
@@ -197,13 +235,21 @@ public class GlyphPaintColorLine(
 
     /** Compares color-line values in stable stop order. */
     override fun equals(other: Any?): Boolean =
-        other is GlyphPaintColorLine && extendMode == other.extendMode && colorStops == other.colorStops
+        other is GlyphPaintColorLine &&
+            extendMode == other.extendMode &&
+            colorStops == other.colorStops &&
+            interpolationSpace == other.interpolationSpace &&
+            alphaInterpolationMode == other.alphaInterpolationMode
 
-    /** Returns a hash derived from the extension mode and ordered stops. */
-    override fun hashCode(): Int = 31 * extendMode.hashCode() + colorStops.hashCode()
+    /** Returns a hash derived from all color-line interpolation semantics. */
+    override fun hashCode(): Int =
+        31 * (31 * (31 * extendMode.hashCode() + colorStops.hashCode()) + interpolationSpace.hashCode()) +
+            alphaInterpolationMode.hashCode()
 
     /** Returns a diagnostic representation of this color line. */
-    override fun toString(): String = "GlyphPaintColorLine(extendMode=$extendMode, colorStops=$colorStops)"
+    override fun toString(): String =
+        "GlyphPaintColorLine(extendMode=$extendMode, colorStops=$colorStops, " +
+            "interpolationSpace=$interpolationSpace, alphaInterpolationMode=$alphaInterpolationMode)"
 }
 
 /**
@@ -320,6 +366,16 @@ public sealed interface GlyphPaintNode {
         override val children: List<Int> = listOf(paint)
     }
 
+    /** Restricts a child paint to the fill region of one portable path. */
+    public data class PathClip(
+        /** Path whose fill region clips the child paint. */
+        public val path: GlyphPaintPath,
+        /** Child paint node index. */
+        public val paint: Int,
+    ) : GlyphPaintNode {
+        override val children: List<Int> = listOf(paint)
+    }
+
     /** Applies an affine transform to one child paint. */
     public data class Transform(
         /** Child paint node index. */
@@ -344,7 +400,7 @@ public sealed interface GlyphPaintNode {
 
     /**
      * Groups child nodes in source order with one explicitly declared composition operation.
-     * An empty group means no paint and is structurally bounded; it is valid in schema 2 only.
+     * An empty group means no paint and is structurally bounded; it is valid in schema 2 and later.
      */
     public class Group(
         children: List<Int>,
@@ -368,7 +424,9 @@ public sealed interface GlyphPaintNode {
  * The graph contains no SVG source, external reference, native object, or renderer state. It
  * validates node indexes and rejects reference cycles during construction, so consumers cannot
  * discover an unsupported cyclic subgraph after a provider certifies this representation.
- * Schema 1 rejects empty groups; schema 2 allows them to represent no paint.
+ * Schema 1 rejects empty groups; later schemas allow them to represent no paint. Schema 3 is the
+ * first schema that can carry sRGB gradient interpolation, unpremultiplied gradient alpha
+ * interpolation, or [GlyphPaintNode.PathClip].
  */
 public class GlyphPaintIR(
     /** Version of the graph schema. */
@@ -389,6 +447,18 @@ public class GlyphPaintIR(
         this.nodes.forEachIndexed { index, node ->
             require(schemaVersion != 1 || node !is GlyphPaintNode.Group || node.children.isNotEmpty()) {
                 "A schema 1 paint group must contain at least one child."
+            }
+            require(schemaVersion >= 3 || node !is GlyphPaintNode.PathClip) {
+                "PathClip requires paint schema 3 or later."
+            }
+            require(schemaVersion >= 3 || node.gradientInterpolationSpace() != GlyphPaintInterpolationSpace.SRGB) {
+                "sRGB gradient interpolation requires paint schema 3 or later."
+            }
+            require(
+                schemaVersion >= 3 ||
+                    node.gradientAlphaInterpolationMode() != GlyphPaintAlphaInterpolationMode.UNPREMULTIPLIED,
+            ) {
+                "Unpremultiplied gradient alpha interpolation requires paint schema 3 or later."
             }
             require(node.children.all { child -> child in this.nodes.indices }) {
                 "Paint node $index references a node outside the graph."
@@ -443,6 +513,20 @@ public class GlyphPaintIR(
 
     override fun toString(): String =
         "GlyphPaintIR(schemaVersion=$schemaVersion, rootNode=$rootNode, nodes=$nodes, clipBounds=$clipBounds)"
+}
+
+private fun GlyphPaintNode.gradientInterpolationSpace(): GlyphPaintInterpolationSpace? = when (this) {
+    is GlyphPaintNode.LinearGradient -> colorLine.interpolationSpace
+    is GlyphPaintNode.RadialGradient -> colorLine.interpolationSpace
+    is GlyphPaintNode.SweepGradient -> colorLine.interpolationSpace
+    else -> null
+}
+
+private fun GlyphPaintNode.gradientAlphaInterpolationMode(): GlyphPaintAlphaInterpolationMode? = when (this) {
+    is GlyphPaintNode.LinearGradient -> colorLine.alphaInterpolationMode
+    is GlyphPaintNode.RadialGradient -> colorLine.alphaInterpolationMode
+    is GlyphPaintNode.SweepGradient -> colorLine.alphaInterpolationMode
+    else -> null
 }
 
 private const val UNVISITED: Byte = 0

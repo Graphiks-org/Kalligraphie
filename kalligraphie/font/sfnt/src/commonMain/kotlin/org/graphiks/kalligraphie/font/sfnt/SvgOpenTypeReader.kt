@@ -7,11 +7,21 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphColor
 import org.graphiks.kalligraphie.api.GlyphId
+import org.graphiks.kalligraphie.api.GlyphPaintAlphaInterpolationMode
+import org.graphiks.kalligraphie.api.GlyphPaintColorLine
+import org.graphiks.kalligraphie.api.GlyphPaintColorStop
+import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
+import org.graphiks.kalligraphie.api.GlyphPaintExtendMode
+import org.graphiks.kalligraphie.api.GlyphPaintIR
+import org.graphiks.kalligraphie.api.GlyphPaintInterpolationSpace
 import org.graphiks.kalligraphie.api.GlyphPaintNode
+import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
 import org.graphiks.kalligraphie.api.GlyphPaintPath
 import org.graphiks.kalligraphie.api.GlyphPaintPathCommand
+import org.graphiks.kalligraphie.api.GlyphPaintPoint
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.PaintGraphProfile
+import kotlin.text.CharacterCodingException
 
 /**
  * One fully normalized SVG-in-OpenType paint result.
@@ -56,15 +66,16 @@ public class SvgOpenTypeData internal constructor(
 /**
  * Decodes the deliberately small, safe SVG-in-OpenType subset implemented by Kalligraphie.
  *
- * Only SVG table version 0 with raw UTF-8 documents is accepted. Every glyph in a document record
+ * Only SVG table version 0 with raw UTF-8 or gzip-encoded UTF-8 documents is accepted. Every glyph in a document record
  * is targeted exactly once by either the root `svg` or a descendant `g` whose `id` is exactly
- * `glyph<N>`. Supported documents contain `svg`, `g`, and self-closing `path` elements; `g` may
- * contain `translate` and `scale` transforms; paths may use `M`, `L`, `H`, `V`, `C`, `S`, and `Z`
- * commands (and their relative forms) with a solid `#RRGGBB` fill or `fill="none"` for an
- * explicitly inkless path. All transforms are applied to the portable path coordinates.
- * Scripts, network or external references, entities, animation, compressed documents, XML
- * declarations, gradients, clips, strokes, opacity, masks, and every unlisted element or
- * attribute are rejected before any [SvgOpenTypeData] is returned.
+ * `glyph<N>`. Supported documents contain `svg`, `g`, `defs`, `linearGradient`, self-closing
+ * `stop`, `path`, and `rect` elements. Groups may contain `translate` and `scale` transforms;
+ * paths may use `M`, `L`, `H`, `V`, `C`, `S`, and `Z` commands (and their relative forms).
+ * Shapes accept solid `#RRGGBB`, `fill="none"`, or a preceding local linear-gradient reference
+ * for rectangles. Object-bounding-box linear gradients normalize to schema-3 portable paints.
+ * Scripts, network or external references, entities, animation, XML declarations, strokes,
+ * masks, and every unlisted element or attribute are rejected before any [SvgOpenTypeData] is
+ * returned.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object SvgOpenTypeReader {
@@ -157,7 +168,8 @@ public object SvgOpenTypeReader {
 
         val records = ArrayList<SvgOpenTypeDocumentRecord>(documentCount)
         var previousLastGlyphId = -1
-        var cumulativeDocumentBytes = 0L
+        var cumulativeEncodedDocumentBytes = 0L
+        var cumulativeDecodedDocumentBytes = 0L
         val transformBudget = SvgTransformBudget(profile.limits.maxSvgTransformOperations)
         repeat(documentCount) { recordIndex ->
             val offset = recordsStart + recordIndex * DOCUMENT_RECORD_LENGTH
@@ -176,19 +188,28 @@ public object SvgOpenTypeReader {
             val sourceEnd = checkedRangeEnd(sourceOffset, documentLength, svgTable.size)
                 ?: return invalid("font.svg.invalid-document-range", "SVG document bytes exceed the table.")
             if (documentLength == 0L) return invalid("font.svg.empty-document", "SVG document bytes must not be empty.")
-            if (documentLength > profile.limits.maxSourceBytes.toLong() - cumulativeDocumentBytes) {
+            if (documentLength > profile.limits.maxSourceBytes.toLong() - cumulativeEncodedDocumentBytes) {
                 return limit("SVG cumulative document-byte limit exceeded.")
             }
-            cumulativeDocumentBytes += documentLength
+            cumulativeEncodedDocumentBytes += documentLength
             previousLastGlyphId = lastGlyphId
             if (selectedGlyphId != null && selectedGlyphId !in firstGlyphId..lastGlyphId) return@repeat
-            val document = svgTable.copyOfRange(sourceOffset.toInt(), sourceEnd)
-            if (document.size >= 2 && document[0] == GZIP_MAGIC_0 && document[1] == GZIP_MAGIC_1) {
-                return unsupported("Compressed SVG-in-OpenType documents are not supported.")
+            val encodedDocument = svgTable.copyOfRange(sourceOffset.toInt(), sourceEnd)
+            val document = when (
+                val result = decodeSvgDocument(
+                    encoded = encodedDocument,
+                    limits = profile.limits,
+                    remainingTotalDecodedBytes = profile.limits.maxSvgTotalDecodedBytes.toLong() - cumulativeDecodedDocumentBytes,
+                )
+            ) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
             }
+            cumulativeDecodedDocumentBytes += document.size.toLong()
             val xml = try {
                 document.decodeToString(throwOnInvalidSequence = true)
-            } catch (_: IllegalArgumentException) {
+            } catch (_: CharacterCodingException) {
                 return invalid("font.svg.invalid-utf8", "SVG document is not valid UTF-8.")
             }
             val parsed = when (val result = SvgDocumentParser(profile, transformBudget).parse(xml)) {
@@ -214,13 +235,50 @@ public object SvgOpenTypeReader {
     }
 
     /**
-     * Returns whether the complete table can be normalized by the implemented safe subset.
+     * Returns whether the table has a structurally valid version-0 envelope.
      *
-     * Catalogues use this conservative check before advertising an SVG paint route. Exact caller
-     * limits are still applied by [read] while acquiring the render asset.
+     * Catalogues use this check before advertising an SVG paint route. It validates record ranges
+     * and glyph ownership without inspecting document contents. Transport, integrity, UTF-8,
+     * markup, and exact caller limits are certified by [read] while acquiring the render asset.
      */
-    public fun hasStructurallyValidVersionZeroTable(svgTable: ByteArray, glyphCount: Int): Boolean =
-        read(svgTable, glyphCount, capabilityProfile) is FontOperationResult.Success
+    public fun hasStructurallyValidVersionZeroTable(svgTable: ByteArray, glyphCount: Int): Boolean {
+        if (glyphCount <= 0 || svgTable.size < SVG_HEADER_LENGTH) return false
+        if (readUInt16(svgTable, 0)?.toInt() != SVG_TABLE_VERSION || readUInt32(svgTable, 6) != 0u) return false
+        val documentListOffset = readUInt32(svgTable, 2)?.toLong() ?: return false
+        if (
+            documentListOffset < SVG_HEADER_LENGTH ||
+            documentListOffset > Int.MAX_VALUE ||
+            checkedRangeEnd(documentListOffset, DOCUMENT_LIST_HEADER_LENGTH.toLong(), svgTable.size) == null
+        ) {
+            return false
+        }
+        val documentListStart = documentListOffset.toInt()
+        val documentCount = readUInt16(svgTable, documentListStart)?.toInt() ?: return false
+        if (documentCount == 0) return false
+        val recordsStart = documentListStart + DOCUMENT_LIST_HEADER_LENGTH
+        if (checkedRangeEnd(recordsStart, documentCount * DOCUMENT_RECORD_LENGTH, svgTable.size) == null) return false
+
+        var previousLastGlyphId = -1
+        repeat(documentCount) { recordIndex ->
+            val offset = recordsStart + recordIndex * DOCUMENT_RECORD_LENGTH
+            val firstGlyphId = readUInt16(svgTable, offset)?.toInt() ?: return false
+            val lastGlyphId = readUInt16(svgTable, offset + 2)?.toInt() ?: return false
+            val documentOffset = readUInt32(svgTable, offset + 4)?.toLong() ?: return false
+            val documentLength = readUInt32(svgTable, offset + 8)?.toLong() ?: return false
+            if (
+                firstGlyphId > lastGlyphId ||
+                lastGlyphId >= glyphCount ||
+                firstGlyphId <= previousLastGlyphId ||
+                documentLength == 0L
+            ) {
+                return false
+            }
+            val sourceOffset = documentListOffset + documentOffset
+            if (checkedRangeEnd(sourceOffset, documentLength, svgTable.size) == null) return false
+            previousLastGlyphId = lastGlyphId
+        }
+        return true
+    }
 }
 
 internal data class SvgOpenTypeDocumentRecord(
@@ -238,7 +296,12 @@ private class SvgDocumentParser(
     private val transformBudget: SvgTransformBudget,
 ) {
     private val glyphs = linkedMapOf<Int, SvgGlyphPaintBuilder>()
-    private var unassignedPathCount: Int = 0
+    private val unassignedPaint = SvgGlyphPaintBuilder()
+    private val gradients = linkedMapOf<String, SvgLinearGradient>()
+    private val elementIds = mutableSetOf<String>()
+    private var parsedGradientCount: Int = 0
+    private var parsedColorStopCount: Int = 0
+    private var pendingGradient: SvgLinearGradientBuilder? = null
 
     fun parse(xml: String): FontOperationResult<ParsedSvgDocument> {
         if (xml.contains("<!") || xml.contains("<?") || xml.contains('&')) {
@@ -260,8 +323,14 @@ private class SvgDocumentParser(
             if (token.isEmpty()) return invalid("font.svg.invalid-element", "SVG contains an empty element.")
             if (token.startsWith('/')) {
                 val name = token.drop(1).trim()
-                if (name !in setOf("svg", "g") || stack.lastOrNull()?.name != name) {
+                if (name !in CONTAINER_ELEMENTS || stack.lastOrNull()?.name != name) {
                     return invalid("font.svg.invalid-close", "SVG element nesting is invalid.")
+                }
+                if (name == "linearGradient") {
+                    val definition = pendingGradient?.build()
+                        ?: return invalid("font.svg.invalid-gradient", "SVG linear-gradient state is invalid.")
+                    gradients[definition.id] = definition
+                    pendingGradient = null
                 }
                 stack.removeLast()
                 continue
@@ -278,9 +347,13 @@ private class SvgDocumentParser(
                         return unsupported("Only one non-empty root svg element with declared attributes is supported.")
                     }
                     if (attributes["xmlns"] != SVG_NAMESPACE) return unsupported("SVG root must declare the SVG namespace.")
-                    val targetGlyphId = attributes["id"]?.let(::parseGlyphTargetId)
-                    if ("id" in attributes && targetGlyphId == null) {
+                    val id = attributes["id"]
+                    val targetGlyphId = id?.let(::parseGlyphTargetId)
+                    if (id != null && targetGlyphId == null) {
                         return invalid("font.svg.invalid-glyph-target", "SVG root id must have the form glyph<N>.")
+                    }
+                    if (id != null && !elementIds.add(id)) {
+                        return invalid("font.svg.duplicate-id", "SVG element ids must be globally unique within a document.")
                     }
                     if (targetGlyphId != null && !registerGlyphTarget(targetGlyphId)) {
                         return invalid("font.svg.duplicate-glyph-target", "SVG document declares a glyph target more than once.")
@@ -290,13 +363,21 @@ private class SvgDocumentParser(
                 }
 
                 "g" -> {
-                    if (stack.isEmpty() || selfClosing || attributes.keys.any { key -> key !in GROUP_ATTRIBUTES }) {
+                    if (
+                        stack.lastOrNull()?.name !in PAINT_CONTAINER_ELEMENTS ||
+                        selfClosing ||
+                        attributes.keys.any { key -> key !in GROUP_ATTRIBUTES }
+                    ) {
                         return unsupported("SVG group attributes other than transform and glyph target id are not supported.")
                     }
                     if (stack.size + 1 > profile.limits.maxDepth) return limit("SVG nesting-depth limit exceeded.")
-                    val targetGlyphId = attributes["id"]?.let(::parseGlyphTargetId)
-                    if ("id" in attributes && targetGlyphId == null) {
+                    val id = attributes["id"]
+                    val targetGlyphId = id?.let(::parseGlyphTargetId)
+                    if (id != null && targetGlyphId == null) {
                         return invalid("font.svg.invalid-glyph-target", "SVG group id must have the form glyph<N>.")
+                    }
+                    if (id != null && !elementIds.add(id)) {
+                        return invalid("font.svg.duplicate-id", "SVG element ids must be globally unique within a document.")
                     }
                     val parent = stack.last()
                     if (targetGlyphId != null && parent.glyphTargetId != null) {
@@ -324,28 +405,170 @@ private class SvgDocumentParser(
                     )
                 }
 
+                "defs" -> {
+                    if (
+                        stack.lastOrNull()?.name !in PAINT_CONTAINER_ELEMENTS ||
+                        attributes.isNotEmpty()
+                    ) {
+                        return unsupported("SVG defs must be an attribute-free child of svg or g.")
+                    }
+                    if (!selfClosing) {
+                        if (stack.size + 1 > profile.limits.maxDepth) return limit("SVG nesting-depth limit exceeded.")
+                        stack.addLast(SvgElement("defs", AffineTransform.identity, null))
+                    }
+                }
+
+                "linearGradient" -> {
+                    if (stack.lastOrNull()?.name != "defs") {
+                        return unsupported("SVG linearGradient must be a child of defs.")
+                    }
+                    if (profile.schemaVersion != 3) {
+                        return unsupported("SVG linear gradients require paint schema 3.")
+                    }
+                    if (attributes.keys.any { key -> key !in LINEAR_GRADIENT_ATTRIBUTES }) {
+                        return unsupported("SVG linear-gradient attributes outside the static object-bounding-box subset are not supported.")
+                    }
+                    val id = attributes["id"]?.takeIf(String::isSvgDefinitionId)
+                        ?: return invalid("font.svg.invalid-gradient-id", "SVG linearGradient requires a valid local id.")
+                    if (!elementIds.add(id)) {
+                        return invalid("font.svg.duplicate-id", "SVG element ids must be globally unique within a document.")
+                    }
+                    if (parsedGradientCount >= profile.limits.maxGradients) {
+                        return limit("SVG gradient-definition limit exceeded.")
+                    }
+                    if (attributes.getOrElse("gradientUnits") { "objectBoundingBox" } != "objectBoundingBox") {
+                        return unsupported("Only objectBoundingBox SVG linear gradients are supported.")
+                    }
+                    val x1 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("x1") { "0%" })
+                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient x1 is invalid.")
+                    val y1 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("y1") { "0%" })
+                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient y1 is invalid.")
+                    val x2 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("x2") { "100%" })
+                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient x2 is invalid.")
+                    val y2 = parseObjectBoundingBoxCoordinate(attributes.getOrElse("y2") { "0%" })
+                        ?: return invalid("font.svg.invalid-gradient-coordinate", "SVG linear-gradient y2 is invalid.")
+                    val extendMode = when (attributes.getOrElse("spreadMethod") { "pad" }) {
+                        "pad" -> GlyphPaintExtendMode.PAD
+                        "repeat" -> GlyphPaintExtendMode.REPEAT
+                        "reflect" -> GlyphPaintExtendMode.REFLECT
+                        else -> return unsupported("SVG linear-gradient spread method is not supported.")
+                    }
+                    val interpolationSpace = when (attributes.getOrElse("color-interpolation") { "sRGB" }) {
+                        "sRGB" -> GlyphPaintInterpolationSpace.SRGB
+                        "linearRGB" -> GlyphPaintInterpolationSpace.LINEAR_SRGB
+                        else -> return unsupported("SVG linear-gradient color interpolation is not supported.")
+                    }
+                    parsedGradientCount += 1
+                    val builder = SvgLinearGradientBuilder(
+                        id = id,
+                        x1 = x1,
+                        y1 = y1,
+                        x2 = x2,
+                        y2 = y2,
+                        extendMode = extendMode,
+                        interpolationSpace = interpolationSpace,
+                    )
+                    if (selfClosing) {
+                        gradients[id] = builder.build()
+                    } else {
+                        if (stack.size + 1 > profile.limits.maxDepth) return limit("SVG nesting-depth limit exceeded.")
+                        pendingGradient = builder
+                        stack.addLast(SvgElement("linearGradient", AffineTransform.identity, null))
+                    }
+                }
+
+                "stop" -> {
+                    if (
+                        stack.lastOrNull()?.name != "linearGradient" ||
+                        !selfClosing ||
+                        attributes.keys.any { key -> key !in STOP_ATTRIBUTES }
+                    ) {
+                        return unsupported("Only self-closing stops within linearGradient are supported.")
+                    }
+                    if (parsedColorStopCount >= profile.limits.maxColorStops) {
+                        return limit("SVG color-stop limit exceeded.")
+                    }
+                    val rawOffset = parseSvgFraction(attributes.getOrElse("offset") { "0" })
+                        ?: return invalid("font.svg.invalid-stop-offset", "SVG stop offset is invalid.")
+                    val color = parseColor(attributes.getOrElse("stop-color") { "#000000" })
+                        ?: return unsupported("Only #RRGGBB SVG stop colors are supported.")
+                    val rawOpacity = parseSvgFraction(attributes.getOrElse("stop-opacity") { "1" })
+                        ?: return invalid("font.svg.invalid-stop-opacity", "SVG stop opacity is invalid.")
+                    pendingGradient?.addStop(rawOffset, color, rawOpacity)
+                        ?: return invalid("font.svg.invalid-gradient", "SVG stop has no active linear gradient.")
+                    parsedColorStopCount += 1
+                }
+
                 "path" -> {
-                    if (stack.isEmpty() || !selfClosing || attributes.keys.any { key -> key !in PATH_ATTRIBUTES }) {
+                    if (
+                        stack.lastOrNull()?.name !in PAINT_CONTAINER_ELEMENTS ||
+                        !selfClosing ||
+                        attributes.keys.any { key -> key !in PATH_ATTRIBUTES }
+                    ) {
                         return unsupported("Only self-closing paths with d and fill attributes are supported.")
                     }
                     val pathData = attributes["d"] ?: return invalid("font.svg.missing-path-data", "SVG path is missing d data.")
                     val fill = attributes["fill"] ?: "#000000"
                     if (fill == "none") continue
                     val color = parseColor(fill) ?: return unsupported("Only #RRGGBB SVG fills are supported.")
-                    val target = stack.last().glyphTargetId?.let(glyphs::get)
-                    val existingPathCount = target?.paths?.size ?: unassignedPathCount
-                    val pathsAfterAppend = existingPathCount + 1
-                    val nodesAfterAppend = if (pathsAfterAppend == 1) pathsAfterAppend else pathsAfterAppend + 1
-                    if (existingPathCount >= profile.limits.maxPaths || nodesAfterAppend > profile.limits.maxNodes) {
-                        return limit("SVG path or paint-node limit exceeded.")
-                    }
                     val path = when (val parsed = parsePath(pathData, stack.last().transform)) {
                         is FontOperationResult.Success -> parsed.value
                         is FontOperationResult.Failure -> return parsed
                         is FontOperationResult.Cancelled -> return parsed
                     }
-                    if (target != null) target.paths += GlyphPaintNode.Path(path, color)
-                    else unassignedPathCount += 1
+                    val target = stack.last().glyphTargetId?.let(glyphs::get) ?: unassignedPaint
+                    target.appendSolidPath(path, color, profile)?.let { failure -> return failure }
+                }
+
+                "rect" -> {
+                    if (
+                        stack.lastOrNull()?.name !in PAINT_CONTAINER_ELEMENTS ||
+                        !selfClosing ||
+                        attributes.keys.any { key -> key !in RECT_ATTRIBUTES }
+                    ) {
+                        return unsupported("Only self-closing rectangles in the static fill subset are supported.")
+                    }
+                    val x = parseSvgNumber(attributes.getOrElse("x") { "0" })
+                        ?: return invalid("font.svg.invalid-rect", "SVG rectangle x is invalid.")
+                    val y = parseSvgNumber(attributes.getOrElse("y") { "0" })
+                        ?: return invalid("font.svg.invalid-rect", "SVG rectangle y is invalid.")
+                    val width = attributes["width"]?.let(::parseSvgNumber)
+                        ?: return invalid("font.svg.invalid-rect", "SVG rectangle width is required and must be finite.")
+                    val height = attributes["height"]?.let(::parseSvgNumber)
+                        ?: return invalid("font.svg.invalid-rect", "SVG rectangle height is required and must be finite.")
+                    if (width < 0.0 || height < 0.0) {
+                        return invalid("font.svg.invalid-rect", "SVG rectangle dimensions must be non-negative.")
+                    }
+                    val fill = attributes.getOrElse("fill") { "#000000" }
+                    if (fill == "none") continue
+                    val solid = parseColor(fill)
+                    val gradient = if (solid == null) {
+                        val reference = parseLocalPaintReference(fill)
+                            ?: return unsupported("Only #RRGGBB or preceding local gradient references are supported for SVG rectangles.")
+                        gradients[reference]
+                            ?: return unsupported("SVG rectangle gradient references must resolve to a preceding local definition.")
+                    } else {
+                        null
+                    }
+                    if (width == 0.0 || height == 0.0) continue
+                    if (!stack.last().transform.preservesArea) continue
+                    val path = when (val result = rectanglePath(x, y, width, height, stack.last().transform)) {
+                        is FontOperationResult.Success -> result.value
+                        is FontOperationResult.Failure -> return result
+                        is FontOperationResult.Cancelled -> return result
+                    }
+                    val target = stack.last().glyphTargetId?.let(glyphs::get) ?: unassignedPaint
+                    if (solid != null) {
+                        target.appendSolidPath(path, solid, profile)?.let { failure -> return failure }
+                        continue
+                    }
+                    target.appendGradientRect(
+                        path = path,
+                        definition = checkNotNull(gradient),
+                        rectangle = SvgRectangle(x, y, width, height),
+                        transform = stack.last().transform,
+                        profile = profile,
+                    )?.let { failure -> return failure }
                 }
 
                 else -> return unsupported("SVG element $name is not supported.")
@@ -547,22 +770,268 @@ private data class SvgElement(
 )
 
 private class SvgGlyphPaintBuilder {
-    val paths: MutableList<GlyphPaintNode.Path> = mutableListOf()
+    private val nodes: MutableList<GlyphPaintNode> = mutableListOf()
+    private val roots: MutableList<Int> = mutableListOf()
+    private var internalReferences: Int = 0
+    private var pathCount: Int = 0
+    private var gradientCount: Int = 0
+    private var colorStopCount: Int = 0
+    private var clipCount: Int = 0
+    private var deepestRoot: Int = 0
+
+    fun appendSolidPath(
+        path: GlyphPaintPath,
+        color: GlyphColor,
+        profile: PaintGraphProfile,
+    ): FontOperationResult.Failure? {
+        if (GlyphPaintNodeKind.PATH !in profile.acceptedNodeKinds) {
+            return unsupported("The selected paint profile does not accept SVG solid paths.")
+        }
+        projectedLimitFailure(
+            additionalNodes = 1,
+            additionalReferences = 0,
+            additionalPaths = 1,
+            additionalGradients = 0,
+            additionalColorStops = 0,
+            additionalClips = 0,
+            rootDepth = 1,
+            profile = profile,
+        )?.let { return it }
+        nodes += GlyphPaintNode.Path(path, color)
+        roots += nodes.lastIndex
+        pathCount += 1
+        deepestRoot = maxOf(deepestRoot, 1)
+        return null
+    }
+
+    fun appendGradientRect(
+        path: GlyphPaintPath,
+        definition: SvgLinearGradient,
+        rectangle: SvgRectangle,
+        transform: AffineTransform,
+        profile: PaintGraphProfile,
+    ): FontOperationResult.Failure? {
+        if (definition.colorStops.isEmpty()) return null
+        if (GlyphPaintNodeKind.PATH_CLIP !in profile.acceptedNodeKinds) {
+            return unsupported("The selected paint profile does not accept SVG path clips.")
+        }
+        val intrinsicallySolid = definition.colorStops.size == 1 || definition.hasDegenerateVector
+        val points = if (intrinsicallySolid) {
+            null
+        } else {
+            definition.points(rectangle, transform)
+                ?: return invalid("font.svg.invalid-gradient", "SVG linear-gradient coordinates exceed the portable domain.")
+        }
+        val useSolid = intrinsicallySolid || checkNotNull(points).let { resolved -> resolved.p0 == resolved.p1 }
+        if (!useSolid && !checkNotNull(points).formsPlane) {
+            return invalid("font.svg.invalid-gradient", "SVG linear-gradient points are collinear after normalization.")
+        }
+        val requiredPaintKind = if (useSolid) GlyphPaintNodeKind.SOLID else GlyphPaintNodeKind.LINEAR_GRADIENT
+        if (requiredPaintKind !in profile.acceptedNodeKinds) {
+            return unsupported("The selected paint profile does not accept the normalized SVG gradient paint.")
+        }
+        if (!useSolid) {
+            if (definition.extendMode !in profile.acceptedGradientExtendModes) {
+                return unsupported("The selected paint profile does not accept the SVG gradient spread method.")
+            }
+            if (definition.interpolationSpace !in profile.acceptedGradientInterpolationSpaces) {
+                return unsupported("The selected paint profile does not accept the SVG gradient interpolation space.")
+            }
+            if (GlyphPaintAlphaInterpolationMode.UNPREMULTIPLIED !in profile.acceptedGradientAlphaInterpolationModes) {
+                return unsupported("The selected paint profile does not accept SVG alpha interpolation.")
+            }
+        }
+        projectedLimitFailure(
+            additionalNodes = 2,
+            additionalReferences = 1,
+            additionalPaths = 1,
+            additionalGradients = if (useSolid) 0 else 1,
+            additionalColorStops = if (useSolid) 0 else definition.colorStops.size,
+            additionalClips = 1,
+            rootDepth = 2,
+            profile = profile,
+        )?.let { return it }
+        val paintIndex = nodes.size
+        nodes += if (useSolid) {
+            val finalStop = definition.colorStops.last()
+            GlyphPaintNode.Solid(finalStop.color, finalStop.opacity)
+        } else {
+            val gradientPoints = checkNotNull(points)
+            GlyphPaintNode.LinearGradient(
+                colorLine = GlyphPaintColorLine(
+                    extendMode = definition.extendMode,
+                    colorStops = definition.colorStops,
+                    interpolationSpace = definition.interpolationSpace,
+                    alphaInterpolationMode = GlyphPaintAlphaInterpolationMode.UNPREMULTIPLIED,
+                ),
+                p0 = gradientPoints.p0,
+                p1 = gradientPoints.p1,
+                p2 = gradientPoints.p2,
+            )
+        }
+        nodes += GlyphPaintNode.PathClip(path, paintIndex)
+        roots += nodes.lastIndex
+        internalReferences += 1
+        pathCount += 1
+        if (!useSolid) {
+            gradientCount += 1
+            colorStopCount += definition.colorStops.size
+        }
+        clipCount += 1
+        deepestRoot = maxOf(deepestRoot, 2)
+        return null
+    }
 
     fun paint(profile: PaintGraphProfile): SvgGlyphPaint? {
-        if (paths.isEmpty()) return SvgGlyphPaint.Empty
-        val nodes = ArrayList<GlyphPaintNode>(paths.size + 1)
-        nodes += paths
-        val rootNode = if (paths.size == 1) {
-            0
+        if (roots.isEmpty()) return SvgGlyphPaint.Empty
+        val completeNodes = ArrayList<GlyphPaintNode>(nodes.size + 1)
+        completeNodes += nodes
+        val rootNode = if (roots.size == 1) {
+            roots.single()
         } else {
-            nodes += GlyphPaintNode.Group(paths.indices.toList())
-            nodes.lastIndex
+            completeNodes += GlyphPaintNode.Group(roots, GlyphPaintCompositionMode.SOURCE_OVER)
+            completeNodes.lastIndex
         }
-        val paint = org.graphiks.kalligraphie.api.GlyphPaintIR(profile.schemaVersion, rootNode, nodes)
+        val paint = GlyphPaintIR(profile.schemaVersion, rootNode, completeNodes)
         return if (profile.accepts(paint)) SvgGlyphPaint.Paint(paint) else null
     }
+
+    private fun projectedLimitFailure(
+        additionalNodes: Int,
+        additionalReferences: Int,
+        additionalPaths: Int,
+        additionalGradients: Int,
+        additionalColorStops: Int,
+        additionalClips: Int,
+        rootDepth: Int,
+        profile: PaintGraphProfile,
+    ): FontOperationResult.Failure? {
+        val rootsAfterAppend = roots.size + 1
+        val groupNodes = if (rootsAfterAppend > 1) 1 else 0
+        val groupReferences = if (rootsAfterAppend > 1) rootsAfterAppend else 0
+        val nodesAfterAppend = nodes.size.toLong() + additionalNodes + groupNodes
+        val referencesAfterAppend = internalReferences.toLong() + additionalReferences + groupReferences
+        val depthAfterAppend = maxOf(deepestRoot, rootDepth) + if (rootsAfterAppend > 1) 1 else 0
+        if (
+            nodesAfterAppend > profile.limits.maxNodes ||
+            referencesAfterAppend > profile.limits.maxReferences ||
+            depthAfterAppend > profile.limits.maxDepth ||
+            (profile.schemaVersion >= 2 && nodesAfterAppend > profile.limits.maxPaintVisits) ||
+            pathCount.toLong() + additionalPaths > profile.limits.maxPaths ||
+            gradientCount.toLong() + additionalGradients > profile.limits.maxGradients ||
+            colorStopCount.toLong() + additionalColorStops > profile.limits.maxColorStops ||
+            clipCount.toLong() + additionalClips > profile.limits.maxClips
+        ) {
+            return limit("SVG generated paint-graph limit exceeded.")
+        }
+        if (
+            rootsAfterAppend > 1 &&
+            (
+                GlyphPaintNodeKind.GROUP !in profile.acceptedNodeKinds ||
+                    GlyphPaintCompositionMode.SOURCE_OVER !in profile.acceptedCompositionModes
+            )
+        ) {
+            return unsupported("The selected paint profile cannot group the complete SVG paint.")
+        }
+        return null
+    }
 }
+
+private data class SvgRectangle(
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double,
+)
+
+private data class SvgGradientPoints(
+    val p0: GlyphPaintPoint,
+    val p1: GlyphPaintPoint,
+    val p2: GlyphPaintPoint,
+) {
+    val formsPlane: Boolean
+        get() = formsNonDegenerateBasis(
+            firstX = p1.x - p0.x,
+            firstY = p1.y - p0.y,
+            secondX = p2.x - p0.x,
+            secondY = p2.y - p0.y,
+        )
+}
+
+private data class SvgLinearGradient(
+    val id: String,
+    val x1: Double,
+    val y1: Double,
+    val x2: Double,
+    val y2: Double,
+    val extendMode: GlyphPaintExtendMode,
+    val interpolationSpace: GlyphPaintInterpolationSpace,
+    val colorStops: List<GlyphPaintColorStop>,
+) {
+    val hasDegenerateVector: Boolean
+        get() = x1 == x2 && y1 == y2
+
+    fun points(rectangle: SvgRectangle, transform: AffineTransform): SvgGradientPoints? = try {
+        val dx = x2 - x1
+        val dy = y2 - y1
+        val p0 = transform.apply(rectangle.map(x1, y1))
+        val p1 = transform.apply(rectangle.map(x2, y2))
+        val p2 = transform.apply(rectangle.map(x1 - dy, y1 + dx))
+        SvgGradientPoints(
+            GlyphPaintPoint(p0.x, p0.y),
+            GlyphPaintPoint(p1.x, p1.y),
+            GlyphPaintPoint(p2.x, p2.y),
+        )
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+}
+
+private class SvgLinearGradientBuilder(
+    val id: String,
+    private val x1: Double,
+    private val y1: Double,
+    private val x2: Double,
+    private val y2: Double,
+    private val extendMode: GlyphPaintExtendMode,
+    private val interpolationSpace: GlyphPaintInterpolationSpace,
+) {
+    private val colorStops = mutableListOf<GlyphPaintColorStop>()
+
+    fun addStop(offset: Double, color: GlyphColor, opacity: Double) {
+        val normalizedOffset = maxOf(colorStops.lastOrNull()?.offset ?: 0.0, offset.coerceIn(0.0, 1.0))
+        colorStops += GlyphPaintColorStop(normalizedOffset, color, opacity.coerceIn(0.0, 1.0))
+    }
+
+    fun build(): SvgLinearGradient {
+        val normalizedStops = if (colorStops.size > 1 && extendMode != GlyphPaintExtendMode.PAD) {
+            buildList(colorStops.size + 2) {
+                colorStops.first().takeIf { stop -> stop.offset > 0.0 }?.let { stop ->
+                    add(stop.copy(offset = 0.0))
+                }
+                addAll(colorStops)
+                colorStops.last().takeIf { stop -> stop.offset < 1.0 }?.let { stop ->
+                    add(stop.copy(offset = 1.0))
+                }
+            }
+        } else {
+            colorStops.toList()
+        }
+        return SvgLinearGradient(
+            id = id,
+            x1 = x1,
+            y1 = y1,
+            x2 = x2,
+            y2 = y2,
+            extendMode = extendMode,
+            interpolationSpace = interpolationSpace,
+            colorStops = normalizedStops,
+        )
+    }
+}
+
+private fun SvgRectangle.map(normalizedX: Double, normalizedY: Double): Point =
+    Point(x + normalizedX * width, y + normalizedY * height)
 
 private class SvgTransformBudget(
     private val maximum: Int,
@@ -618,7 +1087,9 @@ private class SvgNumberCursor(
 
     fun hasNumber(): Boolean {
         index = source.skipSeparators(index)
-        return source.getOrNull(index)?.let { character -> character.isDigit() || character == '+' || character == '-' || character == '.' } == true
+        return source.getOrNull(index)?.let { character ->
+            character.isSvgAsciiDigit() || character == '+' || character == '-' || character == '.'
+        } == true
     }
 
     fun number(): Double? {
@@ -626,13 +1097,13 @@ private class SvgNumberCursor(
         val start = index
         if (source.getOrNull(index) in setOf('+', '-')) index += 1
         var digits = 0
-        while (source.getOrNull(index)?.isDigit() == true) {
+        while (source.getOrNull(index)?.isSvgAsciiDigit() == true) {
             index += 1
             digits += 1
         }
         if (source.getOrNull(index) == '.') {
             index += 1
-            while (source.getOrNull(index)?.isDigit() == true) {
+            while (source.getOrNull(index)?.isSvgAsciiDigit() == true) {
                 index += 1
                 digits += 1
             }
@@ -643,7 +1114,7 @@ private class SvgNumberCursor(
             index += 1
             if (source.getOrNull(index) in setOf('+', '-')) index += 1
             val exponentDigits = index
-            while (source.getOrNull(index)?.isDigit() == true) index += 1
+            while (source.getOrNull(index)?.isSvgAsciiDigit() == true) index += 1
             if (exponentDigits == index) {
                 index = exponent
             }
@@ -662,7 +1133,42 @@ private class SvgNumberCursor(
         while (hasRemaining()) values += number() ?: return null
         return values
     }
+
+    fun singleNumber(): Double? {
+        index = source.skipWhitespace(0)
+        if (index == source.length || source[index] == ',') return null
+        val start = index
+        if (source.getOrNull(index) in setOf('+', '-')) index += 1
+        var integerDigits = 0
+        while (source.getOrNull(index)?.isSvgAsciiDigit() == true) {
+            index += 1
+            integerDigits += 1
+        }
+        if (source.getOrNull(index) == '.') {
+            index += 1
+            val fractionStart = index
+            while (source.getOrNull(index)?.isSvgAsciiDigit() == true) index += 1
+            if (fractionStart == index) return null
+        } else if (integerDigits == 0) {
+            return null
+        }
+        if (source.getOrNull(index) in setOf('e', 'E')) {
+            index += 1
+            if (source.getOrNull(index) in setOf('+', '-')) index += 1
+            val exponentStart = index
+            while (source.getOrNull(index)?.isSvgAsciiDigit() == true) index += 1
+            if (exponentStart == index) return null
+        }
+        val end = index
+        index = source.skipWhitespace(index)
+        if (index != source.length) return null
+        return source.substring(start, end).toDoubleOrNull()?.takeIf(Double::isFinite)
+    }
 }
+
+private fun Char.isSvgAsciiDigit(): Boolean = this in '0'..'9'
+
+private fun Char.isSvgWhitespace(): Boolean = this == ' ' || this == '\t' || this == '\r' || this == '\n'
 
 private data class AffineTransform(
     val a: Double,
@@ -683,6 +1189,9 @@ private data class AffineTransform(
 
     fun apply(point: Point): Point = Point(a * point.x + c * point.y + e, b * point.x + d * point.y + f)
 
+    val preservesArea: Boolean
+        get() = formsNonDegenerateBasis(a, b, c, d)
+
     val values: List<Double>
         get() = listOf(a, b, c, d, e, f)
 
@@ -691,6 +1200,81 @@ private data class AffineTransform(
         fun translate(x: Double, y: Double): AffineTransform = AffineTransform(1.0, 0.0, 0.0, 1.0, x, y)
         fun scale(x: Double, y: Double): AffineTransform = AffineTransform(x, 0.0, 0.0, y, 0.0, 0.0)
     }
+}
+
+private fun formsNonDegenerateBasis(
+    firstX: Double,
+    firstY: Double,
+    secondX: Double,
+    secondY: Double,
+): Boolean {
+    if (!firstX.isFinite() || !firstY.isFinite() || !secondX.isFinite() || !secondY.isFinite()) return false
+    return exactBinaryProduct(firstX, secondY) != exactBinaryProduct(firstY, secondX)
+}
+
+private data class ExactBinaryComponent(
+    val negative: Boolean,
+    val significand: ULong,
+    val exponent: Int,
+)
+
+private data class Unsigned128(
+    val high: ULong,
+    val low: ULong,
+)
+
+private data class ExactBinaryProduct(
+    val negative: Boolean,
+    val significand: Unsigned128,
+    val exponent: Int,
+)
+
+private fun exactBinaryProduct(first: Double, second: Double): ExactBinaryProduct {
+    val left = first.exactBinaryComponent()
+    val right = second.exactBinaryComponent()
+    if (left.significand == 0UL || right.significand == 0UL) return ZERO_EXACT_BINARY_PRODUCT
+    return ExactBinaryProduct(
+        negative = left.negative != right.negative,
+        significand = multiplySignificands(left.significand, right.significand),
+        exponent = left.exponent + right.exponent,
+    )
+}
+
+private fun Double.exactBinaryComponent(): ExactBinaryComponent {
+    val bits = toBits().toULong()
+    val encodedExponent = ((bits shr DOUBLE_SIGNIFICAND_BITS) and DOUBLE_EXPONENT_MASK).toInt()
+    var significand = bits and DOUBLE_FRACTION_MASK
+    var exponent = if (encodedExponent == 0) {
+        DOUBLE_SUBNORMAL_EXPONENT
+    } else {
+        significand = significand or DOUBLE_IMPLICIT_BIT
+        encodedExponent - DOUBLE_EXPONENT_BIAS - DOUBLE_SIGNIFICAND_BITS
+    }
+    if (significand == 0UL) return ExactBinaryComponent(false, 0UL, 0)
+    while ((significand and 1UL) == 0UL) {
+        significand = significand shr 1
+        exponent += 1
+    }
+    return ExactBinaryComponent(
+        negative = (bits and DOUBLE_SIGN_MASK) != 0UL,
+        significand = significand,
+        exponent = exponent,
+    )
+}
+
+private fun multiplySignificands(first: ULong, second: ULong): Unsigned128 {
+    val firstLow = first and UNSIGNED_INT_MASK
+    val firstHigh = first shr UNSIGNED_INT_BITS
+    val secondLow = second and UNSIGNED_INT_MASK
+    val secondHigh = second shr UNSIGNED_INT_BITS
+    val lowProduct = firstLow * secondLow
+    val highMiddle = firstHigh * secondLow + (lowProduct shr UNSIGNED_INT_BITS)
+    val combinedMiddle = (highMiddle and UNSIGNED_INT_MASK) + firstLow * secondHigh
+    return Unsigned128(
+        high = firstHigh * secondHigh + (highMiddle shr UNSIGNED_INT_BITS) +
+            (combinedMiddle shr UNSIGNED_INT_BITS),
+        low = (combinedMiddle shl UNSIGNED_INT_BITS) or (lowProduct and UNSIGNED_INT_MASK),
+    )
 }
 
 private fun parseAttributes(source: String): Map<String, String>? {
@@ -738,15 +1322,78 @@ private fun String.findTagEnd(start: Int): Int? {
 
 private fun String.skipWhitespace(start: Int = 0): Int {
     var index = start
-    while (getOrNull(index)?.isWhitespace() == true) index += 1
+    while (getOrNull(index)?.isSvgWhitespace() == true) index += 1
     return index
 }
 
 private fun String.skipSeparators(start: Int): Int {
     var index = start
-    while (getOrNull(index)?.let { character -> character.isWhitespace() || character == ',' } == true) index += 1
+    while (getOrNull(index)?.let { character -> character.isSvgWhitespace() || character == ',' } == true) index += 1
     return index
 }
+
+private fun String.trimSvgWhitespace(): String {
+    val start = skipWhitespace()
+    var end = length
+    while (end > start && this[end - 1].isSvgWhitespace()) end -= 1
+    return substring(start, end)
+}
+
+private fun rectanglePath(
+    x: Double,
+    y: Double,
+    width: Double,
+    height: Double,
+    transform: AffineTransform,
+): FontOperationResult<GlyphPaintPath> = try {
+    val topLeft = transform.apply(Point(x, y))
+    val topRight = transform.apply(Point(x + width, y))
+    val bottomRight = transform.apply(Point(x + width, y + height))
+    val bottomLeft = transform.apply(Point(x, y + height))
+    FontOperationResult.Success(
+        GlyphPaintPath(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(topLeft.x, topLeft.y),
+                GlyphPaintPathCommand.LineTo(topRight.x, topRight.y),
+                GlyphPaintPathCommand.LineTo(bottomRight.x, bottomRight.y),
+                GlyphPaintPathCommand.LineTo(bottomLeft.x, bottomLeft.y),
+                GlyphPaintPathCommand.Close,
+            ),
+        ),
+    )
+} catch (_: IllegalArgumentException) {
+    invalid("font.svg.invalid-rect", "SVG rectangle coordinates exceed the portable path domain.")
+}
+
+private fun parseSvgNumber(value: String): Double? {
+    val text = value.trimSvgWhitespace()
+    if (text.isEmpty() || text.endsWith('%')) return null
+    return SvgNumberCursor(text).singleNumber()
+}
+
+private fun parseSvgFraction(value: String): Double? {
+    val text = value.trimSvgWhitespace()
+    if (text.isEmpty()) return null
+    val percentage = text.endsWith('%')
+    if (percentage && text.getOrNull(text.lastIndex - 1)?.isSvgWhitespace() == true) return null
+    val numberText = if (percentage) text.dropLast(1) else text
+    val number = parseSvgNumber(numberText) ?: return null
+    return if (percentage) number / 100.0 else number
+}
+
+private fun parseObjectBoundingBoxCoordinate(value: String): Double? = parseSvgFraction(value)
+
+private fun parseLocalPaintReference(value: String): String? {
+    val text = value.trim()
+    if (!text.startsWith("url(#") || !text.endsWith(')')) return null
+    val id = text.substring(5, text.length - 1)
+    return id.takeIf(String::isSvgDefinitionId)
+}
+
+private fun String.isSvgDefinitionId(): Boolean =
+    isNotEmpty() &&
+        (first().isLetter() || first() == '_') &&
+        drop(1).all { character -> character.isLetterOrDigit() || character in setOf('_', '-', '.') }
 
 private fun parseColor(value: String): GlyphColor? {
     if (value.length != 7 || value.firstOrNull() != '#') return null
@@ -773,30 +1420,6 @@ private fun unsupported(message: String): FontOperationResult.Failure =
 private fun limit(message: String): FontOperationResult.Failure =
     FontOperationResult.Failure(FontError.ResourceLimitExceeded(message, FontDiagnosticLocation.Table("SVG ")))
 
-private val capabilityProfile: PaintGraphProfile = PaintGraphProfile(
-    acceptedNodeKinds = listOf(
-        org.graphiks.kalligraphie.api.GlyphPaintNodeKind.PATH,
-        org.graphiks.kalligraphie.api.GlyphPaintNodeKind.GROUP,
-    ),
-    acceptedCompositionModes = listOf(org.graphiks.kalligraphie.api.GlyphPaintCompositionMode.SOURCE_OVER),
-    limits = org.graphiks.kalligraphie.api.PaintGraphLimits(
-        maxNodes = 1_000_000,
-        maxReferences = 1_000_000,
-        maxDepth = 1_024,
-        maxSourceBytes = 16 * 1024 * 1024,
-        maxPaths = 1_000_000,
-        maxSvgDocuments = 4_096,
-        maxSvgTransformOperations = 65_536,
-    ),
-    outlineProfile = org.graphiks.kalligraphie.api.OutlineProfile(
-        maxBytes = 64 * 1024 * 1024,
-        maxContours = 1_000_000,
-        maxPoints = 1_000_000,
-        maxCompositeDepth = 1,
-        maxCompositeComponents = 1,
-    ),
-)
-
 private const val SVG_TABLE_VERSION: Int = 0
 private const val SVG_HEADER_LENGTH: Int = 10
 private const val DOCUMENT_LIST_HEADER_LENGTH: Int = 2
@@ -805,5 +1428,31 @@ private const val SVG_NAMESPACE: String = "http://www.w3.org/2000/svg"
 private val SVG_ATTRIBUTES: Set<String> = setOf("xmlns", "id")
 private val GROUP_ATTRIBUTES: Set<String> = setOf("transform", "id")
 private val PATH_ATTRIBUTES: Set<String> = setOf("d", "fill")
-private const val GZIP_MAGIC_0: Byte = 0x1F
-private const val GZIP_MAGIC_1: Byte = 0x8B.toByte()
+private val RECT_ATTRIBUTES: Set<String> = setOf("x", "y", "width", "height", "fill")
+private val LINEAR_GRADIENT_ATTRIBUTES: Set<String> = setOf(
+    "id",
+    "x1",
+    "y1",
+    "x2",
+    "y2",
+    "gradientUnits",
+    "spreadMethod",
+    "color-interpolation",
+)
+private val STOP_ATTRIBUTES: Set<String> = setOf("offset", "stop-color", "stop-opacity")
+private val CONTAINER_ELEMENTS: Set<String> = setOf("svg", "g", "defs", "linearGradient")
+private val PAINT_CONTAINER_ELEMENTS: Set<String> = setOf("svg", "g")
+private const val DOUBLE_SIGNIFICAND_BITS: Int = 52
+private const val DOUBLE_EXPONENT_BIAS: Int = 1023
+private const val DOUBLE_SUBNORMAL_EXPONENT: Int = -1074
+private const val DOUBLE_SIGN_MASK: ULong = 0x8000_0000_0000_0000UL
+private const val DOUBLE_EXPONENT_MASK: ULong = 0x7FFUL
+private const val DOUBLE_FRACTION_MASK: ULong = 0x000F_FFFF_FFFF_FFFFUL
+private const val DOUBLE_IMPLICIT_BIT: ULong = 0x0010_0000_0000_0000UL
+private const val UNSIGNED_INT_BITS: Int = 32
+private const val UNSIGNED_INT_MASK: ULong = 0xFFFF_FFFFUL
+private val ZERO_EXACT_BINARY_PRODUCT: ExactBinaryProduct = ExactBinaryProduct(
+    negative = false,
+    significand = Unsigned128(0UL, 0UL),
+    exponent = 0,
+)

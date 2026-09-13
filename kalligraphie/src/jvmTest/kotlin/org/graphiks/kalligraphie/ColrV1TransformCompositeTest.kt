@@ -124,7 +124,7 @@ internal fun colrV1Profile(
     modes: List<GlyphPaintCompositionMode> = GlyphPaintCompositionMode.entries.toList(),
     maxTransforms: Int = 128,
 ): PaintGraphProfile = PaintGraphProfile(
-    acceptedNodeKinds = GlyphPaintNodeKind.entries.toList(),
+    acceptedNodeKinds = GlyphPaintNodeKind.entries.filterNot { kind -> kind == GlyphPaintNodeKind.PATH_CLIP },
     acceptedCompositionModes = modes,
     acceptedGradientExtendModes = GlyphPaintExtendMode.entries.toList(),
     limits = PaintGraphLimits(maxNodes = 256, maxReferences = 512, maxDepth = 64,

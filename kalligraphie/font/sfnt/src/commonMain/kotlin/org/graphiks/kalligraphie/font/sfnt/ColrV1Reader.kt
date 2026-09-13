@@ -17,7 +17,7 @@ public object ColrV1Reader {
         return colrResult { readIndexes(colrTable, glyphCount, null) } is FontOperationResult.Success
     }
 
-    /** Captures bounded source bytes, global indexes and the selected CPAL 0/1 palette. */
+    /** Captures bounded source bytes, global indexes and the selected CPAL 0/1 palette for paint schema 2 or 3. */
     public fun read(
         colrTable: ByteArray,
         cpalTable: ByteArray,
@@ -26,6 +26,9 @@ public object ColrV1Reader {
         paletteIndex: Int,
         foregroundColor: GlyphColor,
     ): FontOperationResult<ColrV1Data> = colrResult {
+        if (profile.schemaVersion !in 2..3) {
+            colrUnsupported("COLR version 1 requires paint-graph schema version 2 or 3.")
+        }
         val limits = profile.limits
         colrLimit(colrTable.size.toLong() + cpalTable.size, limits.maxSourceBytes, "source bytes")
         val palettes = CpalPaletteReader.read(cpalTable, ColrCpalV0Limits(
@@ -57,7 +60,7 @@ public class ColrV1Data internal constructor(
     /** Whether this glyph has legacy layers in the same COLR table. */
     public fun containsLegacyGlyph(glyphId: GlyphId): Boolean = indexes.legacyGlyphs.asList().binarySearch(glyphId.value) >= 0
 
-    /** Resolves one complete graph, obtaining glyph clips through the caller's outline materializer. */
+    /** Resolves one complete schema-2 or schema-3 graph, obtaining glyph clips through the caller's outline materializer. */
     public fun resolveGlyph(
         glyphId: GlyphId,
         profile: PaintGraphProfile,
@@ -65,6 +68,9 @@ public class ColrV1Data internal constructor(
         materializeOutline: (GlyphId) -> FontOperationResult<GlyphOutlineIR>,
     ): FontOperationResult<GlyphRepresentation> = colrResult {
         val location = FontDiagnosticLocation.Glyph(glyphId.value)
+        if (profile.schemaVersion !in 2..3) {
+            colrUnsupported("COLR version 1 requires paint-graph schema version 2 or 3.", location)
+        }
         if (glyphId.value !in 0 until glyphCount) colrInvalid("COLR glyph is outside the face.", location)
         val record = indexes.glyphs.asList().binarySearch(glyphId.value)
         if (record < 0) return@colrResult resolveLegacyOrOutline(glyphId, profile, cancellationToken, materializeOutline)
@@ -112,7 +118,11 @@ public class ColrV1Data internal constructor(
                 val stop = offset + 3 + index * 6
                 colors += GlyphPaintColorStop(reader.f2(stop), color(reader.u16(stop + 2)), reader.opacity(stop + 4))
             }
-            return GlyphPaintColorLine(mode, colors.sortedBy { it.offset })
+            return GlyphPaintColorLine(
+                mode,
+                colors.sortedBy { it.offset },
+                GlyphPaintInterpolationSpace.LINEAR_SRGB,
+            )
         }
         fun enter(offset: Int, depth: Int) {
             checkCancelled()
@@ -246,7 +256,12 @@ public class ColrV1Data internal constructor(
             active.remove(offset)
             frames.removeLast()
         }
-        val paint = GlyphPaintIR(schemaVersion = 2, rootNode = completed.getValue(indexes.paints[record]), nodes = nodes, clipBounds = clip)
+        val paint = GlyphPaintIR(
+            schemaVersion = profile.schemaVersion,
+            rootNode = completed.getValue(indexes.paints[record]),
+            nodes = nodes,
+            clipBounds = clip,
+        )
         // Account for expanded paths through shared nodes, independently of memoized source decoding.
         val pending = ArrayDeque<Pair<Int, Int>>()
         pending.addLast(paint.rootNode to 1)
@@ -321,7 +336,7 @@ public class ColrV1Data internal constructor(
         }
         if (nodes.isEmpty()) return GlyphRepresentation.Empty
         if (nodes.size > 1) nodes += GlyphPaintNode.Group(nodes.indices.toList())
-        val paint = GlyphPaintIR(schemaVersion = 2, rootNode = nodes.lastIndex, nodes = nodes)
+        val paint = GlyphPaintIR(schemaVersion = profile.schemaVersion, rootNode = nodes.lastIndex, nodes = nodes)
         if (!profile.accepts(paint)) colrUnsupported("The complete COLR fallback is not accepted by the consumer.", location)
         return GlyphRepresentation.Paint(paint)
     }
