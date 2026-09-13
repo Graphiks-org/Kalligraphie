@@ -6,6 +6,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Base64
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.test.Test
@@ -40,6 +44,8 @@ import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.EditableLine
+import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.PaintGraphLimits
 import org.graphiks.kalligraphie.api.PaintGraphProfile
@@ -47,6 +53,8 @@ import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.shaping.JvmPreparedFontCachePolicy
+import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.layout.openLayoutHandle
 
 class GlyphMaterializationBenchmarkTest {
     @Test
@@ -151,6 +159,10 @@ internal data class GlyphMaterializationMeasurementProfile(
     val preparedSourceBytes: GlyphMaterializationMeasurementValue,
     val estimatedPreparedNativeBytes: GlyphMaterializationMeasurementValue,
     val backendReuses: GlyphMaterializationMeasurementValue,
+    val stages: Map<String, GlyphMaterializationPercentiles> = emptyMap(),
+    val workers: Int? = null,
+    val operationsPerWave: Int? = null,
+    val p95ObjectiveNanos: Long? = null,
 )
 
 internal data class GlyphMaterializationMeasurementReport(
@@ -182,6 +194,14 @@ internal data class GlyphMaterializationMeasurementReport(
             appendLine("- Latency p50: ${profile.latency.p50Nanos} ns")
             appendLine("- Latency p95: ${profile.latency.p95Nanos} ns")
             appendLine("- Latency p99: ${profile.latency.p99Nanos} ns")
+            profile.workers?.let { appendLine("- Workers: $it") }
+            profile.operationsPerWave?.let { appendLine("- Operations per wave: $it") }
+            profile.p95ObjectiveNanos?.let { target ->
+                appendLine("- Observational objective: p95 <= $target ns; ${if (profile.latency.p95Nanos <= target) "PASS" else "ABOVE"} (not a CI gate)")
+            }
+            profile.stages.forEach { (stage, latency) ->
+                appendLine("- Stage `$stage`: p50 ${latency.p50Nanos} ns; p95 ${latency.p95Nanos} ns; p99 ${latency.p99Nanos} ns")
+            }
             appendMeasurement("Allocations", profile.allocations)
             appendMeasurement("Retained JVM memory", profile.retainedJvmMemory)
             appendMeasurement("Retained native memory", profile.retainedNativeMemory)
@@ -236,6 +256,9 @@ internal object GlyphMaterializationBenchmark {
         "TrueTypeWarmOutlines",
         "TrueTypeColdDetach",
         "TrueTypeWarmDetach",
+        "FontAssetRetainReopenCold",
+        "FontAssetRetainReopenWarm",
+        "ConcurrentResolveWarm",
     )
 
     fun reportFor(
@@ -326,12 +349,15 @@ internal object GlyphMaterializationBenchmark {
             trueTypeWarmOutlinesProfile(liberation, trueTypeGlyphIds, warmupIterations, iterations),
             trueTypeColdDetachProfile(liberation, warmupIterations, iterations),
             trueTypeWarmDetachProfile(liberation, warmupIterations, iterations),
+            fontAssetHandoffProfile(liberation, false, warmupIterations, iterations),
+            fontAssetHandoffProfile(liberation, true, warmupIterations, iterations),
+            concurrentResolveProfile(liberation, warmupIterations, iterations),
         )
         return reportFor(
             environment = environment,
             corpus = GlyphMaterializationMeasurementCorpus(
-                id = "portable-glyph-materialization-v3",
-                description = "23 profiles including ten portable TrueType editor stages over Liberation Sans and the stable paragraph \"$TRUE_TYPE_PARAGRAPH\"",
+                id = "portable-glyph-materialization-v4",
+                description = "30 profiles including ten portable TrueType editor stages and three font-asset handoff profiles over Liberation Sans and the stable paragraph \"$TRUE_TYPE_PARAGRAPH\"; concurrent corpus is the 35 distinct nonzero paragraph glyph IDs in first-occurrence order",
                 glyphCount = 6 + trueTypeScalars.size,
             ),
             profiles = profiles,
@@ -906,6 +932,284 @@ internal object GlyphMaterializationBenchmark {
         }
     }
 
+    private fun fontAssetHandoffProfile(
+        fixture: Fixture,
+        warm: Boolean,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = if (warm) "FontAssetRetainReopenWarm" else "FontAssetRetainReopenCold",
+        route = "Liberation Sans stable text as one EditableLine -> public JvmEditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset by complete key -> resolve every final certified glyph",
+        timedBoundary = if (warm) {
+            "fresh text version and complete renderable editable-line certification through renderer-asset and layout-handle closure; persistent catalog/resolver/face/font/public-session preparation, seed and cleanup excluded"
+        } else {
+            "fresh embedded catalog, resolver, face/font and public editable-line session/backend through complete line certification, handoff, glyph consumption and all owner cleanup"
+        },
+        cacheState = if (warm) "one reusable public editable-line session with prepared font and resolver, with the real portable path seeded outside timing" else "fresh catalog/resolver/face/font/public-session/backend for every sample",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+        p95ObjectiveNanos = if (warm) 8_000_000 else null,
+    ) { record ->
+        // Fixture audit uses independent literal facts, outside every measured sample.
+        validateHandoffFixture(fixture)
+        val persistent = if (warm) openHandoffSession(fixture) else null
+        try {
+            if (persistent != null) handoffSample(fixture, persistent)
+            repeat(warmupIterations + iterations) { index ->
+                val sample = handoffSample(fixture, persistent)
+                if (index >= warmupIterations) record(sample)
+            }
+        } finally {
+            persistent?.close()
+        }
+    }
+
+    private fun handoffSample(fixture: Fixture, persistent: HandoffSession?): Sample {
+        val stages = linkedMapOf<String, Long>()
+        fun <T> stage(name: String, operation: () -> T): T {
+            val started = System.nanoTime()
+            return try { operation() } finally { stages[name] = System.nanoTime() - started }
+        }
+        val owned = MeasurementOwners()
+        val sample = timed {
+            try {
+                var session: HandoffSession? = persistent
+                val layout = stage("layout-certification") {
+                    val active = session ?: openHandoffSession(fixture).also {
+                        owned.add { it.close() }
+                        session = it
+                    }
+                    active.layout()
+                }
+                val handle = stage("layout-handle-open") {
+                    success(layout.openLayoutHandle(checkNotNull(session).resolver)).also { value ->
+                        owned.add { success(value.close()) }
+                    }
+                }
+                val certificates = layout.positionedGlyphRuns.flatMap { it.glyphs }
+                    .map { checkNotNull(it.materializationCertificate) }
+                val byKey = certificates.groupBy { it.assetKey }
+                val assets = stage("renderer-asset-retain") {
+                    byKey.mapValues { (_, values) ->
+                        success(handle.retainFontAsset(values.first())).also { asset ->
+                            owned.add { success(asset.close()) }
+                        }
+                    }
+                }
+                stage("glyph-resolve-consume") {
+                    certificates.forEach { certificate ->
+                        consumeOutlineRepresentation(certificate.glyphId, success(
+                            assets.getValue(certificate.assetKey).resolveGlyph(FontGlyphRequest(certificate.glyphId)),
+                        ))
+                    }
+                }
+                Observation(sourceBytes = if (persistent == null) fixture.bytes.size.toLong() else 0L)
+            } finally {
+                stage("owned-resource-close") { owned.close() }
+            }
+        }
+        stages["total"] = sample.elapsedNanos
+        return sample.copy(stages = stages)
+    }
+
+    private fun openHandoffSession(fixture: Fixture): HandoffSession {
+        val owned = MeasurementOwners()
+        return try {
+            val catalog = captureTrueTypeCatalog(fixture)
+            val resolver = success(catalog.openAssetResolver()).also { value -> owned.add { success(value.close()) } }
+            val face = success(catalog.resolveFace(catalog.faces.single().id, trueTypeRequirements()))
+            val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
+            val session = success(JvmEditableLineLayoutSession.open()).also { value -> owned.add { success(value.close()) } }
+            HandoffSession(catalog, resolver, font, session, owned)
+        } catch (failure: Throwable) {
+            try { owned.close() } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            throw failure
+        }
+    }
+
+    private class HandoffSession(
+        val catalog: FontCatalogSnapshot,
+        val resolver: FontAssetResolverHandle,
+        val font: FontInstance,
+        val session: JvmEditableLineLayoutSession,
+        private val owned: MeasurementOwners,
+    ) : AutoCloseable {
+        fun layout(): EditableLine {
+            val snapshot = Kalligraphie.decodeUtf8(
+                TextVersion.create(), listOf(TextSlice.Utf8(TRUE_TYPE_PARAGRAPH.encodeToByteArray())),
+            ).snapshot
+            val result = session.layout(
+                JvmEditableLineFacadeRequest(
+                    snapshot = snapshot,
+                    font = font,
+                    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                    language = "en",
+                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    features = emptyList(),
+                    verticalMetrics = org.graphiks.kalligraphie.api.LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
+                    materialization = EditableLineMaterialization.Renderable(
+                        resolver, FontRenderVariantSnapshot.default, trueTypeRequirements(),
+                    ),
+                ),
+            )
+            return when (result) {
+                is EditableLineResult.Success -> result.line
+                else -> error("Handoff measurement failed: $result")
+            }
+        }
+
+        override fun close() = owned.close()
+    }
+
+    /** Runs all cleanup actions, including after a failed close; no production counters. */
+    private class MeasurementOwners : AutoCloseable {
+        private val actions = mutableListOf<() -> Unit>()
+        fun add(close: () -> Unit) { actions.add(close) }
+        override fun close() {
+            var failure: Throwable? = null
+            while (actions.isNotEmpty()) {
+                try { actions.removeAt(actions.lastIndex)() } catch (cause: Throwable) {
+                    if (failure == null) failure = cause else failure.addSuppressed(cause)
+                }
+            }
+            failure?.let { throw it }
+        }
+    }
+
+    private fun rendererAssetFromLayout(fixture: Fixture): FontRenderAssetHandle {
+        var retained: FontRenderAssetHandle? = null
+        return try {
+            openHandoffSession(fixture).use { session ->
+                val layout = session.layout()
+                val handle = success(layout.openLayoutHandle(session.resolver))
+                try {
+                    val certificates = layout.positionedGlyphRuns.flatMap { it.glyphs }
+                        .map { checkNotNull(it.materializationCertificate) }
+                    check(certificates.map { it.assetKey }.distinct().size == 1)
+                    // Stable paragraph corpus is fixed independently of this API's mapping output.
+                    check(certificates.map { it.glyphId }.distinct() == HANDOFF_GLYPH_CORPUS)
+                    retained = success(handle.retainFontAsset(certificates.first()))
+                } finally {
+                    success(handle.close())
+                }
+            }
+            checkNotNull(retained)
+        } catch (failure: Throwable) {
+            try { retained?.let { success(it.close()) } } catch (closeFailure: Throwable) { failure.addSuppressed(closeFailure) }
+            throw failure
+        }
+    }
+
+    private fun validateHandoffFixture(fixture: Fixture) {
+        check(fixture.bytes.sha256Hex() == "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8")
+        val asset = rendererAssetFromLayout(fixture)
+        try {
+            // PROVENANCE.md: independent fontTools audit, U+0041 -> glyph 36.
+            val outline = (success(asset.resolveGlyph(FontGlyphRequest(GlyphId(36)))) as GlyphRepresentation.Outline).outline
+            check(outline.glyphId == 36 && outline.unitsPerEm == 2048)
+            check(outline.bounds == org.graphiks.kalligraphie.api.DesignBounds(4, 0, 1362, 1409))
+            check(outline.contours.size == 2)
+            consumeOutlineRepresentation(GlyphId(36), GlyphRepresentation.Outline(outline))
+        } finally {
+            success(asset.close())
+        }
+    }
+
+    private fun concurrentResolveProfile(
+        fixture: Fixture,
+        warmupIterations: Int,
+        iterations: Int,
+    ): GlyphMaterializationMeasurementProfile = measuredProfile(
+        name = "ConcurrentResolveWarm",
+        route = "one renderer-owned Liberation Sans asset from public JvmEditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset; 35 fixed distinct nonzero glyphs partitioned round-robin over four persistent workers",
+        timedBoundary = "whole-wave wall time from dispatch until all four workers resolve and consume every corpus glyph exactly once; never divided by operations; allocation probes run inside workers",
+        cacheState = "session/backend, resolver and layout handle closed before warmup; all corpus glyphs pre-resolved; workers started before timing; shared renderer asset closed after all waves",
+        warmupIterations = warmupIterations,
+        iterations = iterations,
+        workers = 4,
+        operationsPerWave = HANDOFF_GLYPH_CORPUS.size,
+        p95ObjectiveNanos = 4_000_000,
+    ) { record ->
+        validateHandoffFixture(fixture)
+        val asset = rendererAssetFromLayout(fixture)
+        var coordinatorInterrupted = false
+        try {
+            consumeOutlines(asset, HANDOFF_GLYPH_CORPUS)
+            val workerOwners = MeasurementOwners()
+            try {
+                // One persistent thread per partition: a shared queue could let one worker
+                // execute several partitions while another never participates in a wave.
+                val executors = List(4) {
+                    (Executors.newFixedThreadPool(1) as ThreadPoolExecutor).also { executor ->
+                        workerOwners.add { closeWorker(executor) }
+                        executor.prestartAllCoreThreads()
+                    }
+                }
+                val partitions = List(4) { worker -> HANDOFF_GLYPH_CORPUS.filterIndexed { index, _ -> index % 4 == worker } }
+                repeat(warmupIterations + iterations) { index ->
+                    var workerAllocations: Long? = null
+                    val sample = timed {
+                        val results = partitions.mapIndexed { worker, glyphs ->
+                            executors[worker].submit(Callable {
+                                val before = ThreadAllocationProbe.currentBytes()
+                                var checksum = 0L
+                                glyphs.forEach { glyph ->
+                                    val representation = success(asset.resolveGlyph(FontGlyphRequest(glyph)))
+                                    checksum += when (representation) {
+                                        is GlyphRepresentation.Outline -> representation.outline.let { outline ->
+                                            outline.glyphId.toLong() + outline.unitsPerEm + outline.bounds.minX + outline.bounds.minY +
+                                                outline.bounds.maxX + outline.bounds.maxY + outline.contours.size + outline.commands.size
+                                        }
+                                        GlyphRepresentation.Empty -> glyph.value.toLong()
+                                        else -> error("Concurrent outline measurement received $representation")
+                                    }
+                                }
+                                val after = ThreadAllocationProbe.currentBytes()
+                                WorkerObservation(checksum, if (before != null && after != null && after >= before) after - before else null)
+                            })
+                        }.map { future ->
+                            try {
+                                future.get()
+                            } catch (failure: InterruptedException) {
+                                // Future.get clears the flag; restore it after all owner cleanup.
+                                coordinatorInterrupted = true
+                                throw failure
+                            }
+                        }
+                        results.forEach { consumeValue(it.checksum) }
+                        workerAllocations = if (results.all { it.allocatedBytes != null }) results.sumOf { checkNotNull(it.allocatedBytes) } else null
+                        Observation()
+                    }
+                    if (index >= warmupIterations) record(sample.copy(allocatedBytes = workerAllocations))
+                }
+            } finally {
+                workerOwners.close()
+            }
+        } finally {
+            try {
+                success(asset.close())
+            } finally {
+                if (coordinatorInterrupted) Thread.currentThread().interrupt()
+            }
+        }
+    }
+
+    private data class WorkerObservation(val checksum: Long, val allocatedBytes: Long?)
+
+    private fun closeWorker(executor: ThreadPoolExecutor) {
+        executor.shutdownNow()
+        var interrupted = false
+        while (!executor.isTerminated) {
+            try { executor.awaitTermination(1, TimeUnit.SECONDS) } catch (_: InterruptedException) { interrupted = true }
+        }
+        if (interrupted) Thread.currentThread().interrupt()
+    }
+
+    private val HANDOFF_GLYPH_CORPUS: List<GlyphId> = listOf(
+        53, 72, 68, 71, 69, 79, 3, 87, 92, 83, 82, 74, 85, 75, 78, 86, 90, 15,
+        88, 81, 70, 76, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 89, 91, 17,
+    ).map(::GlyphId)
+
     private fun trueTypeParagraphGlyphIds(fixture: Fixture, scalars: List<Int>): List<GlyphId> {
         val glyphIds = resolveParagraphGlyphs(prepareTrueType(fixture).instance, scalars)
             .filter { glyphId -> glyphId.value != 0 }
@@ -1139,6 +1443,9 @@ internal object GlyphMaterializationBenchmark {
         warmupIterations: Int,
         iterations: Int,
         cancellation: Boolean = false,
+        workers: Int? = null,
+        operationsPerWave: Int? = null,
+        p95ObjectiveNanos: Long? = null,
         run: ((Sample) -> Unit) -> Unit,
     ): GlyphMaterializationMeasurementProfile {
         forceGc()
@@ -1158,7 +1465,7 @@ internal object GlyphMaterializationBenchmark {
             warmupIterations = warmupIterations,
             iterations = iterations,
             latency = percentiles(samples.map(Sample::elapsedNanos)),
-            allocations = if (allocations.size == samples.size) measurement(allocations.averageAsLong(), "bytes allocated by the measured thread per iteration") else unavailable("thread allocation counters are unavailable on this JVM"),
+            allocations = if (allocations.size == samples.size) measurement(allocations.averageAsLong(), if (workers == null) "bytes allocated by the measured thread per iteration" else "sum of bytes allocated inside all four worker resolve/consume intervals per wave; coordinator and dispatch allocations excluded") else unavailable(if (workers == null) "thread allocation counters are unavailable on this JVM" else "trustworthy nonnegative allocation deltas were not available for every worker; coordinator allocation is not substituted"),
             retainedJvmMemory = measurement(retainedAfter - retainedBefore, "signed used-heap delta after documented forced-GC samples"),
             retainedNativeMemory = unavailable("portable routes expose no retained native-memory accounting boundary"),
             nativeAllocations = unavailable("portable routes expose no native-allocation counter"),
@@ -1179,6 +1486,10 @@ internal object GlyphMaterializationBenchmark {
             preparedSourceBytes = operationMeasurement(samples, Observation::preparedSourceBytes, "OpenType bytes copied into the session's native source buffers during this sample; retained seeded fonts need no new copy"),
             estimatedPreparedNativeBytes = operationMeasurement(samples, Observation::estimatedPreparedNativeBytes, "retained estimate at sample end using ${JvmPreparedFontCachePolicy.nativeEstimatorVersion}; excludes source buffers and is not measured native allocation"),
             backendReuses = operationMeasurement(samples, Observation::backendReuses, "existing session/backend used per sample (0 cold, 1 warm); lifecycle defined by the runner"),
+            stages = samples.first().stages.keys.associateWith { stage -> percentiles(samples.map { it.stages.getValue(stage) }) },
+            workers = workers,
+            operationsPerWave = operationsPerWave,
+            p95ObjectiveNanos = p95ObjectiveNanos,
         )
     }
 
@@ -1391,7 +1702,7 @@ internal object GlyphMaterializationBenchmark {
         }
     }
 
-    private data class Sample(val elapsedNanos: Long, val allocatedBytes: Long?, val observation: Observation, val cancellationDelayNanos: Long?)
+    private data class Sample(val elapsedNanos: Long, val allocatedBytes: Long?, val observation: Observation, val cancellationDelayNanos: Long?, val stages: Map<String, Long> = emptyMap())
 
     private class CancelsOnCheck(private val cancelAtCheck: Int) : CancellationToken {
         private var checks: Int = 0

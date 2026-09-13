@@ -88,14 +88,15 @@ val (perFaceBudget, perCatalogBudget) = updatedPolicy
 val retainedBytesPerFace = perFaceBudget.retainedBytes
 ```
 
-Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource native. La fermeture du dernier lease (droit de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
+Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource native. La fermeture du dernier lease (droit temporaire de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
 
 Les catalogues ne partagent pas encore de budget au niveau provider/engine (fournisseur/moteur). Cette portée de propriété et la participation des ressources natives seront introduites avec une route native. Les tests de glyphes démontrent la transparence observable ; ils ne mesurent pas la rétention et ne prouvent pas l'admission du cache. La comptabilité appartient à une future instrumentation opt-in (activée explicitement), hors `check`.
 
 Sur macOS, l’artefact JVM expose aussi `MacosSystemFontCatalog.open()`. Il
 capture, sous limites, les fichiers `.ttf` réguliers dans un instantané
 portable et utilise les mêmes routes que les fontes embarquées. Il n’expose pas
-de handle (poignée) CoreText et ne déclare pas de prise en charge de `.otf` ni
+de handle (gestionnaire de durée de vie ; ici, poignée native) CoreText et ne
+déclare pas de prise en charge de `.otf` ni
 de `.ttc`.
 
 Hors périmètre : TTC/OTC, CFF/CFF2, variations, styles synthétiques, versions
@@ -184,6 +185,81 @@ certificat exact de route contour, graphe de peinture, bitmap (image
 matricielle) ou sans encre, lié à son `FontRenderAssetKey`. Le gestionnaire
 reste la propriété de l’appelant ; la façade ne l’emprunte que pendant l’appel
 synchrone.
+
+### Posséder les ressources certifiées pour un rendu différé
+
+Le handoff (transfert de propriété) explicite sépare deux succès. Un layout
+(résultat de composition) rendable réussi reste sans ressource, mais ce premier
+succès ne garantit pas que ses racines de fonte pourront être rouvertes plus
+tard. Tant que le résolveur est ouvert, appelez
+`openLayoutHandle(resolver)`. Ce second succès, faillible et atomique, retourne
+soit un `LayoutHandle`, handle (gestionnaire de durée de vie) qui possède
+toutes les racines certifiées, soit aucun gestionnaire. La même extension
+existe sur `EditableLine`, `ParagraphLayout` et `FlowLayout`.
+
+```kotlin
+val layout = (renderableResult as EditableLineResult.Success).line
+val handle = try {
+    when (val opened = layout.openLayoutHandle(resolver)) {
+        is FontOperationResult.Success -> opened.value
+        is FontOperationResult.Failure -> error(opened.error.message)
+        is FontOperationResult.Cancelled -> error("Asset ownership was cancelled.")
+    }
+} finally {
+    session.close()
+    resolver.close()
+}
+
+val certificatesByAsset = layout.positionedGlyphRuns
+    .flatMap { run -> run.glyphs }
+    .mapNotNull { glyph -> glyph.materializationCertificate }
+    .groupBy { certificate -> certificate.assetKey }
+val rendererAssets = mutableMapOf<FontRenderAssetKey, FontRenderAssetHandle>()
+try {
+    for ((key, certificates) in certificatesByAsset) {
+        rendererAssets[key] = when (val retained = handle.retainFontAsset(certificates.first())) {
+            is FontOperationResult.Success -> retained.value
+            is FontOperationResult.Failure -> error(retained.error.message)
+            is FontOperationResult.Cancelled -> error("Asset retention was cancelled.")
+        }
+    }
+
+    val certificate = certificatesByAsset.values.first().first()
+    val representation = rendererAssets.getValue(certificate.assetKey)
+        .resolveGlyph(FontGlyphRequest(certificate.glyphId))
+} finally {
+    rendererAssets.values.forEach { it.close() }
+    handle.close()
+}
+val geometryIsStillReadable = handle.layout
+```
+
+Regroupez les certificats par `assetKey` : un asset (ressource de rendu)
+conservé sert tous les glyphes certifiés de cette combinaison exacte
+d’instance, de variante et de profil de représentation. Chaque
+`retainFontAsset(...)` réussi fournit au renderer (moteur de rendu) une
+ressource possédée indépendamment et son propre lease (droit temporaire de
+durée de vie). Elle reste valide après la fermeture du `LayoutHandle` et doit
+être fermée par le moteur de rendu. Fermer le gestionnaire refuse les nouvelles
+rétentions et libère ses racines, mais n’invalide jamais `handle.layout` : le
+layout immuable reste lisible.
+
+Note de migration : `FontError.CertificateNotInLayout` est un nouveau membre
+de la sealed error surface (surface d’erreurs scellée) utilisée par ce parcours
+de handoff. Ajoutez une branche lors de la recompilation d’un `when` Kotlin
+exhaustif sur `FontError` ; les signatures de méthodes et JVM restent
+inchangées. Un gestionnaire exhaustif déjà compilé peut lancer
+`NoWhenBranchMatchedException` si le nouveau parcours lui fournit ce membre,
+alors que les appels existants ne commencent pas automatiquement à le retourner.
+
+Le gestionnaire possède de la mémoire externe du consommateur, hors du budget
+du cache (mémoire interne de réutilisation). L’annulation est observée entre
+les appels indivisibles au fournisseur ; elle n’interrompt pas un `reopen`,
+`detach` ou `close` déjà en cours. La factory (fabrique) initiale réalise
+actuellement son acquisition atomique par réouverture et détachement, mais ces
+opérations ne font pas partie de l’abstraction `LayoutHandle`. Cette API
+n’attribue pas ces ressources à une session de composition et n’introduit
+aucune politique de GPU, d’atlas, de rendu natif ou de rendu.
 
 Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence JVM. Ses
 ressources Linux et macOS x64/arm64 sont épinglées, vérifiées par hash

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - FontMaterializationCachePolicy now uses structured per-face/per-catalog budgets: generated Kotlin copy/destructuring operations are source- and binary-incompatible with the former byte-only data class; migrate to perFace/perCatalog and recompile consumers that used the old generated operations. The historical byte-only constructor and getter remain available.
+- `FontError.CertificateNotInLayout` extends the sealed error surface used by the new font-asset handoff route. Add an arm when recompiling exhaustive Kotlin `when` handlers; existing method and JVM signatures remain available, but an already compiled exhaustive handler can throw `NoWhenBranchMatchedException` if this new member reaches it. Existing calls do not automatically emit this error.
 - Kotlin 2.4.0 → 2.4.10
 - Gradle 9.5.0 → 9.6.1
 - Added blocking pull request policy checks aligned with `CONTRIBUTING.md`.
@@ -18,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
+- Opt-in public font-asset handoff and four-worker resolution measurements, with stage percentiles and an observational Apple M2 Max reference outside functional checks.
+- Immutable layouts can now be paired with an explicit closable handle that atomically retains all certified font roots and hands independent assets to delayed renderers.
 - Structured portable font materialization cache budgets for estimated retained bytes, decoded pixels, native bytes and native allocations, enforced atomically per face and per catalog with global LRU ordering; preserves the historical byte-only constructor and observable glyph results. Native charges remain zero until a native route owns cacheable resources.
 - Reproducible opt-in measurement of cold and warm portable TrueType editor stages for preparation, text mapping, metrics, outlines, and detached render assets.
 - Exact region-chain composition through `org.graphiks:kalligraphie`: immutable application-supplied `FlowRegion` geometry with exclusions and bounded refinement, logical lines distributed into geometric `LineFragment` values without restarting BiDi or splitting clusters and inline objects, deterministic fragmentation relaxation diagnostics, identity-attested `FlowContinuation` reuse, and incremental forward rematerialization with explicit unmaterialized coverage.

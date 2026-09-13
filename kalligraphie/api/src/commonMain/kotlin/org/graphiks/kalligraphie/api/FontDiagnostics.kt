@@ -184,6 +184,16 @@ public sealed interface FontError {
         override val code: String = "font.resource-closed"
     }
 
+    /** The requested materialization certificate is absent from the owning layout. */
+    public data class CertificateNotInLayout(
+        /** Glyph identifier of the rejected certificate. */
+        public val glyphId: Int,
+        override val message: String = "The materialization certificate does not belong to this layout.",
+        override val location: FontDiagnosticLocation = FontDiagnosticLocation.Glyph(glyphId),
+    ) : FontError {
+        override val code: String = "font.certificate-not-in-layout"
+    }
+
     /** The requested representation profile is not supported. */
     public data class UnsupportedRepresentationProfile(
         /** Error message describing the unsupported profile. */

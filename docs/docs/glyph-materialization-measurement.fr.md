@@ -8,7 +8,7 @@ fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1 et Liberation Sans TrueType
 auditées et versionnées, à travers les parcours publics catalogue, resolver
 (résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`.
 
-Le runner enregistre vingt-sept profils, dans cet ordre :
+Le runner enregistre trente profils, dans cet ordre :
 
 - normalisation COLR v0 / CPAL v0 froide et chaude ;
 - normalisation SVG-in-OpenType froide et chaude ;
@@ -26,7 +26,9 @@ Le runner enregistre vingt-sept profils, dans cet ordre :
   paragraphes mono-police et BiDi multi-police ;
 - étapes portables TrueType froides et chaudes de préparation, correspondance
   texte-glyphe, métriques, contours et détachement sur un paragraphe d’éditeur
-  Liberation Sans stable.
+  Liberation Sans stable ;
+- `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, puis
+  `ConcurrentResolveWarm` sur ce même paragraphe.
 
 Pour les six profils directs historiques, un échantillon froid commence avant
 la création du catalogue embarqué et se termine après consommation de la
@@ -144,6 +146,83 @@ de Liberation Sans avec celles des autres fixtures. La mémoire native retenue
 et les allocations natives restent explicitement `unavailable` (indisponibles),
 car l’API portable n’expose aucune frontière de comptabilité fiable pour ces
 valeurs.
+
+## Transfert public des ressources de police
+
+Les trois derniers profils utilisent le paragraphe stable ci-dessus et la fixture
+Liberation Sans auditée. Hors chronomètre, le runner vérifie son empreinte et les
+faits littéraux de l’audit indépendant du glyphe 36 : 2048 unités par cadratin,
+limites `(4, 0, 1362, 1409)`, deux contours. Il vérifie aussi la séquence distincte
+des glyphes finaux du paragraphe contre le corpus fixe ci-dessous.
+
+`FontAssetRetainReopenCold` crée un catalogue embarqué, un resolver, une face
+résolue, son instance de police et une session publique `JvmEditableLineLayoutSession`
+neufs par échantillon. Cette session possède son vrai backend HarfBuzz. Son
+appel public `layout`, recevant un `JvmEditableLineFacadeRequest`, compose le
+texte stable comme une unique `EditableLine` représentable. Le parcours appelle
+`openLayoutHandle`, regroupe tous les certificats finaux
+par clé complète `FontRenderAssetKey`, conserve un asset de renderer (moteur de
+rendu) par clé, puis résout et consomme tous les glyphes finaux certifiés, y
+compris leurs répétitions. Le total comprend la fermeture des assets, du handle,
+du backend et du resolver.
+
+`FontAssetRetainReopenWarm` prépare hors chronomètre un catalogue, un resolver,
+une face/instance de police et une session publique de ligne réutilisable, puis
+amorce le parcours portable complet
+avant le warmup (préchauffage). Chaque échantillon fournit une nouvelle version
+de texte et crée une nouvelle ligne éditable, un handle et un ensemble d’assets. Leur
+fermeture est mesurée ; celle de la session/backend et du resolver persistants
+reste hors intervalle. Ce profil est l’observation nommée 60 Hz, avec un objectif
+p95 <= 8 000 000 ns.
+
+Les deux profils conservent les durées individuelles d’une seule chaîne et
+publient les percentiles nearest-rank (rang supérieur) p50/p95/p99 :
+
+| Étape | Travail chronométré |
+| --- | --- |
+| `layout-certification` | Nouvelle version de texte, layout public de ligne et certification finale ; à froid, création du catalogue, du resolver, de la face/instance de police et de la session publique/backend comprise |
+| `layout-handle-open` | Appel public `openLayoutHandle` et enregistrement du propriétaire |
+| `renderer-asset-retain` | Un appel public `retainFontAsset` par clé complète et enregistrement de chaque propriétaire |
+| `glyph-resolve-consume` | Résolution de chaque glyphe final certifié et consommation des champs réels de sa représentation |
+| `owned-resource-close` | Tous les propriétaires de l’échantillon, backend et resolver compris à froid |
+| `total` | Échantillon complet, y compris les petits intervalles d’orchestration comme le regroupement des certificats |
+
+Les percentiles de chaque étape sont calculés séparément ; leurs sommes ne sont
+pas nécessairement un percentile total. Le nettoyage s’exécute même en cas
+d’échec/annulation et continue après une erreur de fermeture. Aucune
+instrumentation produit ni aucun compteur interne de cache n’est ajouté.
+
+`ConcurrentResolveWarm` obtient un unique asset de renderer par cette même
+chaîne publique, puis ferme handle, backend et resolver avant le préchauffage
+ou la mesure. Il résout préalablement les 35 identifiants de glyphes non nuls
+distincts suivants, dans l’ordre de première occurrence du paragraphe :
+
+```text
+53, 72, 68, 71, 69, 79, 3, 87, 92, 83, 82, 74, 85, 75, 78, 86, 90, 15,
+88, 81, 70, 76, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 89, 91, 17
+```
+
+Quatre workers (fils d’exécution de travail) persistants partagent cet asset.
+La distribution round-robin (cyclique) leur donne 9, 9, 9 et 8 glyphes. Un
+échantillon est une vague concurrente qui résout et consomme chaque glyphe du
+corpus exactement une fois. La latence principale est le temps écoulé de toute
+la vague, de la distribution des tâches à leur achèvement, sans division par
+le nombre d’opérations. Le rapport indique quatre workers et 35 opérations par
+vague. Les allocations sont la somme des différences fiables non négatives
+relevées dans les quatre intervalles de résolution/consommation, moyennée par
+vague ; celles du coordinateur et de la distribution des tâches sont exclues.
+Si un worker ne dispose pas d’un tel compteur, le champ indique `unavailable`
+(indisponible) et sa raison. Les workers se terminent avant la fermeture de
+l’asset partagé, même en cas d’échec. Le statut d’interruption du coordinateur
+pendant la collecte des résultats est restauré après fermeture des propriétaires.
+Ce profil est l’observation nommée 120 Hz,
+avec un objectif p95 <= 4 000 000 ns.
+
+Ces objectifs produisent uniquement les champs observés `PASS` (atteint) ou
+`ABOVE` (dépassé), sans faire échouer le runner ni `check`. Cette évolution de
+l’outil se vérifie par exécution de fumée et mesure réelle, sans test structurel
+artificiel ni assertion temporelle. La [référence Apple M2 Max](glyph-materialization-reference-apple-m2-max.md)
+est une observation sur une machine, pas une promesse universelle.
 
 ## Exécution reproductible
 

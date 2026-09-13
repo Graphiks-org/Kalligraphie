@@ -184,6 +184,75 @@ outline, paint-graph, bitmap, or inkless-route certificate tied to its
 `FontRenderAssetKey`. The resolver remains caller-owned; the facade borrows it
 only during the synchronous call.
 
+### Own certified assets for delayed rendering
+
+A successful renderable layout is resource-free, but that first success does
+not promise that its certified font roots can be reopened later. While the
+resolver is still open, call `openLayoutHandle(resolver)`. This is a second,
+fallible and atomic success: it either returns a `LayoutHandle` owning every
+certified root or publishes no handle. The same extension is available on
+`EditableLine`, `ParagraphLayout`, and `FlowLayout`.
+
+```kotlin
+val layout = (renderableResult as EditableLineResult.Success).line
+val handle = try {
+    when (val opened = layout.openLayoutHandle(resolver)) {
+        is FontOperationResult.Success -> opened.value
+        is FontOperationResult.Failure -> error(opened.error.message)
+        is FontOperationResult.Cancelled -> error("Asset ownership was cancelled.")
+    }
+} finally {
+    session.close()
+    resolver.close()
+}
+
+val certificatesByAsset = layout.positionedGlyphRuns
+    .flatMap { run -> run.glyphs }
+    .mapNotNull { glyph -> glyph.materializationCertificate }
+    .groupBy { certificate -> certificate.assetKey }
+val rendererAssets = mutableMapOf<FontRenderAssetKey, FontRenderAssetHandle>()
+try {
+    for ((key, certificates) in certificatesByAsset) {
+        rendererAssets[key] = when (val retained = handle.retainFontAsset(certificates.first())) {
+            is FontOperationResult.Success -> retained.value
+            is FontOperationResult.Failure -> error(retained.error.message)
+            is FontOperationResult.Cancelled -> error("Asset retention was cancelled.")
+        }
+    }
+
+    val certificate = certificatesByAsset.values.first().first()
+    val representation = rendererAssets.getValue(certificate.assetKey)
+        .resolveGlyph(FontGlyphRequest(certificate.glyphId))
+} finally {
+    rendererAssets.values.forEach { it.close() }
+    handle.close()
+}
+val geometryIsStillReadable = handle.layout
+```
+
+Group certificates by `assetKey` because one retained renderer asset serves
+all certified glyphs for that exact font instance, variant, and representation
+profile. Each successful `retainFontAsset(...)` returns an independently owned
+asset: it remains valid after the layout handle closes and must be closed by
+the renderer. Closing the handle prevents new retentions and releases its
+roots, but never invalidates `handle.layout`; the immutable layout remains
+readable.
+
+Migration note: `FontError.CertificateNotInLayout` is a new member of the
+sealed error surface used by this handoff route. Add a branch when recompiling
+an exhaustive Kotlin `when` over `FontError`; method and JVM signatures remain
+unchanged. An already compiled exhaustive handler can throw
+`NoWhenBranchMatchedException` if new handoff code supplies this member, while
+existing calls do not automatically begin returning it.
+
+The handle owns external consumer memory, outside the internal cache budget.
+Cancellation is checked between indivisible provider calls; it does not
+interrupt a `reopen`, `detach`, or `close` already in progress. The initial
+factory currently implements its atomic acquisition with reopen and detach,
+but those operations are not part of the `LayoutHandle` abstraction. This API
+does not make a layout session own these resources and introduces no GPU,
+atlas, native-rendering, or rendering policy.
+
 The embedded HarfBuzz 14.3.0 backend is the JVM reference implementation. Its
 Linux and macOS x64/arm64 resources are pinned, hash-verified, and never found
 through a system-library search. Public contracts contain no JNI or native
