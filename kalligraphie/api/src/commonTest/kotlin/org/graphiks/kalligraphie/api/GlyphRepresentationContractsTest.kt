@@ -247,11 +247,11 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
-    fun renderableRequirementsRejectNativeOnlyProfilesWhenPortableDataIsRequired() {
+    fun renderableRequirementsRejectPlatformOnlyProfilesWhenPortableDataIsRequired() {
         assertFailsWith<IllegalArgumentException> {
             FontAccessRequirementsSnapshot.renderable(
                 acceptedProfiles = listOf(
-                    NativeHandleProfile(
+                    PlatformHandleProfile(
                         bridgeKind = "platform-font",
                         bridgeVersion = "1",
                     ),
@@ -262,12 +262,12 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
-    fun portableDataRequirementsExcludeNativeProfilesFromTheNegotiationOrder() {
+    fun portableDataRequirementsExcludePlatformProfilesFromTheNegotiationOrder() {
         val outline = outlineProfile()
 
         val requirements = FontAccessRequirementsSnapshot.renderable(
             acceptedProfiles = listOf(
-                NativeHandleProfile(
+                PlatformHandleProfile(
                     bridgeKind = "platform-font",
                     bridgeVersion = "1",
                 ),

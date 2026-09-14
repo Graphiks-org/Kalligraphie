@@ -91,19 +91,19 @@ public class FontAccessRequirementsSnapshot private constructor(
     /** Requested access mode. */
     public val mode: Mode,
     acceptedProfiles: List<GlyphRepresentationProfile>,
-    /** Whether a native-only route is forbidden for this request. */
+    /** Whether a platform-only route is forbidden for this request. */
     public val portableDataRequired: Boolean,
 ) {
     /**
      * Ordered immutable profiles eligible for materialization.
      *
-     * Native profiles supplied alongside [portableDataRequired] are excluded before providers
-     * observe this list, so a portable-data request cannot be satisfied by a native route ahead
+     * Platform profiles supplied alongside [portableDataRequired] are excluded before providers
+     * observe this list, so a portable-data request cannot be satisfied by a platform route ahead
      * of a portable alternative. The relative order of the remaining profiles is preserved.
      */
     public val acceptedProfiles: List<GlyphRepresentationProfile> =
         acceptedProfiles
-            .filter { profile -> !portableDataRequired || profile !is NativeHandleProfile }
+            .filter { profile -> !portableDataRequired || profile !is PlatformHandleProfile }
             .immutableListSnapshot()
 
     /** First accepted outline profile, retained for compatibility with outline-only consumers. */
@@ -119,8 +119,8 @@ public class FontAccessRequirementsSnapshot private constructor(
                 "RENDERABLE requirements must accept at least one render profile."
             }
         }
-        require(!portableDataRequired || this.acceptedProfiles.any { it !is NativeHandleProfile }) {
-            "portableDataRequired cannot be satisfied by native-only profiles."
+        require(!portableDataRequired || this.acceptedProfiles.any { it !is PlatformHandleProfile }) {
+            "portableDataRequired cannot be satisfied by platform-only profiles."
         }
     }
 
@@ -193,26 +193,33 @@ public sealed interface GlyphRepresentationProfile {
 }
 
 /**
- * Explicit permission to borrow one platform-native materialization route.
+ * Explicit permission to borrow one platform-specific materialization route.
  *
  * This profile carries only stable bridge metadata; it never exposes a platform object from the
  * common API. A request with [FontAccessRequirementsSnapshot.portableDataRequired] removes every
- * native profile before provider negotiation, so a native-only list becomes invalid and native
+ * platform profile before provider negotiation, so a platform-only list becomes invalid and platform
  * profiles never take precedence over portable alternatives.
  */
-public data class NativeHandleProfile(
+public data class PlatformHandleProfile(
     /** Stable kind of the platform bridge, such as a platform-font bridge. */
     public val bridgeKind: String,
     /** Version of the platform bridge contract. */
     public val bridgeVersion: String,
-    /** Version of the common native-route schema. */
+    /** Version of the common platform-route schema. */
     override val schemaVersion: Int = 1,
+    /** Stable bridge namespace; defaults to [bridgeKind] for legacy callers. */
+    public val bridgeId: String = bridgeKind,
 ) : GlyphRepresentationProfile {
     init {
         require(bridgeKind.isNotBlank()) { "bridgeKind must not be blank." }
         require(bridgeVersion.isNotBlank()) { "bridgeVersion must not be blank." }
         require(schemaVersion > 0) { "schemaVersion must be positive." }
+        require(bridgeId.isNotBlank()) { "bridgeId must not be blank." }
     }
+
+    /** Retains the previous JVM constructor for callers specifying the common schema. */
+    public constructor(bridgeKind: String, bridgeVersion: String, schemaVersion: Int) :
+        this(bridgeKind, bridgeVersion, schemaVersion, bridgeKind)
 }
 
 /** Resource and geometry limits applied while materializing outlines. */
@@ -257,14 +264,15 @@ public data class FontRenderVariantKey(
 }
 
 /**
- * Content-based identity of one acquired render asset, independent of a provider generation.
+ * Semantic identity of one acquired render asset.
  *
  * For a portable [FontSourceId], equal source content, instance geometry, variant, and profile
  * produce equal identities across independently captured catalog generations. For an opaque
  * source, the provider domain and source token already carried by [FontInstanceKey] remain part
  * of equality, so independent providers cannot collide. This value is safe for semantic caches
  * but is not a locator: reopening still requires the generation-bound [FontRenderAssetKey] and a
- * live matching resolver.
+ * live matching resolver. Platform identities additionally retain their exact bridge/runtime
+ * context and provider generation; only portable materializations omit the generation.
  */
 public data class FontRenderAssetSemanticIdentity(
     /** Exact font instance whose content and geometric interpretation are materialized. */
@@ -275,7 +283,15 @@ public data class FontRenderAssetSemanticIdentity(
     public val representationProfile: GlyphRepresentationProfile,
     /** Complete variant context when a non-default variant needs it for semantic equality. */
     public val variantSnapshot: FontRenderVariantSnapshot? = null,
+    /** Exact platform bridge/runtime reopening domain; absent for portable materialization. */
+    public val platformContext: PlatformFontAssetContext? = null,
+    /** Platform provider generation; portable semantic equality remains generation-independent. */
+    public val platformGeneration: FontCatalogGeneration? = null,
 ) {
+    /** Retains the previous JVM constructor for portable semantic identities. */
+    public constructor(fontInstanceKey: FontInstanceKey, variant: FontRenderVariantKey,
+        representationProfile: GlyphRepresentationProfile, variantSnapshot: FontRenderVariantSnapshot?) :
+        this(fontInstanceKey, variant, representationProfile, variantSnapshot, null, null)
     init {
         require(variantSnapshot == null || variantSnapshot.key == variant) {
             "Render-variant snapshot must match the asset variant key."
@@ -291,7 +307,7 @@ public data class FontRenderAssetSemanticIdentity(
  *
  * [semanticIdentity] supplies the content-based identity suitable for portable semantic caches;
  * [generation] supplies the provider domain and immutable snapshot required for reopening. This
- * key owns only immutable values, carries no native handle, and is safe to retain after the asset
+ * key owns only immutable values, carries no platform handle, and is safe to retain after the asset
  * closes, but it does not keep a resolver, catalogue, or resource alive.
  */
 public data class FontRenderAssetKey(
@@ -312,7 +328,14 @@ public data class FontRenderAssetKey(
      * color from an opaque key string. Provider-created non-default assets retain this snapshot.
      */
     public val variantSnapshot: FontRenderVariantSnapshot? = null,
+    /** Provider-issued exact platform context; acquired platform assets must supply this proof. */
+    public val platformContext: PlatformFontAssetContext? = null,
 ) {
+    /** Retains the previous JVM constructor, including complete visual selection. */
+    public constructor(fontInstanceKey: FontInstanceKey, variant: FontRenderVariantKey,
+        representationProfile: GlyphRepresentationProfile, generation: FontCatalogGeneration,
+        variantSnapshot: FontRenderVariantSnapshot?) :
+        this(fontInstanceKey, variant, representationProfile, generation, variantSnapshot, null)
     init {
         require(variantSnapshot == null || variantSnapshot.key == variant) {
             "Render-variant snapshot must match the asset variant key."
@@ -323,7 +346,8 @@ public data class FontRenderAssetKey(
     }
 
     /**
-     * Content-based identity without [generation].
+     * Immutable semantic identity: portable profiles omit [generation], while platform
+     * profiles retain their provider generation and bridge/runtime context.
      *
      * This value is recreated from immutable fields and therefore does not retain an asset or
      * provider resource. Use this value, rather than this reopening key, when sharing portable
@@ -335,6 +359,8 @@ public data class FontRenderAssetKey(
             variant = variant,
             representationProfile = representationProfile,
             variantSnapshot = variantSnapshot,
+            platformContext = platformContext.takeIf { representationProfile is PlatformHandleProfile },
+            platformGeneration = generation.takeIf { representationProfile is PlatformHandleProfile },
         )
 
     /**
@@ -412,6 +438,14 @@ public interface FontAssetResolverHandle {
      * owned by the caller and remains independently closable or detachable.
      */
     public fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle>
+
+    /**
+     * Reopens [key] with cooperative cancellation before dispatch and ownership transfer.
+     * A handle produced after cancellation is closed unconditionally before returning Cancelled.
+     * Platform implementations also check between non-interruptible native calls.
+     */
+    public fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
+        cancelledAssetTransfer(cancellationToken) { reopen(key) }
 
     /**
      * Closes this resolver.
@@ -569,6 +603,18 @@ public interface FontInstance {
         unsupportedOpenTypeDataOperation()
 
     /**
+     * Bounds controlled source-copy allocations without invoking [copyOpenTypeData].
+     * Unknown bounds fail with font.open-type-copy-estimate-unavailable; the result is read-only
+     * and refers to the exact immutable face source, independent of instance size.
+     */
+    public fun estimateOpenTypeDataCopy(): FontOperationResult<OpenTypeDataCopyEstimate> =
+        FontOperationResult.Failure(FontError.FontDataFailure(
+            code = "font.open-type-copy-estimate-unavailable",
+            message = "The provider cannot bound copying its immutable OpenType source.",
+            location = FontDiagnosticLocation.FaceId(key.face),
+        ))
+
+    /**
      * Returns a conservative non-negative byte bound for one render asset before acquisition.
      *
      * The estimate covers the asset retained for this exact [renderVariant], instance, and
@@ -619,6 +665,35 @@ public interface FontInstance {
         renderVariant: FontRenderVariantSnapshot,
         requirements: FontAccessRequirementsSnapshot,
     ): FontOperationResult<FontRenderAssetHandle> = acquireRenderAsset(resolver, renderVariant.key, requirements)
+
+    /**
+     * Acquires the key-only visual selection observing cancellation before dispatch and transfer.
+     * Cancellation transfers no owner; an already produced asset is closed before returning.
+     */
+    public fun acquireRenderAsset(resolver: FontAssetResolverHandle, variant: FontRenderVariantKey,
+        requirements: FontAccessRequirementsSnapshot, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
+        cancelledAssetTransfer(cancellationToken) { acquireRenderAsset(resolver, variant, requirements) }
+
+    /**
+     * Acquires the complete visual selection observing cancellation before dispatch and transfer.
+     * Cancellation transfers no owner; platform wrappers additionally check between native steps.
+     */
+    public fun acquireRenderAsset(resolver: FontAssetResolverHandle, renderVariant: FontRenderVariantSnapshot,
+        requirements: FontAccessRequirementsSnapshot, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
+        cancelledAssetTransfer(cancellationToken) { acquireRenderAsset(resolver, renderVariant, requirements) }
+}
+
+private inline fun cancelledAssetTransfer(token: CancellationToken, dispatch: () -> FontOperationResult<FontRenderAssetHandle>): FontOperationResult<FontRenderAssetHandle> {
+    if (token.isCancellationRequested()) return FontOperationResult.Cancelled()
+    val result = dispatch()
+    var transferred = false
+    try {
+        if (token.isCancellationRequested()) return FontOperationResult.Cancelled()
+        transferred = true
+        return result
+    } finally {
+        if (!transferred && result is FontOperationResult.Success) result.value.close()
+    }
 }
 
 /**

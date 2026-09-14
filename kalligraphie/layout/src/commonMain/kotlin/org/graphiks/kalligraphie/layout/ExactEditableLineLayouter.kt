@@ -949,7 +949,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                                 portableDataRequired = materialization.requirements.portableDataRequired,
                             ),
                         )
-                        when (val acquired = pool.acquire(instance, profileMaterialization, profile)) {
+                        when (val acquired = pool.acquire(instance, profileMaterialization, profile, request.cancellationToken)) {
                             is FontOperationResult.Success -> when (
                                 val certified = certifyWithAsset(
                                     request,
@@ -958,6 +958,7 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
                                     acquired.value,
                                     profileMaterialization,
                                     proofs,
+                                    pool,
                                 )
                             ) {
                                 is CertificationResult.Success -> {
@@ -1031,7 +1032,34 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         asset: FontRenderAssetHandle,
         materialization: EditableLineMaterialization.Renderable,
         proofs: GlyphMaterializationProofs,
+        pool: OperationRenderAssetPool,
     ): CertificationResult {
+        if (asset is org.graphiks.kalligraphie.api.PlatformFontRenderAssetHandle &&
+            asset.key.representationProfile is org.graphiks.kalligraphie.api.PlatformHandleProfile) {
+            val glyphIds = placements.flatMap { placement -> placement.fontGlyphs.map { it.shapedGlyph.glyphId } }.distinct()
+            val known = proofs.requestedRoutes(asset.key, glyphIds, pool)
+            val missing = glyphIds.filterNot(known::containsKey)
+            val routes = if (missing.isEmpty()) known else when (val validated = validatePlatformGlyphs(asset, missing, request.cancellationToken)) {
+                is FontOperationResult.Success -> {
+                    proofs.record(asset.key, validated.value)
+                    known + validated.value
+                }
+                is FontOperationResult.Failure -> return CertificationResult.Failure(
+                    EditableLineError.FontMaterializationFailure(validated.error), validated.diagnostics.map(::fontDiagnostic),
+                    terminal = validated.error.isTerminalMaterializationFailure(),
+                )
+                is FontOperationResult.Cancelled -> return CertificationResult.Cancelled(validated.diagnostics.map(::fontDiagnostic))
+            }
+            if (request.cancellationToken.isCancellationRequested()) return CertificationResult.Cancelled(emptyList())
+            val certificates = placements.flatMap { placement ->
+                placement.fontGlyphs.mapIndexed { glyphIndex, glyph ->
+                    GlyphPosition(placement.visualOrder, glyphIndex) to GlyphMaterializationCertificate(
+                        asset.key, glyph.shapedGlyph.glyphId, checkNotNull(routes[glyph.shapedGlyph.glyphId]),
+                    )
+                }
+            }.toMap()
+            return CertificationResult.Success(placements.associate { it.visualOrder to asset.key }, certificates)
+        }
         val expectedVariantSnapshot = asset.key.variantSnapshot ?: FontRenderVariantSnapshot.default
         var result: CertificationResult = if (
             asset.key.fontInstanceKey == instance.key &&

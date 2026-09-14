@@ -10,6 +10,7 @@ val kalligraphieModules = listOf(
     ":kalligraphie:unicode",
     ":kalligraphie:shaping",
     ":kalligraphie:layout",
+    ":kalligraphie:platform:apple",
 ).map { project(it) }
 
 val copyKalligraphieDokkaIntoMkDocs = tasks.register<Sync>("copyKalligraphieDokkaIntoMkDocs") {

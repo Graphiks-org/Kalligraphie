@@ -42,7 +42,7 @@ These are the checks that must pass before merge. They are enforced by the PR po
 - Keep branch ancestry aligned with the latest `master`; the final merge into `master` is squash-only.
 - Use Conventional Commits for the PR title and every non-merge commit subject: `<type>(<scope>): <description>`.
 - Allowed PR and commit types are `feat`, `fix`, `build`, `chore`, `ci`, `docs`, `perf`, `refactor`, `test`, and `style`.
-- Allowed scopes are `font`, `buildSrc`, `docs`, and `release`.
+- Use one of the current-project scopes listed under [Conventional Commits](#conventional-commits). The machine-readable list is defined in [.github/contributing-policy.toml](.github/contributing-policy.toml).
 - Use the exact [PR template](.github/PULL_REQUEST_TEMPLATE.md) headings: `Description`, `Type of Change`, `Checklist`, `Screenshots (if applicable)`, and `Additional Notes`.
 - Select exactly one change type checkbox in the PR body.
 - Record the changelog decision explicitly in the PR checklist:
@@ -122,11 +122,39 @@ This project uses [Conventional Commits](https://www.conventionalcommits.org/).
 | `test`    | Adding or fixing tests                             |
 | `style`   | Code style (formatting, imports ordering)          |
 
-**Scopes:** `font`, `buildSrc`, `docs`, `release`
+**Scopes:**
+
+Choose the narrowest applicable scope from the current project structure:
+
+| Scope | Responsibility and location |
+|-------|-----------------------------|
+| `kalligraphie` | Consumer facade in `:kalligraphie` |
+| `api` | Public contracts in `:kalligraphie:api` |
+| `unicode` | Unicode analysis in `:kalligraphie:unicode` |
+| `font` | Font management across the `kalligraphie/font/` module family |
+| `font-core` | Font catalogues and instances in `:kalligraphie:font:core` |
+| `sfnt` | SFNT/OpenType parsing in `:kalligraphie:font:sfnt` |
+| `scaler` | Font scaling and geometry in `:kalligraphie:font:scaler` |
+| `glyph` | Glyph representation materialization in `:kalligraphie:font:glyph` |
+| `shaping` | Text shaping backends in `:kalligraphie:shaping` |
+| `layout` | Text layout and editing geometry in `:kalligraphie:layout` |
+| `platform` | Platform integration across the `kalligraphie/platform/` module family |
+| `apple` | Apple font integration in `:kalligraphie:platform:apple` |
+| `buildSrc` | Gradle conventions in `buildSrc/` |
+| `ci` | Automated repository checks in `.github/workflows/` and `.github/scripts/` |
+| `docs` | Documentation in `docs/` and repository documentation files |
+| `release` | Release workflow, publication and versioning |
+
+Use `font` or `platform` for a change spanning their respective module families.
+Keep this table and `allowed_scopes` in [.github/contributing-policy.toml](.github/contributing-policy.toml)
+synchronized whenever an implemented module is introduced, renamed or removed.
+Only scopes corresponding to existing repository responsibilities are permitted.
 
 **Examples:**
 ```
 feat(font): add glyph parser
+feat(apple): add certified CoreText font access
+fix(layout): preserve caret geometry across line wrapping
 fix(buildSrc): resolve AGP compatibility issue
 docs: update README with new badges
 ```

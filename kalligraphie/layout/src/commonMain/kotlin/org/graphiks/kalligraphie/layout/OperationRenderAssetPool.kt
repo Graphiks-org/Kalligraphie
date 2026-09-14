@@ -1,5 +1,11 @@
 package org.graphiks.kalligraphie.layout
 
+import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.FontCatalogGeneration
+import org.graphiks.kalligraphie.api.FontInstanceKey
+import org.graphiks.kalligraphie.api.PlatformFontRenderAssetHandle
+import org.graphiks.kalligraphie.api.PlatformHandleProfile
+import org.graphiks.kalligraphie.api.PlatformFontAccessLimitExceeded
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditorOperationLimitExceeded
 import org.graphiks.kalligraphie.api.EditorOperationLimitKind
@@ -16,11 +22,19 @@ import org.graphiks.kalligraphie.api.GlyphRepresentationProfile
 import org.graphiks.kalligraphie.api.MaterializationResourceProfile
 import org.graphiks.kalligraphie.api.toDiagnostic
 
+private data class RenderAssetSelection(
+    val instance: FontInstanceKey,
+    val renderVariant: FontRenderVariantSnapshot,
+    val profile: GlyphRepresentationProfile,
+    val generation: FontCatalogGeneration,
+)
+
 /** Assets owned, bounded, and reused by one synchronous materialization operation. */
 internal class OperationRenderAssetPool(
     private val profile: MaterializationResourceProfile,
 ) {
     private val assets = linkedMapOf<FontRenderAssetKey, FontRenderAssetHandle>()
+    private val issuedKeys = mutableMapOf<RenderAssetSelection, FontRenderAssetKey>()
     private var estimatedAssetBytes: Long = 0L
     private var closed: Boolean = false
     private var terminalFailure: FontOperationResult.Failure? = null
@@ -37,17 +51,13 @@ internal class OperationRenderAssetPool(
         instance: FontInstance,
         materialization: EditableLineMaterialization.Renderable,
         representationProfile: GlyphRepresentationProfile,
+        cancellationToken: CancellationToken,
     ): FontOperationResult<FontRenderAssetHandle> {
         check(!closed) { "An operation render-asset pool cannot acquire after closure." }
         terminalFailure?.let { return it }
-        val key = FontRenderAssetKey(
-            fontInstanceKey = instance.key,
-            variant = materialization.renderVariant.key,
-            representationProfile = representationProfile,
-            generation = materialization.resolver.generation,
-            variantSnapshot = materialization.renderVariant.takeUnless { it == FontRenderVariantSnapshot.default },
-        )
-        assets[key]?.let { return FontOperationResult.Success(it) }
+        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+        val selection = RenderAssetSelection(instance.key, materialization.renderVariant, representationProfile, materialization.resolver.generation)
+        issuedKeys[selection]?.let { key -> assets[key]?.let { return FontOperationResult.Success(it) } }
 
         val estimate = if (profile.maxEstimatedAssetBytes == Long.MAX_VALUE) {
             0L
@@ -91,16 +101,29 @@ internal class OperationRenderAssetPool(
             portableDataRequired = materialization.requirements.portableDataRequired,
         )
         val acquired = if (materialization.renderVariant == FontRenderVariantSnapshot.default) {
-            instance.acquireRenderAsset(materialization.resolver, materialization.variant, requirements)
+            instance.acquireRenderAsset(materialization.resolver, materialization.variant, requirements, cancellationToken)
         } else {
-            instance.acquireRenderAsset(materialization.resolver, materialization.renderVariant, requirements)
+            instance.acquireRenderAsset(materialization.resolver, materialization.renderVariant, requirements, cancellationToken)
         }
         if (acquired is FontOperationResult.Success) {
-            if (acquired.value.key != key) {
-                val mismatch = FontError.InvalidFontData(
-                    "Acquired render asset key does not match the complete operation-pool key.",
+            val key = acquired.value.key
+            val platformProfile = representationProfile as? PlatformHandleProfile
+            val context = key.platformContext
+            val platformMatches = if (platformProfile == null) context == null else
+                acquired.value is PlatformFontRenderAssetHandle && context != null &&
+                    context.reopenToken.isNotBlank() &&
+                    context.routeIdentity.bridgeKind == platformProfile.bridgeKind &&
+                    context.routeIdentity.bridgeId == platformProfile.bridgeId &&
+                    context.routeIdentity.bridgeVersion == platformProfile.bridgeVersion &&
+                    context.routeIdentity.runtimeInterpretationId.isNotBlank()
+            if (key.fontInstanceKey != selection.instance ||
+                (key.variantSnapshot ?: FontRenderVariantSnapshot.default) != selection.renderVariant ||
+                key.variant != selection.renderVariant.key || key.representationProfile != selection.profile ||
+                key.generation != selection.generation || !platformMatches) {
+                val mismatch = if (!platformMatches) FontError.FontDataFailure(
+                    "font.platform-context-proof-failed", "Acquired platform asset does not match the requested bridge context.",
                     FontDiagnosticLocation.FaceId(instance.key.face),
-                )
+                ) else FontError.InvalidFontData("Acquired render asset key does not match the complete operation selection.", FontDiagnosticLocation.FaceId(instance.key.face))
                 val closeDiagnostics = closeUnexpectedAsset(acquired.value)
                 val failure = FontOperationResult.Failure(
                     mismatch,
@@ -109,7 +132,12 @@ internal class OperationRenderAssetPool(
                 if (closeFailure != null) terminalFailure = failure
                 return failure
             }
+            if (cancellationToken.isCancellationRequested()) {
+                val diagnostics = acquired.diagnostics + closeUnexpectedAsset(acquired.value)
+                return FontOperationResult.Cancelled(diagnostics)
+            }
             assets[key] = acquired.value
+            issuedKeys[selection] = key
             estimatedAssetBytes = observedBytes
         }
         return acquired
@@ -134,6 +162,7 @@ internal class OperationRenderAssetPool(
             }
         }
         assets.clear()
+        issuedKeys.clear()
         return diagnostics
     }
 
@@ -176,7 +205,17 @@ internal class OperationRenderAssetPool(
 // operation, its shared shaping budget, lifecycle, or mandatory byte estimate are terminal.
 internal fun FontError.isTerminalMaterializationFailure(): Boolean =
     this is FontError.ResourceClosed ||
+        this is FontError.IncompatibleCatalogGeneration ||
+        this is PlatformFontAccessLimitExceeded ||
         this is FontError.ShapingResourceLimitExceeded ||
         this is FontError.EditorOperationLimitExceeded ||
         this is FontError.Cancelled ||
-        code == OperationRenderAssetPool.ESTIMATE_UNAVAILABLE_CODE
+        code == OperationRenderAssetPool.ESTIMATE_UNAVAILABLE_CODE ||
+        code == PLATFORM_GLYPH_CLEANUP_FAILURE_CODE ||
+        code in setOf(
+            "font.open-type-copy-estimate-unavailable", "font.open-type-copy-estimate-invalid",
+            "font.platform-context-proof-failed", "font.native-library-load-failed",
+            "font.native-symbol-resolution-failed", "font.native-allocation-failed",
+            "font.platform-resolver-cleanup-failed",
+            "font.native-font-creation-failed", "font.platform-runtime-identity-unavailable",
+        )

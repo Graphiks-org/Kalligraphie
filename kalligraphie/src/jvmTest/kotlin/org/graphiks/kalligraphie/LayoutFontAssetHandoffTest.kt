@@ -370,11 +370,11 @@ class LayoutFontAssetHandoffTest {
             val certificates = fixture.certificates
             val failedKey = certificates.last().assetKey
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
-                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
+                override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
                     if (key == failedKey) {
                         FontOperationResult.Failure(FontError.InvalidFontData("Later certified root is unavailable."))
                     } else {
-                        captureAssets(fixture.resolver.reopen(key), captured)
+                        captureAssets(fixture.resolver.reopen(key, cancellationToken), captured)
                     }
             }
 
@@ -402,8 +402,8 @@ class LayoutFontAssetHandoffTest {
         val cancellation = SwitchableCancellationToken()
         try {
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
-                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
-                    cancelAfterActualDetach(fixture.resolver.reopen(key), cancellation, captured)
+                override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
+                    cancelAfterActualDetach(fixture.resolver.reopen(key, cancellationToken), cancellation, captured)
             }
 
             val opened = fixture.line.openLayoutHandle(resolver, cancellation)
@@ -425,9 +425,9 @@ class LayoutFontAssetHandoffTest {
             val captured = mutableListOf<FontRenderAssetHandle>()
             try {
                 val resolver = object : FontAssetResolverHandle by fixture.resolver {
-                    override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> = when (case) {
-                        "attached" -> reportWrongAttachedKey(fixture.resolver.reopen(key), captured)
-                        "detached" -> reportWrongDetachedKey(fixture.resolver.reopen(key), captured)
+                    override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> = when (case) {
+                        "attached" -> reportWrongAttachedKey(fixture.resolver.reopen(key, cancellationToken), captured)
+                        "detached" -> reportWrongDetachedKey(fixture.resolver.reopen(key, cancellationToken), captured)
                         else -> error("Unknown complete-key case: $case")
                     }
                 }
@@ -451,8 +451,8 @@ class LayoutFontAssetHandoffTest {
         try {
             val unsupportedKey = fixture.certificates.last().assetKey
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
-                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> = when (
-                    val reopened = fixture.resolver.reopen(key)
+                override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> = when (
+                    val reopened = fixture.resolver.reopen(key, cancellationToken)
                 ) {
                     is FontOperationResult.Success -> FontOperationResult.Success(
                         if (key == unsupportedKey) UnsupportedDetachAsset(reopened.value, captured)
@@ -481,8 +481,8 @@ class LayoutFontAssetHandoffTest {
         val captured = mutableListOf<FontRenderAssetHandle>()
         try {
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
-                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
-                    closeFailingAssets(fixture.resolver.reopen(key), captured)
+                override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
+                    closeFailingAssets(fixture.resolver.reopen(key, cancellationToken), captured)
             }
 
             val opened = fixture.line.openLayoutHandle(resolver)
@@ -511,8 +511,8 @@ class LayoutFontAssetHandoffTest {
         var primaryFailure: Throwable? = null
         try {
             val resolver = object : FontAssetResolverHandle by fixture.resolver {
-                override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> =
-                    gateRootDetach(fixture.resolver.reopen(key), detachEntered, releaseDetach, captured)
+                override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
+                    gateRootDetach(fixture.resolver.reopen(key, cancellationToken), detachEntered, releaseDetach, captured)
             }
             val openedHandle = success(fixture.line.openLayoutHandle(resolver))
             handle = openedHandle

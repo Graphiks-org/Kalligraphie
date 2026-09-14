@@ -8,6 +8,11 @@ bibliothèque fournit des octets SFNT capturés à `Kalligraphie.embedded(...)`,
 sélectionne un enregistrement de face stable, crée une instance de fonte, puis utilise une
 ressource de rendu pour matérialiser une représentation portable de glyphe.
 
+Le module facultatif d’[accès aux fontes via la plateforme](platform-font-access.md) ajoute
+une route CoreText explicite sur les JVM macOS prises en charge sans modifier
+le shaping (transformation du texte en glyphes) ni la géométrie d’édition
+portables. Le consommateur possède la durée de vie des ressources de plateforme et le rendu.
+
 Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;
@@ -722,14 +727,14 @@ val (perFaceBudget, perCatalogBudget) = updatedPolicy
 val retainedBytesPerFace = perFaceBudget.retainedBytes
 ```
 
-Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource native. La fermeture du dernier lease (droit temporaire de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
+Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource de plateforme. La fermeture du dernier lease (droit temporaire de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
 
-Les catalogues ne partagent pas encore de budget au niveau provider/engine (fournisseur/moteur). Cette portée de propriété et la participation des ressources natives seront introduites avec une route native. Les tests de glyphes démontrent la transparence observable ; ils ne mesurent pas la rétention et ne prouvent pas l'admission du cache. La comptabilité appartient à une future instrumentation opt-in (activée explicitement), hors `check`.
+Les catalogues ne partagent pas encore de budget au niveau provider/engine (fournisseur/moteur). Cette portée de propriété et la participation des ressources de plateforme seront introduites avec une route de cache de plateforme. Les tests de glyphes démontrent la transparence observable ; ils ne mesurent pas la rétention et ne prouvent pas l'admission du cache. La comptabilité appartient à une future instrumentation opt-in (activée explicitement), hors `check`.
 
 Sur macOS, l’artefact JVM expose aussi `MacosSystemFontCatalog.open()`. Il
 capture, sous limites, les fichiers `.ttf` réguliers dans un instantané
 portable et utilise les mêmes routes que les fontes embarquées. Il n’expose pas
-de handle (gestionnaire de durée de vie ; ici, poignée native) CoreText et ne
+de handle (référence opaque vers une ressource de plateforme) CoreText et ne
 déclare pas de prise en charge de `.otf` ni
 de `.ttc`.
 
@@ -894,7 +899,7 @@ les appels indivisibles au fournisseur ; elle n’interrompt pas un `reopen`,
 actuellement son acquisition atomique par réouverture et détachement, mais ces
 opérations ne font pas partie de l’abstraction `LayoutHandle`. Cette API
 n’attribue pas ces ressources à une session de composition et n’introduit
-aucune politique de GPU, d’atlas, de rendu natif ou de rendu.
+aucune politique de GPU, d’atlas, de rendu de plateforme ou de rendu.
 
 Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence JVM. Ses
 ressources Linux et macOS x64/arm64 sont épinglées, vérifiées par hash

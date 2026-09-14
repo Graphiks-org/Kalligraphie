@@ -36,7 +36,7 @@ import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphRepresentationKey
 import org.graphiks.kalligraphie.api.GlyphRepresentationProfile
-import org.graphiks.kalligraphie.api.NativeHandleProfile
+import org.graphiks.kalligraphie.api.PlatformHandleProfile
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.PaintGraphProfile
 import org.graphiks.kalligraphie.api.immutableListSnapshot
@@ -577,7 +577,7 @@ internal fun estimateEmbeddedRenderAssetBytes(
             .saturatingAdd(profile.limits.maxIndexTableBytes.toLong())
             .saturatingAdd(profile.limits.maxBitmapTableBytes.toLong())
             .saturatingAdd(profile.limits.maxTotalDecodedBytes.toLong())
-        is NativeHandleProfile -> total
+        is PlatformHandleProfile -> total
     }
     return total
 }
@@ -702,7 +702,7 @@ private fun GlyphRepresentationProfile.estimatedRetainedBytes(): Long = when (th
     is BitmapProfile -> 112L
         .saturatingAdd(acceptedPixelFormats.size.toLong().saturatingMultiply(8L))
         .saturatingAdd(acceptedColorSpaces.size.toLong().saturatingMultiply(8L))
-    is NativeHandleProfile -> 64L
+    is PlatformHandleProfile -> 64L
         .saturatingAdd(bridgeKind.estimatedRetainedBytes())
         .saturatingAdd(bridgeVersion.estimatedRetainedBytes())
 }

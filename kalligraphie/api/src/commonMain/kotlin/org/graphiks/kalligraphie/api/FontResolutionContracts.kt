@@ -65,8 +65,8 @@ public data class FontFaceCapabilities(
     public val paintGraph: Boolean = false,
     /** Whether the face declares a decoded portable bitmap route. */
     public val bitmap: Boolean = false,
-    /** Whether the face declares a separately negotiated native-handle route. */
-    public val nativeHandle: Boolean = false,
+    /** Whether the face declares a separately negotiated platform-handle route. */
+    public val platformHandle: Boolean = false,
 )
 
 /**

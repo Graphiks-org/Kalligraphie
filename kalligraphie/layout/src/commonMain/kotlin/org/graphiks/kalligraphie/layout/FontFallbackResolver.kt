@@ -652,6 +652,7 @@ internal object FontFallbackResolver {
                 instance,
                 materialization,
                 materialization.requirements.acceptedProfiles.single(),
+                request.cancellationToken,
             )
         ) {
             is FontOperationResult.Success -> acquired.value
@@ -663,6 +664,26 @@ internal object FontFallbackResolver {
                 return Validation.Rejected(acquired.diagnostics + acquired.error.toDiagnostic())
             }
             is FontOperationResult.Cancelled -> return Validation.Cancelled(acquired.diagnostics)
+        }
+        if (asset is org.graphiks.kalligraphie.api.PlatformFontRenderAssetHandle &&
+            asset.key.representationProfile is org.graphiks.kalligraphie.api.PlatformHandleProfile) {
+            val glyphIds = shaped.glyphs.map { it.glyphId }.distinct()
+            val known = proofs.requestedRoutes(asset.key, glyphIds, pool)
+            val missing = glyphIds.filterNot(known::containsKey)
+            if (missing.isEmpty()) return Validation.Valid
+            return when (val validated = validatePlatformGlyphs(asset, missing, request.cancellationToken)) {
+                is FontOperationResult.Success -> {
+                    proofs.record(asset.key, validated.value)
+                    Validation.Valid
+                }
+                is FontOperationResult.Cancelled -> Validation.Cancelled(validated.diagnostics)
+                is FontOperationResult.Failure -> if (validated.error.isTerminalMaterializationFailure()) {
+                    Validation.Failed(validated.error, validated.diagnostics)
+                } else {
+                    onRejection(validated.error.materializationReason(), asset.key.representationProfile, listOf(shaped.range))
+                    Validation.Rejected(validated.diagnostics + validated.error.toDiagnostic(), listOf(shaped.range))
+                }
+            }
         }
         val routes = mutableMapOf<org.graphiks.kalligraphie.api.GlyphId, GlyphMaterializationRoute>()
         var validation: Validation = Validation.Valid
@@ -789,7 +810,7 @@ internal object FontFallbackResolver {
         is org.graphiks.kalligraphie.api.OutlineProfile -> outline
         is org.graphiks.kalligraphie.api.PaintGraphProfile -> paintGraph
         is org.graphiks.kalligraphie.api.BitmapProfile -> bitmap
-        is org.graphiks.kalligraphie.api.NativeHandleProfile -> nativeHandle
+        is org.graphiks.kalligraphie.api.PlatformHandleProfile -> platformHandle
     }
 
     private fun FontError.isTerminal(): Boolean = this is FontError.ResourceClosed ||

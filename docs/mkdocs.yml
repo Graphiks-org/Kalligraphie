@@ -50,6 +50,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - Font Management: font-management.md
+  - Platform Font Access: platform-font-access.md
   - Editable-line Measurement: editable-line-measurement.md
   - Glyph Materialization Measurement: glyph-materialization-measurement.md
   - Apple M2 Max Materialization Reference: glyph-materialization-reference-apple-m2-max.md

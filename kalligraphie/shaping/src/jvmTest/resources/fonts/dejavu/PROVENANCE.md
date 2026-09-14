@@ -28,3 +28,26 @@ that glyph. The shaping contract therefore records `ABSENT`; later layout is
 responsible for its deterministic interpolation fallback. The test never calls
 `hb-shape` at runtime and does not use the embedded HarfBuzz backend as its
 oracle.
+
+## Independent final visible hyphen oracle
+
+Against the unchanged TTF digest above, external `hb-shape (HarfBuzz) 14.4.0`
+returned this design-unit result, outside the Kotlin shaping backend:
+
+```sh
+hb-shape --direction=ltr --script=Latn --language=en --no-glyph-names --font-size=2048 --show-extents DejaVuSans.ttf '-'
+```
+
+```text
+[16=0+739<100,643,539,-164>]
+```
+
+The final hyphen-minus is glyph 16, advance 739 at units per em 2048, with
+design bounds `(100,479,639,643)`. Direct scaling `739 * 1000 / 2048`
+gives the float-valued layout/native advance `360.83984375` at size 1000.
+The corresponding nonempty native path bounds are
+`(48.828125,233.88671875,312.01171875,313.96484375)`.
+The same command with `--font-size=1000` reports integer-rounded advance
+`361`; that rounded shaping output is not the derived metric oracle.
+These literals certify the visible glyph produced at a broken soft hyphen,
+rather than the suppressed source scalar. Fixture bytes remain unchanged.

@@ -31,9 +31,10 @@ import org.graphiks.kalligraphie.api.toDiagnostic
  * No partial layout handle is published on failure or cancellation.
  *
  * [cancellationToken] is observed cooperatively before work, before each root acquisition, after
- * successful reopening and detachment, and before publication. Provider calls are indivisible
- * from this operation's perspective: cancellation does not interrupt an in-progress reopen,
- * detach, or close. Cancellation observed at a checkpoint returns [FontOperationResult.Cancelled].
+ * successful reopening and detachment, and before publication. Reopening receives the token,
+ * allowing cooperative provider checks between native calls; an individual native call cannot
+ * be interrupted. Detachment and cleanup remain non-cancellable.
+ * Cancellation observed at a checkpoint returns [FontOperationResult.Cancelled].
  *
  * On failure or observed cancellation, current owners and previously adopted roots are closed,
  * with roots cleaned up in reverse acquisition order. Cleanup continues after typed cleanup
@@ -118,7 +119,7 @@ private fun <T> openLayoutHandle(
 
     for (key in extractedCertificates.map { it.assetKey }.distinct()) {
         if (cancellationToken.isCancellationRequested()) return abort(FontOperationResult.Cancelled())
-        val attached = when (val reopened = resolver.reopen(key)) {
+        val attached = when (val reopened = resolver.reopen(key, cancellationToken)) {
             is FontOperationResult.Success -> {
                 diagnostics += reopened.diagnostics
                 reopened.value
