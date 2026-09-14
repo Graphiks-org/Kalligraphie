@@ -9,9 +9,8 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
     private val admission: CoreTextByteAdmission) : FontAssetResolverHandle {
     private val owner = CoreTextResourceOwner { delegate.close() }
     fun acquire(instance: FontInstance, variant: FontRenderVariantSnapshot, requirements: FontAccessRequirementsSnapshot,
-        token: CancellationToken): FontOperationResult<FontRenderAssetHandle> = nativeResult {
-        val operation = owner.acquireChild() ?: fail(FontError.ResourceClosed("CoreText asset resolver is closed."))
-        operation.use {
+        token: CancellationToken): FontOperationResult<FontRenderAssetHandle> = admittedOperation(token) {
+        coreTextResult {
             checkCancellation(token)
             if (requirements.mode != FontAccessRequirementsSnapshot.Mode.RENDERABLE) fail(FontError.UnsupportedRepresentationProfile("Renderable access is required."))
             var refusal: FontOperationResult.Failure? = null
@@ -30,7 +29,7 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
                     wrapPortable(instance.acquireRenderAsset(delegate, variant, portableRequirements, token), instance.key, variant, profile, token)
                 }
                 when (result) {
-                    is FontOperationResult.Success -> return@nativeResult result.value
+                    is FontOperationResult.Success -> return@coreTextResult result
                     is FontOperationResult.Cancelled -> throw CoreTextAbort(result)
                     is FontOperationResult.Failure -> {
                         if (result.error !is FontError.UnsupportedRepresentationProfile &&
@@ -43,21 +42,20 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
         }
     }
     override fun reopen(key: FontRenderAssetKey): FontOperationResult<FontRenderAssetHandle> = reopen(key, CancellationToken.none)
-    override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> = nativeResult {
-        val operation = owner.acquireChild() ?: fail(FontError.ResourceClosed("CoreText asset resolver is closed."))
-        operation.use {
+    override fun reopen(key: FontRenderAssetKey, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> = admittedOperation(cancellationToken) {
+        coreTextResult {
             checkCancellation(cancellationToken)
             if (key.generation != generation) fail(FontError.IncompatibleCatalogGeneration("Asset key belongs to another adapted provider generation."))
             val source = sources[key.fontInstanceKey.face] ?: fail(FontError.AssetUnavailable("Asset face is absent from the captured generation."))
             if (key.representationProfile is NativeHandleProfile) {
                 if (key.representationProfile != runtime.profile || key.nativeContext != runtime.context(key)) fail(FontError.AssetUnavailable("Native key has a different bridge/runtime or invalid reopening token."))
-                nativeAsset(source, key, cancellationToken)
+                nativeResult { nativeAsset(source, key, cancellationToken) }
             } else {
                 if (key.nativeContext != null) fail(FontError.AssetUnavailable("Portable asset key cannot carry native context."))
                 val variant = key.variantSnapshot ?: if (key.variant == FontRenderVariantKey.default) FontRenderVariantSnapshot.default
                     else fail(FontError.AssetUnavailable("Non-default portable variant requires its complete snapshot."))
                 wrapPortable(delegate.reopen(key.copy(generation = delegate.generation), cancellationToken), key.fontInstanceKey, variant,
-                    key.representationProfile, cancellationToken).valueOrAbort()
+                    key.representationProfile, cancellationToken)
             }
         }
     }
@@ -66,7 +64,7 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
         var resourceOwner: CoreTextResourceOwner? = null
         var transferred = false
         try {
-            resourceOwner = CoreTextResourceOwner(context::release)
+            resourceOwner = CoreTextResourceOwner { context.release(); FontOperationResult.Success(Unit) }
             val asset = CoreTextNativeAsset(key, context, resourceOwner)
             checkCancellation(token)
             transferred = true
@@ -74,17 +72,37 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
         } finally { if (!transferred) { if (resourceOwner == null) context.release() else resourceOwner.close() } }
     }
     private fun wrapPortable(result: FontOperationResult<FontRenderAssetHandle>, instance: FontInstanceKey,
-        variant: FontRenderVariantSnapshot, profile: GlyphRepresentationProfile, token: CancellationToken): FontOperationResult<FontRenderAssetHandle> = nativeResult {
-        val asset = result.valueOrAbort()
-        var transferred = false
-        try {
+        variant: FontRenderVariantSnapshot, profile: GlyphRepresentationProfile, token: CancellationToken): FontOperationResult<FontRenderAssetHandle> = adaptCoreTextAsset(result) { asset ->
             checkCancellation(token)
             if (asset.key.fontInstanceKey != instance || asset.key.variant != variant.key || asset.key.representationProfile != profile ||
                 asset.key.generation != delegate.generation || asset.key.variantSnapshot != variant.takeUnless { it == FontRenderVariantSnapshot.default }) {
                 fail(FontError.AssetUnavailable("Portable provider issued an asset for a different exact selection."))
             }
-            CoreTextPortableAsset(asset, asset.key.copy(generation = generation)).also { transferred = true }
-        } finally { if (!transferred) asset.close() }
+            CoreTextPortableAsset(asset, asset.key.copy(generation = generation))
     }
-    override fun close(): FontOperationResult<Unit> { owner.close(); return FontOperationResult.Success(Unit) }
+    private inline fun admittedOperation(token: CancellationToken,
+        block: () -> FontOperationResult<FontRenderAssetHandle>): FontOperationResult<FontRenderAssetHandle> = coreTextResult {
+        val operation = owner.acquireChild() ?: fail(FontError.ResourceClosed("CoreText asset resolver is closed."))
+        var result: FontOperationResult<FontRenderAssetHandle>? = null
+        try {
+            result = coreTextResult { block() }
+        } finally {
+            val drainage = operation.closeResult()
+            val completed = result
+            if (completed != null) {
+                if (completed is FontOperationResult.Success) {
+                    var transferable = false
+                    try {
+                        val primary = if (token.isCancellationRequested()) FontOperationResult.Cancelled(completed.diagnostics) else completed
+                        result = completeCoreTextCleanup(primary, drainage)
+                        transferable = result is FontOperationResult.Success
+                    } finally {
+                        if (!transferable) result = completeCoreTextCleanup(checkNotNull(result), completed.value.close())
+                    }
+                } else result = completeCoreTextCleanup(completed, drainage)
+            }
+        }
+        checkNotNull(result)
+    }
+    override fun close(): FontOperationResult<Unit> = owner.closeResult()
 }

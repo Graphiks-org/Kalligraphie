@@ -147,6 +147,17 @@ another thread and must itself be closed. A closed owner rejects new
 acquisitions. Close is idempotent and does not wait for its admitted children;
 the last owner/operation releases the underlying native context.
 
+The adapted resolver preserves its private portable resolver's typed cleanup
+result when closure drains immediately. If admitted acquire/reopen operations
+are still running, close returns without waiting; the last completing
+operation carries deferred cleanup diagnostics. A cleanup refusal is terminal
+(`font.native-resolver-cleanup-failed`), while primary cancellation stays
+cancelled. Any asset that cannot be transferred is closed first. Repeated
+close does not retry drainage. Portable resolve/instantiate and owned
+acquire/reopen/detach adaptation preserve successful provider diagnostics;
+detachment checks the complete underlying key
+before exposing the original public key.
+
 **Raw pointer obligation:** keep the owning lease open for every unmanaged
 native call that uses the pointer, and do not close that lease concurrently
 with such a call. Retaining a pointer alone keeps nothing alive. Kotlin

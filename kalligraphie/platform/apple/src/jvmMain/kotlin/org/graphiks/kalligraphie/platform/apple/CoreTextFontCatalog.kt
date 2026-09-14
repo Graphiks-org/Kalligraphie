@@ -6,6 +6,13 @@ import org.graphiks.kalligraphie.api.*
 public interface CoreTextFontCatalogSnapshot : FontCatalogSnapshot {
     /** Explicit bridge profile available only on eligible static monochrome TrueType faces. */
     public val nativeProfile: NativeHandleProfile
+    /**
+     * Opens a private portable resolver. Its first close reports immediately available cleanup;
+     * closure never waits for admitted acquire/reopen operations. The last completing operation
+     * reports deferred cleanup refusal as terminal failure (or retains primary cancellation),
+     * closing any untransferred asset. Already transferred owners remain independent.
+     */
+    public override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle>
 }
 
 /** Opt-in factory; loading the portable library alone never loads Apple native libraries. */
@@ -41,13 +48,11 @@ internal class CapturedCoreTextCatalog(private val portable: FontCatalogSnapshot
     override val faces: List<FontFaceRecord> = java.util.Collections.unmodifiableList(portable.faces.map { record ->
         record.copy(capabilities = record.capabilities.copy(nativeHandle = sources.getValue(record.id).nativeEligible))
     })
-    override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> = nativeResult {
-        val delegate = portable.openAssetResolver().valueOrAbort()
-        var transferred = false
-        try { CoreTextAssetResolver(generation, delegate, sources, runtime, bindings, admission).also { transferred = true } }
-        finally { if (!transferred) delegate.close() }
+    override fun openAssetResolver(): FontOperationResult<FontAssetResolverHandle> =
+        adaptCoreTextOwnedResult(portable.openAssetResolver(), { it.close() }) { delegate ->
+            CoreTextAssetResolver(generation, delegate, sources, runtime, bindings, admission)
     }
-    override fun resolveFace(faceId: FontFaceId, requirements: FontAccessRequirementsSnapshot): FontOperationResult<FontFace> = nativeResult {
+    override fun resolveFace(faceId: FontFaceId, requirements: FontAccessRequirementsSnapshot): FontOperationResult<FontFace> = coreTextResult {
         val nativeAccepted = sources[faceId]?.nativeEligible == true && runtime.profile in requirements.acceptedProfiles
         val underlyingRequirements = if (requirements.mode == FontAccessRequirementsSnapshot.Mode.LAYOUT_ONLY || nativeAccepted) {
             FontAccessRequirementsSnapshot.layoutOnly()
@@ -56,7 +61,8 @@ internal class CapturedCoreTextCatalog(private val portable: FontCatalogSnapshot
             if (profiles.isEmpty()) fail(FontError.UnsupportedRepresentationProfile("This face cannot provide an accepted CoreText native profile."))
             FontAccessRequirementsSnapshot.renderable(profiles, requirements.portableDataRequired)
         }
-        val face = portable.resolveFace(faceId, underlyingRequirements).valueOrAbort()
-        CoreTextFontFace(face, generation, sources[faceId], runtime)
+        adaptCoreTextResult(portable.resolveFace(faceId, underlyingRequirements)) { face ->
+            CoreTextFontFace(face, generation, sources[faceId], runtime)
+        }
     }
 }

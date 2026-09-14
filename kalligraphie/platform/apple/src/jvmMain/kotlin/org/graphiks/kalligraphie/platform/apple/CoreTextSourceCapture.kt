@@ -14,20 +14,22 @@ internal fun <T> FontOperationResult<T>.valueOrAbort(): T = when (this) {
     is FontOperationResult.Failure -> throw CoreTextAbort(this)
     is FontOperationResult.Cancelled -> throw CoreTextAbort(this)
 }
-internal inline fun <T> nativeResult(block: () -> T): FontOperationResult<T> = try {
+internal inline fun <T> nativeResult(diagnostics: List<FontDiagnostic> = emptyList(), block: () -> T): FontOperationResult<T> = try {
     val value = block()
-    try { FontOperationResult.Success(value) } catch (failure: OutOfMemoryError) {
-        when (value) {
+    try { FontOperationResult.Success(value, diagnostics) } catch (failure: OutOfMemoryError) {
+        val cleanup = when (value) {
             is FontRenderAssetHandle -> value.close()
             is NativeFontLease -> value.close()
             is FontAssetResolverHandle -> value.close()
+            else -> FontOperationResult.Success(Unit)
         }
-        throw failure
+        completeCoreTextCleanup(FontOperationResult.Failure(FontError.FontDataFailure("font.native-allocation-failed",
+            "Native access could not allocate its admitted buffers.", FontDiagnosticLocation.Source), diagnostics), cleanup)
     }
 } catch (abort: CoreTextAbort) {
-    abort.outcome
+    abort.outcome.withCoreTextDiagnostics(diagnostics + abort.outcome.coreTextDiagnostics())
 } catch (failure: OutOfMemoryError) {
-    FontOperationResult.Failure(FontError.FontDataFailure("font.native-allocation-failed", "Native access could not allocate its admitted buffers.", FontDiagnosticLocation.Source))
+    FontOperationResult.Failure(FontError.FontDataFailure("font.native-allocation-failed", "Native access could not allocate its admitted buffers.", FontDiagnosticLocation.Source), diagnostics)
 }
 internal fun checkedAdd(left: Long, right: Long): Long = try { Math.addExact(left, right) } catch (_: ArithmeticException) { Long.MAX_VALUE }
 internal fun checkLimit(phase: NativeFontAccessPhase, dimension: NativeFontAccessDimension, maximum: Long, observed: Long) {

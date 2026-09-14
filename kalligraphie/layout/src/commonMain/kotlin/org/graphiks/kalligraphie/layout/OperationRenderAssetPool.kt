@@ -216,5 +216,6 @@ internal fun FontError.isTerminalMaterializationFailure(): Boolean =
             "font.open-type-copy-estimate-unavailable", "font.open-type-copy-estimate-invalid",
             "font.native-context-proof-failed", "font.native-library-load-failed",
             "font.native-symbol-resolution-failed", "font.native-allocation-failed",
+            "font.native-resolver-cleanup-failed",
             "font.native-font-creation-failed", "font.native-runtime-identity-unavailable",
         )

@@ -7,8 +7,8 @@ internal class CoreTextFontFace(private val delegate: FontFace, private val gene
     private val source: CoreTextCapturedSource?, private val runtime: CoreTextRuntimeIdentity) : FontFace {
     override val id: FontFaceId get() = delegate.id
     override val metadata: FontFaceMetadata get() = delegate.metadata
-    override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> = nativeResult {
-        CoreTextFontInstance(delegate.instantiate(descriptor).valueOrAbort(), generation, source, runtime)
+    override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> = adaptCoreTextResult(delegate.instantiate(descriptor)) { instance ->
+        CoreTextFontInstance(instance, generation, source, runtime)
     }
 }
 
@@ -34,10 +34,10 @@ internal class CoreTextFontInstance(private val delegate: FontInstance, private 
         requirements: FontAccessRequirementsSnapshot): FontOperationResult<FontRenderAssetHandle> =
         acquireRenderAsset(resolver, renderVariant, requirements, CancellationToken.none)
     override fun acquireRenderAsset(resolver: FontAssetResolverHandle, renderVariant: FontRenderVariantSnapshot,
-        requirements: FontAccessRequirementsSnapshot, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> = nativeResult {
+        requirements: FontAccessRequirementsSnapshot, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> = coreTextResult {
         checkCancellation(cancellationToken)
         if (resolver.generation != generation) fail(FontError.IncompatibleCatalogGeneration("Resolver does not belong to the adapted instance generation."))
         if (resolver !is CoreTextAssetResolver) fail(FontError.AssetUnavailable("Resolver cannot acquire this adapted CoreText instance."))
-        resolver.acquire(delegate, renderVariant, requirements, cancellationToken).valueOrAbort()
+        resolver.acquire(delegate, renderVariant, requirements, cancellationToken)
     }
 }

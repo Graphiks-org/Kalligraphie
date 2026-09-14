@@ -4,6 +4,40 @@ import org.graphiks.kalligraphie.api.*
 import kotlin.test.*
 
 class CoreTextFontOwnershipTest {
+    @Test fun nativeReopeningAdmittedBeforeResolverClosureTransfersAnIndependentAuditedOwner() {
+        val catalog = liberationCatalog()
+        val resolver = success(catalog.openAssetResolver())
+        try {
+            val original = nativeAsset(catalog, resolver)
+            val key = original.key
+            success(original.close())
+            val token = BlockingCoreTextToken()
+            val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
+            val held = worker.submit<FontOperationResult<FontRenderAssetHandle>> { resolver.reopen(key, token) }
+            try {
+                // Reopen's first cooperative check is inside its admitted operation. This is
+                // synchronization, not a checkpoint-count or native-resource identity oracle.
+                assertTrue(token.awaitCheckpoint())
+                success(resolver.close())
+                assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(resolver.reopen(key)).error)
+                token.advance()
+                for (attempt in 0 until 80) {
+                    if (held.isDone || !token.awaitCheckpoint()) break
+                    token.advance()
+                }
+                val reopened = assertIs<NativeFontRenderAssetHandle>(success(held.get(10, java.util.concurrent.TimeUnit.SECONDS)))
+                try { assertEquals(key, reopened.key); assertAuditedAdvance(reopened) }
+                finally { success(reopened.close()) }
+                success(resolver.close())
+            } finally {
+                token.cancel()
+                try {
+                    val result = held.get(10, java.util.concurrent.TimeUnit.SECONDS)
+                    if (result is FontOperationResult.Success) success(result.value.close())
+                } finally { worker.shutdownNow() }
+            }
+        } finally { success(resolver.close()) }
+    }
     @Test fun portableAcquisitionAndReopeningCheckCancellationBeforeReturningTheirOutcome() {
         val catalog = portableFixture("/fonts/liberation/LiberationSans-Regular.ttf")
         val resolver = success(catalog.openAssetResolver())

@@ -166,6 +166,18 @@ propriétaire fermé refuse les nouvelles acquisitions. La fermeture est
 idempotente et n’attend pas les enfants admis ; le dernier propriétaire ou
 opération libère le contexte natif sous-jacent.
 
+Le résolveur adapté conserve le résultat typé de fermeture de son résolveur
+portable privé lorsque le drainage est immédiat. Si des acquire/reopen admis
+sont encore en cours, la fermeture retourne sans attendre ; la dernière
+opération terminée porte les diagnostics du drainage différé. Un refus de
+cleanup (nettoyage) est terminal (`font.native-resolver-cleanup-failed`),
+tandis qu’une annulation primaire reste une annulation. Toute ressource non
+transférable est d’abord fermée. Une fermeture répétée ne retente pas le
+drainage. Les adaptations portables resolve/instantiate et acquire/reopen/detach
+conservent les diagnostics de réussite du fournisseur ; le détachement vérifie
+la clé sous-jacente complète avant d’exposer la clé
+publique d’origine.
+
 **Obligation liée au pointeur brut :** garder le propriétaire ouvert pendant
 tout appel natif non géré utilisant son pointeur et ne pas le fermer en
 concurrence avec cet appel. Un pointeur seul ne maintient rien en vie. Les
