@@ -1490,6 +1490,7 @@ class EditableLineTest {
             resolver: org.graphiks.kalligraphie.api.FontAssetResolverHandle,
             variant: FontRenderVariantKey,
             requirements: FontAccessRequirementsSnapshot,
+            cancellationToken: org.graphiks.kalligraphie.api.CancellationToken,
         ): FontOperationResult<FontRenderAssetHandle> = FontOperationResult.Success(asset)
     }
 

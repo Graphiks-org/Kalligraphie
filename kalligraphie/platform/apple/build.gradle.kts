@@ -22,6 +22,11 @@ kotlin {
         }
     }
 }
+tasks.named<Copy>("jvmTestProcessResources") {
+    from(rootProject.file("kalligraphie/shaping/src/jvmTest/resources")) {
+        include("fonts/dejavu/DejaVuSans.ttf", "fonts/dejavu/PROVENANCE.md", "fonts/dejavu/LICENSE.txt")
+    }
+}
 dokka { dokkaSourceSets.configureEach { reportUndocumented.set(true) } }
 mavenPublishing { coordinates(artifactId = "kalligraphie-platform-apple") }
 tasks.withType<Test>().configureEach {

@@ -6,6 +6,7 @@ import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
+import org.graphiks.kalligraphie.api.NativeHandleProfile
 
 /**
  * Operation-local evidence that a live asset has already resolved exact glyph routes.
@@ -24,6 +25,7 @@ internal class GlyphMaterializationProofs {
     ): GlyphMaterializationProof? = routesByAsset.entries.firstNotNullOfOrNull { (assetKey, routes) ->
         if (
             pool.owns(assetKey) &&
+            assetKey.representationProfile !is NativeHandleProfile &&
             assetKey.fontInstanceKey == instance.key &&
             assetKey.generation == materialization.resolver.generation &&
             assetKey.variant == materialization.renderVariant.key &&
@@ -31,10 +33,17 @@ internal class GlyphMaterializationProofs {
             assetKey.representationProfile in materialization.requirements.acceptedProfiles &&
             glyphIds.all(routes::containsKey)
         ) {
-            GlyphMaterializationProof(assetKey, routes.toMap())
+            GlyphMaterializationProof(assetKey, glyphIds.distinct().associateWith { checkNotNull(routes[it]) })
         } else {
             null
         }
+    }
+
+    /** Projects only requested evidence from the complete, currently owned issued key. */
+    fun requestedRoutes(assetKey: FontRenderAssetKey, glyphIds: Collection<GlyphId>, pool: OperationRenderAssetPool): Map<GlyphId, GlyphMaterializationRoute> {
+        if (!pool.owns(assetKey)) return emptyMap()
+        val known = routesByAsset[assetKey] ?: return emptyMap()
+        return glyphIds.distinct().mapNotNull { glyph -> known[glyph]?.let { glyph to it } }.toMap()
     }
 
     fun record(assetKey: FontRenderAssetKey, routes: Map<GlyphId, GlyphMaterializationRoute>) {
