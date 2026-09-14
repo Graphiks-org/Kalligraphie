@@ -15,13 +15,19 @@ internal class CoreTextFontContext private constructor(val font: Long, val glyph
         }
     }
     companion object {
+        /** Source and native selection eligibility must be checked even before a warm lookup. */
+        fun validate(source: CoreTextCapturedSource, key: FontRenderAssetKey) {
+            if (!source.platformEligible || key.fontInstanceKey.face != source.face ||
+                key.fontInstanceKey.layoutSize.value <= 0f || !key.fontInstanceKey.layoutSize.value.isFinite() ||
+                key.fontInstanceKey.geometry != FontGeometryParameters() || key.variant != FontRenderVariantKey.default ||
+                key.variantSnapshot != null || key.platformContext == null) {
+                fail(FontError.UnsupportedRepresentationProfile("CoreText requires supported static TrueType source, positive size and default geometry/variant."))
+            }
+        }
         fun create(source: CoreTextCapturedSource, key: FontRenderAssetKey, bindings: CoreTextBindings,
             admission: CoreTextByteAdmission, token: CancellationToken): CoreTextFontContext {
             checkCancellation(token)
-            if (!source.platformEligible || key.fontInstanceKey.layoutSize.value <= 0f || !key.fontInstanceKey.layoutSize.value.isFinite() ||
-                key.fontInstanceKey.geometry != FontGeometryParameters() || key.variant != FontRenderVariantKey.default || key.variantSnapshot != null) {
-                fail(FontError.UnsupportedRepresentationProfile("CoreText requires supported static TrueType source, positive size and default geometry/variant."))
-            }
+            validate(source, key)
             val context = checkNotNull(key.platformContext)
             val charge = source.bytes.size.toLong() * 2L
             admission.reserve(charge, PlatformFontAccessPhase.NATIVE_CREATION).use {

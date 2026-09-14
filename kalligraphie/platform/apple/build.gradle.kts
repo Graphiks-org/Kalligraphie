@@ -11,6 +11,7 @@ kotlin {
     sourceSets {
         jvmMain.dependencies {
             api(project(":kalligraphie:api"))
+            implementation(project(":kalligraphie:font:core"))
             implementation("org.graphiks:kffi-jvm:1.0.0-SNAPSHOT")
         }
         jvmTest {
