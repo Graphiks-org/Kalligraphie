@@ -97,14 +97,31 @@ qui contiennent des définitions `linearGradient` ou des définitions
 éléments `stop` auto-fermants. Un élément `rect`
 auto-fermant peut utiliser un remplissage opaque `#RRGGBB`, `fill="none"` ou
 une référence `url(#id)` vers un gradient unique défini plus tôt dans
-le même document ; un remplissage absent utilise du noir opaque par défaut. Les
-coordonnées du gradient utilisent uniquement
-`objectBoundingBox` (boîte englobante de l’objet) : les valeurs sans unité et
-les pourcentages sont résolus relativement au rectangle sans être bornés à sa
-boîte unité. Les valeurs linéaires par défaut sont `x1=0%`, `y1=0%`,
+le même document ; un remplissage absent utilise du noir opaque par défaut. Un
+élément `path` auto-fermant pris en charge accepte les mêmes remplissages si le
+gradient référencé déclare explicitement `userSpaceOnUse`. Les gradients
+`objectBoundingBox` restent incompatibles avec les chemins, y compris lorsqu’ils
+sont vides, unis, dégénérés ou utilisés sous une transformation singulière. Avec
+`gradientUnits` absent ou explicitement égal à `objectBoundingBox` (boîte
+englobante de l’objet), les valeurs sans unité et les pourcentages sont résolus
+relativement au rectangle sans être bornés à sa boîte unité. Les valeurs
+linéaires par défaut sont `x1=0%`, `y1=0%`,
 `x2=100%` et `y2=0%`. Les valeurs radiales par défaut sont `cx=50%`, `cy=50%`,
-`r=50%`, `fx=cx` et `fy=cy`. Les deux types utilisent par défaut
-`spreadMethod=pad` et l’interpolation sRGB.
+`r=50%`, `fx=cx` et `fy=cy`.
+
+`gradientUnits=userSpaceOnUse` (coordonnées absolues dans l’espace utilisateur)
+est accepté uniquement avec des coordonnées finies, sans unité et indépendantes
+du viewport (fenêtre de visualisation). Une définition linéaire doit fournir
+explicitement `x1`, `y1`, `x2` et `y2`. Une définition radiale doit fournir
+explicitement `cx`, `cy` et un `r` positif ou nul ; `fx` et `fy` absents héritent
+des valeurs absolues acceptées de `cx` et `cy`, tandis qu’un foyer explicite doit
+lui aussi être sans unité. Les pourcentages et les valeurs par défaut en
+pourcentage sélectionnées par l’omission d’un attribut requis restent hors de
+ce sous-ensemble borné, car ils dépendent du viewport et d’un éventuel `viewBox`.
+Ils retournent `UnsupportedRepresentationProfile`, tout comme une valeur
+`gradientUnits` inconnue ; un nombre absolu mal formé ou non fini et un rayon
+radial négatif non nul retournent `FontDataFailure`. Les deux types utilisent
+par défaut `spreadMethod=pad` et l’interpolation sRGB.
 
 `spreadMethod` accepte les trois modes d’extension portables : `pad`, `repeat`
 et `reflect` correspondent à `PAD`, `REPEAT` et `REFLECT`. Une valeur
@@ -192,30 +209,36 @@ SVG déclarée, quel que soit son nombre d’opérandes ; chaque appel à un op�
 de gradient partagent ce budget, et le fallback (repli) de profil recommence la
 validation sans publier de donnée partielle.
 
-Avec des vecteurs-colonnes, la transformation de peinture vaut `T * B * G` :
-`T` est la transformation de groupe effective du rectangle, `B` applique sa
-boîte englobante normalisée et `G` compose `gradientTransform` dans l’ordre
-source. `G` modifie uniquement la géométrie du gradient ; le chemin de découpe
-du rectangle reste soumis à `T` seul. Un gradient linéaire incorpore cette
-transformation dans `p0`, `p1` et `p2`, sans nœud `Transform` supplémentaire.
-Un gradient radial conserve ses cercles normalisés et place la même
-transformation sur son unique nœud `Transform` existant.
+Avec des vecteurs-colonnes, une peinture en boîte englobante utilise
+`T * B * G` : `T` est la transformation de groupe effective du rectangle, `B`
+applique sa boîte englobante normalisée et `G` compose `gradientTransform` dans
+l’ordre source. Une peinture absolue en espace utilisateur utilise à la place
+`T * G`, indépendamment des bornes du rectangle. La transformation ne modifie
+que la géométrie du gradient ; le chemin de découpe du rectangle reste soumis à
+`T` seul. Un gradient linéaire incorpore la transformation choisie dans `p0`,
+`p1` et `p2`, sans nœud `Transform` supplémentaire. Un gradient radial conserve
+ses cercles normalisés ou absolus et place la transformation choisie sur son
+unique nœud `Transform` existant.
 
-Une définition sans arrêt ne
-produit aucune encre. Pour un rectangle dont la transformation de groupe
+L’espace de coordonnées et les coordonnées d’une définition sont entièrement
+validés avant toute réduction vide ou unie : une entrée dépendante du viewport
+ne peut donc pas être masquée par l’absence d’arrêts, un arrêt unique ou un
+rayon nul. Une définition valide sans arrêt ne produit aucune encre. Pour un
+rectangle ou chemin pris en charge dont la transformation de groupe
 effective `T` préserve l’aire, un gradient linéaire à un seul arrêt ou un
 vecteur source aux extrémités identiques est normalisé avec le dernier arrêt en
 `Solid` (peinture unie), sous
-le `PathClip` (découpe par chemin) du rectangle. Pour tout autre gradient linéaire d’au
+le `PathClip` (découpe par chemin) de la forme. Pour tout autre gradient linéaire d’au
 moins deux arrêts, Kalligraphie résout d’abord ses points normalisés `p0` et
 `p1` ; s’ils coïncident, il applique la même réduction en peinture unie, sinon
-il produit un `LinearGradient` (gradient linéaire) sous ce chemin rectangulaire.
+il produit un `LinearGradient` (gradient linéaire) sous le chemin de la forme.
 Avant cette production, les points normalisés `p0`, `p1` et `p2` doivent former
 un triplet non colinéaire. Un triplet colinéaire retourne
 `font.svg.invalid-gradient` et aucune ressource partielle n’est publiée. Une
 transformation de groupe effective `T` singulière omet un rectangle ou chemin
-rempli après validation de sa géométrie, de son remplissage et de toute
-référence de peinture.
+rempli après validation de sa géométrie et de son remplissage. Pour un gradient
+de chemin, la référence locale, l’espace de coordonnées, les capacités atteintes
+et les limites projetées du graphe sont aussi validés avant cette omission.
 
 Un rayon radial `r < 0` constitue une donnée invalide. Avec un seul arrêt ou
 `r == 0`, le gradient est pareillement réduit au dernier arrêt sous forme de
@@ -226,9 +249,11 @@ décalé est un SVG valide hors de ce sous-ensemble : il retourne
 peinture radiale non dégénérée conserve ses deux cercles normalisés
 (`c0=(fx,fy), radius0=0` et `c1=(cx,cy), radius1=r`) sous un nœud `Transform`
 (transformation du repère enfant vers le repère parent). Cette transformation
-porte `T * B * G`, tandis qu’un `PathClip` contenant le chemin rectangulaire
-transformé uniquement par `T` découpe le résultat.
-Ce modèle préserve l’ellipse produite par un rectangle non carré.
+porte `T * B * G` ; un radial absolu conserve les mêmes champs de cercle sans
+mise à l’échelle sous `T * G`. Dans les deux cas, un `PathClip` contenant le
+chemin de la forme, transformé uniquement par `T`, découpe le résultat. La forme
+en boîte englobante est réservée aux rectangles et préserve l’ellipse produite
+par un rectangle non carré.
 
 Chaque gradient linéaire ou radial déclaré exige un `PaintGraphProfile` de schéma 3
 exact. Lorsque la normalisation produit réellement un `LinearGradient`, le
@@ -239,7 +264,7 @@ et `PATH_CLIP`. Un `RadialGradient` produit exige les mêmes capacités
 d’interpolation et d’extension, ainsi que `RADIAL_GRADIENT`, `TRANSFORM` et
 `PATH_CLIP`. Une réduction en peinture unie exige à la place `SOLID` et
 `PATH_CLIP`, mais pas l’espace d’interpolation ni le mode d’interpolation
-d’alpha ou d’extension de la définition. Les rectangles unis utilisent
+d’alpha ou d’extension de la définition. Les rectangles et chemins unis utilisent
 `PATH`. Un document qui possède plusieurs racines peintes exige aussi `GROUP` et
 `SOURCE_OVER`. Les limites existantes sont contrôlées
 avant publication : les octets source et décodés, transformations, définitions
@@ -247,7 +272,7 @@ de gradient et arrêts analysés, ainsi que les nœuds, références, chemins,
 découpes, gradients, arrêts de couleur et profondeurs produits doivent tous
 respecter les bornes. Les visites de peinture sont également bornées à partir
 du schéma 2 ; le schéma 1 conserve ses contrôles historiques des nœuds et de la
-profondeur sans appliquer `maxPaintVisits`. Chaque chemin rectangulaire créé
+profondeur sans appliquer `maxPaintVisits`. Chaque chemin de forme créé
 doit aussi respecter l’`outlineProfile` (profil de contours) du profil. Un
 nœud `Transform` radial produit compte dans `maxTransforms`, indépendamment
 des appels aux fonctions de transformation SVG déclarés par les groupes ou
@@ -268,13 +293,14 @@ sont globalement uniques. L’unicité des cibles par identifiant de glyphe rest
 un invariant distinct. Les références de peinture sont locales, limitées à un
 fragment `#id` et uniquement dirigées vers une définition antérieure. Une
 référence non résolue, future, externe ou contenant autrement une URI échoue
-avant la publication d’une ressource, même si le rectangle ne devait ensuite
+avant la publication d’une ressource, même si la forme référente ne devait ensuite
 produire aucune encre. Une entrée mal formée ou non prise en charge ne publie
 jamais de graphe partiel.
 
-Le sous-ensemble ne prend pas en charge `viewBox`, `userSpaceOnUse`,
-`href`, `xlink:href`, le rayon focal `fr`, les foyers
-radiaux non concentriques, les remplissages par gradient sur `path`, CSS ou les attributs `style`, les découpes SVG générales
+Le sous-ensemble ne prend pas en charge `viewBox`, les coordonnées en
+pourcentage ou valeurs par défaut de l’espace utilisateur qui dépendent du
+viewport, `href`, `xlink:href`, le rayon focal `fr`, les foyers
+radiaux non concentriques, les gradients `objectBoundingBox` sur `path`, CSS ou les attributs `style`, les découpes SVG générales
 ou chemins de découpe, les masques, contours tracés, scripts, entités,
 animations, ressources externes, ni les éléments et attributs non déclarés.
 Les formats de compression autres que le transport gzip mono-membre autorisé

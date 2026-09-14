@@ -369,6 +369,564 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     @Test
+    fun userSpaceLinearGradientUsesTgOrderWithoutBoundingBoxScalingOrTransformingTheClip() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="absolute" gradientUnits="userSpaceOnUse" x1="1" y1="2" x2="11" y2="2" gradientTransform="translate(5 7) scale(2 4)">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <rect x="100" y="200" width="400" height="600" fill="url(#absolute)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(gradientProfile())).representation,
+        ).paint
+        val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+
+        assertEquals(GlyphPaintPoint(24.0, 65.0), gradient.p0)
+        assertEquals(GlyphPaintPoint(64.0, 65.0), gradient.p1)
+        assertEquals(GlyphPaintPoint(24.0, 185.0), gradient.p2)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(210.0, 620.0),
+                GlyphPaintPathCommand.LineTo(1_010.0, 620.0),
+                GlyphPaintPathCommand.LineTo(1_010.0, 2_420.0),
+                GlyphPaintPathCommand.LineTo(210.0, 2_420.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun pathUsesUserSpaceLinearGradientInItsActiveCoordinateSystem() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="absolute" gradientUnits="userSpaceOnUse" x1="1" y1="2" x2="11" y2="2" gradientTransform="translate(5 7) scale(2 4)">
+                  <stop offset="0" stop-color="#102030" stop-opacity="25%"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <path d="M1 2 L4 2 L2 9 Z" fill="url(#absolute)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(gradientProfile())).representation,
+        ).paint
+        val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+
+        assertEquals(GlyphPaintPoint(24.0, 65.0), gradient.p0)
+        assertEquals(GlyphPaintPoint(64.0, 65.0), gradient.p1)
+        assertEquals(GlyphPaintPoint(24.0, 185.0), gradient.p2)
+        assertEquals(
+            listOf(
+                GlyphPaintColorStop(0.0, GlyphColor(16, 32, 48), 0.25),
+                GlyphPaintColorStop(1.0, GlyphColor(144, 160, 176), 1.0),
+            ),
+            gradient.colorLine.colorStops,
+        )
+        val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1])
+        assertEquals(0, clip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(18.0, 26.0),
+                GlyphPaintPathCommand.LineTo(14.0, 47.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            clip.path.commands,
+        )
+    }
+
+    @Test
+    fun pathUsesUserSpaceRadialGradientWithOneActiveTransformNode() {
+        val document = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"10\" cy=\"20\" r=\"5\" gradientTransform=\"matrix(2 1 0 3 5 7)\"",
+            rectangle = """<g transform="translate(10 20) scale(4 5)"><path d="M1 2 L4 2 L2 9 Z" fill="url(#radial)"/></g>""",
+        )
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(radialGradientProfile())).representation,
+        ).paint
+        val gradient = assertIs<GlyphPaintNode.RadialGradient>(paint.nodes[0])
+
+        assertEquals(GlyphPaintPoint(10.0, 20.0), gradient.c0)
+        assertEquals(0.0, gradient.radius0)
+        assertEquals(GlyphPaintPoint(10.0, 20.0), gradient.c1)
+        assertEquals(5.0, gradient.radius1)
+        assertEquals(
+            GlyphAffineTransform(8.0, 5.0, 0.0, 15.0, 30.0, 55.0),
+            assertIs<GlyphPaintNode.Transform>(paint.nodes[1]).matrix,
+        )
+        val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[2])
+        assertEquals(1, clip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(14.0, 30.0),
+                GlyphPaintPathCommand.LineTo(26.0, 30.0),
+                GlyphPaintPathCommand.LineTo(18.0, 65.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            clip.path.commands,
+        )
+    }
+
+    @Test
+    fun pathGradientDefinitionIsResolvedIndependentlyAtEachReference() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="shared" gradientUnits="userSpaceOnUse" x1="10" y1="20" x2="30" y2="20">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+              <g transform="translate(100 200)">
+                <path d="M0 0 L10 0 L0 20 Z" fill="url(#shared)"/>
+              </g>
+              <g transform="translate(-50 75) scale(2 3)">
+                <path d="M1000 2000 L5000 2000 L1000 8000 Z" fill="url(#shared)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(gradientProfile(maxGradients = 2, maxColorStops = 4, maxSvgTransformOperations = 3)),
+            ).representation,
+        ).paint
+        val first = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+        val second = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[2])
+
+        assertEquals(GlyphPaintPoint(110.0, 220.0), first.p0)
+        assertEquals(GlyphPaintPoint(130.0, 220.0), first.p1)
+        assertEquals(GlyphPaintPoint(110.0, 240.0), first.p2)
+        assertEquals(GlyphPaintPoint(-30.0, 135.0), second.p0)
+        assertEquals(GlyphPaintPoint(10.0, 135.0), second.p1)
+        assertEquals(GlyphPaintPoint(-30.0, 195.0), second.p2)
+        assertEquals(
+            GlyphPaintPathCommand.MoveTo(100.0, 200.0),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands.first(),
+        )
+        assertEquals(
+            GlyphPaintPathCommand.MoveTo(1_950.0, 6_075.0),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[3]).path.commands.first(),
+        )
+    }
+
+    @Test
+    fun pathGradientsNormalizeEmptyAndIntrinsicSolidPaints() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="empty" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0"/>
+                <linearGradient id="one" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+                  <stop offset="40%" stop-color="#AABBCC" stop-opacity="40%"/>
+                </linearGradient>
+                <linearGradient id="flat" gradientUnits="userSpaceOnUse" x1="5" y1="7" x2="5" y2="7">
+                  <stop offset="0" stop-color="#112233" stop-opacity="20%"/>
+                  <stop offset="1" stop-color="#445566" stop-opacity="70%"/>
+                </linearGradient>
+                <radialGradient id="zero" gradientUnits="userSpaceOnUse" cx="8" cy="9" r="0">
+                  <stop offset="0" stop-color="#010203" stop-opacity="10%"/>
+                  <stop offset="1" stop-color="#ABCDEF" stop-opacity="90%"/>
+                </radialGradient>
+              </defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="url(#empty)"/>
+              <path d="M1 1 L3 1 L1 4 Z" fill="url(#one)"/>
+              <path d="M10 20 L14 20 L10 25 Z" fill="url(#flat)"/>
+              <path d="M30 40 L36 40 L30 47 Z" fill="url(#zero)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(
+                    gradientProfile(
+                        maxNodes = 7,
+                        maxReferences = 6,
+                        maxPaths = 3,
+                        maxGradients = 4,
+                        maxColorStops = 5,
+                        maxClips = 3,
+                    ),
+                ),
+            ).representation,
+        ).paint
+
+        assertEquals(6, paint.rootNode)
+        assertEquals(7, paint.nodes.size)
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(170, 187, 204), 0.4), paint.nodes[0])
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(68, 85, 102), 0.7), paint.nodes[2])
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(171, 205, 239), 0.9), paint.nodes[4])
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(1.0, 1.0),
+                GlyphPaintPathCommand.LineTo(3.0, 1.0),
+                GlyphPaintPathCommand.LineTo(1.0, 4.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(10.0, 20.0),
+                GlyphPaintPathCommand.LineTo(14.0, 20.0),
+                GlyphPaintPathCommand.LineTo(10.0, 25.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[3]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(30.0, 40.0),
+                GlyphPaintPathCommand.LineTo(36.0, 40.0),
+                GlyphPaintPathCommand.LineTo(30.0, 47.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[5]).path.commands,
+        )
+        assertEquals(GlyphPaintNode.Group(listOf(1, 3, 5)), paint.nodes[6])
+    }
+
+    @Test
+    fun objectBoundingBoxPathGradientsStayUnsupportedBeforeReductionOrSingularOmission() {
+        val definitions = listOf(
+            """<linearGradient id="box"/>""",
+            """<linearGradient id="box"><stop offset="1" stop-color="#AABBCC"/></linearGradient>""",
+            """<radialGradient id="box" r="0"><stop offset="1" stop-color="#AABBCC"/></radialGradient>""",
+        )
+
+        for (definition in definitions) {
+            val document = """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs>$definition</defs>
+                  <g transform="scale(0 1)">
+                    <path d="M0 0 L10 0 L0 10 Z" fill="url(#box)"/>
+                  </g>
+                </svg>
+            """.trimIndent()
+
+            val error = acquireSvgFailure(document, gradientProfile())
+
+            assertIs<FontError.UnsupportedRepresentationProfile>(error)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+        }
+    }
+
+    @Test
+    fun unsafePathGradientReferencesFailAtomicallyWithTypedPublicErrors() {
+        val invalidPaints = listOf(
+            "url(#paint",
+            "url(https://example.test/paint)",
+            "url(#missing)",
+            "url(#glyph1)",
+        )
+        for (fill in invalidPaints) {
+            val document = """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <path d="M0 0 L1 0 L0 1 Z" fill="#010203"/>
+                  <path d="M2 2 L3 2 L2 3 Z" fill="$fill"/>
+                </svg>
+            """.trimIndent()
+
+            val error = acquireSvgFailure(document, gradientProfile())
+
+            assertIs<FontError.UnsupportedRepresentationProfile>(error)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+        }
+
+        val forwardReference = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <path d="M0 0 L1 0 L0 1 Z" fill="#010203"/>
+              <path d="M2 2 L3 2 L2 3 Z" fill="url(#later)"/>
+              <defs>
+                <linearGradient id="later" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+            </svg>
+        """.trimIndent()
+
+        val error = acquireSvgFailure(forwardReference, gradientProfile())
+        assertIs<FontError.UnsupportedRepresentationProfile>(error)
+        assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+    }
+
+    @Test
+    fun singularPathTransformsOmitValidGradientPaintOnlyAfterReferenceAndProfileValidation() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="absolute" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+              <g transform="scale(0 1)">
+                <path d="M0 0 L10 0 L0 10 Z" fill="url(#absolute)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        assertIs<GlyphRepresentation.Empty>(
+            resolveSvgDocument(document, listOf(gradientProfile())).representation,
+        )
+
+        val missingCapability = gradientProfile(
+            nodeKinds = listOf(
+                GlyphPaintNodeKind.PATH,
+                GlyphPaintNodeKind.GROUP,
+                GlyphPaintNodeKind.SOLID,
+                GlyphPaintNodeKind.PATH_CLIP,
+            ),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, missingCapability))
+
+        val unresolved = document.replace("url(#absolute)", "url(#missing)")
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(unresolved, gradientProfile()))
+    }
+
+    @Test
+    fun pathGradientOutlineExhaustionIsAResourceLimitBeforeSingularOmission() {
+        val triangle = "M0 0 L10 0 L0 10 Z"
+        val twoContours = "M0 0 L10 0 L0 10 Z M20 20 L30 20 L20 30 Z"
+        val linearDefinition = """
+            <linearGradient id="paint" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+              <stop offset="0" stop-color="#102030"/>
+              <stop offset="1" stop-color="#90A0B0"/>
+            </linearGradient>
+        """.trimIndent()
+        val radialDefinition = """
+            <radialGradient id="paint" gradientUnits="userSpaceOnUse" cx="0" cy="0" r="10">
+              <stop offset="0" stop-color="#102030"/>
+              <stop offset="1" stop-color="#90A0B0"/>
+            </radialGradient>
+        """.trimIndent()
+        val solidDefinition = """
+            <linearGradient id="paint" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+              <stop offset="1" stop-color="#AABBCC"/>
+            </linearGradient>
+        """.trimIndent()
+        data class Case(
+            val name: String,
+            val document: String,
+            val profile: PaintGraphProfile,
+        )
+        val rejected = listOf(
+            Case(
+                "linear point limit",
+                singularPathGradientDocument(linearDefinition, triangle),
+                gradientProfile(maxOutlinePoints = 2),
+            ),
+            Case(
+                "radial contour limit",
+                singularPathGradientDocument(radialDefinition, twoContours),
+                radialGradientProfile(maxOutlineContours = 1),
+            ),
+            Case(
+                "solid-reduction byte limit",
+                singularPathGradientDocument(solidDefinition, triangle),
+                gradientProfile(maxOutlineBytes = 80),
+            ),
+        )
+
+        for (case in rejected) {
+            for (transform in listOf("scale(1 1)", "scale(0 1)")) {
+                val failure = assertIs<FontError.ResourceLimitExceeded>(
+                    acquireSvgFailure(case.document.replace("scale(0 1)", transform), case.profile),
+                    "${case.name}: $transform",
+                )
+                assertEquals(FontDiagnosticLocation.Table("SVG "), failure.location)
+            }
+        }
+
+        val admitted = gradientProfile(maxOutlineBytes = 81, maxOutlineContours = 1, maxOutlinePoints = 3)
+        assertIs<GlyphRepresentation.Empty>(
+            resolveSvgDocument(
+                singularPathGradientDocument(solidDefinition, triangle),
+                listOf(admitted),
+            ).representation,
+        )
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                singularPathGradientDocument(solidDefinition, triangle).replace("scale(0 1)", "scale(1 1)"),
+                listOf(admitted),
+            ).representation,
+        ).paint
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(170, 187, 204), 1.0), paint.nodes[0])
+        val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[paint.rootNode])
+        assertEquals(0, clip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(10.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 10.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            clip.path.commands,
+        )
+    }
+
+    @Test
+    fun pathGradientCapabilitiesRemainAuthoritative() {
+        val linear = userSpaceLinearPathSvgDocument()
+        val incompatibleLinearProfiles = listOf(
+            gradientProfile(
+                nodeKinds = listOf(
+                    GlyphPaintNodeKind.PATH,
+                    GlyphPaintNodeKind.GROUP,
+                    GlyphPaintNodeKind.SOLID,
+                    GlyphPaintNodeKind.LINEAR_GRADIENT,
+                ),
+            ),
+            gradientProfile(
+                nodeKinds = listOf(
+                    GlyphPaintNodeKind.PATH,
+                    GlyphPaintNodeKind.GROUP,
+                    GlyphPaintNodeKind.SOLID,
+                    GlyphPaintNodeKind.PATH_CLIP,
+                ),
+            ),
+            gradientProfile(extendModes = listOf(GlyphPaintExtendMode.REPEAT)),
+            gradientProfile(interpolationSpaces = listOf(GlyphPaintInterpolationSpace.LINEAR_SRGB)),
+            gradientProfile(alphaInterpolationModes = emptyList()),
+        )
+        for (profile in incompatibleLinearProfiles) {
+            assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(linear, profile))
+        }
+
+        val radial = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"10\"",
+            rectangle = """<path d="M0 0 L10 0 L0 10 Z" fill="url(#radial)"/>""",
+        )
+        val missingTransform = radialGradientProfile(
+            nodeKinds = listOf(
+                GlyphPaintNodeKind.SOLID,
+                GlyphPaintNodeKind.GROUP,
+                GlyphPaintNodeKind.RADIAL_GRADIENT,
+                GlyphPaintNodeKind.PATH_CLIP,
+            ),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(radial, missingTransform))
+    }
+
+    @Test
+    fun pathGradientGraphAndPaintBudgetsRemainAuthoritative() {
+        val linear = userSpaceLinearPathSvgDocument()
+        val limitedLinearProfiles = listOf(
+            gradientProfile(maxNodes = 1),
+            gradientProfile(maxReferences = 0),
+            gradientProfile(maxPaths = 0),
+            gradientProfile(maxGradients = 0),
+            gradientProfile(maxColorStops = 1),
+            gradientProfile(maxClips = 0),
+        )
+        for (profile in limitedLinearProfiles) {
+            assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(linear, profile))
+        }
+
+        val radial = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"10\"",
+            rectangle = """<path d="M0 0 L10 0 L0 10 Z" fill="url(#radial)"/>""",
+        )
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(radial, radialGradientProfile(maxTransforms = 0)),
+        )
+    }
+
+    @Test
+    fun reusedRadialPathGradientDepthAndProducedCountsStayBounded() {
+        val document = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"10\"",
+            rectangle = """
+                <path d="M0 0 L10 0 L0 10 Z" fill="url(#radial)"/>
+                <path d="M20 20 L30 20 L20 30 Z" fill="url(#radial)"/>
+            """.trimIndent(),
+        )
+        fun profile(
+            maxDepth: Int = 4,
+            maxGradients: Int = 2,
+            maxColorStops: Int = 4,
+        ): PaintGraphProfile = radialGradientProfile(
+            maxNodes = 7,
+            maxReferences = 6,
+            maxDepth = maxDepth,
+            maxPaths = 2,
+            maxGradients = maxGradients,
+            maxColorStops = maxColorStops,
+            maxTransforms = 2,
+            maxClips = 2,
+        )
+
+        assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, profile(maxDepth = 3)))
+        assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, profile(maxGradients = 1)))
+        assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, profile(maxColorStops = 2)))
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(profile())).representation,
+        ).paint
+        assertEquals(6, paint.rootNode)
+        assertEquals(7, paint.nodes.size)
+        assertIs<GlyphPaintNode.RadialGradient>(paint.nodes[0])
+        assertEquals(0, assertIs<GlyphPaintNode.Transform>(paint.nodes[1]).paint)
+        assertEquals(1, assertIs<GlyphPaintNode.PathClip>(paint.nodes[2]).paint)
+        assertIs<GlyphPaintNode.RadialGradient>(paint.nodes[3])
+        assertEquals(3, assertIs<GlyphPaintNode.Transform>(paint.nodes[4]).paint)
+        assertEquals(4, assertIs<GlyphPaintNode.PathClip>(paint.nodes[5]).paint)
+        assertEquals(GlyphPaintNode.Group(listOf(2, 5)), paint.nodes[6])
+    }
+
+    @Test
+    fun userSpaceGradientIsResolvedAtEachReferenceWithoutDependingOnRectangleBounds() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="shared" gradientUnits="userSpaceOnUse" x1="10" y1="20" x2="30" y2="20">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+              <g transform="translate(100 200)">
+                <rect x="0" y="0" width="10" height="20" fill="url(#shared)"/>
+              </g>
+              <g transform="translate(-50 75) scale(2 3)">
+                <rect x="1000" y="2000" width="4000" height="6000" fill="url(#shared)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(gradientProfile(maxGradients = 2, maxColorStops = 4, maxSvgTransformOperations = 3)),
+            ).representation,
+        ).paint
+        val first = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+        val second = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[2])
+
+        assertEquals(GlyphPaintPoint(110.0, 220.0), first.p0)
+        assertEquals(GlyphPaintPoint(130.0, 220.0), first.p1)
+        assertEquals(GlyphPaintPoint(110.0, 240.0), first.p2)
+        assertEquals(GlyphPaintPoint(-30.0, 135.0), second.p0)
+        assertEquals(GlyphPaintPoint(10.0, 135.0), second.p1)
+        assertEquals(GlyphPaintPoint(-30.0, 195.0), second.p2)
+    }
+
+    @Test
     fun linearGradientRotationUsesTBgOrderWithoutTransformingTheClip() {
         val document = """
             <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
@@ -548,6 +1106,57 @@ class SvgInOpenTypeGlyphRepresentationTest {
                 GlyphPaintPathCommand.Close,
             ),
             assertIs<GlyphPaintNode.PathClip>(paint.nodes[2]).path.commands,
+        )
+    }
+
+    @Test
+    fun userSpaceRadialGradientRetainsAbsoluteCircleAndUsesOneExactTgTransform() {
+        val document = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"30\" cy=\"40\" r=\"25\" gradientTransform=\"matrix(-2 1 0 3 5 7)\"",
+            rectangle = """<g transform="translate(10 20) scale(2 3)"><rect x="100" y="200" width="400" height="600" fill="url(#radial)"/></g>""",
+        )
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(radialGradientProfile(maxTransforms = 1))).representation,
+        ).paint
+        val radial = assertIs<GlyphPaintNode.RadialGradient>(paint.nodes[0])
+
+        assertEquals(GlyphPaintPoint(30.0, 40.0), radial.c0)
+        assertEquals(0.0, radial.radius0)
+        assertEquals(GlyphPaintPoint(30.0, 40.0), radial.c1)
+        assertEquals(25.0, radial.radius1)
+        assertEquals(
+            GlyphAffineTransform(-4.0, 3.0, 0.0, 9.0, 20.0, 41.0),
+            assertIs<GlyphPaintNode.Transform>(paint.nodes[1]).matrix,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(210.0, 620.0),
+                GlyphPaintPathCommand.LineTo(1_010.0, 620.0),
+                GlyphPaintPathCommand.LineTo(1_010.0, 2_420.0),
+                GlyphPaintPathCommand.LineTo(210.0, 2_420.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[2]).path.commands,
+        )
+    }
+
+    @Test
+    fun userSpaceRadialGradientRequiresTheExistingTransformCapabilityAndBudget() {
+        val document = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"30\" cy=\"40\" r=\"25\"",
+        )
+        val withoutTransformKind = radialGradientProfile(
+            nodeKinds = listOf(
+                GlyphPaintNodeKind.SOLID,
+                GlyphPaintNodeKind.RADIAL_GRADIENT,
+                GlyphPaintNodeKind.PATH_CLIP,
+            ),
+        )
+
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, withoutTransformKind))
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(document, radialGradientProfile(maxTransforms = 0)),
         )
     }
 
@@ -2135,6 +2744,101 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     @Test
+    fun userSpacePercentagesAndViewportDependentDefaultsAreTypedUnsupportedBeforePublication() {
+        val linearDocuments = listOf(
+            userSpaceLinearSvgDocument(attributes = "x1=\"0\" y1=\"0\" y2=\"0\""),
+            userSpaceLinearSvgDocument(attributes = "x1=\"0\" y1=\"0\" x2=\"100%\" y2=\"0\""),
+        )
+        for (document in linearDocuments) {
+            val error = acquireSvgFailure(document, listOf(schema2GradientProfile(), gradientProfile()))
+
+            assertIs<FontError.UnsupportedRepresentationProfile>(error)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+        }
+
+        val radialDocuments = listOf(
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cy=\"0\" r=\"10\""),
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"50%\" cy=\"0\" r=\"10\""),
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\""),
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"50%\""),
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"10\" fx=\"50%\""),
+        )
+        for (document in radialDocuments) {
+            val error = acquireSvgFailure(document, radialGradientProfile())
+
+            assertIs<FontError.UnsupportedRepresentationProfile>(error)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+        }
+    }
+
+    @Test
+    fun negativeUserSpacePercentageRadiusIsInvalidBeforeViewportDependentExclusion() {
+        val document = radialSvgDocument(
+            attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"-1%\"",
+        )
+
+        val error = acquireSvgFailure(document, radialGradientProfile())
+
+        assertIs<FontError.FontDataFailure>(error)
+        assertEquals("font.svg.invalid-gradient-radius", error.code)
+        assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+    }
+
+    @Test
+    fun userSpaceCoordinatesAreValidatedBeforeEmptyOrSolidReduction() {
+        val viewportDependentDocuments = listOf(
+            userSpaceLinearSvgDocument(
+                attributes = "x1=\"0\" y1=\"0\" x2=\"100%\" y2=\"0\"",
+                stops = """<stop offset="1" stop-color="#90A0B0"/>""",
+            ) to gradientProfile(),
+            radialSvgDocument(
+                attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\"",
+                stops = "",
+            ) to radialGradientProfile(),
+        )
+
+        for ((document, profile) in viewportDependentDocuments) {
+            assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, profile))
+        }
+    }
+
+    @Test
+    fun malformedOrUnsupportedUserSpaceGeometryKeepsItsTypedErrorClassification() {
+        val malformedDocuments = listOf(
+            userSpaceLinearSvgDocument(attributes = "x1=\"1.\" y1=\"0\" x2=\"10\" y2=\"0\"") to gradientProfile(),
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"1.e2\" cy=\"0\" r=\"10\"") to
+                radialGradientProfile(),
+            radialSvgDocument(attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"0\" cy=\"0\" r=\"-1\"") to
+                radialGradientProfile(),
+        )
+        for ((document, profile) in malformedDocuments) {
+            val error = acquireSvgFailure(document, profile)
+
+            assertIs<FontError.FontDataFailure>(error)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+        }
+
+        val unsupportedDocuments = listOf(
+            userSpaceLinearSvgDocument(
+                units = "viewport",
+                attributes = "x1=\"0\" y1=\"0\" x2=\"10\" y2=\"0\"",
+            ) to gradientProfile(),
+            radialSvgDocument(
+                attributes = "gradientUnits=\"viewport\" cx=\"0\" cy=\"0\" r=\"10\"",
+            ) to radialGradientProfile(),
+            radialSvgDocument(
+                attributes = "gradientUnits=\"userSpaceOnUse\" cx=\"10\" cy=\"20\" r=\"5\" fx=\"11\" fy=\"20\"",
+            ) to radialGradientProfile(),
+        )
+        for ((document, profile) in unsupportedDocuments) {
+            val error = acquireSvgFailure(document, profile)
+
+            assertIs<FontError.UnsupportedRepresentationProfile>(error)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(error.location).tag)
+        }
+    }
+
+    @Test
     fun rejectsDuplicateGradientIdsAndResourceExhaustionBeforePublishingAnAsset() {
         val duplicate = """
             <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
@@ -2733,9 +3437,12 @@ class SvgInOpenTypeGlyphRepresentationTest {
         maxGradients: Int = 1,
         maxColorStops: Int = 4,
         maxTransforms: Int = 0,
-        outlineProfile: OutlineProfile = svgOutlineProfile(),
         maxClips: Int = 2,
         maxSvgTransformOperations: Int = 4_096,
+        maxOutlineBytes: Int = 16 * 1024,
+        maxOutlineContours: Int = 8,
+        maxOutlinePoints: Int = 64,
+        outlineProfile: OutlineProfile = svgOutlineProfile(maxOutlineBytes, maxOutlineContours, maxOutlinePoints),
     ): PaintGraphProfile = PaintGraphProfile(
         acceptedNodeKinds = nodeKinds,
         acceptedCompositionModes = listOf(org.graphiks.kalligraphie.api.GlyphPaintCompositionMode.SOURCE_OVER),
@@ -2778,7 +3485,10 @@ class SvgInOpenTypeGlyphRepresentationTest {
         maxTransforms: Int = 1,
         maxClips: Int = 1,
         maxSvgTransformOperations: Int = 4_096,
-        outlineProfile: OutlineProfile = svgOutlineProfile(),
+        maxOutlineBytes: Int = 16 * 1024,
+        maxOutlineContours: Int = 8,
+        maxOutlinePoints: Int = 64,
+        outlineProfile: OutlineProfile = svgOutlineProfile(maxOutlineBytes, maxOutlineContours, maxOutlinePoints),
     ): PaintGraphProfile = PaintGraphProfile(
         acceptedNodeKinds = nodeKinds,
         acceptedCompositionModes = listOf(org.graphiks.kalligraphie.api.GlyphPaintCompositionMode.SOURCE_OVER),
@@ -2826,10 +3536,14 @@ class SvgInOpenTypeGlyphRepresentationTest {
         maxSvgTransformOperations = maxSvgTransformOperations,
     )
 
-    private fun svgOutlineProfile(): OutlineProfile = OutlineProfile(
-        maxBytes = 16 * 1024,
-        maxContours = 8,
-        maxPoints = 64,
+    private fun svgOutlineProfile(
+        maxBytes: Int = 16 * 1024,
+        maxContours: Int = 8,
+        maxPoints: Int = 64,
+    ): OutlineProfile = OutlineProfile(
+        maxBytes = maxBytes,
+        maxContours = maxContours,
+        maxPoints = maxPoints,
         maxCompositeDepth = 1,
         maxCompositeComponents = 1,
     )
@@ -2863,14 +3577,17 @@ class SvgInOpenTypeGlyphRepresentationTest {
         }
     }
 
-    private fun acquireSvgFailure(document: String, profile: PaintGraphProfile): FontError {
+    private fun acquireSvgFailure(document: String, profile: PaintGraphProfile): FontError =
+        acquireSvgFailure(document, listOf(profile))
+
+    private fun acquireSvgFailure(document: String, profiles: List<PaintGraphProfile>): FontError {
         val catalog = success(
             Kalligraphie.embedded(
                 fixtureWithSvgDocumentPayload(document.encodeToByteArray()),
                 FontSourceProvenance("Twemoji fixture with rejected Kalligraphie-authored SVG gradient document"),
             ),
         )
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(profile))
+        val requirements = FontAccessRequirementsSnapshot.renderable(profiles)
         val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
         val resolver = success(catalog.openAssetResolver())
@@ -2916,6 +3633,49 @@ class SvgInOpenTypeGlyphRepresentationTest {
             </radialGradient>
           </defs>
           $rectangle
+        </svg>
+    """.trimIndent()
+
+    private fun userSpaceLinearSvgDocument(
+        units: String = "userSpaceOnUse",
+        attributes: String,
+        stops: String = """
+            <stop offset="0" stop-color="#102030"/>
+            <stop offset="1" stop-color="#90A0B0"/>
+        """.trimIndent(),
+    ): String = """
+        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+          <rect x="0" y="0" width="5" height="5" fill="#010203"/>
+          <defs>
+            <linearGradient id="absolute" gradientUnits="$units" $attributes>
+              $stops
+            </linearGradient>
+          </defs>
+          <rect x="10" y="20" width="30" height="40" fill="url(#absolute)"/>
+        </svg>
+    """.trimIndent()
+
+    private fun userSpaceLinearPathSvgDocument(): String = """
+        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+          <defs>
+            <linearGradient id="absolute" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+              <stop offset="0" stop-color="#102030"/>
+              <stop offset="1" stop-color="#90A0B0"/>
+            </linearGradient>
+          </defs>
+          <path d="M0 0 L10 0 L0 10 Z" fill="url(#absolute)"/>
+        </svg>
+    """.trimIndent()
+
+    private fun singularPathGradientDocument(
+        definition: String,
+        pathData: String,
+    ): String = """
+        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+          <defs>$definition</defs>
+          <g transform="scale(0 1)">
+            <path d="$pathData" fill="url(#paint)"/>
+          </g>
         </svg>
     """.trimIndent()
 
