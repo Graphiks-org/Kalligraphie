@@ -96,13 +96,15 @@ internal object SharedFontCacheMeasurement {
         output.appendLine("route=${tiny.platformProfile} largeRoute=${big.platformProfile}")
         val one = success(tiny.openAssetResolver()); val two = success(big.openAssetResolver())
         var held: PlatformFontRenderAssetHandle? = null
+        var runtimeRoute: PlatformFontRouteIdentity? = null
         try {
             timed("cold-seed") { repeat(48) { index ->
                 val size = (index + 1).toFloat()
                 val value = asset(tiny, one, size)
-                if (index == 0) output.appendLine("runtimeRoute=${value.key.platformContext?.routeIdentity}")
+                if (index == 0) runtimeRoute = value.key.platformContext?.routeIdentity
                 try { metric(value, 3, 900.0 * size / 1000.0) } finally { success(value.close()) }
             } }
+            output.appendLine("runtimeRoute=$runtimeRoute")
             output.appendLine("seed evidence\n${recorder.report()}")
             output.appendLine(CoreTextResourceMeasurement.report())
             timed("hot-indexed") {
