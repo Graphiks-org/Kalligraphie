@@ -33,6 +33,55 @@ import kotlin.test.assertTrue
 
 class SvgInOpenTypeGlyphRepresentationTest {
     @Test
+    fun reportsRectangleOutlinePointExhaustionAsAResourceLimit() {
+        for (fill in listOf("#102030", "url(#sky)")) {
+            val document = """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs>
+                    <linearGradient id="sky">
+                      <stop offset="0" stop-color="#102030"/>
+                      <stop offset="1" stop-color="#90A0B0"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="10" y="20" width="30" height="40" fill="$fill"/>
+                </svg>
+            """.trimIndent()
+            val tooSmall = gradientProfile(outlineProfile = svgOutlineProfile().copy(maxPoints = 3))
+
+            val failure = assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, tooSmall))
+            assertEquals(FontDiagnosticLocation.Table("SVG "), failure.location)
+
+            val admitted = gradientProfile(outlineProfile = svgOutlineProfile().copy(maxPoints = 4))
+            val paint = assertIs<GlyphRepresentation.Paint>(resolveSvgDocument(document, listOf(admitted)).representation).paint
+            val path = if (fill == "#102030") {
+                val solid = assertIs<GlyphPaintNode.Path>(paint.nodes.single())
+                assertEquals(GlyphColor(16, 32, 48), solid.color)
+                solid.path
+            } else {
+                val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+                assertEquals(
+                    listOf(
+                        GlyphPaintColorStop(0.0, GlyphColor(16, 32, 48), 1.0),
+                        GlyphPaintColorStop(1.0, GlyphColor(144, 160, 176), 1.0),
+                    ),
+                    gradient.colorLine.colorStops,
+                )
+                assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path
+            }
+            assertEquals(
+                listOf(
+                    GlyphPaintPathCommand.MoveTo(10.0, 20.0),
+                    GlyphPaintPathCommand.LineTo(40.0, 20.0),
+                    GlyphPaintPathCommand.LineTo(40.0, 60.0),
+                    GlyphPaintPathCommand.LineTo(10.0, 60.0),
+                    GlyphPaintPathCommand.Close,
+                ),
+                path.commands,
+            )
+        }
+    }
+
+    @Test
     fun normalizesDefaultSrgbGradientAndSolidRectangleWithOrderedProfileFallback() {
         val document = """
             <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
@@ -1075,6 +1124,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
         maxGradients: Int = 1,
         maxColorStops: Int = 4,
         maxClips: Int = 2,
+        outlineProfile: OutlineProfile = svgOutlineProfile(),
     ): PaintGraphProfile = PaintGraphProfile(
         acceptedNodeKinds = listOf(
             GlyphPaintNodeKind.PATH,
@@ -1092,7 +1142,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
             maxColorStops = maxColorStops,
             maxClips = maxClips,
         ),
-        outlineProfile = svgOutlineProfile(),
+        outlineProfile = outlineProfile,
         schemaVersion = 3,
         acceptedGradientExtendModes = GlyphPaintExtendMode.entries.toList(),
         acceptedGradientInterpolationSpaces = interpolationSpaces,

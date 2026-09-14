@@ -45,18 +45,22 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 
 ### Transport et limites des documents SVG
 
-Les octets d’un document SVG-in-OpenType sont décodés lors de l’acquisition
-d’une ressource de rendu. Le transport est soit UTF-8 brut, soit un unique
-transport gzip (encodage compressé du document) contenant de l’UTF-8. Son
-décodage utilise le streaming (traitement en flux) pendant l’application des
-limites. gzip ne constitue pas une représentation exposée au consommateur :
-après le décodage et la validation, la ressource ne retient qu’un IR (*intermediate
-representation*, représentation intermédiaire) portable et immuable du
-sous-ensemble SVG pris en charge. Ainsi, `resolveGlyph(...)` reçoit cet IR
-immuable retenu, jamais le SVG encodé, XML, le membre gzip, une URI, ni une
-ressource de moteur de rendu.
+La route SVG entièrement normalisée décode tous les documents lors de
+l’acquisition d’une ressource de rendu, puis retient un IR (*intermediate
+representation*, représentation intermédiaire) portable et immuable au lieu
+des documents SVG encodés. Le transport est soit UTF-8 brut, soit un unique
+membre gzip (encodage compressé du document) contenant de l’UTF-8 ; son décodage
+utilise le streaming (traitement en flux) pendant l’application des limites.
+Une ressource mixte SVG/COLR v1 retient au contraire, de manière privée, la
+source SVG encodée et son index bornés, puis normalise tout le document
+sélectionné lorsqu’un glyphe couvert est demandé. Les glyphes COLR non couverts
+restent ainsi utilisables même si ce document SVG ne peut pas être décodé ou
+normalisé. Les résultats publics réussis de `resolveGlyph(...)` n’exposent que
+de la peinture portable immuable ou un glyphe vide, jamais le SVG encodé, XML,
+gzip, une URI ou une ressource de moteur de rendu. Les ressources détachées
+possèdent les données immuables nécessaires à leur route.
 
-`PaintGraphLimits` applique toutes les limites suivantes avant publication :
+`PaintGraphLimits` applique les limites suivantes :
 
 - `maxSourceBytes` borne la table SVG entière et le cumul des octets encodés
   des documents ;
@@ -64,17 +68,23 @@ ressource de moteur de rendu.
   gzip ;
 - `maxSvgDecodedDocumentBytes` borne les octets UTF-8 décodés de chaque
   document brut ou gzip ;
-- `maxSvgTotalDecodedBytes` borne le cumul des octets UTF-8 décodés de tous les
-  enregistrements de document.
+- `maxSvgTotalDecodedBytes` borne le cumul des octets UTF-8 décodés lors d’une
+  opération de normalisation : tous les enregistrements dans la route
+  entièrement normalisée, ou tout le document sélectionné dans la route mixte.
 
 Chaque limite dédiée à gzip ou au décodage vaut par défaut `maxSourceBytes`,
 dont la valeur par défaut est 1 048 576 octets. Le dépassement de l’une de ces
-limites retourne `FontError.ResourceLimitExceeded` pour la table `SVG ` ;
-aucune ressource ni certificat partiel n’est publié. Un en-tête gzip mal
+limites retourne `FontError.ResourceLimitExceeded` pour la table `SVG `.
+Les limites de toute la source encodée et de son index s’appliquent à
+l’acquisition dans les deux routes. Les contrôles du décodage, de l’intégrité,
+de l’UTF-8, du balisage et du graphe refusent l’acquisition dans la route
+entièrement normalisée, ou la demande du glyphe couvert dans la route mixte ;
+aucun résultat SVG partiel n’est publié et la certification des autres glyphes
+COLR non couverts reste valide. Un en-tête gzip mal
 formé, un membre non-DEFLATE, des drapeaux réservés dans l’en-tête gzip, un
 échec des contrôles d’intégrité gzip, des membres gzip concaténés ou des octets
 supplémentaires après un membre retournent `FontError.FontDataFailure` avec le
-code `font.svg.invalid-gzip`, également avant toute publication. Un UTF-8
+code `font.svg.invalid-gzip` au point de normalisation de la route concernée. Un UTF-8
 invalide ou un SVG mal formé suit le contrat existant de
 `FontDataFailure` typée, tandis qu’un balisage SVG hors du sous-ensemble sûr
 retourne `FontError.UnsupportedRepresentationProfile`.
@@ -333,6 +343,53 @@ dégrade pas un autre glyphe COLR. La validation atomique de tout le document
 SVG sélectionné reste inchangée, même lorsqu’il cible plusieurs glyphes.
 
 ### Migration des consommateurs de peinture
+
+#### Ajouts du schéma 3
+
+La compatibilité de schéma ne préserve pas l’ABI (interface binaire
+d’application) JVM. Le constructeur `GlyphPaintColorLine` ajoute
+`interpolationSpace` et `alphaInterpolationMode`, avec des valeurs par défaut
+qui conservent les règles COLR historiques `LINEAR_SRGB` et `PREMULTIPLIED`.
+Le constructeur `PaintGraphProfile` ajoute
+`acceptedGradientInterpolationSpaces` et
+`acceptedGradientAlphaInterpolationModes`. Par défaut, ces listes sont vides
+pour le schéma 1 et n’acceptent que `LINEAR_SRGB` / `PREMULTIPLIED` pour le
+schéma 2 et les suivants ; choisir le schéma 3 seul n’autorise donc pas les
+gradients SVG sRGB ou à alpha non prémultiplié. Déclarez explicitement ces
+capacités ainsi que les catégories de nœuds nécessaires.
+
+`PaintGraphLimits` ajoute trois limites de transport avec des valeurs par
+défaut : `maxSvgCompressedDocumentBytes`, `maxSvgDecodedDocumentBytes` et
+`maxSvgTotalDecodedBytes`, chacune égale à `maxSourceBytes` par défaut. Les
+descripteurs de son constructeur, du constructeur à arguments par défaut, et
+des méthodes générées `copy` et `copy$default` changent. `component1` à
+`component20` conservent leur position et leur type de retour `Int` ; les
+nouvelles limites occupent `component21` à `component23`. Les appels ordinaires
+aux constructeurs Kotlin et les appels `copy` nommés conservent leurs arguments
+après recompilation, mais les anciens descripteurs JVM ne sont pas conservés.
+Recompilez toutes les applications et bibliothèques qui utilisent ces
+signatures modifiées, y compris celles qui n’appellent que l’ancien
+constructeur `GlyphPaintColorLine` à deux arguments : les anciens binaires
+peuvent lancer `NoSuchMethodError`.
+
+Traitez `GlyphPaintNode.PathClip`, `GlyphPaintNodeKind.PATH_CLIP` et les
+nouvelles énumérations `GlyphPaintInterpolationSpace` /
+`GlyphPaintAlphaInterpolationMode` dans la répartition des opérations du
+consommateur. Complétez les gestionnaires exhaustifs ; les gestionnaires
+sealed (scellés) déjà compilés peuvent lancer `NoWhenBranchMatchedException`.
+`PATH_CLIP` est inséré avant `TRANSFORM`, décalant les positions ordinales
+suivantes : ne persistez jamais ces positions, mais des noms ou identifiants
+explicitement versionnés.
+
+Les empreintes canoniques de profils ajoutent `gradientInterpolation=`,
+`gradientAlphaInterpolation=` et les trois limites de transport dans
+`limits=`. Même les profils de schéma 1 ou 2 par ailleurs inchangés ont des
+empreintes différentes. Régénérez ou invalidez les empreintes persistées et
+les entrées de cache dérivées, puis rouvrez et certifiez avec des clés fraîches
+d’un fournisseur vivant ; les empreintes stockées ne sont pas des
+localisateurs de ressources.
+
+#### Changements antérieurs du schéma 2
 
 La compatibilité de schéma ne signifie pas compatibilité binaire JVM.
 `GlyphPaintIR` ajoute `clipBounds`, `PaintGraphProfile` ajoute

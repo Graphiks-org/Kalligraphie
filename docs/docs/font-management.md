@@ -36,16 +36,19 @@ The supported functional scope is intentionally narrow:
 
 ### SVG document transport and bounds
 
-SVG-in-OpenType document bytes are decoded while a render asset is acquired.
-The transport may be raw UTF-8 or a single gzip member containing UTF-8. gzip
-decoding is streamed while its bounds are enforced. gzip is a compressed
-document transport, not a representation exposed to a
-consumer: after decoding and validation, the asset retains only immutable
-portable IR (intermediate representation) for the supported SVG subset.
-Consequently, `resolveGlyph(...)` receives that retained immutable IR, never
-the encoded SVG, XML, gzip member, URI, or a renderer resource.
+The fully normalized SVG route decodes all document bytes while a render
+asset is acquired, then retains immutable portable IR (intermediate
+representation) instead of encoded SVG payloads. The transport may be raw
+UTF-8 or a single gzip member containing UTF-8; gzip decoding is streamed
+while its bounds are enforced. A mixed SVG/COLR v1 asset instead privately
+retains bounded encoded SVG source/index data and normalizes the entire
+selected document when a covered glyph is requested. This preserves unrelated
+uncovered COLR glyphs even if that SVG payload cannot be decoded or normalized.
+Successful public `resolveGlyph(...)` results expose only immutable portable
+paint or empty glyph data, never encoded SVG, XML, gzip, a URI, or a renderer
+resource. Detached assets own the immutable data needed by their route.
 
-`PaintGraphLimits` applies all of the following bounds before publication:
+`PaintGraphLimits` applies the following bounds:
 
 - `maxSourceBytes` bounds the complete SVG table and the cumulative encoded
   document bytes;
@@ -53,17 +56,22 @@ the encoded SVG, XML, gzip member, URI, or a renderer resource.
   document;
 - `maxSvgDecodedDocumentBytes` bounds the decoded UTF-8 bytes of each raw or
   gzip document; and
-- `maxSvgTotalDecodedBytes` bounds decoded UTF-8 bytes accumulated across all
-  document records.
+- `maxSvgTotalDecodedBytes` bounds decoded UTF-8 bytes accumulated in one
+  normalization operation: all document records in the fully normalized route,
+  or the selected whole document in the mixed route.
 
 Each dedicated gzip/decoded limit defaults to `maxSourceBytes` (whose default
 is 1,048,576 bytes). Exceeding any of these bounds returns
-`FontError.ResourceLimitExceeded` at the `SVG ` table; no partial asset or
-certificate is published. A malformed gzip header, a non-DEFLATE member,
+`FontError.ResourceLimitExceeded` at the `SVG ` table. Complete encoded
+source/index bounds apply at acquisition in both routes. Decoding, integrity,
+UTF-8, markup and graph checks reject acquisition in the fully normalized
+route, or reject the covered glyph request in the mixed route; no partial SVG
+result is published and unrelated uncovered COLR certification remains valid.
+A malformed gzip header, a non-DEFLATE member,
 reserved gzip header flags, failed gzip integrity checks, concatenated gzip
 members, or trailing bytes after a member returns
-`FontError.FontDataFailure` with code `font.svg.invalid-gzip`, likewise before
-publication. Invalid UTF-8 or malformed SVG follows the existing typed
+`FontError.FontDataFailure` with code `font.svg.invalid-gzip` at that route's
+normalization boundary. Invalid UTF-8 or malformed SVG follows the existing typed
 `FontDataFailure` contract, and SVG markup outside the safe subset returns
 `FontError.UnsupportedRepresentationProfile`.
 
@@ -282,6 +290,46 @@ glyph. The existing all-or-nothing validation of a selected SVG document is
 unchanged, including documents targeting multiple glyphs.
 
 ### Migrating paint consumers
+
+#### Schema-3 additions
+
+Graph-schema compatibility does not preserve JVM binary compatibility. The
+`GlyphPaintColorLine` constructor now appends defaulted `interpolationSpace`
+and `alphaInterpolationMode`: the defaults preserve historical
+`LINEAR_SRGB` and `PREMULTIPLIED` COLR semantics. The `PaintGraphProfile`
+constructor appends `acceptedGradientInterpolationSpaces` and
+`acceptedGradientAlphaInterpolationModes`. Their defaults are empty for
+schema 1 and accept only `LINEAR_SRGB` / `PREMULTIPLIED` for schema 2 and later;
+selecting schema 3 alone does not admit sRGB or unpremultiplied SVG gradients.
+Declare those capabilities explicitly, together with the needed node kinds.
+
+`PaintGraphLimits` appends three defaulted transport bounds:
+`maxSvgCompressedDocumentBytes`, `maxSvgDecodedDocumentBytes` and
+`maxSvgTotalDecodedBytes`, each defaulting to `maxSourceBytes`. Its constructor,
+default-argument constructor, generated `copy` and `copy$default` descriptors
+change. `component1` through `component20` keep their existing positions and
+`Int` return types; the new bounds occupy `component21` through `component23`.
+Ordinary recompiled Kotlin constructor and named `copy` calls keep their
+existing arguments, but the previous JVM constructor/generated descriptors
+are not retained. Recompile every application and library using these changed
+signatures, including callers using only the former two-argument
+`GlyphPaintColorLine` constructor; old binaries can raise `NoSuchMethodError`.
+
+Handle `GlyphPaintNode.PathClip`, `GlyphPaintNodeKind.PATH_CLIP`, and the new
+`GlyphPaintInterpolationSpace` / `GlyphPaintAlphaInterpolationMode` enums in
+consumer dispatch. Update exhaustive handlers; previously compiled sealed
+handlers can raise `NoWhenBranchMatchedException`. `PATH_CLIP` is inserted
+before `TRANSFORM`, shifting subsequent node-kind ordinals: never persist enum
+ordinals, and use explicit versioned names/tags instead.
+
+Canonical profile fingerprints add `gradientInterpolation=`,
+`gradientAlphaInterpolation=` and the three transport bounds in `limits=`.
+Even otherwise unchanged schema-1 or schema-2 profiles get different
+fingerprints. Regenerate/invalidate persisted fingerprints and derived cache
+entries, then reopen/certify with fresh live provider keys; stored fingerprints
+are not resource locators.
+
+#### Earlier schema-2 changes
 
 Graph-schema compatibility is not JVM binary compatibility. `GlyphPaintIR`
 adds defaulted `clipBounds`, `PaintGraphProfile` adds defaulted

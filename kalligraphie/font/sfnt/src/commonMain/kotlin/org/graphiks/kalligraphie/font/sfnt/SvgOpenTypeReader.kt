@@ -239,7 +239,8 @@ public object SvgOpenTypeReader {
      *
      * Catalogues use this check before advertising an SVG paint route. It validates record ranges
      * and glyph ownership without inspecting document contents. Transport, integrity, UTF-8,
-     * markup, and exact caller limits are certified by [read] while acquiring the render asset.
+     * markup, and exact caller limits are certified by [read] during fully normalized SVG asset
+     * acquisition, or by [readGlyph] when a covered glyph in a mixed SVG/COLR asset is requested.
      */
     public fun hasStructurallyValidVersionZeroTable(svgTable: ByteArray, glyphCount: Int): Boolean {
         if (glyphCount <= 0 || svgTable.size < SVG_HEADER_LENGTH) return false
@@ -787,6 +788,7 @@ private class SvgGlyphPaintBuilder {
         if (GlyphPaintNodeKind.PATH !in profile.acceptedNodeKinds) {
             return unsupported("The selected paint profile does not accept SVG solid paths.")
         }
+        pathLimitFailure(path, profile)?.let { return it }
         projectedLimitFailure(
             additionalNodes = 1,
             additionalReferences = 0,
@@ -841,6 +843,7 @@ private class SvgGlyphPaintBuilder {
                 return unsupported("The selected paint profile does not accept SVG alpha interpolation.")
             }
         }
+        pathLimitFailure(path, profile)?.let { return it }
         projectedLimitFailure(
             additionalNodes = 2,
             additionalReferences = 1,
@@ -895,6 +898,17 @@ private class SvgGlyphPaintBuilder {
         val paint = GlyphPaintIR(profile.schemaVersion, rootNode, completeNodes)
         return if (profile.accepts(paint)) SvgGlyphPaint.Paint(paint) else null
     }
+
+    private fun pathLimitFailure(path: GlyphPaintPath, profile: PaintGraphProfile): FontOperationResult.Failure? =
+        if (
+            path.contourCount > profile.outlineProfile.maxContours ||
+            path.pointCount > profile.outlineProfile.maxPoints ||
+            path.estimatedByteSize > profile.outlineProfile.maxBytes
+        ) {
+            limit("SVG portable path exceeds the selected outline resource limits.")
+        } else {
+            null
+        }
 
     private fun projectedLimitFailure(
         additionalNodes: Int,
