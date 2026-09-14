@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Static COLR v1 expands paint constructors, `PaintGraphLimits` generated `copy` signatures and sealed/enum cases: recompile consumers, update exhaustive handlers, never persist enum ordinals, and regenerate persisted profile fingerprints, including schema 1. Ordinary recompiled Kotlin constructor calls retain defaults; this is not JVM binary compatibility. Empty-group rejection now occurs when constructing schema-1 `GlyphPaintIR`, not `Group` alone; see the font-management migration notes.
 - FontMaterializationCachePolicy now uses structured per-face/per-catalog budgets: generated Kotlin copy/destructuring operations are source- and binary-incompatible with the former byte-only data class; migrate to perFace/perCatalog and recompile consumers that used the old generated operations. The historical byte-only constructor and getter remain available.
 - `FontError.CertificateNotInLayout` extends the sealed error surface used by the new font-asset handoff route. Add an arm when recompiling exhaustive Kotlin `when` handlers; existing method and JVM signatures remain available, but an already compiled exhaustive handler can throw `NoWhenBranchMatchedException` if this new member reaches it. Existing calls do not automatically emit this error.
 - Kotlin 2.4.0 → 2.4.10
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
+- Portable `PaintGraphProfile` schema 2 for static COLR version 1 and CPAL 0/1, including resolved palette and foreground colors, gradients, affine transforms, clips, all composition modes, bounded certification, per-glyph fallback, resource limits, and retained-asset handoff; schema 1 remains compatible with existing COLR version 0 and SVG-in-OpenType routes.
 - Opt-in public font-asset handoff and four-worker resolution measurements, with stage percentiles and an observational Apple M2 Max reference outside functional checks.
 - Immutable layouts can now be paired with an explicit closable handle that atomically retains all certified font roots and hands independent assets to delayed renderers.
 - Structured portable font materialization cache budgets for estimated retained bytes, decoded pixels, native bytes and native allocations, enforced atomically per face and per catalog with global LRU ordering; preserves the historical byte-only constructor and observable glyph results. Native charges remain zero until a native route owns cacheable resources.

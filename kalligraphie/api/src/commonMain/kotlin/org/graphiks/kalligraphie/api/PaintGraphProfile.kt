@@ -10,6 +10,27 @@ public enum class GlyphPaintNodeKind {
 
     /** An ordered compositing group. */
     GROUP,
+
+    /** An unbounded solid paint. */
+    SOLID,
+
+    /** A three-point linear gradient. */
+    LINEAR_GRADIENT,
+
+    /** A radial gradient between two circles. */
+    RADIAL_GRADIENT,
+
+    /** An angular sweep gradient. */
+    SWEEP_GRADIENT,
+
+    /** A glyph-outline clip around a child paint. */
+    GLYPH_CLIP,
+
+    /** An affine transform around a child paint. */
+    TRANSFORM,
+
+    /** A two-input composition operation. */
+    COMPOSITE,
 }
 
 /** Resource limits enforced while validating one portable paint graph. */
@@ -42,6 +63,23 @@ public data class PaintGraphLimits(
     public val maxSvgDocuments: Int = 4_096,
     /** Maximum SVG transform operations normalized for one paint route. */
     public val maxSvgTransformOperations: Int = 4_096,
+    /** Maximum color stops across reached gradient paints. */
+    public val maxColorStops: Int = 0,
+    /** Maximum reached affine-transform paints. */
+    public val maxTransforms: Int = 0,
+    /** Maximum reached two-input composite paints. */
+    public val maxComposites: Int = 0,
+    /** Maximum reached glyph-clip paints. */
+    public val maxClips: Int = 0,
+    /** Maximum COLR clip records decoded before selecting one glyph. */
+    public val maxClipRecords: Int = 65_536,
+    /**
+     * Maximum paint-node visits while validating one graph root.
+     *
+     * The default follows [maxNodes] for conservative schema-2 validation. Schema-1 profiles
+     * retain their original serialized-node and depth validation without a visit budget.
+     */
+    public val maxPaintVisits: Int = maxNodes,
 ) {
     init {
         require(maxNodes > 0) { "maxNodes must be positive." }
@@ -58,6 +96,12 @@ public data class PaintGraphLimits(
         require(maxLayerRecords > 0) { "maxLayerRecords must be positive." }
         require(maxSvgDocuments > 0) { "maxSvgDocuments must be positive." }
         require(maxSvgTransformOperations > 0) { "maxSvgTransformOperations must be positive." }
+        require(maxColorStops >= 0) { "maxColorStops must be non-negative." }
+        require(maxTransforms >= 0) { "maxTransforms must be non-negative." }
+        require(maxComposites >= 0) { "maxComposites must be non-negative." }
+        require(maxClips >= 0) { "maxClips must be non-negative." }
+        require(maxClipRecords > 0) { "maxClipRecords must be positive." }
+        require(maxPaintVisits > 0) { "maxPaintVisits must be positive." }
     }
 }
 
@@ -77,11 +121,14 @@ public class PaintGraphProfile(
     public val outlineProfile: OutlineProfile,
     /** Version of the paint-graph schema accepted by the consumer. */
     override val schemaVersion: Int = 1,
+    acceptedGradientExtendModes: List<GlyphPaintExtendMode> = emptyList(),
 ) : GlyphRepresentationProfile {
     /** Immutable node categories accepted by this consumer. */
     public val acceptedNodeKinds: List<GlyphPaintNodeKind> = acceptedNodeKinds.immutableListSnapshot()
     /** Immutable composition operations accepted by this consumer. */
     public val acceptedCompositionModes: List<GlyphPaintCompositionMode> = acceptedCompositionModes.immutableListSnapshot()
+    /** Immutable gradient extension modes accepted by this consumer. */
+    public val acceptedGradientExtendModes: List<GlyphPaintExtendMode> = acceptedGradientExtendModes.immutableListSnapshot()
 
     init {
         require(schemaVersion > 0) { "schemaVersion must be positive." }
@@ -90,13 +137,51 @@ public class PaintGraphProfile(
         require(this.acceptedCompositionModes.distinct().size == this.acceptedCompositionModes.size) {
             "Paint composition modes must not repeat."
         }
+        require(this.acceptedGradientExtendModes.distinct().size == this.acceptedGradientExtendModes.size) {
+            "Paint gradient extension modes must not repeat."
+        }
+        if (schemaVersion == 1) {
+            require(this.acceptedNodeKinds.none(GlyphPaintNodeKind::requiresSchemaTwo)) {
+                "Schema 1 profiles cannot advertise schema 2 paint nodes."
+            }
+            require(this.acceptedGradientExtendModes.isEmpty()) {
+                "Schema 1 profiles cannot advertise gradient extension modes."
+            }
+            require(this.acceptedCompositionModes.all { mode -> mode == GlyphPaintCompositionMode.SOURCE_OVER }) {
+                "Schema 1 profiles can advertise only SOURCE_OVER composition."
+            }
+        }
     }
 
     /** Returns whether [paint] is completely supported within this profile's declared bounds. */
     public fun accepts(paint: GlyphPaintIR): Boolean {
         if (paint.schemaVersion != schemaVersion || paint.nodes.size > limits.maxNodes) return false
-        val references = paint.nodes.sumOf { node -> node.children.size }
+        val references = paint.nodes.sumOf { node -> node.children.size.toLong() }
         if (references > limits.maxReferences) return false
+        if (schemaVersion == 1) return acceptsSchemaOne(paint)
+        if (!acceptsReachedNodes(paint)) return false
+        return paint.clipBounds != null || paint.hasBoundedRoot()
+    }
+
+    override fun equals(other: Any?): Boolean =
+        other is PaintGraphProfile &&
+            acceptedNodeKinds == other.acceptedNodeKinds &&
+            acceptedCompositionModes == other.acceptedCompositionModes &&
+            acceptedGradientExtendModes == other.acceptedGradientExtendModes &&
+            limits == other.limits &&
+            outlineProfile == other.outlineProfile &&
+            schemaVersion == other.schemaVersion
+
+    override fun hashCode(): Int {
+        var result = acceptedNodeKinds.hashCode()
+        result = 31 * result + acceptedCompositionModes.hashCode()
+        result = 31 * result + acceptedGradientExtendModes.hashCode()
+        result = 31 * result + limits.hashCode()
+        result = 31 * result + outlineProfile.hashCode()
+        return 31 * result + schemaVersion
+    }
+
+    private fun acceptsSchemaOne(paint: GlyphPaintIR): Boolean {
         val paths = paint.nodes.count { node -> node is GlyphPaintNode.SolidOutline || node is GlyphPaintNode.Path }
         if (paths > limits.maxPaths) return false
         if (paint.nodes.filterIsInstance<GlyphPaintNode.SolidOutline>().any { node -> !outlineProfile.acceptsOutline(node.outline) }) {
@@ -109,23 +194,83 @@ public class PaintGraphProfile(
         if (paint.nodes.filterIsInstance<GlyphPaintNode.Group>().any { group -> group.compositionMode !in acceptedCompositionModes }) {
             return false
         }
-        return !paint.exceedsDepth(limits.maxDepth)
+        return !paint.exceedsSchemaOneDepth(limits.maxDepth)
     }
 
-    override fun equals(other: Any?): Boolean =
-        other is PaintGraphProfile &&
-            acceptedNodeKinds == other.acceptedNodeKinds &&
-            acceptedCompositionModes == other.acceptedCompositionModes &&
-            limits == other.limits &&
-            outlineProfile == other.outlineProfile &&
-            schemaVersion == other.schemaVersion
+    private fun acceptsReachedNodes(paint: GlyphPaintIR): Boolean {
+        var visits = 0L
+        var paths = 0L
+        var gradients = 0L
+        var colorStops = 0L
+        var transforms = 0L
+        var composites = 0L
+        var clips = 0L
+        val pendingNodes = ArrayDeque<Int>()
+        val pendingDepths = ArrayDeque<Int>()
+        pendingNodes.addLast(paint.rootNode)
+        pendingDepths.addLast(1)
 
-    override fun hashCode(): Int {
-        var result = acceptedNodeKinds.hashCode()
-        result = 31 * result + acceptedCompositionModes.hashCode()
-        result = 31 * result + limits.hashCode()
-        result = 31 * result + outlineProfile.hashCode()
-        return 31 * result + schemaVersion
+        while (pendingNodes.isNotEmpty()) {
+            val node = paint.nodes[pendingNodes.removeLast()]
+            val depth = pendingDepths.removeLast()
+            visits += 1
+            if (visits > limits.maxPaintVisits || depth > limits.maxDepth) return false
+            if (node.kind() !in acceptedNodeKinds) return false
+
+            when (node) {
+                is GlyphPaintNode.SolidOutline -> {
+                    paths += 1
+                    if (!outlineProfile.acceptsOutline(node.outline)) return false
+                }
+                is GlyphPaintNode.Path -> {
+                    paths += 1
+                    if (!outlineProfile.acceptsPath(node.path)) return false
+                }
+                is GlyphPaintNode.Group -> {
+                    if (node.compositionMode !in acceptedCompositionModes) return false
+                }
+                is GlyphPaintNode.Solid -> Unit
+                is GlyphPaintNode.LinearGradient -> {
+                    gradients += 1
+                    colorStops += node.colorLine.colorStops.size
+                    if (node.colorLine.extendMode !in acceptedGradientExtendModes) return false
+                }
+                is GlyphPaintNode.RadialGradient -> {
+                    gradients += 1
+                    colorStops += node.colorLine.colorStops.size
+                    if (node.colorLine.extendMode !in acceptedGradientExtendModes) return false
+                }
+                is GlyphPaintNode.SweepGradient -> {
+                    gradients += 1
+                    colorStops += node.colorLine.colorStops.size
+                    if (node.colorLine.extendMode !in acceptedGradientExtendModes) return false
+                }
+                is GlyphPaintNode.GlyphClip -> {
+                    clips += 1
+                    if (!outlineProfile.acceptsOutline(node.outline)) return false
+                }
+                is GlyphPaintNode.Transform -> transforms += 1
+                is GlyphPaintNode.Composite -> {
+                    composites += 1
+                    if (node.mode !in acceptedCompositionModes) return false
+                }
+            }
+            if (
+                paths > limits.maxPaths ||
+                gradients > limits.maxGradients ||
+                colorStops > limits.maxColorStops ||
+                transforms > limits.maxTransforms ||
+                composites > limits.maxComposites ||
+                clips > limits.maxClips
+            ) {
+                return false
+            }
+            node.children.forEach { child ->
+                pendingNodes.addLast(child)
+                pendingDepths.addLast(depth + 1)
+            }
+        }
+        return true
     }
 }
 
@@ -133,6 +278,28 @@ private fun GlyphPaintNode.kind(): GlyphPaintNodeKind = when (this) {
     is GlyphPaintNode.SolidOutline -> GlyphPaintNodeKind.SOLID_OUTLINE
     is GlyphPaintNode.Path -> GlyphPaintNodeKind.PATH
     is GlyphPaintNode.Group -> GlyphPaintNodeKind.GROUP
+    is GlyphPaintNode.Solid -> GlyphPaintNodeKind.SOLID
+    is GlyphPaintNode.LinearGradient -> GlyphPaintNodeKind.LINEAR_GRADIENT
+    is GlyphPaintNode.RadialGradient -> GlyphPaintNodeKind.RADIAL_GRADIENT
+    is GlyphPaintNode.SweepGradient -> GlyphPaintNodeKind.SWEEP_GRADIENT
+    is GlyphPaintNode.GlyphClip -> GlyphPaintNodeKind.GLYPH_CLIP
+    is GlyphPaintNode.Transform -> GlyphPaintNodeKind.TRANSFORM
+    is GlyphPaintNode.Composite -> GlyphPaintNodeKind.COMPOSITE
+}
+
+private fun GlyphPaintNodeKind.requiresSchemaTwo(): Boolean = when (this) {
+    GlyphPaintNodeKind.SOLID_OUTLINE,
+    GlyphPaintNodeKind.PATH,
+    GlyphPaintNodeKind.GROUP,
+    -> false
+    GlyphPaintNodeKind.SOLID,
+    GlyphPaintNodeKind.LINEAR_GRADIENT,
+    GlyphPaintNodeKind.RADIAL_GRADIENT,
+    GlyphPaintNodeKind.SWEEP_GRADIENT,
+    GlyphPaintNodeKind.GLYPH_CLIP,
+    GlyphPaintNodeKind.TRANSFORM,
+    GlyphPaintNodeKind.COMPOSITE,
+    -> true
 }
 
 internal fun OutlineProfile.acceptsOutline(outline: GlyphOutlineIR): Boolean =
@@ -150,7 +317,7 @@ internal fun OutlineProfile.acceptsPath(path: GlyphPaintPath): Boolean =
         path.pointCount <= maxPoints &&
         path.estimatedByteSize <= maxBytes
 
-private fun GlyphPaintIR.exceedsDepth(maximum: Int): Boolean {
+private fun GlyphPaintIR.exceedsSchemaOneDepth(maximum: Int): Boolean {
     val greatestVisitedDepth = IntArray(nodes.size)
     val pendingNodes = ArrayDeque<Int>()
     val pendingDepths = ArrayDeque<Int>()
@@ -170,3 +337,91 @@ private fun GlyphPaintIR.exceedsDepth(maximum: Int): Boolean {
     }
     return false
 }
+
+private fun GlyphPaintIR.hasBoundedRoot(): Boolean {
+    val bounded = ByteArray(nodes.size)
+    val pendingNodes = ArrayDeque<Int>()
+    val readyToEvaluate = ArrayDeque<Boolean>()
+    pendingNodes.addLast(rootNode)
+    readyToEvaluate.addLast(false)
+
+    while (pendingNodes.isNotEmpty()) {
+        val index = pendingNodes.removeLast()
+        val ready = readyToEvaluate.removeLast()
+        if (bounded[index] != UNKNOWN_BOUNDEDNESS) continue
+        val node = nodes[index]
+        if (!ready) {
+            pendingNodes.addLast(index)
+            readyToEvaluate.addLast(true)
+            node.children.forEach { child ->
+                if (bounded[child] == UNKNOWN_BOUNDEDNESS) {
+                    pendingNodes.addLast(child)
+                    readyToEvaluate.addLast(false)
+                }
+            }
+            continue
+        }
+        bounded[index] = if (node.isBounded(bounded)) BOUNDED else UNBOUNDED
+    }
+    return bounded[rootNode] == BOUNDED
+}
+
+private fun GlyphPaintNode.isBounded(bounded: ByteArray): Boolean = when (this) {
+    is GlyphPaintNode.SolidOutline,
+    is GlyphPaintNode.Path,
+    is GlyphPaintNode.GlyphClip,
+    -> true
+    is GlyphPaintNode.Solid,
+    is GlyphPaintNode.LinearGradient,
+    is GlyphPaintNode.RadialGradient,
+    is GlyphPaintNode.SweepGradient,
+    -> false
+    is GlyphPaintNode.Group -> children.all { child -> bounded[child] == BOUNDED }
+    is GlyphPaintNode.Transform -> bounded[paint] == BOUNDED
+    is GlyphPaintNode.Composite -> compositeIsBounded(
+        sourceIsBounded = bounded[source] == BOUNDED,
+        backdropIsBounded = bounded[backdrop] == BOUNDED,
+        mode = mode,
+    )
+}
+
+private fun compositeIsBounded(
+    sourceIsBounded: Boolean,
+    backdropIsBounded: Boolean,
+    mode: GlyphPaintCompositionMode,
+): Boolean = when (mode) {
+    GlyphPaintCompositionMode.CLEAR -> true
+    GlyphPaintCompositionMode.SOURCE -> sourceIsBounded
+    GlyphPaintCompositionMode.DESTINATION -> backdropIsBounded
+    GlyphPaintCompositionMode.SOURCE_IN,
+    GlyphPaintCompositionMode.DESTINATION_IN,
+    -> sourceIsBounded || backdropIsBounded
+    GlyphPaintCompositionMode.SOURCE_OUT -> sourceIsBounded
+    GlyphPaintCompositionMode.DESTINATION_OUT -> backdropIsBounded
+    GlyphPaintCompositionMode.SOURCE_ATOP,
+    GlyphPaintCompositionMode.DESTINATION_ATOP,
+    GlyphPaintCompositionMode.SOURCE_OVER,
+    GlyphPaintCompositionMode.DESTINATION_OVER,
+    GlyphPaintCompositionMode.XOR,
+    GlyphPaintCompositionMode.PLUS,
+    GlyphPaintCompositionMode.SCREEN,
+    GlyphPaintCompositionMode.OVERLAY,
+    GlyphPaintCompositionMode.DARKEN,
+    GlyphPaintCompositionMode.LIGHTEN,
+    GlyphPaintCompositionMode.COLOR_DODGE,
+    GlyphPaintCompositionMode.COLOR_BURN,
+    GlyphPaintCompositionMode.HARD_LIGHT,
+    GlyphPaintCompositionMode.SOFT_LIGHT,
+    GlyphPaintCompositionMode.DIFFERENCE,
+    GlyphPaintCompositionMode.EXCLUSION,
+    GlyphPaintCompositionMode.MULTIPLY,
+    GlyphPaintCompositionMode.HSL_HUE,
+    GlyphPaintCompositionMode.HSL_SATURATION,
+    GlyphPaintCompositionMode.HSL_COLOR,
+    GlyphPaintCompositionMode.HSL_LUMINOSITY,
+    -> sourceIsBounded && backdropIsBounded
+}
+
+private const val UNKNOWN_BOUNDEDNESS: Byte = 0
+private const val BOUNDED: Byte = 1
+private const val UNBOUNDED: Byte = 2

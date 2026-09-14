@@ -85,6 +85,47 @@ public object SvgOpenTypeReader {
         svgTable: ByteArray,
         glyphCount: Int,
         profile: PaintGraphProfile,
+    ): FontOperationResult<SvgOpenTypeData> = readSelected(svgTable, glyphCount, profile, null)
+
+    /**
+     * Validates the complete bounded SVG source/index without normalizing glyph payloads.
+     *
+     * Mixed color routes defer payload capabilities and graph limits until a covered glyph is
+     * requested. [svgTable], [glyphCount] and [profile] have the same meaning as in [read].
+     */
+    public fun validateIndex(
+        svgTable: ByteArray,
+        glyphCount: Int,
+        profile: PaintGraphProfile,
+    ): FontOperationResult<Unit> = when (val result = readSelected(svgTable, glyphCount, profile, -1)) {
+        is FontOperationResult.Success -> FontOperationResult.Success(Unit, result.diagnostics)
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    /**
+     * Normalizes only the document covering [glyphId], preserving whole-document validation.
+     *
+     * All source bytes/index records remain bounded and validated; unrelated documents cannot
+     * reject this glyph's payload capability. [svgTable], [glyphCount] and [profile] are as in
+     * [read]. A successful null result means no SVG record covers the requested glyph.
+     */
+    public fun readGlyph(
+        svgTable: ByteArray,
+        glyphCount: Int,
+        profile: PaintGraphProfile,
+        glyphId: GlyphId,
+    ): FontOperationResult<SvgGlyphPaint?> = when (val result = readSelected(svgTable, glyphCount, profile, glyphId.value)) {
+        is FontOperationResult.Success -> FontOperationResult.Success(result.value.glyphPaint(glyphId), result.diagnostics)
+        is FontOperationResult.Failure -> result
+        is FontOperationResult.Cancelled -> result
+    }
+
+    private fun readSelected(
+        svgTable: ByteArray,
+        glyphCount: Int,
+        profile: PaintGraphProfile,
+        selectedGlyphId: Int?,
     ): FontOperationResult<SvgOpenTypeData> {
         if (glyphCount <= 0) return invalid("font.svg.invalid-glyph-count", "SVG glyph count must be positive.")
         if (svgTable.size > profile.limits.maxSourceBytes) {
@@ -139,6 +180,8 @@ public object SvgOpenTypeReader {
                 return limit("SVG cumulative document-byte limit exceeded.")
             }
             cumulativeDocumentBytes += documentLength
+            previousLastGlyphId = lastGlyphId
+            if (selectedGlyphId != null && selectedGlyphId !in firstGlyphId..lastGlyphId) return@repeat
             val document = svgTable.copyOfRange(sourceOffset.toInt(), sourceEnd)
             if (document.size >= 2 && document[0] == GZIP_MAGIC_0 && document[1] == GZIP_MAGIC_1) {
                 return unsupported("Compressed SVG-in-OpenType documents are not supported.")

@@ -43,6 +43,7 @@ import org.graphiks.kalligraphie.api.immutableListSnapshot
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
+import org.graphiks.kalligraphie.font.sfnt.ColrV1Reader
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
@@ -76,6 +77,7 @@ public class EmbeddedFontCatalog(
     private val parsedFonts: Map<FontFaceId, ParsedTrueTypeFont>
     private val outlineRouteSupportedFaces: Set<FontFaceId>
     private val paintGraphSupportedFaces: Set<FontFaceId>
+    private val colrV1SupportedFaces: Set<FontFaceId>
     private val svgRouteSupportedFaces: Set<FontFaceId>
     private val bitmapRouteSupportedFaces: Set<FontFaceId>
     private val resolvedFaces: Map<FontFaceId, TrueTypeFace>
@@ -111,6 +113,9 @@ public class EmbeddedFontCatalog(
         paintGraphSupportedFaces = ids.filter { id ->
             supportsColrCpalV0(resources.getValue(id), parsedFonts.getValue(id))
         }.toSet()
+        colrV1SupportedFaces = ids.filter { id ->
+            supportsColrV1(resources.getValue(id), parsedFonts.getValue(id))
+        }.toSet()
         svgRouteSupportedFaces = ids.filter { id ->
             supportsSvgOpenTypeRoute(resources.getValue(id), parsedFonts.getValue(id))
         }.toSet()
@@ -125,6 +130,7 @@ public class EmbeddedFontCatalog(
                 resource = resources.getValue(id),
                 outlineRouteSupported = id in outlineRouteSupportedFaces,
                 paintGraphSupported = id in paintGraphSupportedFaces,
+                colrV1Supported = id in colrV1SupportedFaces,
                 svgRouteSupported = id in svgRouteSupportedFaces,
                 bitmapRouteSupported = id in bitmapRouteSupportedFaces,
             )
@@ -137,7 +143,7 @@ public class EmbeddedFontCatalog(
                     characterMapping = true,
                     shaping = true,
                     outline = id in outlineRouteSupportedFaces,
-                    paintGraph = id in paintGraphSupportedFaces || id in svgRouteSupportedFaces,
+                    paintGraph = id in paintGraphSupportedFaces || id in colrV1SupportedFaces || id in svgRouteSupportedFaces,
                     bitmap = id in bitmapRouteSupportedFaces,
                 ),
             )
@@ -205,7 +211,8 @@ public class EmbeddedFontCatalog(
             is org.graphiks.kalligraphie.api.OutlineProfile ->
                 schemaVersion == 1 && faceId in outlineRouteSupportedFaces
             is org.graphiks.kalligraphie.api.PaintGraphProfile ->
-                schemaVersion == 1 && (faceId in paintGraphSupportedFaces || faceId in svgRouteSupportedFaces)
+                (schemaVersion == 1 && (faceId in paintGraphSupportedFaces || faceId in svgRouteSupportedFaces)) ||
+                    (schemaVersion == 2 && (faceId in colrV1SupportedFaces || faceId in svgRouteSupportedFaces))
             is org.graphiks.kalligraphie.api.BitmapProfile ->
                 schemaVersion == 1 && faceId in bitmapRouteSupportedFaces
             else -> false
@@ -231,6 +238,15 @@ private fun supportsGlyfOutlineRoute(
     }
     val expectedLocaBytes = (parsedFont.metadata.glyphCount.toLong() + 1L) * entrySize.toLong()
     return expectedLocaBytes <= Int.MAX_VALUE.toLong() && loca.size == expectedLocaBytes.toInt()
+}
+
+private fun supportsColrV1(resource: PreparedFontResource, parsedFont: ParsedTrueTypeFont): Boolean {
+    val colrRecord = parsedFont.tableRecords["COLR"] ?: return false
+    val cpalRecord = parsedFont.tableRecords["CPAL"] ?: return false
+    val source = resource.preparedFont.copySourceBytes()
+    val colr = slice(source, colrRecord) ?: return false
+    val cpal = slice(source, cpalRecord) ?: return false
+    return ColrV1Reader.hasStructurallyValidTables(colr, cpal, parsedFont.metadata.glyphCount)
 }
 
 private fun supportsColrCpalV0(
@@ -383,6 +399,7 @@ internal class EmbeddedFontAssetResolver(
             parsedFont = parsedFont,
             outlineRouteSupported = supportsGlyfOutlineRoute(resource, parsedFont),
             paintGraphSupported = supportsColrCpalV0(resource, parsedFont),
+            colrV1Supported = supportsColrV1(resource, parsedFont),
             svgRouteSupported = supportsSvgOpenTypeRoute(resource, parsedFont),
             bitmapRouteSupported = supportsEbdtFormatOneRoute(resource, parsedFont),
         ).acquireRenderAsset(
@@ -413,10 +430,10 @@ internal class EmbeddedFontAssetResolver(
                         supportsGlyfOutlineRoute(resource, parsedFont)
                     } == true
             is org.graphiks.kalligraphie.api.PaintGraphProfile ->
-                profile.schemaVersion == 1 &&
-                    resources[instance.face]?.let { resource ->
-                        supportsColrCpalV0(resource, parsedFont) || supportsSvgOpenTypeRoute(resource, parsedFont)
-                    } == true
+                resources[instance.face]?.let { resource ->
+                    (profile.schemaVersion == 1 && (supportsColrCpalV0(resource, parsedFont) || supportsSvgOpenTypeRoute(resource, parsedFont))) ||
+                        (profile.schemaVersion == 2 && (supportsColrV1(resource, parsedFont) || supportsSvgOpenTypeRoute(resource, parsedFont)))
+                } == true
             is org.graphiks.kalligraphie.api.BitmapProfile ->
                 key.variant == FontRenderVariantKey.default &&
                 profile.schemaVersion == 1 &&
@@ -552,6 +569,7 @@ internal fun estimateEmbeddedRenderAssetBytes(
             .saturatingAdd(profile.limits.maxDecodedPaletteBytes.toLong())
             .saturatingAdd(profile.limits.maxNodes.toLong().saturatingMultiply(96L))
             .saturatingAdd(profile.limits.maxReferences.toLong().saturatingMultiply(8L))
+            .saturatingAdd(if (profile.schemaVersion == 2) estimateColrV1GraphBytes(profile) else 0L)
             .saturatingAdd(profile.outlineProfile.maxBytes.toLong())
             .saturatingAdd(estimateColrCpalRetainedBytes(resource, parsedFont))
             .saturatingAdd(estimateSvgRetainedBytes(parsedFont, profile))
@@ -563,6 +581,13 @@ internal fun estimateEmbeddedRenderAssetBytes(
     }
     return total
 }
+
+private fun estimateColrV1GraphBytes(profile: PaintGraphProfile): Long =
+    profile.limits.maxColorStops.toLong().saturatingMultiply(64L)
+        .saturatingAdd(profile.limits.maxClips.toLong().saturatingMultiply(profile.outlineProfile.maxBytes.toLong()))
+        .saturatingAdd(profile.limits.maxBaseGlyphRecords.toLong().saturatingMultiply(8L))
+        .saturatingAdd(profile.limits.maxLayerRecords.toLong().saturatingMultiply(4L))
+        .saturatingAdd(profile.limits.maxClipRecords.toLong().saturatingMultiply(12L))
 
 private fun estimateColrCpalRetainedBytes(
     resource: PreparedFontResource,
@@ -714,7 +739,7 @@ private fun GlyphOutlineIR.estimatedRetainedBytes(): Long {
 }
 
 private fun GlyphPaintIR.estimatedRetainedBytes(): Long {
-    var total = 80L
+    var total = if (clipBounds == null) 80L else 112L
     for (node in nodes) {
         total = total.saturatingAdd(32L)
         total = total.saturatingAdd(
@@ -722,6 +747,13 @@ private fun GlyphPaintIR.estimatedRetainedBytes(): Long {
                 is GlyphPaintNode.SolidOutline -> node.outline.estimatedRetainedBytes().saturatingAdd(16L)
                 is GlyphPaintNode.Path -> node.path.estimatedByteSize.toLong().saturatingAdd(16L)
                 is GlyphPaintNode.Group -> node.children.size.toLong().saturatingMultiply(4L).saturatingAdd(16L)
+                is GlyphPaintNode.Solid -> 40L
+                is GlyphPaintNode.LinearGradient -> 128L.saturatingAdd(node.colorLine.colorStops.size.toLong().saturatingMultiply(64L))
+                is GlyphPaintNode.RadialGradient -> 128L.saturatingAdd(node.colorLine.colorStops.size.toLong().saturatingMultiply(64L))
+                is GlyphPaintNode.SweepGradient -> 112L.saturatingAdd(node.colorLine.colorStops.size.toLong().saturatingMultiply(64L))
+                is GlyphPaintNode.GlyphClip -> node.outline.estimatedRetainedBytes().saturatingAdd(32L)
+                is GlyphPaintNode.Transform -> 96L
+                is GlyphPaintNode.Composite -> 48L
             },
         )
     }
