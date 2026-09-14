@@ -29,10 +29,13 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   conteneurs `svg` et `g` ; éléments `path` (chemins) auto-fermants avec les
   commandes `M`, `L`, `H`, `V`, `C`, `S` et `Z` ; et sous-ensemble statique
   `defs` (définitions), `linearGradient` (gradient linéaire), `radialGradient`
-  (gradient radial) et `stop` (arrêt de couleur), appliqué uniquement aux éléments `rect` (rectangles)
-  auto-fermants. Les chemins et rectangles acceptent un remplissage opaque
-  `#RRGGBB` ou `fill="none"` ; un rectangle peut aussi référencer un gradient
-  linéaire ou radial concentrique local défini auparavant. Les transformations
+  (gradient radial) et `stop` (arrêt de couleur). Les chemins et rectangles
+  acceptent un remplissage `#RRGGBB` ou `fill="none"`, avec un `fill-opacity`
+  facultatif, et peuvent référencer un gradient linéaire ou radial concentrique
+  local antérieur dans les espaces de coordonnées décrits plus bas. Ils peuvent
+  aussi référencer un `clipPath` (définition de découpe) borné en
+  `userSpaceOnUse`, avec un unique enfant chemin ou rectangle à angles vifs.
+  Les transformations
   `translate`, `scale`, `rotate`, `skewX`, `skewY` et `matrix` (matrice affine
   à six coefficients) sont prises en charge. Le sous-ensemble exact des
   gradients et les exclusions restantes sont décrits ci-dessous ;
@@ -145,11 +148,12 @@ de l’arrêt terminal correspondant. Les discontinuités à offsets égaux
 conservent l’ordre source, et les arrêts insérés comptent dans `maxColorStops`
 pour le graphe atteint.
 
-Les attributs de groupe `transform` et les deux types de gradient partagent les
-mêmes opérations SVG prises en charge. Un gradient accepte un attribut
+Les attributs de groupe `transform`, les deux types de gradient et les
+définitions bornées de découpe en espace utilisateur partagent les mêmes
+opérations SVG prises en charge. Un gradient accepte un attribut
 `gradientTransform` (transformation du repère du gradient) absent, vide ou
-composé uniquement d’espaces XML comme identité. Sinon, sa `transform-list`
-(liste SVG de transformations) peut contenir `translate` (translation),
+composé uniquement d’espaces XML comme identité. Sinon, sa `transform list`
+(liste de transformations SVG) peut contenir `translate` (translation),
 `scale` (mise à l’échelle), `rotate(angle)`, `rotate(angle cx cy)`,
 `skewX(angle)`, `skewY(angle)` et `matrix`. Ce sont les six noms de fonction
 de transformation SVG 1.1 acceptés par cette liste bornée.
@@ -205,9 +209,9 @@ semblait restaurer une aire.
 
 Chaque appel complet d’une fonction de transformation consomme une opération
 SVG déclarée, quel que soit son nombre d’opérandes ; chaque appel à un opérande
-`skewX` ou `skewY` coûte donc exactement une opération. Les listes de groupe et
-de gradient partagent ce budget, et le fallback (repli) de profil recommence la
-validation sans publier de donnée partielle.
+`skewX` ou `skewY` coûte donc exactement une opération. Les listes de groupe,
+de gradient et de définition de découpe partagent ce budget, et le fallback
+(repli) de profil recommence la validation sans publier de donnée partielle.
 
 Avec des vecteurs-colonnes, une peinture en boîte englobante utilise
 `T * B * G` : `T` est la transformation de groupe effective du rectangle, `B`
@@ -264,8 +268,10 @@ et `PATH_CLIP`. Un `RadialGradient` produit exige les mêmes capacités
 d’interpolation et d’extension, ainsi que `RADIAL_GRADIENT`, `TRANSFORM` et
 `PATH_CLIP`. Une réduction en peinture unie exige à la place `SOLID` et
 `PATH_CLIP`, mais pas l’espace d’interpolation ni le mode d’interpolation
-d’alpha ou d’extension de la définition. Les rectangles et chemins unis utilisent
-`PATH`. Un document qui possède plusieurs racines peintes exige aussi `GROUP` et
+d’alpha ou d’extension de la définition. Les rectangles et chemins unis opaques
+utilisent `PATH` ; les peintures unies translucides utilisent la forme
+`SOLID`/`PATH_CLIP` décrite plus bas. Un document qui possède plusieurs racines
+peintes exige aussi `GROUP` et
 `SOURCE_OVER`. Les limites existantes sont contrôlées
 avant publication : les octets source et décodés, transformations, définitions
 de gradient et arrêts analysés, ainsi que les nœuds, références, chemins,
@@ -288,23 +294,128 @@ repli ordonné entre profils peut donc ignorer un profil de schéma 3 qui ne
 déclare pas chaque capacité atteinte et sélectionner un profil compatible
 ultérieur.
 
-Tous les identifiants d’élément acceptés sur `svg`, `g`, `linearGradient` et `radialGradient`
-sont globalement uniques. L’unicité des cibles par identifiant de glyphe reste
-un invariant distinct. Les références de peinture sont locales, limitées à un
-fragment `#id` et uniquement dirigées vers une définition antérieure. Une
-référence non résolue, future, externe ou contenant autrement une URI échoue
-avant la publication d’une ressource, même si la forme référente ne devait ensuite
-produire aucune encre. Une entrée mal formée ou non prise en charge ne publie
-jamais de graphe partiel.
+### Opacité du remplissage SVG
+
+Les éléments `path` et `rect` peints et pris en charge peuvent déclarer
+`fill-opacity` comme un nombre fini sans unité ou un pourcentage. Sa valeur par
+défaut est `1` et elle est ramenée dans `0.0..1.0`. Une entrée mal formée ou
+non finie retourne `FontDataFailure` avec le code
+`font.svg.invalid-fill-opacity`, même avec `fill="none"`.
+
+Une peinture unie opaque conserve son nœud `Path` existant. Une peinture unie
+translucide est normalisée en `Solid(color, opacity)` sous le `PathClip`
+(découpe par chemin) de la forme : elle exige `SOLID` et `PATH_CLIP` plutôt que
+`PATH`. Une découpe externe enveloppe tout ce sous-graphe. Pour un gradient,
+chaque référence produit une ligne de couleur immuable dont les opacités des
+arrêts sont multipliées par l’opacité de la forme, y compris l’arrêt terminal
+d’une réduction unie. La définition partagée et les utilisations suivantes
+restent inchangées. Les modes d’interpolation et capacités de gradient
+existants continuent de s’appliquer.
+
+Une opacité nulle omet la peinture normalisée seulement après validation de la
+géométrie atteinte, de la peinture et de ses références, des types de nœud
+requis et des limites de ressources projetées. Elle ne contourne ni un
+gradient non vide incompatible ni une forme invalide. Les définitions de
+gradient vides valides, `fill="none"` et les rectangles peints d’aire nulle
+conservent leurs comportements distincts existants sans encre. Les enfants de
+découpe ne peuvent déclarer ni `fill-opacity`, ni `fill`, ni autre attribut de
+peinture. L’attribut `opacity` sur un élément ou groupe et l’opacité CSS restent
+hors du sous-ensemble.
+
+### Découpe SVG bornée dans l’espace utilisateur
+
+Le sous-ensemble accepte un `clip path` (chemin de découpe) sous la forme d’un
+`clipPath` non auto-fermant directement
+dans `defs`. Il doit porter un `id` valide et globalement unique ;
+`clipPathUnits` doit être absent ou exactement égal à `userSpaceOnUse`
+(coordonnées absolues dans l’espace utilisateur). Son unique enfant est
+exactement un `path` auto-fermant, avec `d` requis, les commandes de chemin
+statiques prises en charge et la règle de remplissage non nulle, ou un `rect`
+à angles vifs. Ce rectangle accepte `x/y` facultatifs (défaut `0`) et
+`width/height` requis, finis, sans unité et non négatifs. Une dimension
+négative non nulle reste invalide même si un sous-dépassement numérique la
+décodait comme zéro. Les angles arrondis et autres attributs de rectangle ne
+sont pas pris en charge. Un
+`path` ou `rect` peint et pris en charge peut ajouter un attribut
+`clip-path="url(#id)"` qui référence un `clipPath` local antérieur. La
+définition et son enfant acceptent chacun un attribut `transform` absent, vide
+ou composé uniquement d’espaces comme identité, ou une `transform list`
+(liste de transformations) qui suit la même grammaire bornée décrite plus
+haut. Ils n’acceptent ni remplissage, style, `clip-rule`, ID sur l’enfant,
+groupe, autre forme, découpe imbriquée, référence, animation, ni élément ou
+attribut non déclaré.
+
+Pour chaque utilisation atteinte, la transformation effective `T` de la forme
+matérialise la forme peinte, tandis que le chemin de la définition utilise
+`T * C * P`, où `C` est la transformation de la définition et `P` celle de son
+enfant, toutes deux composées dans l’ordre déclaré. Les coordonnées de découpe
+déclarées doivent rester finies et respecter exactement les limites de
+`outlineProfile` (profil de contours), même pour une définition inutilisée ;
+les bornes entières des coordonnées de conception ne sont toutefois imposées
+qu’après cette matérialisation complète pour une référence atteinte. Le
+sous-graphe de peinture existant conserve exactement sa topologie
+et ses valeurs, puis un `PathClip` (découpe par chemin) externe l’enveloppe. La
+forme reste donc sous `T` ; la géométrie du gradient conserve son repère
+existant `T * G` ou `T * B * G`. Un gradient conserve son `PathClip` de forme ;
+un gradient radial conserve aussi son éventuel `Transform` sous cette découpe
+de forme. La découpe externe représente une intersection par imbrication, sans
+union de chemins ni calcul de boîte englobante. La réutilisation d’une
+définition sous plusieurs transformations matérialise et comptabilise une
+découpe distincte à chaque référence sans réanalyse ni capture de `T`.
+
+Les définitions de découpe exigent exactement le schéma de peinture 3, même
+inutilisées ; chaque découpe atteinte exige aussi `PATH_CLIP`. Chaque
+utilisation ajoute un nœud, une référence, un
+chemin, une découpe et un niveau de profondeur produits ; elle est facturée
+indépendamment à `maxNodes`, `maxReferences`, `maxPaths`, `maxClips`,
+`maxDepth` et `maxPaintVisits`. Son chemin et le chemin peint doivent tous deux
+respecter exactement l’`outlineProfile` (profil de contours). Un dépassement
+des limites de points, contours ou octets retourne `ResourceLimitExceeded`
+pour la table `SVG `, pas une incompatibilité de capacité. Les opérations
+déclarées de la définition et de son enfant consomment une seule fois le budget
+source partagé `maxSvgTransformOperations` lors de leur analyse, même
+inutilisées. Ce budget couvre toute la table pendant l’acquisition entièrement
+normalisée, ou tout le document sélectionné pendant la matérialisation différée
+mixte SVG/COLR. La réutilisation ne consomme aucune opération source
+supplémentaire. La matérialisation du chemin de découpe ne
+produit aucun nœud `Transform` et ne facture pas `maxTransforms` : les budgets
+existants du gradient, des arrêts et des transformations de la peinture enfant
+restent inchangés. Une composition effective `T * C * P` singulière ou un
+rectangle de découpe d’aire nulle omet la peinture seulement après validation
+de la forme, de la
+définition, de la référence, des capacités, des limites de contours et des
+limites projetées du graphe. `fill="none"` et
+les rectangles d’aire nulle conservent leur résultat sans encre après validation
+des attributs source et de toute référence locale de découpe.
+
+`objectBoundingBox` (boîte englobante de l’objet), les unités inconnues, les
+définitions vides ou contenant plusieurs enfants, le contenu interdit et les
+références mal formées, externes, futures, non résolues ou visant un élément
+qui n’est pas un `clipPath` restent hors du sous-ensemble, même sans utilisation
+ou lorsque la forme ne produirait aucune encre. Les données de chemin mal
+formées, une syntaxe ou composition de transformation mal formée, le XML
+invalide et les ID dupliqués restent des `FontDataFailure`
+typées. Tout échec est atomique pour l’acquisition publique complète, et le
+repli ordonné peut sélectionner un profil exact compatible ultérieur.
+
+Tous les identifiants d’élément acceptés sur `svg`, `g`, `linearGradient`,
+`radialGradient` et `clipPath` sont globalement uniques. L’unicité des cibles
+par identifiant de glyphe reste un invariant distinct. Les références de
+peinture et de découpe sont locales, limitées à un fragment `#id` et uniquement
+dirigées vers une définition antérieure. Une référence non résolue, future,
+externe ou contenant autrement une URI échoue avant la publication d’une
+ressource, même si la forme référente ne devait ensuite produire aucune encre.
+Une entrée mal formée ou non prise en charge ne publie jamais de graphe partiel.
 
 Le sous-ensemble ne prend pas en charge `viewBox`, les coordonnées en
 pourcentage ou valeurs par défaut de l’espace utilisateur qui dépendent du
 viewport, `href`, `xlink:href`, le rayon focal `fr`, les foyers
-radiaux non concentriques, les gradients `objectBoundingBox` sur `path`, CSS ou les attributs `style`, les découpes SVG générales
-ou chemins de découpe, les masques, contours tracés, scripts, entités,
-animations, ressources externes, ni les éléments et attributs non déclarés.
-Les formats de compression autres que le transport gzip mono-membre autorisé
-restent refusés.
+radiaux non concentriques, les gradients `objectBoundingBox` sur `path`, CSS ou
+les attributs `style`, les découpes SVG hors du sous-ensemble exact
+`userSpaceOnUse` à enfant unique décrit ci-dessus, les masques, contours tracés,
+scripts, entités, animations, ressources externes, ni les éléments et attributs
+non déclarés. Les formats de compression autres que le transport gzip
+mono-membre autorisé restent refusés.
 
 ### Schémas de graphe de peinture et COLR version 1 statique
 
@@ -370,8 +481,8 @@ découpes) de format 1 avec une `ClipBox` (boîte de découpe) de format 1 est
 acceptée. Les formats variables `PaintVar*`, `ClipBox` format 2, les magasins
 et tables d’index de variations, CFF/CFF2 et les valeurs CPAL/COLR variables ne
 sont pas pris en charge. Le parcours SVG-in-OpenType distinct accepte les
-gradients linéaires et radiaux concentriques statiques, bornés par un
-rectangle, décrits plus haut via le
+gradients linéaires et radiaux concentriques statiques ainsi que les découpes
+bornées à enfant unique dans l’espace utilisateur décrites plus haut via le
 schéma 3 ; il n’acquiert pas pour autant les découpes SVG générales, masques,
 contours tracés ou animations.
 

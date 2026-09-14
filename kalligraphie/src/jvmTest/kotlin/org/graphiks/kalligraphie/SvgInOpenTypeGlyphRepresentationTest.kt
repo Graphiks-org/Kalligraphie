@@ -34,6 +34,1624 @@ import kotlin.test.assertTrue
 
 class SvgInOpenTypeGlyphRepresentationTest {
     @Test
+    fun translucentSolidPathUsesExactOpacityInsideTheShapeAndExternalClips() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path d="M1 1 L5 1 L1 6 Z"/></clipPath></defs>
+              <path d="M0 0 L4 0 L0 4 Z" fill="#123456" fill-opacity="0.5" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(
+                    gradientProfile(
+                        maxNodes = 3,
+                        maxReferences = 2,
+                        maxPaths = 2,
+                        maxGradients = 0,
+                        maxColorStops = 0,
+                        maxClips = 2,
+                    ),
+                ),
+            ).representation,
+        ).paint
+
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(0x12, 0x34, 0x56), 0.5), paint.nodes[0])
+        val shapeClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1])
+        assertEquals(0, shapeClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(4.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 4.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            shapeClip.path.commands,
+        )
+        val outerClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[2])
+        assertEquals(1, outerClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(1.0, 1.0),
+                GlyphPaintPathCommand.LineTo(5.0, 1.0),
+                GlyphPaintPathCommand.LineTo(1.0, 6.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            outerClip.path.commands,
+        )
+    }
+
+    @Test
+    fun gradientFillOpacityDerivesStopsPerUseWithoutMutatingTheSharedDefinition() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="gradient">
+                  <stop offset="0" stop-color="#123456" stop-opacity="40%"/>
+                  <stop offset="1" stop-color="#ABCDEF" stop-opacity="80%"/>
+                </linearGradient>
+              </defs>
+              <rect x="0" y="0" width="4" height="5" fill="url(#gradient)" fill-opacity="25%"/>
+              <rect x="10" y="0" width="4" height="5" fill="url(#gradient)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(
+                    gradientProfile(
+                        maxNodes = 5,
+                        maxReferences = 4,
+                        maxPaths = 2,
+                        maxGradients = 2,
+                        maxColorStops = 4,
+                        maxClips = 2,
+                    ),
+                ),
+            ).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintColorStop(0.0, GlyphColor(0x12, 0x34, 0x56), 0.1),
+                GlyphPaintColorStop(1.0, GlyphColor(0xAB, 0xCD, 0xEF), 0.2),
+            ),
+            assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0]).colorLine.colorStops,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintColorStop(0.0, GlyphColor(0x12, 0x34, 0x56), 0.4),
+                GlyphPaintColorStop(1.0, GlyphColor(0xAB, 0xCD, 0xEF), 0.8),
+            ),
+            assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[2]).colorLine.colorStops,
+        )
+        assertEquals(GlyphPaintNode.Group(listOf(1, 3)), paint.nodes[4])
+    }
+
+    @Test
+    fun fillOpacityDefaultsToOpaqueAcceptsPercentagesAndClampsFiniteValues() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <path d="M0 0 L2 0 L0 2 Z" fill="#010203"/>
+              <path d="M3 0 L5 0 L3 2 Z" fill="#112233" fill-opacity="50%"/>
+              <rect x="6" y="0" width="2" height="2" fill="#445566" fill-opacity="-0.25"/>
+              <rect x="9" y="0" width="2" height="2" fill="#778899" fill-opacity="1.5"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(
+                    gradientProfile(
+                        maxNodes = 8,
+                        maxReferences = 8,
+                        maxPaths = 6,
+                        maxGradients = 0,
+                        maxColorStops = 0,
+                        maxClips = 3,
+                    ),
+                ),
+            ).representation,
+        ).paint
+
+        assertEquals(GlyphColor(0x01, 0x02, 0x03), assertIs<GlyphPaintNode.Path>(paint.nodes[0]).color)
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(0x11, 0x22, 0x33), 0.5), paint.nodes[1])
+        assertEquals(1, assertIs<GlyphPaintNode.PathClip>(paint.nodes[2]).paint)
+        assertEquals(GlyphColor(0x77, 0x88, 0x99), assertIs<GlyphPaintNode.Path>(paint.nodes[3]).color)
+        assertEquals(GlyphPaintNode.Group(listOf(0, 2, 3)), paint.nodes[4])
+    }
+
+    @Test
+    fun malformedFillOpacityReturnsTypedInvalidDataEvenWhenTheFillIsNone() {
+        val shapes = listOf(
+            """<path d="M0 0 L1 0 L0 1 Z" fill="#123456" fill-opacity="bad"/>""",
+            """<path d="M0 0 L1 0 L0 1 Z" fill="none" fill-opacity="50 %"/>""",
+            """<rect width="1" height="1" fill="#123456" fill-opacity="NaN"/>""",
+            """<rect width="1" height="1" fill="none" fill-opacity="1e999"/>""",
+        )
+
+        for (shape in shapes) {
+            val error = assertIs<FontError.FontDataFailure>(
+                acquireSvgFailure(
+                    """
+                        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                          $shape
+                        </svg>
+                    """.trimIndent(),
+                    gradientProfile(),
+                ),
+            )
+
+            assertEquals("font.svg.invalid-fill-opacity", error.code)
+        }
+    }
+
+    @Test
+    fun clipChildrenDoNotAcceptFillOpacity() {
+        val children = listOf(
+            """<path d="M0 0 L1 0 L0 1 Z" fill-opacity="0.5"/>""",
+            """<rect width="1" height="1" fill-opacity="0.5"/>""",
+        )
+
+        for (child in children) {
+            assertIs<FontError.UnsupportedRepresentationProfile>(
+                acquireSvgFailure(
+                    """
+                        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                          <defs><clipPath id="cut">$child</clipPath></defs>
+                        </svg>
+                    """.trimIndent(),
+                    gradientProfile(),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun zeroSolidFillOpacityValidatesItsShapeAndRequiredNodesBeforeOmission() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <path d="M0 0 L4 0 L0 4 Z" fill="#123456" fill-opacity="0"/>
+            </svg>
+        """.trimIndent()
+
+        assertIs<GlyphRepresentation.Empty>(resolveSvgDocument(document, listOf(gradientProfile())).representation)
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(
+                document,
+                gradientProfile(
+                    nodeKinds = listOf(GlyphPaintNodeKind.PATH_CLIP, GlyphPaintNodeKind.GROUP),
+                ),
+            ),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(
+                document,
+                gradientProfile(
+                    nodeKinds = listOf(GlyphPaintNodeKind.SOLID, GlyphPaintNodeKind.GROUP),
+                ),
+            ),
+        )
+        val invalidShape = document.replace("M0 0 L4 0 L0 4 Z", "M0 0 Lbad")
+        assertEquals(
+            "font.svg.path-number",
+            assertIs<FontError.FontDataFailure>(acquireSvgFailure(invalidShape, gradientProfile())).code,
+        )
+    }
+
+    @Test
+    fun zeroGradientFillOpacityValidatesTheReferencedPaintBeforeOmission() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="gradient" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="#123456"/>
+                  <stop offset="1" stop-color="#ABCDEF"/>
+                </linearGradient>
+              </defs>
+              <rect x="0" y="0" width="4" height="5" fill="url(#gradient)" fill-opacity="0"/>
+            </svg>
+        """.trimIndent()
+
+        assertIs<GlyphRepresentation.Empty>(resolveSvgDocument(document, listOf(gradientProfile())).representation)
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(
+                document,
+                gradientProfile(
+                    nodeKinds = listOf(
+                        GlyphPaintNodeKind.SOLID,
+                        GlyphPaintNodeKind.GROUP,
+                        GlyphPaintNodeKind.PATH_CLIP,
+                    ),
+                ),
+            ),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(document.replace("url(#gradient)", "url(#missing)"), gradientProfile()),
+        )
+        val invalidGradient = document
+            .replace("x1=\"0\"", "x1=\"1e308\"")
+            .replace("x2=\"1\"", "x2=\"-1e308\"")
+        assertEquals(
+            "font.svg.invalid-gradient",
+            assertIs<FontError.FontDataFailure>(acquireSvgFailure(invalidGradient, gradientProfile())).code,
+        )
+    }
+
+    @Test
+    fun zeroTranslucentSolidAccountsForShapeAndExternalClipNodesBeforeOmission() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path d="M1 1 L5 1 L1 6 Z"/></clipPath></defs>
+              <rect x="0" y="0" width="4" height="5" fill="#123456" fill-opacity="0" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+        fun profile(
+            maxNodes: Int = 3,
+            maxReferences: Int = 2,
+            maxDepth: Int = 3,
+            maxPaintVisits: Int = 3,
+            maxPaths: Int = 2,
+            maxClips: Int = 2,
+        ): PaintGraphProfile = gradientProfile(
+            maxNodes = maxNodes,
+            maxReferences = maxReferences,
+            maxDepth = maxDepth,
+            maxPaintVisits = maxPaintVisits,
+            maxPaths = maxPaths,
+            maxGradients = 0,
+            maxColorStops = 0,
+            maxClips = maxClips,
+        )
+
+        assertIs<GlyphRepresentation.Empty>(resolveSvgDocument(document, listOf(profile())).representation)
+        val limitedProfiles = listOf(
+            profile(maxNodes = 2),
+            profile(maxReferences = 1),
+            profile(maxDepth = 2),
+            profile(maxPaintVisits = 2),
+            profile(maxPaths = 1),
+            profile(maxClips = 1),
+        )
+        for (limitedProfile in limitedProfiles) {
+            assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, limitedProfile))
+        }
+    }
+
+    @Test
+    fun translucentSolidDoesNotRequireTheOpaquePathNodeKind() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <rect x="0" y="0" width="4" height="5" fill="#123456" fill-opacity="0.5"/>
+            </svg>
+        """.trimIndent()
+        val profile = gradientProfile(
+            nodeKinds = listOf(
+                GlyphPaintNodeKind.SOLID,
+                GlyphPaintNodeKind.PATH_CLIP,
+                GlyphPaintNodeKind.GROUP,
+            ),
+            maxNodes = 2,
+            maxReferences = 1,
+            maxPaths = 1,
+            maxGradients = 0,
+            maxColorStops = 0,
+            maxClips = 1,
+        )
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(profile)).representation,
+        ).paint
+
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(0x12, 0x34, 0x56), 0.5), paint.nodes[0])
+        assertEquals(0, assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).paint)
+    }
+
+    @Test
+    fun rectangularClipChildComposesItsGeometryForEveryReference() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <clipPath id="cut" transform="translate(10 20)">
+                  <rect x="1" y="2" width="3" height="4" transform="scale(2 3)"/>
+                </clipPath>
+              </defs>
+              <g transform="translate(100 200)">
+                <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+              </g>
+              <g transform="translate(-10 30) scale(3 2)">
+                <path d="M0 0 L1 0 L0 1 Z" fill="#405060" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(
+                    clipProfile(
+                        maxNodes = 5,
+                        maxReferences = 4,
+                        maxPaintVisits = 5,
+                        maxPaths = 4,
+                        maxClips = 2,
+                    ),
+                ),
+            ).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(112.0, 226.0),
+                GlyphPaintPathCommand.LineTo(118.0, 226.0),
+                GlyphPaintPathCommand.LineTo(118.0, 238.0),
+                GlyphPaintPathCommand.LineTo(112.0, 238.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(26.0, 82.0),
+                GlyphPaintPathCommand.LineTo(44.0, 82.0),
+                GlyphPaintPathCommand.LineTo(44.0, 106.0),
+                GlyphPaintPathCommand.LineTo(26.0, 106.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[3]).path.commands,
+        )
+    }
+
+    @Test
+    fun rectangularClipChildDefaultsItsOmittedOriginToZero() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><rect width="3" height="4"/></clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(3.0, 0.0),
+                GlyphPaintPathCommand.LineTo(3.0, 4.0),
+                GlyphPaintPathCommand.LineTo(0.0, 4.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun translatedOutOfRangePathClipMaterializesInsideTheFinalCoordinateDomain() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <path transform="translate(-2147483648 0)" d="M2147483648 0 L2147483649 0 L2147483648 1 Z"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[0]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun translatedOutOfRangeRectangularClipMaterializesInsideTheFinalCoordinateDomain() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <rect x="2147483648" y="0" width="1" height="1" transform="translate(-2147483648 0)"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[0]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 0.0),
+                GlyphPaintPathCommand.LineTo(1.0, 1.0),
+                GlyphPaintPathCommand.LineTo(0.0, 1.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun outOfRangePathClipWithoutItsTranslationRemainsInvalidWhenReferenced() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <path d="M2147483648 0 L2147483649 0 L2147483648 1 Z"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val error = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()))
+
+        assertEquals("font.svg.invalid-path", error.code)
+    }
+
+    @Test
+    fun outOfRangeRectangularClipWithoutItsTranslationRemainsInvalidWhenReferenced() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut">
+                <rect x="2147483648" y="0" width="1" height="1"/>
+              </clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#123456" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val error = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()))
+
+        assertEquals("font.svg.invalid-path", error.code)
+    }
+
+    @Test
+    fun rectangularClipChildRejectsInvalidDimensions() {
+        val documents = listOf(
+            "<rect x=\"0\" y=\"0\" width=\"-1\" height=\"1\"/>",
+            "<rect x=\"0\" y=\"0\" width=\"1\" height=\"-1\"/>",
+            "<rect x=\"0\" y=\"0\" width=\"-1e-9999\" height=\"1\"/>",
+            "<rect x=\"0\" y=\"0\" width=\"1\" height=\"-1e-9999\"/>",
+            "<rect x=\"0\" y=\"0\" height=\"1\"/>",
+            "<rect x=\"0\" y=\"0\" width=\"1\"/>",
+            "<rect x=\"0\" y=\"0\" width=\"bad\" height=\"1\"/>",
+            "<rect x=\"0\" y=\"0\" width=\"1\" height=\"NaN\"/>",
+        )
+
+        for (rectangle in documents) {
+            val error = assertIs<FontError.FontDataFailure>(
+                acquireSvgFailure(
+                    """
+                        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                          <defs><clipPath id="cut">$rectangle</clipPath></defs>
+                        </svg>
+                    """.trimIndent(),
+                    clipProfile(),
+                ),
+            )
+
+            assertEquals("font.svg.invalid-rect", error.code)
+        }
+    }
+
+    @Test
+    fun zeroSizedRectangularClipProducesEmptyOnlyAfterClipValidation() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><rect width="0" height="4"/></clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        assertIs<GlyphRepresentation.Empty>(resolveSvgDocument(document, listOf(clipProfile())).representation)
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(
+                document,
+                clipProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH, GlyphPaintNodeKind.GROUP)),
+            ),
+        )
+    }
+
+    @Test
+    fun rectangularClipChildRejectsRoundedCornersAndMultipleChildren() {
+        val documents = listOf(
+            "<rect width=\"3\" height=\"4\" rx=\"1\"/>",
+            "<rect width=\"3\" height=\"4\" ry=\"1\"/>",
+            "<rect width=\"3\" height=\"4\"/><rect width=\"3\" height=\"4\"/>",
+            "<path d=\"M0 0 L1 0 L0 1 Z\"/><rect width=\"3\" height=\"4\"/>",
+        )
+
+        for (children in documents) {
+            assertIs<FontError.UnsupportedRepresentationProfile>(
+                acquireSvgFailure(
+                    """
+                        <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                          <defs><clipPath id="cut">$children</clipPath></defs>
+                        </svg>
+                    """.trimIndent(),
+                    clipProfile(),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun unusedRectangularClipStillHonorsTheExactOutlinePointLimit() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="unused"><rect width="4" height="4"/></clipPath></defs>
+            </svg>
+        """.trimIndent()
+
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(document, clipProfile(maxOutlinePoints = 3)),
+        )
+    }
+
+    @Test
+    fun unusedRectangularClipTransformConsumesTheAuthoredTransformBudget() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><rect width="3" height="4" transform="translate(4 5) scale(2)"/></clipPath></defs>
+            </svg>
+        """.trimIndent()
+
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(document, clipProfile(maxSvgTransformOperations = 1)),
+        )
+    }
+
+    @Test
+    fun clipChildTransformComposesPerReferenceWithoutChangingThePaintedShapes() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <clipPath id="cut" transform="scale(2 3)">
+                  <path transform="translate(4 5)" d="M1 2 L3 2 L1 4 Z"/>
+                </clipPath>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <path d="M1 2 L3 2 L1 4 Z" fill="#102030" clip-path="url(#cut)"/>
+              </g>
+              <g transform="translate(-10 30) scale(3 2)">
+                <path d="M1 2 L3 2 L1 4 Z" fill="#405060" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                document,
+                listOf(
+                    clipProfile(
+                        maxNodes = 5,
+                        maxReferences = 4,
+                        maxPaths = 4,
+                        maxClips = 2,
+                        maxPaintVisits = 5,
+                    ),
+                ),
+            ).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(16.0, 26.0),
+                GlyphPaintPathCommand.LineTo(12.0, 32.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[0]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(30.0, 83.0),
+                GlyphPaintPathCommand.LineTo(38.0, 83.0),
+                GlyphPaintPathCommand.LineTo(30.0, 101.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(-7.0, 34.0),
+                GlyphPaintPathCommand.LineTo(-1.0, 34.0),
+                GlyphPaintPathCommand.LineTo(-7.0, 38.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[2]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(20.0, 72.0),
+                GlyphPaintPathCommand.LineTo(32.0, 72.0),
+                GlyphPaintPathCommand.LineTo(20.0, 84.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[3]).path.commands,
+        )
+    }
+
+    @Test
+    fun malformedClipChildTransformIsInvalidFontData() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path transform="scale(" d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val error = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()))
+
+        assertEquals("font.svg.invalid-transform", error.code)
+    }
+
+    @Test
+    fun unusedClipChildTransformStillConsumesTheAuthoredTransformBudget() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path transform="translate(4 5) scale(2)" d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>
+            </svg>
+        """.trimIndent()
+
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(document, clipProfile(maxSvgTransformOperations = 1)),
+        )
+    }
+
+    @Test
+    fun unusedClipPathStillHonorsTheExactOutlinePointLimit() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="unused"><path d="M0 0 L4 0 L4 4 L0 4 Z"/></clipPath></defs>
+            </svg>
+        """.trimIndent()
+
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(document, clipProfile(maxOutlinePoints = 3)),
+        )
+    }
+
+    @Test
+    fun unusedClipPathRejectsOverflowFromRelativeCoordinates() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="unused"><path d="M1e308 0 l1e308 0 L0 1 Z"/></clipPath></defs>
+            </svg>
+        """.trimIndent()
+
+        val error = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()))
+
+        assertEquals("font.svg.invalid-path", error.code)
+    }
+
+    @Test
+    fun singularClipChildTransformOmitsPaintAfterValidatingTheReferenceAndProfile() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path transform="scale(0 1)" d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        assertIs<GlyphRepresentation.Empty>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(
+                document,
+                clipProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH, GlyphPaintNodeKind.GROUP)),
+            ),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(document.replace("url(#cut)", "url(#missing)"), clipProfile()),
+        )
+    }
+
+    @Test
+    fun unlistedClipChildAttributesRemainUnsupported() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path data-extra="no" d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>
+              <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, clipProfile()))
+    }
+
+    @Test
+    fun clipTransformComposesInsideTheReferencingTransformWithoutMovingTheSolidShape() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <clipPath id="cut" transform="scale(2 3)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath>
+              </defs>
+              <g transform="translate(10 20)">
+                <path d="M1 2 L4 2 L2 9 Z" fill="#102030" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(2, paint.nodes.size)
+        assertEquals(1, paint.rootNode)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(11.0, 22.0),
+                GlyphPaintPathCommand.LineTo(14.0, 22.0),
+                GlyphPaintPathCommand.LineTo(12.0, 29.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.Path>(paint.nodes[0]).path.commands,
+        )
+        val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1])
+        assertEquals(0, clip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(18.0, 26.0),
+                GlyphPaintPathCommand.LineTo(14.0, 38.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            clip.path.commands,
+        )
+    }
+
+    @Test
+    fun clipTransformSupportsEveryAuthoredTransformFormInListOrder() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <clipPath id="cut" transform="translate(10 20) scale(2 3) rotate(90) skewX(45) skewY(-45) matrix(1 0 0 1 4 5)">
+                  <path d="M0 0 L1 0 L0 1 Z"/>
+                </clipPath>
+              </defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(clipProfile())).representation,
+        ).paint
+
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(8.0, 35.0),
+                GlyphPaintPathCommand.LineTo(10.0, 35.0),
+                GlyphPaintPathCommand.LineTo(6.0, 38.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+    }
+
+    @Test
+    fun clipTransformChangesOnlyTheOuterClipAroundLinearGradientPaint() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="paint" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+                <clipPath id="cut" transform="scale(2 3)"><path d="M2 3 L7 3 L6 8 Z"/></clipPath>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <rect x="1" y="2" width="4" height="6" fill="url(#paint)" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(gradientProfile(maxNodes = 3, maxReferences = 2))).representation,
+        ).paint
+
+        assertEquals(2, paint.rootNode)
+        val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+        assertEquals(GlyphPaintPoint(10.0, 20.0), gradient.p0)
+        assertEquals(GlyphPaintPoint(30.0, 20.0), gradient.p1)
+        assertEquals(GlyphPaintPoint(10.0, 50.0), gradient.p2)
+        val shapeClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1])
+        assertEquals(0, shapeClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(20.0, 26.0),
+                GlyphPaintPathCommand.LineTo(20.0, 44.0),
+                GlyphPaintPathCommand.LineTo(12.0, 44.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            shapeClip.path.commands,
+        )
+        val outerClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[2])
+        assertEquals(1, outerClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(18.0, 47.0),
+                GlyphPaintPathCommand.LineTo(38.0, 47.0),
+                GlyphPaintPathCommand.LineTo(34.0, 92.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            outerClip.path.commands,
+        )
+    }
+
+    @Test
+    fun solidPathClipKeepsPaintInsideTheLiteralTransformedClipGeometry() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <clipPath id="cut"><path d="M0 1 L5 1 L3 6 Z"/></clipPath>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <path d="M1 2 L4 2 L2 9 Z" fill="#102030" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(gradientProfile())).representation,
+        ).paint
+
+        assertEquals(2, paint.nodes.size)
+        assertEquals(1, paint.rootNode)
+        val shape = assertIs<GlyphPaintNode.Path>(paint.nodes[0])
+        assertEquals(GlyphColor(16, 32, 48), shape.color)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(18.0, 26.0),
+                GlyphPaintPathCommand.LineTo(14.0, 47.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            shape.path.commands,
+        )
+        val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1])
+        assertEquals(0, clip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(10.0, 23.0),
+                GlyphPaintPathCommand.LineTo(20.0, 23.0),
+                GlyphPaintPathCommand.LineTo(16.0, 38.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            clip.path.commands,
+        )
+    }
+
+    @Test
+    fun linearGradientClipKeepsTheShapeClipInsideTheLiteralOuterClip() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="paint" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+                <clipPath id="cut"><path d="M2 3 L7 3 L6 8 Z"/></clipPath>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <rect x="1" y="2" width="4" height="6" fill="url(#paint)" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(gradientProfile(maxNodes = 3, maxReferences = 2))).representation,
+        ).paint
+
+        assertEquals(2, paint.rootNode)
+        val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[0])
+        assertEquals(GlyphPaintPoint(10.0, 20.0), gradient.p0)
+        assertEquals(GlyphPaintPoint(30.0, 20.0), gradient.p1)
+        assertEquals(GlyphPaintPoint(10.0, 50.0), gradient.p2)
+        val shapeClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1])
+        assertEquals(0, shapeClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(20.0, 26.0),
+                GlyphPaintPathCommand.LineTo(20.0, 44.0),
+                GlyphPaintPathCommand.LineTo(12.0, 44.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            shapeClip.path.commands,
+        )
+        val outerClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[2])
+        assertEquals(1, outerClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(14.0, 29.0),
+                GlyphPaintPathCommand.LineTo(24.0, 29.0),
+                GlyphPaintPathCommand.LineTo(22.0, 44.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            outerClip.path.commands,
+        )
+    }
+
+    @Test
+    fun radialGradientClipKeepsItsTransformBelowBothLiteralPathClips() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <radialGradient id="paint" gradientUnits="userSpaceOnUse" cx="10" cy="20" r="5">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </radialGradient>
+                <clipPath id="cut"><path d="M2 3 L7 3 L6 8 Z"/></clipPath>
+              </defs>
+              <g transform="translate(10 20) scale(2 3)">
+                <path d="M1 2 L4 2 L2 9 Z" fill="url(#paint)" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+        val profile = radialGradientProfile(
+            maxNodes = 4,
+            maxReferences = 3,
+            maxDepth = 4,
+            maxPaintVisits = 4,
+            maxPaths = 2,
+            maxClips = 2,
+        )
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(profile)).representation,
+        ).paint
+
+        assertEquals(3, paint.rootNode)
+        val gradient = assertIs<GlyphPaintNode.RadialGradient>(paint.nodes[0])
+        assertEquals(GlyphPaintPoint(10.0, 20.0), gradient.c0)
+        assertEquals(GlyphPaintPoint(10.0, 20.0), gradient.c1)
+        assertEquals(5.0, gradient.radius1)
+        val transform = assertIs<GlyphPaintNode.Transform>(paint.nodes[1])
+        assertEquals(0, transform.paint)
+        assertEquals(GlyphAffineTransform(2.0, 0.0, 0.0, 3.0, 10.0, 20.0), transform.matrix)
+        val shapeClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[2])
+        assertEquals(1, shapeClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 26.0),
+                GlyphPaintPathCommand.LineTo(18.0, 26.0),
+                GlyphPaintPathCommand.LineTo(14.0, 47.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            shapeClip.path.commands,
+        )
+        val outerClip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[3])
+        assertEquals(2, outerClip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(14.0, 29.0),
+                GlyphPaintPathCommand.LineTo(24.0, 29.0),
+                GlyphPaintPathCommand.LineTo(22.0, 44.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            outerClip.path.commands,
+        )
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(
+                document,
+                radialGradientProfile(
+                    maxNodes = 4,
+                    maxReferences = 3,
+                    maxDepth = 3,
+                    maxPaintVisits = 4,
+                    maxPaths = 2,
+                    maxClips = 2,
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun reusedClipDefinitionMaterializesLiteralGeometryForEachReferenceTransform() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut" transform="translate(5 7)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <g transform="translate(10 0)">
+                <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+              </g>
+              <g transform="scale(2 3)">
+                <path d="M0 0 L3 0 L0 4 Z" fill="#405060" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+        val profile = clipProfile(
+            maxNodes = 5,
+            maxReferences = 4,
+            maxDepth = 3,
+            maxPaintVisits = 5,
+            maxPaths = 4,
+            maxClips = 2,
+        )
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(profile)).representation,
+        ).paint
+
+        assertEquals(4, paint.rootNode)
+        assertEquals(listOf(1, 3), assertIs<GlyphPaintNode.Group>(paint.nodes[4]).children)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(16.0, 9.0),
+                GlyphPaintPathCommand.LineTo(19.0, 9.0),
+                GlyphPaintPathCommand.LineTo(17.0, 13.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[1]).path.commands,
+        )
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(12.0, 27.0),
+                GlyphPaintPathCommand.LineTo(18.0, 27.0),
+                GlyphPaintPathCommand.LineTo(14.0, 39.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            assertIs<GlyphPaintNode.PathClip>(paint.nodes[3]).path.commands,
+        )
+    }
+
+    @Test
+    fun clipTransformOperationsAreChargedOnceAtDefinitionIncludingUnusedDefinitions() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <clipPath id="cut" transform="translate(5 7)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath>
+                <clipPath id="unused" transform="scale(2 3)"><path d="M0 0 L1 0 L0 1 Z"/></clipPath>
+              </defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+              <path d="M5 0 L8 0 L5 4 Z" fill="#405060" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+        val exact = clipProfile(
+            maxNodes = 5,
+            maxReferences = 4,
+            maxPaintVisits = 5,
+            maxPaths = 4,
+            maxClips = 2,
+            maxSvgTransformOperations = 2,
+        )
+
+        assertIs<GlyphRepresentation.Paint>(resolveSvgDocument(document, listOf(exact)).representation)
+        val failure = acquireSvgFailure(document, clipProfile(
+            maxNodes = 5,
+            maxReferences = 4,
+            maxPaintVisits = 5,
+            maxPaths = 4,
+            maxClips = 2,
+            maxSvgTransformOperations = 1,
+        ))
+        assertIs<FontError.ResourceLimitExceeded>(failure)
+        assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(failure.location).tag)
+    }
+
+    @Test
+    fun invalidClipTransformsFailWithTypedSvgTableDataErrors() {
+        val transforms = listOf(
+            "unknown(1)",
+            "translate(1),",
+            "matrix(1 0)",
+            "translate(1e309)",
+            "scale(1e-999 1)",
+            "skewX(90)",
+            "scale(1e308) scale(1e308)",
+            "matrix(1e-200 0 0 1 0 0) matrix(1e-200 0 0 1 0 0)",
+        )
+
+        for (transform in transforms) {
+            val document = """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs><clipPath id="cut" transform="$transform"><path d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030"/>
+                </svg>
+            """.trimIndent()
+
+            val failure = acquireSvgFailure(document, clipProfile())
+            assertIs<FontError.FontDataFailure>(failure, transform)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(failure.location).tag, transform)
+        }
+    }
+
+    @Test
+    fun invalidReferenceAndClipTransformCompositionsFailWithTypedSvgTableErrors() {
+        val cases = listOf(
+            "matrix(1e308 0 0 1 0 0)" to "matrix(1e308 0 0 1 0 0)",
+            "matrix(1e-200 0 0 1 0 0)" to "matrix(1e-200 0 0 1 0 0)",
+        )
+
+        for ((referenceTransform, clipTransform) in cases) {
+            val document = """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs><clipPath id="cut" transform="$clipTransform"><path d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>
+                  <g transform="$referenceTransform">
+                    <path d="M0 0 L1 0 L0 1 Z" fill="#102030" clip-path="url(#cut)"/>
+                  </g>
+                </svg>
+            """.trimIndent()
+
+            val failure = acquireSvgFailure(document, clipProfile())
+            assertIs<FontError.FontDataFailure>(failure, document)
+            assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(failure.location).tag, document)
+        }
+    }
+
+    @Test
+    fun omittedAndExplicitUserSpaceClipUnitsEachProduceTheLiteralClippedPaint() {
+        fun document(units: String): String = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"$units><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        for (units in listOf("", " clipPathUnits=\"userSpaceOnUse\"")) {
+            val paint = assertIs<GlyphRepresentation.Paint>(
+                resolveSvgDocument(document(units), listOf(clipProfile())).representation,
+                units,
+            ).paint
+
+            assertEquals(1, paint.rootNode, units)
+            assertEquals(2, paint.nodes.size, units)
+            val shape = assertIs<GlyphPaintNode.Path>(paint.nodes[0], units)
+            assertEquals(GlyphColor(16, 32, 48), shape.color, units)
+            assertEquals(
+                listOf(
+                    GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                    GlyphPaintPathCommand.LineTo(3.0, 0.0),
+                    GlyphPaintPathCommand.LineTo(0.0, 4.0),
+                    GlyphPaintPathCommand.Close,
+                ),
+                shape.path.commands,
+                units,
+            )
+            val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[1], units)
+            assertEquals(0, clip.paint, units)
+            assertEquals(
+                listOf(
+                    GlyphPaintPathCommand.MoveTo(1.0, 2.0),
+                    GlyphPaintPathCommand.LineTo(4.0, 2.0),
+                    GlyphPaintPathCommand.LineTo(2.0, 6.0),
+                    GlyphPaintPathCommand.Close,
+                ),
+                clip.path.commands,
+                units,
+            )
+        }
+    }
+
+    @Test
+    fun rejectsClipDefinitionsOutsideTheSinglePathUserSpaceSubset() {
+        val definitions = listOf(
+            """<clipPath id="cut" clipPathUnits="objectBoundingBox" transform="translate(1 2)"><path d="M0 0 L1 0 L0 1 Z"/></clipPath>""",
+            """<clipPath id="cut" clipPathUnits="viewport"><path d="M0 0 L1 0 L0 1 Z"/></clipPath>""",
+            """<clipPath id="cut"></clipPath>""",
+            """<clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z"/><path d="M0 0 L2 0 L0 2 Z"/></clipPath>""",
+            """<clipPath id="cut"/>""",
+            """<clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z" fill="#000000"/></clipPath>""",
+            """<clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z" clip-rule="evenodd"/></clipPath>""",
+            """<clipPath id="cut"><path id="inside" d="M0 0 L1 0 L0 1 Z"/></clipPath>""",
+            """<clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z"></path></clipPath>""",
+            """<clipPath id="cut" transform="translate(1 2)"><g><path d="M0 0 L1 0 L0 1 Z"/></g></clipPath>""",
+        )
+        val documents = definitions.map { definition ->
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs>$definition</defs>
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030"/>
+                </svg>
+            """.trimIndent()
+        } + """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z"/></clipPath>
+              <path d="M0 0 L2 0 L0 2 Z" fill="#102030"/>
+            </svg>
+        """.trimIndent()
+
+        for (document in documents) {
+            assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, clipProfile()), document)
+        }
+    }
+
+    @Test
+    fun rejectsMalformedDuplicateAndInvalidClipDefinitionDataWithTypedFontFailures() {
+        val definitions = listOf(
+            """<clipPath id="cut"><path d="M0 nope"/></clipPath>""",
+            """<clipPath id="1cut"><path d="M0 0 L1 0 L0 1 Z"/></clipPath>""",
+            """<clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z"/></clipPath><clipPath id="cut"><path d="M0 0 L2 0 L0 2 Z"/></clipPath>""",
+        )
+
+        for (definition in definitions) {
+            val document = """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs>$definition</defs>
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030"/>
+                </svg>
+            """.trimIndent()
+
+            assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, clipProfile()), definition)
+        }
+    }
+
+    @Test
+    fun rejectsMalformedOrNonLocalClipReferencesBeforePublishingEarlierPaint() {
+        val definitions = """<defs><clipPath id="cut"><path d="M0 0 L1 0 L0 1 Z"/></clipPath></defs>"""
+        val documents = listOf(
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  $definitions
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030" clip-path="cut"/>
+                </svg>
+            """.trimIndent(),
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  $definitions
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030" clip-path="url(https://example.com/c.svg#cut)"/>
+                </svg>
+            """.trimIndent(),
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030" clip-path="url(#cut)"/>
+                  $definitions
+                </svg>
+            """.trimIndent(),
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  $definitions
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030"/>
+                  <path d="M3 3 L5 3 L3 5 Z" fill="#405060" clip-path="url(#missing)"/>
+                </svg>
+            """.trimIndent(),
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <path d="M0 0 L2 0 L0 2 Z" fill="#102030" clip-path="url(#glyph1)"/>
+                </svg>
+            """.trimIndent(),
+        )
+
+        for (document in documents) {
+            assertIs<FontError.UnsupportedRepresentationProfile>(
+                acquireSvgFailure(
+                    document,
+                    clipProfile(maxNodes = 5, maxReferences = 4, maxDepth = 3, maxPaintVisits = 5, maxPaths = 4),
+                ),
+                document,
+            )
+        }
+    }
+
+    @Test
+    fun exactClipProfileLimitsPassWhileEveryGeneratedClipBudgetIsEnforced() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+        val exact = clipProfile(maxOutlineBytes = 81, maxOutlineContours = 1, maxOutlinePoints = 3)
+
+        val resolved = resolveSvgDocument(document, listOf(exact))
+
+        assertEquals(exact, resolved.profile)
+        assertIs<GlyphRepresentation.Paint>(resolved.representation)
+        val graphLimitProfiles = listOf(
+            clipProfile(maxNodes = 1),
+            clipProfile(maxReferences = 0),
+            clipProfile(maxDepth = 1),
+            clipProfile(maxPaintVisits = 1),
+            clipProfile(maxPaths = 1),
+            clipProfile(maxClips = 0),
+        )
+        for (profile in graphLimitProfiles) {
+            assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, profile))
+        }
+        val outlineLimitProfiles = listOf(
+            clipProfile(maxOutlineBytes = 80),
+            clipProfile(maxOutlinePoints = 2),
+        )
+        for (profile in outlineLimitProfiles) {
+            assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, profile))
+        }
+    }
+
+    @Test
+    fun clipAndPaintedPathsBothHonorExactLiteralOutlineLimits() {
+        val documents = listOf(
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs><clipPath id="cut"><path d="M0 0 L2 0 L0 2 Z M3 3 L5 3 L3 5 Z"/></clipPath></defs>
+                  <path d="M0 0 L4 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+                </svg>
+            """.trimIndent(),
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  <defs><clipPath id="cut"><path d="M0 0 L4 0 L0 4 Z"/></clipPath></defs>
+                  <path d="M0 0 L2 0 L0 2 Z M3 3 L5 3 L3 5 Z" fill="#102030" clip-path="url(#cut)"/>
+                </svg>
+            """.trimIndent(),
+        )
+        val exact = clipProfile(maxOutlineBytes = 130, maxOutlineContours = 2, maxOutlinePoints = 6)
+
+        for (document in documents) {
+            assertIs<GlyphRepresentation.Paint>(resolveSvgDocument(document, listOf(exact)).representation)
+            assertIs<FontError.ResourceLimitExceeded>(
+                acquireSvgFailure(document, clipProfile(maxOutlineBytes = 129, maxOutlineContours = 2, maxOutlinePoints = 6)),
+            )
+            assertIs<FontError.ResourceLimitExceeded>(
+                acquireSvgFailure(document, clipProfile(maxOutlineBytes = 130, maxOutlineContours = 1, maxOutlinePoints = 6)),
+            )
+            assertIs<FontError.ResourceLimitExceeded>(
+                acquireSvgFailure(document, clipProfile(maxOutlineBytes = 130, maxOutlineContours = 2, maxOutlinePoints = 5)),
+            )
+        }
+    }
+
+    @Test
+    fun clipsRequireExactSchemaThreeAndPathClipButOrderedFallbackCanSelectIt() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+        val schemaTwo = clipProfile(schemaVersion = 2, nodeKinds = listOf(GlyphPaintNodeKind.PATH))
+        val withoutPathClip = clipProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH))
+        val compatible = clipProfile()
+
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, schemaTwo))
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, withoutPathClip))
+        assertEquals(compatible, resolveSvgDocument(document, listOf(schemaTwo, compatible)).profile)
+    }
+
+    @Test
+    fun singularClippedPaintStaysEmptyOnlyAfterClipRequirementsAndLimitsValidate() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <g transform="scale(0 1)">
+                <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        assertEquals(GlyphRepresentation.Empty, resolveSvgDocument(document, listOf(clipProfile())).representation)
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(document, clipProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH))),
+        )
+        assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, clipProfile(maxNodes = 1)))
+    }
+
+    @Test
+    fun singularClipTransformOmitsSolidAndGradientPaintOnlyAfterReachedValidation() {
+        val solid = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut" transform="scale(0 1)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+        val gradient = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="paint" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+                <clipPath id="cut" transform="scale(0 1)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath>
+              </defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="url(#paint)" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+        val radialGradient = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <radialGradient id="paint" gradientUnits="userSpaceOnUse" cx="10" cy="20" r="5">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </radialGradient>
+                <clipPath id="cut" transform="scale(0 1)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath>
+              </defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="url(#paint)" clip-path="url(#cut)"/>
+            </svg>
+        """.trimIndent()
+
+        assertEquals(GlyphRepresentation.Empty, resolveSvgDocument(solid, listOf(clipProfile())).representation)
+        assertEquals(GlyphRepresentation.Empty, resolveSvgDocument(gradient, listOf(gradientProfile())).representation)
+        assertEquals(
+            GlyphRepresentation.Empty,
+            resolveSvgDocument(
+                radialGradient,
+                listOf(radialGradientProfile(
+                    maxNodes = 4,
+                    maxReferences = 3,
+                    maxDepth = 4,
+                    maxPaintVisits = 4,
+                    maxPaths = 2,
+                    maxClips = 2,
+                )),
+            ).representation,
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(solid, clipProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH))),
+        )
+        assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(solid, clipProfile(maxNodes = 1)))
+        assertIs<FontError.ResourceLimitExceeded>(
+            acquireSvgFailure(solid, clipProfile(maxOutlinePoints = 2)),
+        )
+
+        val invalidSource = solid.replace("M1 2 L4 2 L2 6 Z", "M0 nope")
+        val sourceFailure = acquireSvgFailure(invalidSource, clipProfile())
+        assertIs<FontError.FontDataFailure>(sourceFailure)
+        assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(sourceFailure.location).tag)
+
+        val invalidReference = solid.replace("url(#cut)", "url(#missing)")
+        assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(invalidReference, clipProfile()))
+    }
+
+    @Test
+    fun singularClipDoesNotHideOverflowingLinearGradientMapping() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="paint" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="10" y2="0" gradientTransform="translate(1e308 0)">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </linearGradient>
+                <clipPath id="cut" transform="scale(0 1)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath>
+              </defs>
+              <g transform="scale(2 1)">
+                <path d="M0 0 L3 0 L0 4 Z" fill="url(#paint)" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val failure = assertIs<FontError.FontDataFailure>(acquireSvgFailure(document, gradientProfile()))
+        assertEquals("font.svg.invalid-gradient", failure.code)
+        assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(failure.location).tag)
+    }
+
+    @Test
+    fun singularClipDoesNotHideOverflowingRadialGradientMapping() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <radialGradient id="paint" gradientUnits="userSpaceOnUse" cx="10" cy="20" r="5" gradientTransform="translate(1e308 0)">
+                  <stop offset="0" stop-color="#102030"/>
+                  <stop offset="1" stop-color="#90A0B0"/>
+                </radialGradient>
+                <clipPath id="cut" transform="scale(0 1)"><path d="M1 2 L4 2 L2 6 Z"/></clipPath>
+              </defs>
+              <g transform="scale(2 1)">
+                <path d="M0 0 L3 0 L0 4 Z" fill="url(#paint)" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+
+        val failure = assertIs<FontError.FontDataFailure>(
+            acquireSvgFailure(
+                document,
+                radialGradientProfile(
+                    maxNodes = 4,
+                    maxReferences = 3,
+                    maxDepth = 4,
+                    maxPaintVisits = 4,
+                    maxPaths = 2,
+                    maxClips = 2,
+                ),
+            ),
+        )
+        assertEquals("font.svg.invalid-gradient", failure.code)
+        assertEquals("SVG ", assertIs<FontDiagnosticLocation.Table>(failure.location).tag)
+    }
+
+    @Test
+    fun singularClippedPaintValidatesProjectedGroupingBeforeLeavingEarlierPaintUntouched() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs><clipPath id="cut"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>
+              <path d="M0 0 L3 0 L0 4 Z" fill="#102030"/>
+              <g transform="scale(0 1)">
+                <path d="M5 5 L8 5 L5 9 Z" fill="#405060" clip-path="url(#cut)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+        val exact = clipProfile(
+            maxNodes = 4,
+            maxReferences = 3,
+            maxPaintVisits = 4,
+            maxPaths = 3,
+        )
+
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(document, listOf(exact)).representation,
+        ).paint
+        assertEquals(0, paint.rootNode)
+        assertEquals(1, paint.nodes.size)
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(document, clipProfile(
+                compositionModes = emptyList(),
+                maxNodes = 4,
+                maxReferences = 3,
+                maxPaintVisits = 4,
+                maxPaths = 3,
+            )),
+        )
+    }
+
+    @Test
+    fun noInkShapesStillValidateLocalClipReferencesWithoutGeneratingNodes() {
+        val definitions = """<defs><clipPath id="cut"><path d="M1 2 L4 2 L2 6 Z"/></clipPath></defs>"""
+        val emptyDocuments = listOf(
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  $definitions
+                  <path d="Mnot parsed" fill="none" clip-path="url(#cut)"/>
+                </svg>
+            """.trimIndent(),
+            """
+                <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+                  $definitions
+                  <rect x="0" y="0" width="0" height="4" fill="#102030" clip-path="url(#cut)"/>
+                </svg>
+            """.trimIndent(),
+        )
+
+        for (document in emptyDocuments) {
+            assertEquals(GlyphRepresentation.Empty, resolveSvgDocument(document, listOf(clipProfile())).representation)
+        }
+        val unresolvedZeroRectangle = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              $definitions
+              <rect x="0" y="0" width="0" height="4" fill="#102030" clip-path="url(#missing)"/>
+            </svg>
+        """.trimIndent()
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(unresolvedZeroRectangle, clipProfile()),
+        )
+        val unresolvedNoFillPath = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              $definitions
+              <path d="Mnot parsed" fill="none" clip-path="url(#missing)"/>
+            </svg>
+        """.trimIndent()
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            acquireSvgFailure(unresolvedNoFillPath, clipProfile()),
+        )
+    }
+
+    @Test
     fun groupSkewXFortyFiveProducesExactPathGeometry() {
         val document = """
             <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
@@ -2556,6 +4174,26 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     @Test
+    fun noStopGradientEmitsNoPathWhenPaintedOutlinesExceedTheProfile() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="empty" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="1" y2="0"/>
+              </defs>
+              <path d="M0 0 L10 0 L0 10 Z" fill="url(#empty)"/>
+              <rect x="20" y="30" width="40" height="50" fill="url(#empty)"/>
+            </svg>
+        """.trimIndent()
+
+        assertIs<GlyphRepresentation.Empty>(
+            resolveSvgDocument(
+                document,
+                listOf(gradientProfile(maxOutlineContours = 1, maxOutlinePoints = 2)),
+            ).representation,
+        )
+    }
+
+    @Test
     fun transformedRectangleWithoutAreaPaintsNothing() {
         val document = """
             <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
@@ -2572,6 +4210,31 @@ class SvgInOpenTypeGlyphRepresentationTest {
         """.trimIndent()
 
         assertIs<GlyphRepresentation.Empty>(resolveSvgDocument(document, listOf(gradientProfile())).representation)
+    }
+
+    @Test
+    fun unclippedSingularGradientRectangleStaysEmptyWithUnusedCapabilityAndGraphLimits() {
+        val document = """
+            <svg xmlns="http://www.w3.org/2000/svg" id="glyph1">
+              <defs>
+                <linearGradient id="vertical" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" stop-color="#102030"/>
+                  <stop offset="100%" stop-color="#90A0B0"/>
+                </linearGradient>
+              </defs>
+              <g transform="scale(0 1)">
+                <rect x="10" y="20" width="30" height="40" fill="url(#vertical)"/>
+              </g>
+            </svg>
+        """.trimIndent()
+        val profiles = listOf(
+            gradientProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH_CLIP)),
+            gradientProfile(maxNodes = 1),
+        )
+
+        for (profile in profiles) {
+            assertEquals(GlyphRepresentation.Empty, resolveSvgDocument(document, listOf(profile)).representation)
+        }
     }
 
     @Test
@@ -3404,6 +5067,42 @@ class SvgInOpenTypeGlyphRepresentationTest {
         ),
     )
 
+    private fun clipProfile(
+        schemaVersion: Int = 3,
+        nodeKinds: List<GlyphPaintNodeKind> = listOf(
+            GlyphPaintNodeKind.PATH,
+            GlyphPaintNodeKind.PATH_CLIP,
+            GlyphPaintNodeKind.GROUP,
+        ),
+        compositionModes: List<org.graphiks.kalligraphie.api.GlyphPaintCompositionMode> =
+            listOf(org.graphiks.kalligraphie.api.GlyphPaintCompositionMode.SOURCE_OVER),
+        maxNodes: Int = 2,
+        maxReferences: Int = 1,
+        maxDepth: Int = 3,
+        maxPaintVisits: Int = 2,
+        maxPaths: Int = 2,
+        maxClips: Int = 1,
+        maxOutlineBytes: Int = 16 * 1024,
+        maxOutlineContours: Int = 8,
+        maxOutlinePoints: Int = 64,
+        maxSvgTransformOperations: Int = 4_096,
+    ): PaintGraphProfile = PaintGraphProfile(
+        acceptedNodeKinds = nodeKinds,
+        acceptedCompositionModes = compositionModes,
+        limits = PaintGraphLimits(
+            maxNodes = maxNodes,
+            maxReferences = maxReferences,
+            maxDepth = maxDepth,
+            maxSourceBytes = 16 * 1024,
+            maxPaths = maxPaths,
+            maxClips = maxClips,
+            maxPaintVisits = maxPaintVisits,
+            maxSvgTransformOperations = maxSvgTransformOperations,
+        ),
+        outlineProfile = svgOutlineProfile(maxOutlineBytes, maxOutlineContours, maxOutlinePoints),
+        schemaVersion = schemaVersion,
+    )
+
     private fun schema2GradientProfile(): PaintGraphProfile = PaintGraphProfile(
         acceptedNodeKinds = listOf(
             GlyphPaintNodeKind.PATH,
@@ -3433,6 +5132,8 @@ class SvgInOpenTypeGlyphRepresentationTest {
             listOf(GlyphPaintAlphaInterpolationMode.UNPREMULTIPLIED),
         maxNodes: Int = 5,
         maxReferences: Int = 4,
+        maxDepth: Int = 8,
+        maxPaintVisits: Int = maxNodes,
         maxPaths: Int = 2,
         maxGradients: Int = 1,
         maxColorStops: Int = 4,
@@ -3449,6 +5150,8 @@ class SvgInOpenTypeGlyphRepresentationTest {
         limits = gradientLimits(
             maxNodes = maxNodes,
             maxReferences = maxReferences,
+            maxDepth = maxDepth,
+            maxPaintVisits = maxPaintVisits,
             maxPaths = maxPaths,
             maxGradients = maxGradients,
             maxColorStops = maxColorStops,
@@ -3983,5 +5686,5 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     private fun <T> success(result: FontOperationResult<T>): T =
-        assertIs<FontOperationResult.Success<T>>(result).value
+        assertIs<FontOperationResult.Success<T>>(result, result.toString()).value
 }
