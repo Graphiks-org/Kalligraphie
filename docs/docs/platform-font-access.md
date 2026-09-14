@@ -32,8 +32,13 @@ owned resources from the previous generation.
 
 The standalone embedded route remains available on the JVM. File extensions do
 not establish outline support: `.otf` may contain supported TrueType or unsupported
-CFF. Directory admission is bounded; later HarfBuzz validation can reject an
-original TTC with corruption in an unexamined sibling. A discovered face is not
+CFF. Directory admission is bounded: a TTC/OTC source whose complete face count
+exceeds the remaining examination budget is rejected whole, with a typed limit
+diagnostic, before examining any of its directories. No partially examined
+collection prefix is published. Separate completely examined sources can still
+form a partial catalog; the accepted-face cap applies independently after source
+examination, preserving original selected indices. These checks do not claim
+general equivalence with HarfBuzz's sanitizer for unsupported tables. A discovered face is not
 a guarantee that every backend or representation profile can use it. The
 four-target Linux/macOS JVM CI matrix runs actual directory and system-catalog
 shaping/glyph journeys alongside the full shaper tests and native dependency

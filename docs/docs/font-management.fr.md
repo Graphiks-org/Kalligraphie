@@ -124,18 +124,27 @@ partiel utilisable. Sans face acceptée, l’opération retourne `Failure`.
 `font.capture.diagnostics-truncated` est inclus dans cette limite lorsque des
 détails sont omis. `maxPathsToVisit` compte les chemins inspectés, racines comprises ;
 `maxFacesToExamine` compte les répertoires de faces examinés, refus compris ;
-`maxFaces` limite les faces acceptées. Ces limites ont des sens distincts.
+`maxFaces` limite les faces acceptées après examen de la source. Ces limites ont des sens distincts.
 
-L’en-tête de collection et les plages des répertoires examinés doivent être
-adressables sans débordement. Un répertoire examiné non sûr fait refuser tout
+Chaque collection retenue doit pouvoir faire examiner toutes ses faces dans le
+budget `maxFacesToExamine` restant. Une source TTC/OTC dépassant ce budget est
+refusée entièrement avec `ResourceLimitExceeded` et un diagnostic avant tout
+examen de ses répertoires de faces ; aucun préfixe de collection partiellement
+examinée n’est admis. Une collection valide à deux faces exige donc au moins
+deux places d’examen restantes, même avec `maxFaces` égal à un. Ce refus fondé
+sur le nombre de faces ne consomme aucune place d’examen : des sources distinctes
+qui tiennent dans le budget peuvent encore former un catalogue partiel utilisable.
+
+Les en-têtes de collection et les plages de tous leurs répertoires de faces doivent
+être adressables sans débordement. Un répertoire tenté non sûr fait refuser tout
 son conteneur d’origine, avec des diagnostics d’offset (décalage dans les octets)
-numériques. Des faces voisines adressables mais incompatibles ou aux métadonnées invalides
-peuvent être exclues individuellement ; les faces retenues gardent leur indice
-d’origine. Le fournisseur n’examine pas les répertoires au-delà de
-`maxFacesToExamine`. HarfBuzz peut effectuer une validation de sécurité du
-conteneur entier : la corruption d’une face voisine non examinée peut encore
-empêcher le shaping d’une face admise. L’admission ne garantit pas une validation
-équivalente au container sanitizer (validateur de sécurité du conteneur) de HarfBuzz.
+numériques ; cette tentative compte dans le budget d’examen. Des faces voisines
+adressables mais incompatibles ou aux métadonnées invalides peuvent être exclues
+individuellement ; les faces retenues gardent leur indice d’origine. Après examen
+complet de la source, la limite distincte `maxFaces` peut omettre des faces acceptées.
+Ces contrôles empêchent l’admission d’un conteneur dont des répertoires n’ont pas
+été examinés ; ils ne prétendent pas reproduire le container sanitizer (validateur
+de sécurité du conteneur) de HarfBuzz pour toute table non prise en charge.
 
 `FontFaceId.source` identifie le conteneur capturé d’origine et `faceIndex`
 sélectionne sa face. `copyOpenTypeData()` retourne les octets du conteneur

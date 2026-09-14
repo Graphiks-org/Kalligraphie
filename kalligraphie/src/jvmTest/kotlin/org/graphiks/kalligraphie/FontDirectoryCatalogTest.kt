@@ -128,17 +128,43 @@ class FontDirectoryCatalogTest {
     }
 
     @Test
+    fun unexaminedCorruptSiblingCannotPublishAnOtherwiseRenderableCollectionPrefix() {
+        for (v2 in listOf(false, true)) {
+            val bytes = collectionBytes(v2)
+            val siblingDirectory = collectionUInt(bytes, 16)
+            bytes[siblingDirectory + 4] = 0xff.toByte()
+            bytes[siblingDirectory + 5] = 0xff.toByte()
+            withSources(mapOf("corrupt-sibling.ttc" to bytes)) { root ->
+                val result = FontDirectoryCatalog.open(FontDirectoryCatalogOptions(listOf(root), maxFacesToExamine = 1))
+                assertIs<FontError.ResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(result).error)
+            }
+        }
+    }
+
+    @Test
+    fun collectionThatCannotBeCompletelyExaminedLeavesBudgetForIndependentRenderableSource() {
+        withSources(mapOf("a-collection.ttc" to collectionBytes(), "b-standalone.ttf" to collectionFixture("/fonts/amiri/Amiri-Regular.ttf"))) { root ->
+            val result = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(FontDirectoryCatalog.open(FontDirectoryCatalogOptions(listOf(root), maxFacesToExamine = 1)))
+            assertTrue(result.diagnostics.any { it.code == "font.resource-limit-exceeded" })
+            assertAuditedA(result.value, "Amiri")
+            assertCollectionJourney(result.value, "Amiri", 1000f, listOf(6227, 6631), listOf(612f, 795f))
+        }
+    }
+
+    @Test
     fun sourceAggregateDiscoveryAndExaminedFaceCapsExcludeActualUsableGlyphs() {
         withCollectionRoot { root ->
             for (options in listOf(
                 FontDirectoryCatalogOptions(listOf(root), maxSourceBytes = 841847),
                 FontDirectoryCatalogOptions(listOf(root), maxTotalSourceBytes = 841847),
                 FontDirectoryCatalogOptions(listOf(root), maxPathsToVisit = 1),
+                FontDirectoryCatalogOptions(listOf(root), maxFacesToExamine = 1),
             )) assertIs<FontError.ResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(FontDirectoryCatalog.open(options)).error)
-            for (options in listOf(FontDirectoryCatalogOptions(listOf(root), maxFaces = 1), FontDirectoryCatalogOptions(listOf(root), maxFacesToExamine = 1))) {
+            for (options in listOf(FontDirectoryCatalogOptions(listOf(root), maxFaces = 1))) {
                 val result = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(FontDirectoryCatalog.open(options))
                 assertTrue(result.diagnostics.any { it.code == "font.resource-limit-exceeded" })
                 assertAuditedA(result.value, "Liberation Sans")
+                assertCollectionJourney(result.value, "Liberation Sans", 2048f, listOf(36, 73, 73, 76), listOf(1366f, 532f, 569f, 455f))
                 assertFalse(result.value.faces.any { it.metadata.familyName == "Amiri" })
             }
         }

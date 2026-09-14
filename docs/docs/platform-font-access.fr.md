@@ -36,8 +36,15 @@ de la génération précédente restent possédées par leurs consommateurs.
 
 La route embarquée à face unique reste disponible sur la JVM. Une extension ne
 garantit pas le type de contours : `.otf` peut contenir du TrueType supporté ou
-du CFF exclu. L’admission en répertoire est bornée ; HarfBuzz peut ensuite refuser
-un TTC d’origine dont une face voisine non examinée est corrompue. Une face
+du CFF exclu. L’admission en répertoire est bornée : une source TTC/OTC dont le
+nombre total de faces dépasse le budget d’examen restant est refusée entièrement,
+avec un diagnostic de limite typé, avant tout examen de ses répertoires. Aucun
+préfixe de collection partiellement examinée n’est publié. Des sources distinctes
+entièrement examinées peuvent encore former un catalogue partiel ; la limite de
+faces acceptées s’applique séparément après examen de la source, en conservant les
+indices sélectionnés d’origine. Ces contrôles ne prétendent pas reproduire le
+container sanitizer (validateur de sécurité du conteneur) de HarfBuzz pour les
+tables non prises en charge. Une face
 découverte ne garantit pas son utilisation par tout backend (moteur de
 traitement) ou profil de représentation. La matrice CI (intégration continue)
 JVM Linux/macOS à quatre cibles exécute de vrais parcours de découverte,

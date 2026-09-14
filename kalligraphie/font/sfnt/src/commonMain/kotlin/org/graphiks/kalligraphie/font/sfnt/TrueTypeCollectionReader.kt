@@ -14,6 +14,8 @@ public object TrueTypeCollectionReader {
     /**
      * Validates the header before examining bounded directories. Unsafe directory ranges are
      * source-fatal; safely addressed metadata failures remain individual face results.
+     * Collections exceeding [maxFaces] are rejected whole before any face directory is examined;
+     * a partially examined original container is never returned.
      * [onFaceExamined] accounts every attempted directory, including source-fatal rejection.
      */
     public fun readMetadata(source: FontSource, maxFaces: Int, cancellationToken: CancellationToken = CancellationToken.none, onFaceExamined: () -> Unit = {}): FontOperationResult<List<TrueTypeCollectionFace>> {
@@ -45,8 +47,12 @@ public object TrueTypeCollectionReader {
                 return invalid("Collection DSIG range is invalid.")
             }
         }
+        if (count > maxFaces.toLong()) {
+            val error = FontError.ResourceLimitExceeded("Collection does not fit the remaining face examination budget.", FontDiagnosticLocation.Source)
+            return FontOperationResult.Failure(error, listOf(error.toDiagnostic(FontDiagnosticData(observedValue = count, limit = maxFaces.toLong()))))
+        }
         val faces = mutableListOf<TrueTypeCollectionFace>()
-        repeat(minOf(count, maxFaces.toLong()).toInt()) { index ->
+        repeat(count.toInt()) { index ->
             if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
             onFaceExamined()
             val offset = readUInt32(bytes, 12 + 4 * index)!!.toLong()
@@ -62,7 +68,6 @@ public object TrueTypeCollectionReader {
             val parsed = SfntReader.readMetadataAt(bytes, offset.toInt())
             faces += TrueTypeCollectionFace(index, parsed)
         }
-        val diagnostics = if (count > maxFaces) listOf(FontError.ResourceLimitExceeded("Collection face examination limit reached.", FontDiagnosticLocation.Source).toDiagnostic()) else emptyList()
-        return FontOperationResult.Success(faces, diagnostics)
+        return FontOperationResult.Success(faces)
     }
 }

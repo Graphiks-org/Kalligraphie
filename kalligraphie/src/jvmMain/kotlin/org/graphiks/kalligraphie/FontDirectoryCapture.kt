@@ -36,11 +36,13 @@ internal fun captureFontDirectories(options: FontDirectoryCatalogOptions, token:
             val rootPath = configuredPath.toRealPath()
             Files.walk(rootPath).use { stream ->
                 val iterator = stream.iterator()
-                if (iterator.hasNext()) iterator.next() // root already charged, including nonexistent roots
+                if (token.isCancellationRequested()) return FontOperationResult.Cancelled(diagnostics.values())
+                iterator.next() // walk always starts with the already charged root
                 if (Files.isRegularFile(rootPath, NOFOLLOW_LINKS) && isFontCandidate(rootPath)) candidates.add(rootPath)
-                while (iterator.hasNext()) {
+                while (true) {
                     if (token.isCancellationRequested()) return FontOperationResult.Cancelled(diagnostics.values())
                     if (pathsVisited >= options.maxPathsToVisit) { limit("Path discovery limit reached."); break }
+                    if (!iterator.hasNext()) break
                     val path = iterator.next()
                     pathsVisited++
                     if (Files.isRegularFile(path, NOFOLLOW_LINKS) && !Files.isSymbolicLink(path) && isFontCandidate(path)) candidates.add(path)
@@ -79,8 +81,12 @@ internal fun captureFontDirectories(options: FontDirectoryCatalogOptions, token:
         val remaining = options.maxFacesToExamine - examined
         val faces = if (bytes.size >= 4 && bytes[0] == 't'.code.toByte() && bytes[1] == 't'.code.toByte() && bytes[2] == 'c'.code.toByte() && bytes[3] == 'f'.code.toByte()) {
             when (val result = TrueTypeCollectionReader.readMetadata(source, remaining, token, onFaceExamined = { examined++ })) {
-                is FontOperationResult.Success -> { diagnostics.addAll(result.diagnostics); if (result.diagnostics.isNotEmpty()) limited = true; result.value.map { it.faceIndex to it.metadata } }
-                is FontOperationResult.Failure -> { reject(result.error, result.diagnostics, path.fileName.toString()); continue }
+                is FontOperationResult.Success -> { diagnostics.addAll(result.diagnostics); result.value.map { it.faceIndex to it.metadata } }
+                is FontOperationResult.Failure -> {
+                    if (result.error is FontError.ResourceLimitExceeded) limited = true
+                    reject(result.error, result.diagnostics, path.fileName.toString())
+                    continue
+                }
                 is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(diagnostics.values())
             }
         } else {

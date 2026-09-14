@@ -19,7 +19,10 @@ public class FontDirectoryCatalogOptions(
     public val materializationCachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
     /** Optional shared retention scope; closed scopes still allow uncached operations. */
     public val cacheScope: FontCacheScope? = null,
-    /** Directories examined, including rejected faces. */
+    /**
+     * Face directories examined, including rejected attempts. Collections that cannot fit their
+     * complete face count in the remaining budget are rejected whole without examining a prefix.
+     */
     public val maxFacesToExamine: Int = 128,
     /** Returned diagnostics, including a truncation diagnostic when necessary. */
     public val maxDiagnostics: Int = 64,

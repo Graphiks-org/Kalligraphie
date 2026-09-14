@@ -17,7 +17,7 @@ public class MacosSystemFontCatalogOptions(
     public val materializationCachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
     /** Optional shared scope; closed scopes permit uncached operations. */
     public val cacheScope: FontCacheScope? = null,
-    /** Examined faces, including rejected faces. */
+    /** Examined faces, including rejected attempts; collections must fit whole in the remaining budget. */
     public val maxFacesToExamine: Int = 128,
     /** Returned diagnostics, including diagnostic truncation. */
     public val maxDiagnostics: Int = 64,

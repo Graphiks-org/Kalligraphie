@@ -112,16 +112,24 @@ accepted face the operation returns `Failure`. `maxDiagnostics` bounds returned
 diagnostics; `font.capture.diagnostics-truncated` is included within that bound
 when details are omitted. `maxPathsToVisit` charges inspected paths, including roots;
 `maxFacesToExamine` charges attempted directories, including rejected faces;
-`maxFaces` limits accepted faces. These limits have different meanings.
+`maxFaces` limits accepted faces after source examination. These limits have different meanings.
 
-Collection header and examined directory ranges must be safely addressable. An
-unsafe examined directory rejects its whole original container, with numeric
-location diagnostics. Safely addressed unsupported or metadata-invalid siblings
-may be excluded individually; retained faces keep their original indices. The
-provider does not inspect directories beyond `maxFacesToExamine`. HarfBuzz may
-sanitize the original container more broadly, so corruption in an unexamined
-sibling can still prevent shaping an admitted face. Admission is not a promise
-of equivalence with HarfBuzz's container sanitizer.
+Every retained collection must fit its complete face count within the remaining
+`maxFacesToExamine` budget. A larger TTC/OTC source is rejected whole with
+`ResourceLimitExceeded` and a diagnostic before any of its face directories is
+examined; no partially examined collection prefix is admitted. Thus a valid
+two-face collection requires at least two remaining examination slots, even if
+`maxFaces` is one. A count-based refusal does not consume face-examination slots,
+so separate sources that fit can still form a usable partial catalog.
+
+Collection headers and all their face-directory ranges must be safely addressable.
+An unsafe attempted directory rejects its whole original container, with numeric
+location diagnostics, and the attempted face is charged to the examination budget.
+Safely addressed unsupported or metadata-invalid siblings may be excluded
+individually; retained faces keep their original indices. After complete source
+examination, the separate `maxFaces` cap may omit accepted siblings. These checks
+prevent admission of an original container with unexamined directories; they do
+not claim equivalence with HarfBuzz's sanitizer for arbitrary unsupported tables.
 
 `FontFaceId.source` identifies the captured original container, and `faceIndex`
 selects its face. `copyOpenTypeData()` returns original container bytes and the
