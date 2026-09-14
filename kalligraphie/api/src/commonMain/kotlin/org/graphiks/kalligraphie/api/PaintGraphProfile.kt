@@ -26,6 +26,9 @@ public enum class GlyphPaintNodeKind {
     /** A glyph-outline clip around a child paint. */
     GLYPH_CLIP,
 
+    /** A portable-path clip around a child paint. */
+    PATH_CLIP,
+
     /** An affine transform around a child paint. */
     TRANSFORM,
 
@@ -69,7 +72,7 @@ public data class PaintGraphLimits(
     public val maxTransforms: Int = 0,
     /** Maximum reached two-input composite paints. */
     public val maxComposites: Int = 0,
-    /** Maximum reached glyph-clip paints. */
+    /** Maximum reached glyph-outline and portable-path clip paints. */
     public val maxClips: Int = 0,
     /** Maximum COLR clip records decoded before selecting one glyph. */
     public val maxClipRecords: Int = 65_536,
@@ -80,6 +83,12 @@ public data class PaintGraphLimits(
      * retain their original serialized-node and depth validation without a visit budget.
      */
     public val maxPaintVisits: Int = maxNodes,
+    /** Maximum encoded bytes accepted for one gzip SVG document. */
+    public val maxSvgCompressedDocumentBytes: Int = maxSourceBytes,
+    /** Maximum decoded UTF-8 bytes accepted for one raw or gzip SVG document. */
+    public val maxSvgDecodedDocumentBytes: Int = maxSourceBytes,
+    /** Maximum decoded UTF-8 bytes accumulated across all SVG document records. */
+    public val maxSvgTotalDecodedBytes: Int = maxSourceBytes,
 ) {
     init {
         require(maxNodes > 0) { "maxNodes must be positive." }
@@ -102,6 +111,9 @@ public data class PaintGraphLimits(
         require(maxClips >= 0) { "maxClips must be non-negative." }
         require(maxClipRecords > 0) { "maxClipRecords must be positive." }
         require(maxPaintVisits > 0) { "maxPaintVisits must be positive." }
+        require(maxSvgCompressedDocumentBytes > 0) { "maxSvgCompressedDocumentBytes must be positive." }
+        require(maxSvgDecodedDocumentBytes > 0) { "maxSvgDecodedDocumentBytes must be positive." }
+        require(maxSvgTotalDecodedBytes > 0) { "maxSvgTotalDecodedBytes must be positive." }
     }
 }
 
@@ -117,11 +129,27 @@ public class PaintGraphProfile(
     acceptedCompositionModes: List<GlyphPaintCompositionMode>,
     /** Resource limits applied to every accepted graph. */
     public val limits: PaintGraphLimits,
-    /** Bounds enforced while materializing every outline referenced by the graph. */
+    /** Bounds enforced while materializing every outline and portable path referenced by the graph. */
     public val outlineProfile: OutlineProfile,
     /** Version of the paint-graph schema accepted by the consumer. */
     override val schemaVersion: Int = 1,
     acceptedGradientExtendModes: List<GlyphPaintExtendMode> = emptyList(),
+    /**
+     * Gradient RGB interpolation spaces accepted by the consumer.
+     *
+     * The default is empty for schema 1 and contains only [GlyphPaintInterpolationSpace.LINEAR_SRGB]
+     * for schema 2 and later.
+     */
+    acceptedGradientInterpolationSpaces: List<GlyphPaintInterpolationSpace> =
+        if (schemaVersion == 1) emptyList() else listOf(GlyphPaintInterpolationSpace.LINEAR_SRGB),
+    /**
+     * Gradient alpha-interpolation modes accepted by the consumer.
+     *
+     * The default is empty for schema 1 and contains only
+     * [GlyphPaintAlphaInterpolationMode.PREMULTIPLIED] for schema 2 and later.
+     */
+    acceptedGradientAlphaInterpolationModes: List<GlyphPaintAlphaInterpolationMode> =
+        if (schemaVersion == 1) emptyList() else listOf(GlyphPaintAlphaInterpolationMode.PREMULTIPLIED),
 ) : GlyphRepresentationProfile {
     /** Immutable node categories accepted by this consumer. */
     public val acceptedNodeKinds: List<GlyphPaintNodeKind> = acceptedNodeKinds.immutableListSnapshot()
@@ -129,6 +157,12 @@ public class PaintGraphProfile(
     public val acceptedCompositionModes: List<GlyphPaintCompositionMode> = acceptedCompositionModes.immutableListSnapshot()
     /** Immutable gradient extension modes accepted by this consumer. */
     public val acceptedGradientExtendModes: List<GlyphPaintExtendMode> = acceptedGradientExtendModes.immutableListSnapshot()
+    /** Immutable RGB interpolation spaces accepted for gradient color lines. */
+    public val acceptedGradientInterpolationSpaces: List<GlyphPaintInterpolationSpace> =
+        acceptedGradientInterpolationSpaces.immutableListSnapshot()
+    /** Immutable alpha-interpolation modes accepted for gradient color lines. */
+    public val acceptedGradientAlphaInterpolationModes: List<GlyphPaintAlphaInterpolationMode> =
+        acceptedGradientAlphaInterpolationModes.immutableListSnapshot()
 
     init {
         require(schemaVersion > 0) { "schemaVersion must be positive." }
@@ -140,6 +174,18 @@ public class PaintGraphProfile(
         require(this.acceptedGradientExtendModes.distinct().size == this.acceptedGradientExtendModes.size) {
             "Paint gradient extension modes must not repeat."
         }
+        require(
+            this.acceptedGradientInterpolationSpaces.distinct().size ==
+                this.acceptedGradientInterpolationSpaces.size,
+        ) {
+            "Paint gradient interpolation spaces must not repeat."
+        }
+        require(
+            this.acceptedGradientAlphaInterpolationModes.distinct().size ==
+                this.acceptedGradientAlphaInterpolationModes.size,
+        ) {
+            "Paint gradient alpha-interpolation modes must not repeat."
+        }
         if (schemaVersion == 1) {
             require(this.acceptedNodeKinds.none(GlyphPaintNodeKind::requiresSchemaTwo)) {
                 "Schema 1 profiles cannot advertise schema 2 paint nodes."
@@ -147,8 +193,35 @@ public class PaintGraphProfile(
             require(this.acceptedGradientExtendModes.isEmpty()) {
                 "Schema 1 profiles cannot advertise gradient extension modes."
             }
+            require(this.acceptedGradientInterpolationSpaces.isEmpty()) {
+                "Schema 1 profiles cannot advertise gradient interpolation spaces."
+            }
+            require(this.acceptedGradientAlphaInterpolationModes.isEmpty()) {
+                "Schema 1 profiles cannot advertise gradient alpha-interpolation modes."
+            }
             require(this.acceptedCompositionModes.all { mode -> mode == GlyphPaintCompositionMode.SOURCE_OVER }) {
                 "Schema 1 profiles can advertise only SOURCE_OVER composition."
+            }
+        }
+        if (schemaVersion < 3) {
+            require(GlyphPaintNodeKind.PATH_CLIP !in this.acceptedNodeKinds) {
+                "PathClip requires paint schema 3 or later."
+            }
+        }
+        if (schemaVersion == 2) {
+            require(
+                this.acceptedGradientInterpolationSpaces.all { space ->
+                    space == GlyphPaintInterpolationSpace.LINEAR_SRGB
+                },
+            ) {
+                "Schema 2 profiles can advertise only linear-sRGB gradient interpolation."
+            }
+            require(
+                this.acceptedGradientAlphaInterpolationModes.all { mode ->
+                    mode == GlyphPaintAlphaInterpolationMode.PREMULTIPLIED
+                },
+            ) {
+                "Schema 2 profiles can advertise only premultiplied gradient alpha interpolation."
             }
         }
     }
@@ -168,6 +241,8 @@ public class PaintGraphProfile(
             acceptedNodeKinds == other.acceptedNodeKinds &&
             acceptedCompositionModes == other.acceptedCompositionModes &&
             acceptedGradientExtendModes == other.acceptedGradientExtendModes &&
+            acceptedGradientInterpolationSpaces == other.acceptedGradientInterpolationSpaces &&
+            acceptedGradientAlphaInterpolationModes == other.acceptedGradientAlphaInterpolationModes &&
             limits == other.limits &&
             outlineProfile == other.outlineProfile &&
             schemaVersion == other.schemaVersion
@@ -176,6 +251,8 @@ public class PaintGraphProfile(
         var result = acceptedNodeKinds.hashCode()
         result = 31 * result + acceptedCompositionModes.hashCode()
         result = 31 * result + acceptedGradientExtendModes.hashCode()
+        result = 31 * result + acceptedGradientInterpolationSpaces.hashCode()
+        result = 31 * result + acceptedGradientAlphaInterpolationModes.hashCode()
         result = 31 * result + limits.hashCode()
         result = 31 * result + outlineProfile.hashCode()
         return 31 * result + schemaVersion
@@ -234,20 +311,31 @@ public class PaintGraphProfile(
                     gradients += 1
                     colorStops += node.colorLine.colorStops.size
                     if (node.colorLine.extendMode !in acceptedGradientExtendModes) return false
+                    if (node.colorLine.interpolationSpace !in acceptedGradientInterpolationSpaces) return false
+                    if (node.colorLine.alphaInterpolationMode !in acceptedGradientAlphaInterpolationModes) return false
                 }
                 is GlyphPaintNode.RadialGradient -> {
                     gradients += 1
                     colorStops += node.colorLine.colorStops.size
                     if (node.colorLine.extendMode !in acceptedGradientExtendModes) return false
+                    if (node.colorLine.interpolationSpace !in acceptedGradientInterpolationSpaces) return false
+                    if (node.colorLine.alphaInterpolationMode !in acceptedGradientAlphaInterpolationModes) return false
                 }
                 is GlyphPaintNode.SweepGradient -> {
                     gradients += 1
                     colorStops += node.colorLine.colorStops.size
                     if (node.colorLine.extendMode !in acceptedGradientExtendModes) return false
+                    if (node.colorLine.interpolationSpace !in acceptedGradientInterpolationSpaces) return false
+                    if (node.colorLine.alphaInterpolationMode !in acceptedGradientAlphaInterpolationModes) return false
                 }
                 is GlyphPaintNode.GlyphClip -> {
                     clips += 1
                     if (!outlineProfile.acceptsOutline(node.outline)) return false
+                }
+                is GlyphPaintNode.PathClip -> {
+                    paths += 1
+                    clips += 1
+                    if (!outlineProfile.acceptsPath(node.path)) return false
                 }
                 is GlyphPaintNode.Transform -> transforms += 1
                 is GlyphPaintNode.Composite -> {
@@ -283,6 +371,7 @@ private fun GlyphPaintNode.kind(): GlyphPaintNodeKind = when (this) {
     is GlyphPaintNode.RadialGradient -> GlyphPaintNodeKind.RADIAL_GRADIENT
     is GlyphPaintNode.SweepGradient -> GlyphPaintNodeKind.SWEEP_GRADIENT
     is GlyphPaintNode.GlyphClip -> GlyphPaintNodeKind.GLYPH_CLIP
+    is GlyphPaintNode.PathClip -> GlyphPaintNodeKind.PATH_CLIP
     is GlyphPaintNode.Transform -> GlyphPaintNodeKind.TRANSFORM
     is GlyphPaintNode.Composite -> GlyphPaintNodeKind.COMPOSITE
 }
@@ -297,6 +386,7 @@ private fun GlyphPaintNodeKind.requiresSchemaTwo(): Boolean = when (this) {
     GlyphPaintNodeKind.RADIAL_GRADIENT,
     GlyphPaintNodeKind.SWEEP_GRADIENT,
     GlyphPaintNodeKind.GLYPH_CLIP,
+    GlyphPaintNodeKind.PATH_CLIP,
     GlyphPaintNodeKind.TRANSFORM,
     GlyphPaintNodeKind.COMPOSITE,
     -> true
@@ -370,6 +460,7 @@ private fun GlyphPaintNode.isBounded(bounded: ByteArray): Boolean = when (this) 
     is GlyphPaintNode.SolidOutline,
     is GlyphPaintNode.Path,
     is GlyphPaintNode.GlyphClip,
+    is GlyphPaintNode.PathClip,
     -> true
     is GlyphPaintNode.Solid,
     is GlyphPaintNode.LinearGradient,

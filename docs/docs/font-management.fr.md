@@ -22,21 +22,159 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   fonte), avec des métriques mises à l’échelle séparément en `LayoutUnit` ;
 - `paint graph` (graphe de peinture portable) de schéma 1 pour COLR version 0 /
   CPAL version 0, composé de contours pleins et de groupes ordonnés, ainsi
-  qu’un graphe de schéma 2 pour COLR version 1 statique avec CPAL version 0 ou
-  1 ;
-- table SVG-in-OpenType version 0 avec documents UTF-8 bruts uniquement :
-  éléments `svg` et `g` non auto-fermants, et éléments `path` auto-fermants ;
-  transformations `translate` et `scale` ; commandes de chemin `M`, `L`, `H`,
-  `V`, `C`, `S` et `Z` ; remplissages opaques `#RRGGBB`, ou `fill="none"` pour
-  un chemin explicitement sans encre. Les scripts, ressources externes, entités,
-  animations, compression, gradients, clips (découpes), masques, contours tracés et
-  attributs non déclarés sont refusés avant publication d’une ressource ;
+  qu’un graphe de schéma 2 ou 3 pour COLR version 1 statique avec CPAL version
+  0 ou 1 ;
+- table SVG-in-OpenType version 0 avec documents UTF-8 bruts ou avec un
+  transport gzip mono-membre (encodage compressé du document) :
+  conteneurs `svg` et `g` ; éléments `path` (chemins) auto-fermants avec les
+  commandes `M`, `L`, `H`, `V`, `C`, `S` et `Z` ; et sous-ensemble statique
+  `defs` (définitions), `linearGradient` (gradient linéaire) et `stop` (arrêt de
+  couleur), appliqué uniquement aux éléments `rect` (rectangles)
+  auto-fermants. Les chemins et rectangles acceptent un remplissage opaque
+  `#RRGGBB` ou `fill="none"` ; un rectangle peut aussi référencer un gradient
+  linéaire local défini auparavant. Les
+  transformations `translate` et `scale` sont prises en charge. Le
+  sous-ensemble exact des gradients et les exclusions restantes sont décrits
+  ci-dessous ;
 - strikes bitmap (images matricielles, tailles bitmap exactes) EBLC version 2 / EBDT version 2,
   avec sous-table d’index format 1 et image format 1 uniquement : alpha un bit
   aligné sur les octets, décodé en `ALPHA_8` sRGB, pour un strike demandé à
   l’identique ;
 - ressources de rendu détachées qui restent utilisables après la fermeture du
   gestionnaire propriétaire ou de la ressource attachée.
+
+### Transport et limites des documents SVG
+
+La route SVG entièrement normalisée décode tous les documents lors de
+l’acquisition d’une ressource de rendu, puis retient un IR (*intermediate
+representation*, représentation intermédiaire) portable et immuable au lieu
+des documents SVG encodés. Le transport est soit UTF-8 brut, soit un unique
+membre gzip (encodage compressé du document) contenant de l’UTF-8 ; son décodage
+utilise le streaming (traitement en flux) pendant l’application des limites.
+Une ressource mixte SVG/COLR v1 retient au contraire, de manière privée, la
+source SVG encodée et son index bornés, puis normalise tout le document
+sélectionné lorsqu’un glyphe couvert est demandé. Les glyphes COLR non couverts
+restent ainsi utilisables même si ce document SVG ne peut pas être décodé ou
+normalisé. Les résultats publics réussis de `resolveGlyph(...)` n’exposent que
+de la peinture portable immuable ou un glyphe vide, jamais le SVG encodé, XML,
+gzip, une URI ou une ressource de moteur de rendu. Les ressources détachées
+possèdent les données immuables nécessaires à leur route.
+
+`PaintGraphLimits` applique les limites suivantes :
+
+- `maxSourceBytes` borne la table SVG entière et le cumul des octets encodés
+  des documents ;
+- `maxSvgCompressedDocumentBytes` borne les octets encodés de chaque document
+  gzip ;
+- `maxSvgDecodedDocumentBytes` borne les octets UTF-8 décodés de chaque
+  document brut ou gzip ;
+- `maxSvgTotalDecodedBytes` borne le cumul des octets UTF-8 décodés lors d’une
+  opération de normalisation : tous les enregistrements dans la route
+  entièrement normalisée, ou tout le document sélectionné dans la route mixte.
+
+Chaque limite dédiée à gzip ou au décodage vaut par défaut `maxSourceBytes`,
+dont la valeur par défaut est 1 048 576 octets. Le dépassement de l’une de ces
+limites retourne `FontError.ResourceLimitExceeded` pour la table `SVG `.
+Les limites de toute la source encodée et de son index s’appliquent à
+l’acquisition dans les deux routes. Les contrôles du décodage, de l’intégrité,
+de l’UTF-8, du balisage et du graphe refusent l’acquisition dans la route
+entièrement normalisée, ou la demande du glyphe couvert dans la route mixte ;
+aucun résultat SVG partiel n’est publié et la certification des autres glyphes
+COLR non couverts reste valide. Un en-tête gzip mal
+formé, un membre non-DEFLATE, des drapeaux réservés dans l’en-tête gzip, un
+échec des contrôles d’intégrité gzip, des membres gzip concaténés ou des octets
+supplémentaires après un membre retournent `FontError.FontDataFailure` avec le
+code `font.svg.invalid-gzip` au point de normalisation de la route concernée. Un UTF-8
+invalide ou un SVG mal formé suit le contrat existant de
+`FontDataFailure` typée, tandis qu’un balisage SVG hors du sous-ensemble sûr
+retourne `FontError.UnsupportedRepresentationProfile`.
+
+### Gradients SVG statiques sûrs
+
+Le sous-ensemble accepté de serveurs de peinture comprend des éléments `defs`
+qui contiennent des définitions `linearGradient` nommées, elles-mêmes composées
+d’éventuels éléments `stop` auto-fermants. Un élément `rect`
+auto-fermant peut utiliser un remplissage opaque `#RRGGBB`, `fill="none"` ou
+une référence `url(#id)` vers un gradient linéaire unique défini plus tôt dans
+le même document ; un remplissage absent utilise du noir opaque par défaut. Les
+coordonnées du gradient utilisent uniquement
+`objectBoundingBox` (boîte englobante de l’objet) : les valeurs sans unité et
+les pourcentages sont résolus relativement au rectangle avant l’application de
+sa transformation `translate` ou `scale`. Les valeurs SVG par défaut sont
+`x1=0%`, `y1=0%`, `x2=100%`, `y2=0%`, `spreadMethod=pad` et l’interpolation
+sRGB.
+
+`spreadMethod` accepte les trois modes d’extension portables : `pad`, `repeat`
+et `reflect` correspondent à `PAD`, `REPEAT` et `REFLECT`. Une valeur
+`color-interpolation` absente ou égale à `sRGB` correspond à `SRGB` ;
+`linearRGB` correspond à `LINEAR_SRGB`. Un arrêt accepte un `offset` (position
+le long du gradient) conforme à la grammaire numérique SVG finie,
+éventuellement en pourcentage, une couleur opaque `#RRGGBB` dans `stop-color`,
+et une valeur `stop-opacity` conforme à la même grammaire, éventuellement en
+pourcentage ; leurs valeurs par défaut respectives sont `0`, le noir opaque et
+`1`. Cette grammaire stricte s’applique aussi aux coordonnées et dimensions
+des rectangles et gradients. La notation exponentielle décimale est acceptée,
+mais le point décimal doit être suivi d’au moins un chiffre et le signe de
+pourcentage doit suivre immédiatement son nombre. Les formes `1.`, `1.e2` et
+`50 %`, ainsi que les nombres hexadécimaux à virgule et suffixes `f`/`d`,
+propres à Java, sont refusés. Les offsets et opacités sont bornés dans
+`0.0..1.0`, puis les offsets
+sont rendus non décroissants dans l’ordre du document. Pour une définition à
+plusieurs arrêts en mode `repeat` ou `reflect` dont le premier ou le dernier
+offset n’atteint pas `0` ou `1`, Kalligraphie insère aux extrémités une copie
+de l’arrêt terminal correspondant. Les discontinuités à offsets égaux
+conservent l’ordre source, et les arrêts insérés comptent dans `maxColorStops`
+pour le graphe atteint. Une définition sans arrêt ne
+produit aucune encre. Pour un rectangle dont la transformation finale préserve
+l’aire, un gradient à un seul arrêt ou un vecteur source aux extrémités
+identiques est normalisé avec le dernier arrêt en `Solid` (peinture unie), sous
+le `PathClip` (découpe par chemin) du rectangle. Pour tout autre gradient d’au
+moins deux arrêts, Kalligraphie résout d’abord ses points normalisés `p0` et
+`p1` ; s’ils coïncident, il applique la même réduction en peinture unie, sinon
+il produit un `LinearGradient` (gradient linéaire) sous ce chemin rectangulaire.
+Avant cette production, les points normalisés `p0`, `p1` et `p2` doivent former
+un triplet non colinéaire. Un triplet colinéaire retourne
+`font.svg.invalid-gradient` et aucune ressource partielle n’est publiée. Une
+transformation finale singulière omet le rectangle après validation de son
+remplissage et de sa référence.
+
+Chaque gradient linéaire déclaré exige un `PaintGraphProfile` de schéma 3
+exact. Lorsque la normalisation produit réellement un `LinearGradient`, le
+profil doit accepter l’espace d’interpolation, le mode d’interpolation d’alpha
+`UNPREMULTIPLIED` (non prémultipliée : les composantes RGB et l’alpha sont
+interpolés séparément) et le mode d’extension atteints, ainsi que `LINEAR_GRADIENT`
+et `PATH_CLIP`. Une réduction en peinture unie exige à la place `SOLID` et
+`PATH_CLIP`, mais pas l’espace d’interpolation ni le mode d’interpolation
+d’alpha ou d’extension de la définition. Les rectangles unis utilisent
+`PATH`. Un document qui possède plusieurs racines peintes exige aussi `GROUP` et
+`SOURCE_OVER`. Les limites existantes sont contrôlées
+avant publication : les octets source et décodés, transformations, définitions
+de gradient et arrêts analysés, ainsi que les nœuds, références, chemins,
+découpes, gradients, arrêts de couleur et profondeurs produits doivent tous
+respecter les bornes. Les visites de peinture sont également bornées à partir
+du schéma 2 ; le schéma 1 conserve ses contrôles historiques des nœuds et de la
+profondeur sans appliquer `maxPaintVisits`. Chaque chemin rectangulaire créé
+doit aussi respecter l’`outlineProfile` (profil de contours) du profil. Le
+repli ordonné entre profils peut donc ignorer un profil de schéma 3 qui ne
+déclare pas chaque capacité atteinte et sélectionner un profil compatible
+ultérieur.
+
+Tous les identifiants d’élément acceptés sur `svg`, `g` et `linearGradient`
+sont globalement uniques. L’unicité des cibles par identifiant de glyphe reste
+un invariant distinct. Les références de peinture sont locales, limitées à un
+fragment `#id` et uniquement dirigées vers une définition antérieure. Une
+référence non résolue, future, externe ou contenant autrement une URI échoue
+avant la publication d’une ressource, même si le rectangle ne devait ensuite
+produire aucune encre. Une entrée mal formée ou non prise en charge ne publie
+jamais de graphe partiel.
+
+Le sous-ensemble ne prend pas en charge `viewBox`, `userSpaceOnUse`,
+`gradientTransform`, `href`, les gradients radiaux, les remplissages par
+gradient sur `path`, CSS ou les attributs `style`, les découpes SVG générales
+ou chemins de découpe, les masques, contours tracés, scripts, entités,
+animations, ressources externes, ni les éléments et attributs non déclarés.
+Les formats de compression autres que le transport gzip mono-membre autorisé
+restent refusés.
 
 ### Schémas de graphe de peinture et COLR version 1 statique
 
@@ -53,8 +191,8 @@ Les versions de schéma expriment des capacités exactes du consommateur :
   l’ordre source. Les groupes utilisent `SOURCE_OVER` ; ce schéma ne peut
   annoncer ni nœud du schéma 2, ni mode d’extension de gradient, ni autre mode
   de composition, et un `Group` de schéma 1 doit contenir au moins un enfant.
-  Les graphes COLR version 0 et SVG-in-OpenType restreint existants restent
-  représentables avec ce schéma ;
+  Les graphes COLR version 0 et les graphes SVG-in-OpenType restreints qui ne
+  contiennent que des peintures unies restent représentables avec ce schéma ;
 - le schéma 2 ajoute les peintures non bornées `Solid`, `LinearGradient`,
   `RadialGradient` et `SweepGradient`, ainsi que `GlyphClip`, `Transform` et
   `Composite`, les extensions de gradient `PAD`, `REPEAT` et `REFLECT`, et les
@@ -62,13 +200,37 @@ Les versions de schéma expriment des capacités exactes du consommateur :
   certifie le graphe que si tout son contenu atteignable respecte les types de
   nœud, extensions, modes de composition et limites du `PaintGraphProfile`
   exact. Un `Group` vide de schéma 2 représente `no paint` (absence de
-  peinture) et reste structurellement borné.
+  peinture) et reste structurellement borné. Dans ce schéma, les lignes de
+  couleur des gradients utilisent uniquement `LINEAR_SRGB` : l’interpolation
+  RGB s’effectue en `linear-light` (« lumière linéaire ») sRGB, avec uniquement
+  l’interpolation d’alpha `PREMULTIPLIED` (prémultipliée). Le schéma 2 ne
+  peut ni annoncer ni transporter `SRGB`, `UNPREMULTIPLIED` (non prémultipliée)
+  ou un nœud
+  `PathClip` (« découpe par chemin ») ;
+- le schéma 3 ajoute des capacités d’interpolation explicites à chaque ligne de
+  couleur de gradient. `LINEAR_SRGB` conserve le comportement en lumière
+  linéaire du schéma 2, tandis que `SRGB` interpole dans l’espace de transfert
+  sRGB. `PREMULTIPLIED` et `UNPREMULTIPLIED` indiquent si le RGB est
+  prémultiplié par l’alpha effectif avant l’interpolation. Il ajoute aussi ce
+  nœud `PathClip`, qui restreint une peinture enfant à
+  la région de remplissage d’un chemin portable. Le
+  consommateur déclare précisément les espaces et modes d’alpha qu’il accepte
+  avec `acceptedGradientInterpolationSpaces` et
+  `acceptedGradientAlphaInterpolationModes` ; leurs valeurs par défaut restent
+  `LINEAR_SRGB` et `PREMULTIPLIED` tant que d’autres capacités ne sont pas
+  ajoutées explicitement. Le graphe n’est accepté que si chaque gradient
+  atteint utilise un espace et une sémantique d’alpha déclarés. Le schéma 1 ne
+  peut annoncer aucune de ces deux listes de capacités de gradient.
 
 Les parcours JVM pour fontes embarquées et fichiers `.ttf` capturés acceptent
-les structures globales COLR version 1 statiques et les formats de peinture
-`1`, `2`, `4`, `6`, `8`, `10`, `11`, `12`, `14`, `16`, `18`, `20`, `22`,
-`24`, `26`, `28`, `30` et `32`. Les peintures affine, translation, mise à
-l’échelle, rotation et inclinaison spécialisées sont normalisées en un
+exactement les schémas 2 et 3 pour COLR version 1 statique ; ils ne déduisent
+pas la prise en charge du schéma 4 ou d’un schéma ultérieur. Le même graphe
+COLR peut être publié avec le schéma 2 ou 3 sélectionné tout en conservant
+l’interpolation `LINEAR_SRGB`, la même géométrie et les mêmes couleurs
+littérales. Ces parcours acceptent les structures globales et les formats de
+peinture `1`, `2`, `4`, `6`, `8`, `10`, `11`, `12`, `14`, `16`, `18`, `20`,
+`22`, `24`, `26`, `28`, `30` et `32`. Les peintures affine, translation, mise
+à l’échelle, rotation et inclinaison spécialisées sont normalisées en un
 `GlyphAffineTransform` fini ; les références à d’autres glyphes COLR sont
 résolues dans le graphe et ne sont pas exposées comme références à la table
 source. Un enregistrement `PaintColrLayers` valide de format 1 avec zéro couche
@@ -77,9 +239,14 @@ il n’est pas réduit à `GlyphRepresentation.Empty`. La `ClipList` (liste de
 découpes) de format 1 avec une `ClipBox` (boîte de découpe) de format 1 est
 acceptée. Les formats variables `PaintVar*`, `ClipBox` format 2, les magasins
 et tables d’index de variations, CFF/CFF2 et les valeurs CPAL/COLR variables ne
-sont pas pris en charge. Le sous-ensemble SVG-in-OpenType reste inchangé et
-n’acquiert ni gradients SVG, ni `clip` (découpe), masque, contour tracé ou
-animation.
+sont pas pris en charge. Le parcours SVG-in-OpenType distinct accepte les
+gradients linéaires statiques bornés par un rectangle décrits plus haut via le
+schéma 3 ; il n’acquiert pas pour autant les découpes SVG générales, masques,
+contours tracés ou animations.
+
+Cette extension de schéma n’ajoute aucun moteur de rendu. Le consommateur
+reste responsable de la rastérisation, de l’intégration au processeur
+graphique (GPU) et de l’affichage final.
 
 La palette et la couleur de premier plan sont résolues avant publication. Une
 valeur nulle de `FontRenderVariantSnapshot.cpalPaletteIndex` sélectionne la
@@ -88,15 +255,21 @@ L’index CPAL `0xFFFF` est remplacé par la valeur exacte de `foregroundColor`
 (couleur de premier plan) de la variante, ou par du noir opaque si elle est
 nulle. Le graphe contient donc des couleurs sRGB huit bits littérales et non
 prémultipliées dans `GlyphColor`, jamais des index de palette. L’opacité d’un
-nœud ou d’un arrêt reste une valeur finie séparée dans `0.0..1.0`. Pour
-interpoler un gradient, le moteur de rendu doit linéariser les composantes sRGB
-de chaque arrêt, calculer son alpha effectif comme
-`color.alpha / 255 * opacity`, puis prémultiplier les composantes RGB
-linéaires par cet alpha avant l’interpolation. Il interpole séparément le RGB
-prémultiplié et l’alpha, puis déprémultiplie en traitant l’alpha nul et convertit
-depuis la lumière linéaire vers l’encodage de sortie requis. Changer la palette
-ou le premier plan modifie les couleurs littérales et l’identité de la
-ressource, mais pas la composition, les avances, les positions du `caret`
+nœud ou d’un arrêt reste une valeur finie séparée dans `0.0..1.0`. Le moteur de
+rendu calcule l’alpha effectif de chaque arrêt comme
+`color.alpha / 255.0 * opacity` et représente le RGB dans l’espace déclaré.
+Avec `PREMULTIPLIED`, il prémultiplie le RGB de chaque arrêt par son alpha
+effectif, puis interpole séparément le RGB prémultiplié et l’alpha ; c’est le
+comportement COLR et la valeur par défaut du constructeur et du profil. Avec
+`UNPREMULTIPLIED`, il interpole séparément le RGB non prémultiplié et l’alpha,
+puis ne prémultiplie le résultat que si une composition ultérieure l’exige ;
+c’est le comportement du SVG normalisé. `LINEAR_SRGB` commence par linéariser
+les composantes sRGB littérales, puis reconvertit depuis la lumière linéaire
+vers l’encodage de sortie requis ; `SRGB` interpole le RGB directement dans
+l’espace de transfert sRGB.
+Changer la palette ou le premier plan modifie les couleurs littérales et
+l’identité de la ressource, mais pas la composition, les avances, les
+positions du `caret`
 (curseur d’insertion), le hit-testing (test de point) ni la géométrie de
 sélection.
 
@@ -115,12 +288,14 @@ conservent une progression horaire des couleurs ; ne les triez pas. Voir la
 [convention angulaire OpenType](https://learn.microsoft.com/en-us/typography/opentype/spec/colr#sweep-gradients).
 
 `GlyphPaintIR.clipBounds`, lorsqu’il existe, applique une découpe à tout le
-résultat de la racine. Sans ces limites racine, un graphe de schéma 2 n’est
-accepté que si sa racine atteignable est structurellement bornée :
+résultat de la racine. Sans ces limites racine, un graphe de schéma 2 ou 3
+n’est accepté que si sa racine atteignable est structurellement bornée :
 `SolidOutline`, `Path` et `GlyphClip` sont bornés ; `Solid` et les trois
 gradients ne le sont pas ; `Transform` conserve la bornitude de son enfant ;
-un `Group` n’est borné que si tous ses enfants le sont. Un `Group` vide de
-schéma 2 est donc borné. Pour les compositions, `CLEAR` est toujours borné ;
+un `Group` n’est borné que si tous ses enfants le sont. Dans le schéma 3,
+`PathClip` est borné parce que son chemin portable restreint toute la peinture
+enfant, y compris un gradient autrement non borné. Un `Group` vide de schéma 2
+ou 3 est donc borné. Pour les compositions, `CLEAR` est toujours borné ;
 `SOURCE` et `SOURCE_OUT` suivent la source ;
 `DESTINATION` et `DESTINATION_OUT` suivent le fond ; `SOURCE_IN` et
 `DESTINATION_IN` sont bornés si l’une des deux entrées l’est ; tous les autres
@@ -128,12 +303,16 @@ modes exigent que les deux entrées soient bornées. Une découpe racine borne
 toute combinaison par ailleurs acceptée.
 
 `PaintGraphLimits` est appliqué avant la certification. Il borne les nœuds,
-références, profondeurs et visites développées du graphe ; les chemins,
+références et profondeurs ; à partir du schéma 2, il borne aussi les visites
+développées du graphe. Il borne également les chemins,
 gradients, arrêts de couleur, transformations, compositions et découpes de
 glyphe ; les octets source ; les palettes CPAL, leurs entrées, leurs
 enregistrements de couleur et leurs octets décodés ; les enregistrements COLR
 de glyphes de base, de couches et de découpes ; ainsi que chaque contour
-référencé via `outlineProfile`. Un dépassement renvoie
+référencé via `outlineProfile`. Chaque `PathClip` atteint consomme une unité de
+`maxPaths` et de `maxClips`, et son chemin portable doit respecter
+`outlineProfile` ; les données de ce chemin participent aussi à l’admission
+conservatrice selon la taille retenue. Un dépassement renvoie
 `FontError.ResourceLimitExceeded`. Une capacité atteinte mais non annoncée, ou
 une palette CPAL sélectionnée par le consommateur mais indisponible dans la
 fonte, renvoie `FontError.UnsupportedRepresentationProfile`. Une référence, un
@@ -164,6 +343,53 @@ dégrade pas un autre glyphe COLR. La validation atomique de tout le document
 SVG sélectionné reste inchangée, même lorsqu’il cible plusieurs glyphes.
 
 ### Migration des consommateurs de peinture
+
+#### Ajouts du schéma 3
+
+La compatibilité de schéma ne préserve pas l’ABI (interface binaire
+d’application) JVM. Le constructeur `GlyphPaintColorLine` ajoute
+`interpolationSpace` et `alphaInterpolationMode`, avec des valeurs par défaut
+qui conservent les règles COLR historiques `LINEAR_SRGB` et `PREMULTIPLIED`.
+Le constructeur `PaintGraphProfile` ajoute
+`acceptedGradientInterpolationSpaces` et
+`acceptedGradientAlphaInterpolationModes`. Par défaut, ces listes sont vides
+pour le schéma 1 et n’acceptent que `LINEAR_SRGB` / `PREMULTIPLIED` pour le
+schéma 2 et les suivants ; choisir le schéma 3 seul n’autorise donc pas les
+gradients SVG sRGB ou à alpha non prémultiplié. Déclarez explicitement ces
+capacités ainsi que les catégories de nœuds nécessaires.
+
+`PaintGraphLimits` ajoute trois limites de transport avec des valeurs par
+défaut : `maxSvgCompressedDocumentBytes`, `maxSvgDecodedDocumentBytes` et
+`maxSvgTotalDecodedBytes`, chacune égale à `maxSourceBytes` par défaut. Les
+descripteurs de son constructeur, du constructeur à arguments par défaut, et
+des méthodes générées `copy` et `copy$default` changent. `component1` à
+`component20` conservent leur position et leur type de retour `Int` ; les
+nouvelles limites occupent `component21` à `component23`. Les appels ordinaires
+aux constructeurs Kotlin et les appels `copy` nommés conservent leurs arguments
+après recompilation, mais les anciens descripteurs JVM ne sont pas conservés.
+Recompilez toutes les applications et bibliothèques qui utilisent ces
+signatures modifiées, y compris celles qui n’appellent que l’ancien
+constructeur `GlyphPaintColorLine` à deux arguments : les anciens binaires
+peuvent lancer `NoSuchMethodError`.
+
+Traitez `GlyphPaintNode.PathClip`, `GlyphPaintNodeKind.PATH_CLIP` et les
+nouvelles énumérations `GlyphPaintInterpolationSpace` /
+`GlyphPaintAlphaInterpolationMode` dans la répartition des opérations du
+consommateur. Complétez les gestionnaires exhaustifs ; les gestionnaires
+sealed (scellés) déjà compilés peuvent lancer `NoWhenBranchMatchedException`.
+`PATH_CLIP` est inséré avant `TRANSFORM`, décalant les positions ordinales
+suivantes : ne persistez jamais ces positions, mais des noms ou identifiants
+explicitement versionnés.
+
+Les empreintes canoniques de profils ajoutent `gradientInterpolation=`,
+`gradientAlphaInterpolation=` et les trois limites de transport dans
+`limits=`. Même les profils de schéma 1 ou 2 par ailleurs inchangés ont des
+empreintes différentes. Régénérez ou invalidez les empreintes persistées et
+les entrées de cache dérivées, puis rouvrez et certifiez avec des clés fraîches
+d’un fournisseur vivant ; les empreintes stockées ne sont pas des
+localisateurs de ressources.
+
+#### Changements antérieurs du schéma 2
 
 La compatibilité de schéma ne signifie pas compatibilité binaire JVM.
 `GlyphPaintIR` ajoute `clipBounds`, `PaintGraphProfile` ajoute

@@ -190,7 +190,7 @@ public class EmbeddedFontCatalog(
                         code = "font.unsupported-representation-profile",
                         severity = FontDiagnosticSeverity.ERROR,
                         location = FontDiagnosticLocation.Source,
-                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, declared COLR/CPAL version 0 paint profiles, and declared EBDT format 1 bitmap profiles are supported.",
+                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and EBDT format 1 bitmap profiles are supported.",
                     ),
                 ),
             )
@@ -212,7 +212,7 @@ public class EmbeddedFontCatalog(
                 schemaVersion == 1 && faceId in outlineRouteSupportedFaces
             is org.graphiks.kalligraphie.api.PaintGraphProfile ->
                 (schemaVersion == 1 && (faceId in paintGraphSupportedFaces || faceId in svgRouteSupportedFaces)) ||
-                    (schemaVersion == 2 && (faceId in colrV1SupportedFaces || faceId in svgRouteSupportedFaces))
+                    (schemaVersion in 2..3 && (faceId in colrV1SupportedFaces || faceId in svgRouteSupportedFaces))
             is org.graphiks.kalligraphie.api.BitmapProfile ->
                 schemaVersion == 1 && faceId in bitmapRouteSupportedFaces
             else -> false
@@ -432,7 +432,7 @@ internal class EmbeddedFontAssetResolver(
             is org.graphiks.kalligraphie.api.PaintGraphProfile ->
                 resources[instance.face]?.let { resource ->
                     (profile.schemaVersion == 1 && (supportsColrCpalV0(resource, parsedFont) || supportsSvgOpenTypeRoute(resource, parsedFont))) ||
-                        (profile.schemaVersion == 2 && (supportsColrV1(resource, parsedFont) || supportsSvgOpenTypeRoute(resource, parsedFont)))
+                        (profile.schemaVersion in 2..3 && (supportsColrV1(resource, parsedFont) || supportsSvgOpenTypeRoute(resource, parsedFont)))
                 } == true
             is org.graphiks.kalligraphie.api.BitmapProfile ->
                 key.variant == FontRenderVariantKey.default &&
@@ -569,7 +569,7 @@ internal fun estimateEmbeddedRenderAssetBytes(
             .saturatingAdd(profile.limits.maxDecodedPaletteBytes.toLong())
             .saturatingAdd(profile.limits.maxNodes.toLong().saturatingMultiply(96L))
             .saturatingAdd(profile.limits.maxReferences.toLong().saturatingMultiply(8L))
-            .saturatingAdd(if (profile.schemaVersion == 2) estimateColrV1GraphBytes(profile) else 0L)
+            .saturatingAdd(if (profile.schemaVersion in 2..3) estimateColrV1GraphBytes(profile) else 0L)
             .saturatingAdd(profile.outlineProfile.maxBytes.toLong())
             .saturatingAdd(estimateColrCpalRetainedBytes(resource, parsedFont))
             .saturatingAdd(estimateSvgRetainedBytes(parsedFont, profile))
@@ -621,7 +621,7 @@ private fun estimateSvgRetainedBytes(
     return profile.limits.maxSvgDocuments.toLong().saturatingMultiply(96L)
         .saturatingAdd(glyphCount.saturatingMultiply(112L))
         .saturatingAdd(glyphCount.saturatingMultiply(profile.limits.maxNodes.toLong()).saturatingMultiply(96L))
-        .saturatingAdd(profile.limits.maxSourceBytes.toLong().saturatingMultiply(96L))
+        .saturatingAdd(profile.limits.maxSvgTotalDecodedBytes.toLong().saturatingMultiply(96L))
 }
 
 private fun ByteArray.unsignedShortAt(offset: Int): Int? =
@@ -696,6 +696,9 @@ private fun GlyphRepresentationProfile.estimatedRetainedBytes(): Long = when (th
     is PaintGraphProfile -> 112L
         .saturatingAdd(acceptedNodeKinds.size.toLong().saturatingMultiply(8L))
         .saturatingAdd(acceptedCompositionModes.size.toLong().saturatingMultiply(8L))
+        .saturatingAdd(acceptedGradientExtendModes.size.toLong().saturatingMultiply(8L))
+        .saturatingAdd(acceptedGradientInterpolationSpaces.size.toLong().saturatingMultiply(8L))
+        .saturatingAdd(acceptedGradientAlphaInterpolationModes.size.toLong().saturatingMultiply(8L))
     is BitmapProfile -> 112L
         .saturatingAdd(acceptedPixelFormats.size.toLong().saturatingMultiply(8L))
         .saturatingAdd(acceptedColorSpaces.size.toLong().saturatingMultiply(8L))
@@ -752,6 +755,7 @@ private fun GlyphPaintIR.estimatedRetainedBytes(): Long {
                 is GlyphPaintNode.RadialGradient -> 128L.saturatingAdd(node.colorLine.colorStops.size.toLong().saturatingMultiply(64L))
                 is GlyphPaintNode.SweepGradient -> 112L.saturatingAdd(node.colorLine.colorStops.size.toLong().saturatingMultiply(64L))
                 is GlyphPaintNode.GlyphClip -> node.outline.estimatedRetainedBytes().saturatingAdd(32L)
+                is GlyphPaintNode.PathClip -> node.path.estimatedByteSize.toLong().saturatingAdd(32L)
                 is GlyphPaintNode.Transform -> 96L
                 is GlyphPaintNode.Composite -> 48L
             },

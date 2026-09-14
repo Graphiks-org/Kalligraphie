@@ -53,6 +53,8 @@ public data class GlyphRepresentationProfileKey(
                     "nodes=${profile.acceptedNodeKinds.joinToString(",")}",
                     "composition=${profile.acceptedCompositionModes.joinToString(",")}",
                     "gradientExtend=${profile.acceptedGradientExtendModes.joinToString(",")}",
+                    "gradientInterpolation=${profile.acceptedGradientInterpolationSpaces.joinToString(",")}",
+                    "gradientAlphaInterpolation=${profile.acceptedGradientAlphaInterpolationModes.joinToString(",")}",
                     "limits=${profile.limits.canonicalPaintLimits()}",
                     "outline=${profile.outlineProfile.schemaVersion},${profile.outlineProfile.canonicalOutlineLimits(",")}",
                 ).joinToString(";"),
@@ -113,6 +115,9 @@ private fun PaintGraphLimits.canonicalPaintLimits(): String =
         maxClips,
         maxClipRecords,
         maxPaintVisits,
+        maxSvgCompressedDocumentBytes,
+        maxSvgDecodedDocumentBytes,
+        maxSvgTotalDecodedBytes,
     ).joinToString(",")
 
 private fun BitmapLimits.canonicalBitmapLimits(): String =
