@@ -1,6 +1,6 @@
 # Font Management
 
-Kalligraphie exposes an embedded TrueType path through
+Kalligraphie exposes embedded and directory-captured TrueType paths through
 `org.graphiks:kalligraphie` on the JVM reference target only. The public
 contracts stay portable, but this executable route is JVM-only. A
 consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
@@ -16,7 +16,8 @@ The supported functional scope is intentionally narrow:
 
 - JVM reference target only;
 - static SFNT TrueType only: `0x00010000` and `true`;
-- embedded OpenType sources with face index `0` for each source;
+- standalone embedded OpenType sources with face index `0`, and directory-captured
+  TTC version 1 or 2 sources with their original collection face indices;
 - `LAYOUT_ONLY` for cmap and metrics;
 - `RENDERABLE` with an explicit `OutlineProfile`, `PaintGraphProfile`, or
   `BitmapProfile` when the selected face advertises the matching route;
@@ -41,6 +42,117 @@ The supported functional scope is intentionally narrow:
   sRGB, with an exact requested strike;
 - detached render assets that keep resolving after the owning resolver or
   attached handle is closed.
+
+## Capture font directories on the JVM
+
+`FontDirectoryCatalog.open(options, cancellationToken)` captures readable font
+files from explicit roots. Linux and macOS convenience providers apply the same
+capture rules with separate provider domains:
+
+```kotlin
+import org.graphiks.kalligraphie.FontDirectoryCatalog
+import org.graphiks.kalligraphie.FontDirectoryCatalogOptions
+import org.graphiks.kalligraphie.LinuxSystemFontCatalog
+import org.graphiks.kalligraphie.MacosSystemFontCatalog
+import org.graphiks.kalligraphie.MacosSystemFontCatalogOptions
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontOperationResult
+
+fun requireCapture(result: FontOperationResult<FontCatalogSnapshot>): FontCatalogSnapshot =
+    when (result) {
+        is FontOperationResult.Success -> {
+            result.diagnostics.forEach { println(it) }
+            result.value
+        }
+        is FontOperationResult.Failure -> {
+            result.diagnostics.forEach { println(it) }
+            error("Font capture failed: ${result.error}")
+        }
+        is FontOperationResult.Cancelled -> {
+            result.diagnostics.forEach { println(it) }
+            error("Font capture cancelled")
+        }
+    }
+
+val options = FontDirectoryCatalogOptions(
+    roots = listOf("/usr/share/fonts"),
+    maxPathsToVisit = 512,
+    maxFaces = 32,
+    maxFacesToExamine = 128,
+    maxSourceBytes = 16 * 1024 * 1024,
+    maxTotalSourceBytes = 64 * 1024 * 1024,
+    maxDiagnostics = 64,
+)
+val explicit = requireCapture(FontDirectoryCatalog.open(options))
+// On Linux; omitting options uses system, legacy user and XDG font roots.
+val linux = requireCapture(LinuxSystemFontCatalog.open(options = options))
+// Alternatively on macOS; omitting options uses standard system and user roots.
+val macos = requireCapture(MacosSystemFontCatalog.open(
+    options = MacosSystemFontCatalogOptions(roots = listOf("/Library/Fonts")),
+))
+```
+
+The OS-specific calls are alternatives: each returns a typed unsupported error
+on another OS. Every `open` also accepts a `CancellationToken`; cancellation is
+cooperative between filesystem operations and cannot interrupt a blocked OS
+call. A cancelled capture publishes no partial snapshot. Invalid option values
+(such as non-positive limits or repeated roots) are rejected at construction.
+
+Discovery considers `.ttf`, `.otf`, `.ttc` and `.otc` candidates without following
+symbolic links. An `.otf` extension does not imply CFF outlines: actual SFNT
+content determines support. Static TrueType content is supported; CFF/CFF2 and
+variable font data are outside this route. Captured candidates are ordered
+lexically, with original index order inside each collection. Directory discovery
+is bounded and can omit candidates; it is not an exact inventory of activated
+Fontconfig or CoreText fonts. Filesystem capture is not globally atomic.
+
+Inspect diagnostics even on `Success`: unreadable or absent roots, rejected
+sources/faces and reached limits can leave a usable partial inventory. With no
+accepted face the operation returns `Failure`. `maxDiagnostics` bounds returned
+diagnostics; `font.capture.diagnostics-truncated` is included within that bound
+when details are omitted. `maxPathsToVisit` charges inspected paths, including roots;
+`maxFacesToExamine` charges attempted directories, including rejected faces;
+`maxFaces` limits accepted faces. These limits have different meanings.
+
+Collection header and examined directory ranges must be safely addressable. An
+unsafe examined directory rejects its whole original container, with numeric
+location diagnostics. Safely addressed unsupported or metadata-invalid siblings
+may be excluded individually; retained faces keep their original indices. The
+provider does not inspect directories beyond `maxFacesToExamine`. HarfBuzz may
+sanitize the original container more broadly, so corruption in an unexamined
+sibling can still prevent shaping an admitted face. Admission is not a promise
+of equivalence with HarfBuzz's container sanitizer.
+
+`FontFaceId.source` identifies the captured original container, and `faceIndex`
+selects its face. `copyOpenTypeData()` returns original container bytes and the
+selected face identity; it neither extracts a standalone font nor renumbers or
+rewrites collection bytes. Siblings share the retained source.
+`maxSourceBytes` bounds each read container; `maxTotalSourceBytes` counts unique
+accepted containers once. Neither is a process-memory ceiling: defensive copies,
+temporary reads, metadata and decoder memory are excluded. Use
+`estimateOpenTypeDataCopy()` to preflight controlled copy allocations. Portable
+representation retention is separately governed by `materializationCachePolicy`
+and optional `cacheScope`; closing a shared scope still permits uncached work.
+
+Refresh explicitly by calling `open` again after installation or removal:
+
+```kotlin
+val refreshed = requireCapture(FontDirectoryCatalog.open(options))
+// Use refreshed.generation and a newly opened resolver for new layouts.
+```
+
+Every successful capture has a new generation, even for identical files. Keep layout,
+resolver and asset keys in that generation; reopening an old asset key through
+a new generation fails. Existing captured instances and independently owned
+render assets keep their original data after file replacement or deletion.
+Close each acquired resolver, layout owner and render asset when finished;
+closing an originating owner does not invalidate admitted independent children.
+The snapshot itself has no `close` operation.
+
+Existing Kotlin calls to `MacosSystemFontCatalogOptions` and
+`MacosSystemFontCatalog.open` remain source-compatible through trailing defaults.
+Their JVM signatures changed: recompile consumers using the old constructors or
+factory entry points; already compiled callers are not binary-compatible.
 
 ### SVG document transport and bounds
 

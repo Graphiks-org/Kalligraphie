@@ -13,6 +13,47 @@ de plateforme (référence opaque vers une ressource) n’est pas nécessairemen
 une adresse mémoire. Dans ce guide, appels, pointeurs et allocations natifs
 désignent précisément l’implémentation d’interopérabilité avec l’API C CoreText.
 
+## Capacités des cibles et découverte
+
+La découverte dans les répertoires et le rendu de plateforme sont des capacités
+distinctes. L’artefact principal JVM (machine virtuelle Java) propose
+`FontDirectoryCatalog`, `LinuxSystemFontCatalog` et `MacosSystemFontCatalog` ;
+voir [la capture et ses limites](font-management.md#capturer-des-repertoires-de-fontes-sur-la-jvm).
+Les fournisseurs système capturent des fichiers accessibles, sans reproduire
+exactement le registre des fontes activées. Un nouvel `open` rafraîchit
+explicitement le snapshot (instantané immuable) ; les ressources indépendantes
+de la génération précédente restent possédées par leurs consommateurs.
+
+| Cible / fournisseur | Découverte et données sources | Shaping opérationnel | Accès aux glyphes et rafraîchissement |
+|---|---|---|---|
+| JVM `FontDirectoryCatalog` | Racines lisibles explicites ; TrueType statique à face unique et TTC 1/2, source/indice d’origine | HarfBuzz embarqué sur Linux/macOS x64 et arm64 | Profils portables de contour/peinture/bitmap déclarés ; nouvel `open` |
+| JVM Linux `LinuxSystemFontCatalog` | Racines système, utilisateur historique et XDG, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur Linux x64 et arm64 | Mêmes routes portables ; pas de matching (sélection) par registre Fontconfig ni rafraîchissement automatique |
+| JVM macOS `MacosSystemFontCatalog` | Racines système/utilisateur standard, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; pas de sélection par registre CoreText ni rafraîchissement automatique |
+| Adaptateur CoreText facultatif sur JVM macOS | Octets exacts d’un catalogue portable ; TrueType statique monochrome à face unique éligible uniquement | Conserve le shaping portable ; aucune substitution par une mise en page CoreText | Handle de plateforme explicitement accepté, ou routes portables sous-jacentes ; collections exclues de la route de plateforme |
+| JVM Windows | Aucun fournisseur de fontes système Windows | Aucune cible HarfBuzz opérationnelle embarquée | Les contrats portables ne constituent pas un parcours complet de fontes Windows |
+| Android / Kotlin Native / iOS | Aucun fournisseur de répertoires système sur ces cibles | Aucun parcours de shaping complet implémenté | Contrats communs portables ; ces parcours exécutables ne sont pas implémentés |
+| Données CFF/CFF2 sur toute cible | Non prises en charge par ces fournisseurs de capture | Aucun parcours CFF livré | Aucune route CFF portable ou CoreText dans ce périmètre |
+
+La route embarquée à face unique reste disponible sur la JVM. Une extension ne
+garantit pas le type de contours : `.otf` peut contenir du TrueType supporté ou
+du CFF exclu. L’admission en répertoire est bornée ; HarfBuzz peut ensuite refuser
+un TTC d’origine dont une face voisine non examinée est corrompue. Une face
+découverte ne garantit pas son utilisation par tout backend (moteur de
+traitement) ou profil de représentation. La matrice CI (intégration continue)
+JVM Linux/macOS à quatre cibles exécute de vrais parcours de découverte,
+shaping et glyphes avec les tests complets du shaper (moteur de shaping) et
+l’audit des dépendances natives ; elle n’établit pas de support Windows, mobile
+ou CFF.
+
+Les nouveaux symboles et types natifs bruts, déclarations ABI (interface binaire),
+constantes et accès aux bibliothèques appartiennent à kffi. Kalligraphie garde
+l’adaptation typographique, la capture, la provenance, l’identité, les
+générations, les diagnostics et la durée de vie des ressources de fonte.
+Le code CoreText actuel utilise le moteur générique d’appels JVM de kffi mais
+déclare encore des détails natifs localement, comme les bindings (liaisons
+natives) HarfBuzz historiques ; leur extraction reste à effectuer. La capture
+de répertoires n’ajoute aucune liaison native brute.
+
 ## Module Apple facultatif
 
 Ajouter `:kalligraphie:platform:apple` au module principal `:kalligraphie`.
