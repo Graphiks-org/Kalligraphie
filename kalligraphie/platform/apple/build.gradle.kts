@@ -12,7 +12,7 @@ kotlin {
         jvmMain.dependencies {
             api(project(":kalligraphie:api"))
             implementation(project(":kalligraphie:font:core"))
-            implementation("org.graphiks:kffi-jvm:1.0.0-SNAPSHOT")
+            implementation("org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT")
         }
         jvmTest {
             resources.srcDir(rootProject.file("kalligraphie/src/jvmTest/resources"))

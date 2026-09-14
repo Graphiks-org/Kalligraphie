@@ -56,9 +56,11 @@ Les nouveaux symboles et types natifs bruts, déclarations ABI (interface binair
 constantes et accès aux bibliothèques appartiennent à kffi. Kalligraphie garde
 l’adaptation typographique, la capture, la provenance, l’identité, les
 générations, les diagnostics et la durée de vie des ressources de fonte.
-Le code CoreText actuel utilise le moteur générique d’appels JVM de kffi mais
-déclare encore des détails natifs localement, comme les bindings (liaisons
-natives) HarfBuzz historiques ; leur extraction reste à effectuer. La capture
+Le module Apple facultatif utilise les bindings (liaisons natives) CoreText
+spécialisés de kffi et son service Darwin d’information système ; le chargement
+des bibliothèques, les symboles, les signatures et la disposition mémoire de la
+matrice appartiennent à kffi. Les liaisons HarfBuzz historiques déclarent encore
+des détails natifs localement ; leur extraction reste à effectuer. La capture
 de répertoires n’ajoute aucune liaison native brute.
 
 ## Module Apple facultatif
@@ -76,16 +78,20 @@ pour les contrats du catalogue, des limites et des propriétaires de plateforme.
 L’artefact principal ne dépend pas de ce module et ne charge aucun framework
 Apple (bibliothèque de plateforme). L’API commune ne transporte que des
 identités de route et des contrats de propriété, jamais des pointeurs CoreText
-ou des types kffi. Le module facultatif utilise kffi en interne et ne charge
-que la surface native nécessaire à l’accès aux fontes.
+ou des types kffi. Le module facultatif utilise les liaisons CoreText de kffi en
+interne et ne charge que la surface native nécessaire à l’accès aux fontes,
+quand la fabrique explicitement acceptée crée son adaptateur sur une plateforme
+prise en charge. Les cibles portables conservent leurs exigences actuelles,
+dont Android API 24.
 
 La dépendance kffi interne utilise
-`org.graphiks:kffi-jvm:1.0.0-SNAPSHOT` et suit la dernière publication de la
+`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` et suit la dernière publication de la
 ligne de développement actuelle. Un snapshot est une version de développement
 dont le contenu peut changer. Sa résolution exige le dépôt de snapshots Central
-Portal, filtré pour cet artefact. Le module Apple revérifie les artefacts
-modifiables à chaque résolution en ligne ; il
-n’épingle pas d’artefact horodaté et n’impose pas de politique globale de
+Portal, filtré pour les artefacts racines/JVM CoreText et du runtime (moteur
+d’exécution) générique requis par les métadonnées de publication. Le module Apple
+revérifie les artefacts modifiables à chaque résolution en ligne ; il n’épingle
+pas d’artefact horodaté et n’impose pas de politique globale de
 vérification des sommes de contrôle. Une publication plus récente peut changer
 entre deux constructions et nécessiter une adaptation du code source.
 
@@ -98,7 +104,12 @@ dependencyResolutionManagement {
         mavenCentral()
         maven {
             url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            content { includeModule("org.graphiks", "kffi-jvm") }
+            content {
+                includeModule("org.graphiks", "kffi-coretext")
+                includeModule("org.graphiks", "kffi-coretext-jvm")
+                includeModule("org.graphiks", "kffi")
+                includeModule("org.graphiks", "kffi-jvm")
+            }
         }
     }
 }
