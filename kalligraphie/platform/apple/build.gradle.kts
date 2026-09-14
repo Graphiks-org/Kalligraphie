@@ -11,7 +11,7 @@ kotlin {
     sourceSets {
         jvmMain.dependencies {
             api(project(":kalligraphie:api"))
-            implementation("org.graphiks:kffi-jvm:1.0.0-20260913.233427-53")
+            implementation("org.graphiks:kffi-jvm:1.0.0-SNAPSHOT")
         }
         jvmTest {
             resources.srcDir(rootProject.file("kalligraphie/src/jvmTest/resources"))
@@ -21,6 +21,9 @@ kotlin {
             }
         }
     }
+}
+configurations.configureEach {
+    resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
 tasks.named<Copy>("jvmTestProcessResources") {
     from(rootProject.file("kalligraphie/shaping/src/jvmTest/resources")) {

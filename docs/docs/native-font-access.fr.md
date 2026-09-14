@@ -25,16 +25,15 @@ identités de route et des contrats de propriété, jamais des pointeurs CoreTex
 ou des types kffi. Le module facultatif utilise kffi en interne et ne charge
 que la surface native nécessaire à l’accès aux fontes.
 
-La dépendance kffi interne est épinglée à
-`org.graphiks:kffi-jvm:1.0.0-20260913.233427-53`, pas à un snapshot mobile
-(version de développement dont le contenu peut changer). Sa résolution exige
-le dépôt de développement Central Portal, filtré pour cet artefact. Le
-SHA-256 exact du JAR (archive Java) est
-`11508ebc6e06de32fc9dbe3e9e745c9e0b6d66e2abd177837113f5406a1e1a59`.
-Le build (construction) vérifie les sommes de contrôle des dépendances. Un
-artefact de développement horodaté peut être supprimé ultérieurement par son
-dépôt : ce pin (épinglage) ne garantit pas sa disponibilité permanente et
-n’affirme pas l’existence d’une version stable de kffi.
+La dépendance kffi interne utilise
+`org.graphiks:kffi-jvm:1.0.0-SNAPSHOT` et suit la dernière publication de la
+ligne de développement actuelle. Un snapshot est une version de développement
+dont le contenu peut changer. Sa résolution exige le dépôt de snapshots Central
+Portal, filtré pour cet artefact. Le module Apple revérifie les artefacts
+modifiables à chaque résolution en ligne ; il
+n’épingle pas d’artefact horodaté et n’impose pas de politique globale de
+vérification des sommes de contrôle. Une publication plus récente peut changer
+entre deux constructions et nécessiter une adaptation du code source.
 
 Ajouter ce dépôt au `settings.gradle.kts` du consommateur, à côté de ses
 dépôts Maven habituels :
@@ -51,8 +50,11 @@ dependencyResolutionManagement {
 }
 ```
 
-Le filtre de dépôt ne rend pas l’artefact de développement immuable ;
-conserver la vérification des dépendances lors de sa résolution.
+Les réglages du cache des dépendances ne sont pas publiés aux consommateurs.
+Pour rechercher immédiatement une publication kffi plus récente, lancer la
+construction du consommateur avec `--refresh-dependencies` ou régler ses
+durées de cache des modules modifiables. Une
+construction hors ligne utilise les dépendances déjà en cache.
 
 ## Capturer une source exacte
 

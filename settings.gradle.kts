@@ -18,7 +18,7 @@ dependencyResolutionManagement {
         google()
         mavenCentral()
         maven {
-            name = "KffiPinnedDevelopmentArtifact"
+            name = "KffiSnapshots"
             url = uri("https://central.sonatype.com/repository/maven-snapshots/")
             content { includeModule("org.graphiks", "kffi-jvm") }
         }

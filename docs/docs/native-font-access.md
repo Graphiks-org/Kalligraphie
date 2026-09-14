@@ -21,14 +21,14 @@ frameworks. The common API carries native route identities and ownership
 contracts, not CoreText pointers or kffi types. The optional module uses kffi
 internally and loads only the native surface needed for font access.
 
-The internal kffi dependency is pinned to
-`org.graphiks:kffi-jvm:1.0.0-20260913.233427-53`, not a moving snapshot.
-Projects resolving it need the Central Portal development repository, narrowly
-filtered to that artifact. The exact JAR SHA-256 is
-`11508ebc6e06de32fc9dbe3e9e745c9e0b6d66e2abd177837113f5406a1e1a59`.
-The build verifies dependency checksums. A timestamped development artifact
-can eventually be removed by its repository; this pin is not a permanent
-availability guarantee or a claim that a stable kffi release exists.
+The internal kffi dependency uses
+`org.graphiks:kffi-jvm:1.0.0-SNAPSHOT`, following the latest publication of
+the current development line. Projects resolving it need the Central Portal
+snapshot repository, narrowly filtered to that artifact. The Apple module
+rechecks changing artifacts on every online dependency
+resolution; it does not pin a timestamped artifact or enforce a global
+dependency-checksum policy. A newer publication can change between builds
+and may require source adaptation.
 
 Add this repository in the consuming project's `settings.gradle.kts`,
 alongside its normal Maven repositories:
@@ -45,8 +45,10 @@ dependencyResolutionManagement {
 }
 ```
 
-The repository filter does not make the development artifact immutable;
-keep dependency verification enabled when resolving it.
+Dependency-cache settings are not published to consumers. To check for a
+newer kffi publication immediately, run the consuming build with
+`--refresh-dependencies` or configure its changing-module cache lifetime.
+Offline builds use already cached dependencies.
 
 ## Capture an exact font source
 
