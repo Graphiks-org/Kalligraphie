@@ -20,7 +20,9 @@ internal class CoreTextBindings {
             JvmDowncallEngine.StructField(name, JvmDowncallEngine.FieldKind.FLOAT64, index * 8L)
         })
     }
-    private fun symbol(name: String): Long = try { engine.resolveSymbol(name) } catch (failure: Exception) {
+    private fun symbol(name: String): Long = try { engine.resolveSymbol(name) } catch (failure: UnsatisfiedLinkError) {
+        nativeFailure("font.native-symbol-resolution-failed", "Cannot resolve $name: ${failure.message}")
+    } catch (failure: Exception) {
         nativeFailure("font.native-symbol-resolution-failed", "Cannot resolve $name: ${failure.message}")
     }
     private val dataCreate = symbol("CFDataCreate")
