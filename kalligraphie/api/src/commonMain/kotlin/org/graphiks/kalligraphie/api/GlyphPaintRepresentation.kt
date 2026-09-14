@@ -310,7 +310,15 @@ public sealed interface GlyphPaintNode {
         override val children: List<Int> = emptyList()
     }
 
-    /** Supplies a radial gradient between two circles. */
+    /**
+     * Supplies a radial gradient between two circles in the node's local design space.
+     *
+     * Color-line offset zero corresponds to the circle ([c0], [radius0]) and offset one to
+     * ([c1], [radius1]); intermediate offsets follow the interpolated family of circles and
+     * [colorLine] defines extension outside that interval. Equal centers with equal radii define
+     * no drawable radial interval and therefore paint no ink. A surrounding [Transform] can map
+     * the local circles to ellipses in the parent coordinate space.
+     */
     public data class RadialGradient(
         /** Ordered colors and extension behavior. */
         public val colorLine: GlyphPaintColorLine,
@@ -376,7 +384,13 @@ public sealed interface GlyphPaintNode {
         override val children: List<Int> = listOf(paint)
     }
 
-    /** Applies an affine transform to one child paint. */
+    /**
+     * Applies an affine transform to one child paint.
+     *
+     * [matrix] maps coordinates from the child paint's local design space into the coordinate
+     * space of this node's parent. Consumers may use an inverse mapping when the matrix is
+     * invertible, but the representation does not require one.
+     */
     public data class Transform(
         /** Child paint node index. */
         public val paint: Int,

@@ -23,11 +23,12 @@ The supported functional scope is intentionally narrow:
 - SVG-in-OpenType table version 0 with raw UTF-8 or single-member gzip UTF-8
   documents: `svg` and `g` containers; self-closing `path` elements with
   `M`, `L`, `H`, `V`, `C`, `S`, and `Z`; and a static
-  `defs`/`linearGradient`/`stop` subset applied only to self-closing `rect`
+  `defs`/`linearGradient`/`radialGradient`/`stop` subset applied only to self-closing `rect`
   elements. Paths and rectangles accept opaque `#RRGGBB` or `fill="none"`,
-  while rectangles may also reference a preceding local linear
-  gradient. `translate` and `scale` are supported. The exact gradient subset
-  and remaining exclusions are described below;
+  while rectangles may also reference a preceding local linear or concentric radial
+  gradient. `translate`, `scale`, `rotate`, `skewX`, `skewY`, and
+  six-coefficient affine `matrix` transforms are supported. The exact gradient
+  subset and remaining exclusions are described below;
 - EBLC version 2 / EBDT version 2 bitmap strikes using index subtable format 1
   and image format 1 only: byte-aligned one-bit alpha decoded to `ALPHA_8` in
   sRGB, with an exact requested strike;
@@ -78,14 +79,16 @@ normalization boundary. Invalid UTF-8 or malformed SVG follows the existing type
 ### Safe static SVG gradients
 
 The accepted paint-server subset consists of `defs` containing named
-`linearGradient` definitions, which may contain self-closing `stop` elements.
+`linearGradient` or concentric `radialGradient` definitions, which may contain
+self-closing `stop` elements.
 A self-closing `rect` may use an opaque `#RRGGBB` fill, `fill="none"`, or a
-`url(#id)` reference to a unique linear gradient defined earlier in the same
+`url(#id)` reference to a unique gradient defined earlier in the same
 document; an absent fill defaults to opaque black. Gradient coordinates use
-`objectBoundingBox` only: unitless values and percentages are
-resolved relative to the rectangle before its `translate` or `scale` transform
-is applied. The SVG defaults are `x1=0%`, `y1=0%`, `x2=100%`, `y2=0%`,
-`spreadMethod=pad`, and sRGB interpolation.
+`objectBoundingBox` only: unitless values and percentages are resolved relative
+to the rectangle and are not clamped to its unit box. Linear defaults are
+`x1=0%`, `y1=0%`, `x2=100%`, and `y2=0%`. Radial defaults are `cx=50%`,
+`cy=50%`, `r=50%`, `fx=cx`, and `fy=cy`. Both kinds default to
+`spreadMethod=pad` and sRGB interpolation.
 
 `spreadMethod` accepts all three portable modes: `pad`, `repeat`, and `reflect`
 map to `PAD`, `REPEAT`, and `REFLECT`. An absent `color-interpolation` or the
@@ -103,23 +106,98 @@ are made non-decreasing in document order. For a multi-stop `repeat` or
 Kalligraphie inserts copies of the corresponding terminal stops at those
 endpoints. Equal-offset discontinuities remain in source order, and inserted
 stops count toward the reached graph's `maxColorStops` limit.
-A definition with no stops contributes no ink. For a rectangle whose final
-transform preserves area, a one-stop gradient or a source vector with
+
+Group `transform` attributes and both gradient kinds use the same supported SVG
+transform operations. A gradient may declare an absent, empty, or
+whitespace-only `gradientTransform` as the identity, or a transform list
+containing `translate`, `scale`, `rotate(angle)`, `rotate(angle cx cy)`,
+`skewX(angle)`, `skewY(angle)`, and `matrix`. These are all six SVG 1.1
+transform function names accepted by this bounded list. A matrix has exactly six
+coefficients `matrix(a b c d e f)` and maps points as
+`x' = a*x + c*y + e`, `y' = b*x + d*y + f`. Functions are separated by one
+or more SVG comma-whitespace productions, so repeated commas are accepted
+between functions but remain invalid between operands. `translate` and
+`scale` accept one or two operands, `rotate` requires exactly one or three,
+each skew requires exactly one, and `matrix` requires exactly six.
+`rotate(angle)` rotates around the origin;
+`rotate(angle cx cy)` rotates around the authored center `(cx, cy)`, equivalently
+`translate(cx cy) rotate(angle) translate(-cx -cy)`, while remaining one
+authored operation. `skewX(angle)` keeps `y` fixed and maps
+`x' = x + tan(angle)*y` (the affine `c` coefficient); `skewY(angle)` keeps `x`
+fixed and maps `y' = y + tan(angle)*x` (the affine `b` coefficient).
+Angles are SVG degrees. Finite negative and wrapped angles are accepted.
+Rotation canonicalizes exact multiples of 90 degrees to stable quadrant
+matrices. Skew reduces finite angles by the 180-degree tangent period before
+radian conversion, then canonicalizes exact zero and angles equivalent to
+positive or negative 45 degrees to coefficients `0`, `1`, or `-1`, without
+trigonometric residue. Every rotation or skew factor has positive determinant
+orientation.
+Unlike ordinary rectangle and gradient coordinates, transform operands accept
+forms such as `1.` and `1.e2`. Finite non-zero negative scales and
+negative-determinant matrices reflect the paint. A singular gradient transform
+remains unsupported. Malformed syntax, including malformed rotation or skew
+arity, separators, units, unknown function names, partial lists, non-finite
+values, and composition outside the portable numeric domain are invalid data
+and prevent successful normalization of the affected SVG data. Exact odd quarter turns
+(`90 + 180*k` degrees) are skew asymptotes and therefore invalid. A scale
+factor, matrix coefficient, rotation angle, or skew angle written as non-zero
+but converted to zero is invalid, as is a non-finite tangent; center
+coordinates use the existing translation-coordinate behavior. A composition
+of area-preserving factors whose
+stored product loses area or reverses the determinant orientation implied by
+the factors is also invalid, including across nested groups. An explicitly
+written singular group transform remains valid, while an explicitly singular
+gradient transform is unsupported.
+
+Determinant orientation is determined exactly for the decoded `Double`
+coefficients by comparing `a*d` and `b*c`, without an epsilon, and propagated
+as positive, negative, or singular through composition. A known singular
+factor keeps the complete list or nested-group product singular even if
+rounding its stored coefficients would otherwise appear to restore area.
+
+Every complete transform function call consumes one authored SVG transform
+operation, regardless of its operand count; in particular, each one-operand
+`skewX` or `skewY` call costs exactly one. Group and gradient lists share this
+budget, and profile fallback restarts validation without publishing partial
+data.
+
+With column vectors, the paint mapping is `T * B * G`: `T` is the rectangle's
+effective group transform, `B` maps its normalized object bounding box, and
+`G` is the `gradientTransform` list composed in source order. The transform is
+applied only to gradient geometry; the rectangle's clipping path remains under
+`T`. Linear gradients bake the complete mapping into `p0`, `p1`, and `p2`
+without adding a graph transform. Radial gradients keep normalized circles and
+place the same mapping on their existing single `Transform` node.
+
+A definition with no stops contributes no ink. For a rectangle whose effective
+group transform `T` preserves area, a one-stop linear gradient or a source
+vector with
 identical endpoints normalizes to the final stop as `Solid` under the
-rectangle's `PathClip`. For any other gradient with at least two stops,
+rectangle's `PathClip`. For any other linear gradient with at least two stops,
 Kalligraphie first resolves its normalized `p0` and `p1`; if those points
 coincide, it performs the same solid reduction, otherwise it emits a
 `LinearGradient` under that rectangle path. Before emission, normalized `p0`,
 `p1`, and `p2` must form a non-collinear triplet. A collinear triplet returns
 `font.svg.invalid-gradient`, and no partial asset is published. A singular
-final transform omits the rectangle after its fill and reference have been
-validated.
+effective group transform `T` omits a rectangle or filled path after its
+geometry, fill, and any paint reference have been validated.
 
-Every authored linear gradient requires an exact schema-3 `PaintGraphProfile`.
-When normalization actually emits `LinearGradient`, the profile must accept
+A radial definition with `r < 0` is invalid data. With one stop or `r == 0`,
+it likewise reduces to the final stop as `Solid` under `PathClip`. A radial
+definition with `r > 0` is accepted only when its focus is exactly concentric
+after numeric parsing (`fx == cx` and `fy == cy`); any off-center focus is
+valid SVG outside this subset and yields `UnsupportedRepresentationProfile`
+without clamping. A non-degenerate radial paint keeps its two normalized
+circles (`c0=(fx,fy), radius0=0`, `c1=(cx,cy), radius1=r`) below an explicit
+`Transform` that carries `T * B * G`, then clips that paint with the rectangle
+path transformed by `T` alone.
+This preserves the ellipse produced by a non-square rectangle.
+
+Every authored linear or radial gradient requires an exact schema-3 `PaintGraphProfile`.
+When normalization actually emits `LinearGradient` or `RadialGradient`, the profile must accept
 the reached interpolation space, `UNPREMULTIPLIED` alpha interpolation, and
-extend mode together with
-`LINEAR_GRADIENT` and `PATH_CLIP`. A solid reduction instead requires `SOLID`
+extend mode together with `PATH_CLIP` and the corresponding `LINEAR_GRADIENT`
+or `RADIAL_GRADIENT` node kind. Radial paint also requires `TRANSFORM`. A solid reduction instead requires `SOLID`
 and `PATH_CLIP`, but does not require the definition's interpolation space or
 alpha or extend mode. Solid rectangles use `PATH`. Documents with several
 painted roots also require `GROUP` and `SOURCE_OVER`. Existing limits
@@ -127,20 +205,29 @@ are checked before publication: source and decoded bytes, transforms, parsed
 gradient definitions and stops, and generated nodes, references, paths,
 clips, gradients, color stops, and depth must all fit. Paint visits are also
 bounded for schema 2 and later; schema 1 retains its historical node and depth
-checks without applying `maxPaintVisits`. Each
-generated rectangle path must also satisfy the profile's `outlineProfile`.
+checks without applying `maxPaintVisits`. A generated radial transform counts
+against `maxTransforms`, independently of authored group or gradient
+transform function calls. Every complete authored operation counts once against
+the shared `maxSvgTransformOperations` source budget for one normalization
+operation: the complete table during fully normalized SVG acquisition, or the
+selected whole document during a lazy mixed SVG/COLR glyph request. It is
+charged when its definition is parsed, including identity operations and unused
+definitions. A three-operand `rotate(angle cx cy)` call still counts once;
+referencing one definition repeatedly does not charge it again.
+Each generated rectangle path must also satisfy the profile's `outlineProfile`.
 Ordered profile fallback may therefore skip a schema-3 profile that does not
 declare every reached capability and select a later compatible profile.
 
-All element IDs accepted on `svg`, `g`, and `linearGradient` are globally
+All element IDs accepted on `svg`, `g`, `linearGradient`, and `radialGradient` are globally
 unique. Glyph targets remain unique by glyph ID as a separate invariant.
 Paint references are local, fragment-only, and backward-only; unresolved,
 forward, external, or otherwise URI-bearing references fail before an asset is
 published, even when the rectangle would later contribute no ink. Malformed
 or unsupported input never publishes a partial graph.
 
-The subset does not support `viewBox`, `userSpaceOnUse`, `gradientTransform`,
-`href`, radial gradients, gradient fills on `path`, CSS or `style` attributes,
+The subset does not support `viewBox`, `userSpaceOnUse`, `href`, `xlink:href`,
+radial `fr`, non-concentric radial focus, gradient fills
+on `path`, CSS or `style` attributes,
 general SVG clips or clip paths, masks, strokes, scripts, entities, animation,
 external resources, or unlisted elements and attributes. Compression formats
 other than the permitted single-member gzip transport remain rejected.
@@ -201,8 +288,8 @@ graph containing an empty `Group`; it is not collapsed to
 `GlyphRepresentation.Empty`. ClipList format 1 with ClipBox format 1 is
 accepted. Variable `PaintVar*` formats, ClipBox format 2, variation stores and
 maps, CFF/CFF2, and variable CPAL/COLR values are not supported. The separate
-SVG-in-OpenType route supports the rectangle-bound static linear gradients
-described above through schema 3; it does not gain general SVG clips, masks,
+SVG-in-OpenType route supports the rectangle-bound static linear and concentric
+radial gradients described above through schema 3; it does not gain general SVG clips, masks,
 strokes, or animation.
 
 This schema extension adds no rendering backend. The consumer still owns

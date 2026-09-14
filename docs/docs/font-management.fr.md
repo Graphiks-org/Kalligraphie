@@ -28,14 +28,14 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   transport gzip mono-membre (encodage compressé du document) :
   conteneurs `svg` et `g` ; éléments `path` (chemins) auto-fermants avec les
   commandes `M`, `L`, `H`, `V`, `C`, `S` et `Z` ; et sous-ensemble statique
-  `defs` (définitions), `linearGradient` (gradient linéaire) et `stop` (arrêt de
-  couleur), appliqué uniquement aux éléments `rect` (rectangles)
+  `defs` (définitions), `linearGradient` (gradient linéaire), `radialGradient`
+  (gradient radial) et `stop` (arrêt de couleur), appliqué uniquement aux éléments `rect` (rectangles)
   auto-fermants. Les chemins et rectangles acceptent un remplissage opaque
   `#RRGGBB` ou `fill="none"` ; un rectangle peut aussi référencer un gradient
-  linéaire local défini auparavant. Les
-  transformations `translate` et `scale` sont prises en charge. Le
-  sous-ensemble exact des gradients et les exclusions restantes sont décrits
-  ci-dessous ;
+  linéaire ou radial concentrique local défini auparavant. Les transformations
+  `translate`, `scale`, `rotate`, `skewX`, `skewY` et `matrix` (matrice affine
+  à six coefficients) sont prises en charge. Le sous-ensemble exact des
+  gradients et les exclusions restantes sont décrits ci-dessous ;
 - strikes bitmap (images matricielles, tailles bitmap exactes) EBLC version 2 / EBDT version 2,
   avec sous-table d’index format 1 et image format 1 uniquement : alpha un bit
   aligné sur les octets, décodé en `ALPHA_8` sRGB, pour un strike demandé à
@@ -92,17 +92,19 @@ retourne `FontError.UnsupportedRepresentationProfile`.
 ### Gradients SVG statiques sûrs
 
 Le sous-ensemble accepté de serveurs de peinture comprend des éléments `defs`
-qui contiennent des définitions `linearGradient` nommées, elles-mêmes composées
-d’éventuels éléments `stop` auto-fermants. Un élément `rect`
+qui contiennent des définitions `linearGradient` ou des définitions
+`radialGradient` concentriques nommées, elles-mêmes composées d’éventuels
+éléments `stop` auto-fermants. Un élément `rect`
 auto-fermant peut utiliser un remplissage opaque `#RRGGBB`, `fill="none"` ou
-une référence `url(#id)` vers un gradient linéaire unique défini plus tôt dans
+une référence `url(#id)` vers un gradient unique défini plus tôt dans
 le même document ; un remplissage absent utilise du noir opaque par défaut. Les
 coordonnées du gradient utilisent uniquement
 `objectBoundingBox` (boîte englobante de l’objet) : les valeurs sans unité et
-les pourcentages sont résolus relativement au rectangle avant l’application de
-sa transformation `translate` ou `scale`. Les valeurs SVG par défaut sont
-`x1=0%`, `y1=0%`, `x2=100%`, `y2=0%`, `spreadMethod=pad` et l’interpolation
-sRGB.
+les pourcentages sont résolus relativement au rectangle sans être bornés à sa
+boîte unité. Les valeurs linéaires par défaut sont `x1=0%`, `y1=0%`,
+`x2=100%` et `y2=0%`. Les valeurs radiales par défaut sont `cx=50%`, `cy=50%`,
+`r=50%`, `fx=cx` et `fy=cy`. Les deux types utilisent par défaut
+`spreadMethod=pad` et l’interpolation sRGB.
 
 `spreadMethod` accepte les trois modes d’extension portables : `pad`, `repeat`
 et `reflect` correspondent à `PAD`, `REPEAT` et `REFLECT`. Une valeur
@@ -124,26 +126,118 @@ plusieurs arrêts en mode `repeat` ou `reflect` dont le premier ou le dernier
 offset n’atteint pas `0` ou `1`, Kalligraphie insère aux extrémités une copie
 de l’arrêt terminal correspondant. Les discontinuités à offsets égaux
 conservent l’ordre source, et les arrêts insérés comptent dans `maxColorStops`
-pour le graphe atteint. Une définition sans arrêt ne
-produit aucune encre. Pour un rectangle dont la transformation finale préserve
-l’aire, un gradient à un seul arrêt ou un vecteur source aux extrémités
-identiques est normalisé avec le dernier arrêt en `Solid` (peinture unie), sous
-le `PathClip` (découpe par chemin) du rectangle. Pour tout autre gradient d’au
+pour le graphe atteint.
+
+Les attributs de groupe `transform` et les deux types de gradient partagent les
+mêmes opérations SVG prises en charge. Un gradient accepte un attribut
+`gradientTransform` (transformation du repère du gradient) absent, vide ou
+composé uniquement d’espaces XML comme identité. Sinon, sa `transform-list`
+(liste SVG de transformations) peut contenir `translate` (translation),
+`scale` (mise à l’échelle), `rotate(angle)`, `rotate(angle cx cy)`,
+`skewX(angle)`, `skewY(angle)` et `matrix`. Ce sont les six noms de fonction
+de transformation SVG 1.1 acceptés par cette liste bornée.
+Une matrice possède exactement six
+coefficients
+`matrix(a b c d e f)` et transforme un point selon
+`x' = a*x + c*y + e`, `y' = b*x + d*y + f`. `translate` et `scale` acceptent
+un ou deux opérandes, `rotate` en exige exactement un ou trois, tandis que
+chaque inclinaison en exige exactement un et `matrix` exactement six.
+`rotate(angle)` tourne autour de l’origine ;
+`rotate(angle cx cy)` tourne autour du centre déclaré `(cx, cy)`, ce qui
+équivaut à `translate(cx cy) rotate(angle) translate(-cx -cy)`, tout en restant
+une seule opération déclarée. `skewX(angle)` conserve `y` et applique
+`x' = x + tan(angle)*y` (coefficient affine `c`) ; `skewY(angle)` conserve `x`
+et applique `y' = y + tan(angle)*x` (coefficient affine `b`). Les angles sont
+exprimés en degrés SVG ; les angles finis négatifs ou ramenés par période sont
+acceptés. Les rotations multiples exactes de 90 degrés sont canonicalisées en
+matrices de quadrant stables. Pour une inclinaison, l’angle fini est réduit
+selon la période de 180 degrés de la tangente avant la conversion en radians ;
+le zéro exact et les angles équivalents à +45 ou -45 degrés sont ensuite
+canonicalisés en coefficients `0`, `1` ou `-1`, sans résidu trigonométrique.
+Chaque facteur de rotation ou d’inclinaison conserve une orientation de
+déterminant positive. Entre les
+fonctions, une ou plusieurs séquences SVG de virgule et/ou espaces sont
+acceptées : des virgules répétées y sont donc valides, mais restent invalides
+entre opérandes. Contrairement aux coordonnées ordinaires des rectangles et
+gradients, cette grammaire propre aux transformations accepte notamment `1.`
+et `1.e2`. Une échelle négative, finie et non nulle ou une matrice de
+déterminant négatif produit une réflexion. Une transformation de gradient
+singulière reste non prise en charge. Une syntaxe mal formée — notamment une
+arité, un séparateur ou une unité invalide pour une rotation ou inclinaison, un
+nom de fonction inconnu ou une liste partielle —, une valeur non finie ou une
+composition hors du domaine numérique portable constitue une donnée invalide
+et empêche la normalisation réussie des données SVG concernées. Les quarts de tour impairs
+exacts (`90 + 180*k` degrés) sont des asymptotes d’inclinaison et sont donc
+invalides. Un facteur d’échelle, un coefficient de matrice, un angle de
+rotation ou d’inclinaison écrit comme non nul mais converti en zéro est
+invalide, tout comme une tangente non finie ; les coordonnées du centre suivent
+le comportement existant des coordonnées de translation. Une composition de
+facteurs qui
+préservent chacun l’aire mais dont le produit mémorisé la perd ou inverse
+l’orientation du déterminant imposée par les facteurs est également invalide,
+y compris entre groupes imbriqués. Une transformation de groupe explicitement
+singulière reste valide, tandis qu’une transformation de gradient explicitement
+singulière n’est pas prise en charge.
+
+L’orientation du déterminant est déterminée exactement pour les coefficients
+`Double` décodés en comparant `a*d` et `b*c`, sans seuil de tolérance, puis
+propagée comme positive, négative ou singulière pendant la composition. Un
+facteur connu comme singulier maintient toute la liste ou composition de
+groupes imbriqués singulière, même si l’arrondi de ses coefficients mémorisés
+semblait restaurer une aire.
+
+Chaque appel complet d’une fonction de transformation consomme une opération
+SVG déclarée, quel que soit son nombre d’opérandes ; chaque appel à un opérande
+`skewX` ou `skewY` coûte donc exactement une opération. Les listes de groupe et
+de gradient partagent ce budget, et le fallback (repli) de profil recommence la
+validation sans publier de donnée partielle.
+
+Avec des vecteurs-colonnes, la transformation de peinture vaut `T * B * G` :
+`T` est la transformation de groupe effective du rectangle, `B` applique sa
+boîte englobante normalisée et `G` compose `gradientTransform` dans l’ordre
+source. `G` modifie uniquement la géométrie du gradient ; le chemin de découpe
+du rectangle reste soumis à `T` seul. Un gradient linéaire incorpore cette
+transformation dans `p0`, `p1` et `p2`, sans nœud `Transform` supplémentaire.
+Un gradient radial conserve ses cercles normalisés et place la même
+transformation sur son unique nœud `Transform` existant.
+
+Une définition sans arrêt ne
+produit aucune encre. Pour un rectangle dont la transformation de groupe
+effective `T` préserve l’aire, un gradient linéaire à un seul arrêt ou un
+vecteur source aux extrémités identiques est normalisé avec le dernier arrêt en
+`Solid` (peinture unie), sous
+le `PathClip` (découpe par chemin) du rectangle. Pour tout autre gradient linéaire d’au
 moins deux arrêts, Kalligraphie résout d’abord ses points normalisés `p0` et
 `p1` ; s’ils coïncident, il applique la même réduction en peinture unie, sinon
 il produit un `LinearGradient` (gradient linéaire) sous ce chemin rectangulaire.
 Avant cette production, les points normalisés `p0`, `p1` et `p2` doivent former
 un triplet non colinéaire. Un triplet colinéaire retourne
 `font.svg.invalid-gradient` et aucune ressource partielle n’est publiée. Une
-transformation finale singulière omet le rectangle après validation de son
-remplissage et de sa référence.
+transformation de groupe effective `T` singulière omet un rectangle ou chemin
+rempli après validation de sa géométrie, de son remplissage et de toute
+référence de peinture.
 
-Chaque gradient linéaire déclaré exige un `PaintGraphProfile` de schéma 3
+Un rayon radial `r < 0` constitue une donnée invalide. Avec un seul arrêt ou
+`r == 0`, le gradient est pareillement réduit au dernier arrêt sous forme de
+`Solid` sous un `PathClip`. Avec `r > 0`, le foyer doit être exactement
+concentrique après l’analyse numérique (`fx == cx` et `fy == cy`). Tout foyer
+décalé est un SVG valide hors de ce sous-ensemble : il retourne
+`UnsupportedRepresentationProfile` sans être ramené dans le cercle. Une
+peinture radiale non dégénérée conserve ses deux cercles normalisés
+(`c0=(fx,fy), radius0=0` et `c1=(cx,cy), radius1=r`) sous un nœud `Transform`
+(transformation du repère enfant vers le repère parent). Cette transformation
+porte `T * B * G`, tandis qu’un `PathClip` contenant le chemin rectangulaire
+transformé uniquement par `T` découpe le résultat.
+Ce modèle préserve l’ellipse produite par un rectangle non carré.
+
+Chaque gradient linéaire ou radial déclaré exige un `PaintGraphProfile` de schéma 3
 exact. Lorsque la normalisation produit réellement un `LinearGradient`, le
 profil doit accepter l’espace d’interpolation, le mode d’interpolation d’alpha
 `UNPREMULTIPLIED` (non prémultipliée : les composantes RGB et l’alpha sont
 interpolés séparément) et le mode d’extension atteints, ainsi que `LINEAR_GRADIENT`
-et `PATH_CLIP`. Une réduction en peinture unie exige à la place `SOLID` et
+et `PATH_CLIP`. Un `RadialGradient` produit exige les mêmes capacités
+d’interpolation et d’extension, ainsi que `RADIAL_GRADIENT`, `TRANSFORM` et
+`PATH_CLIP`. Une réduction en peinture unie exige à la place `SOLID` et
 `PATH_CLIP`, mais pas l’espace d’interpolation ni le mode d’interpolation
 d’alpha ou d’extension de la définition. Les rectangles unis utilisent
 `PATH`. Un document qui possède plusieurs racines peintes exige aussi `GROUP` et
@@ -154,12 +248,22 @@ découpes, gradients, arrêts de couleur et profondeurs produits doivent tous
 respecter les bornes. Les visites de peinture sont également bornées à partir
 du schéma 2 ; le schéma 1 conserve ses contrôles historiques des nœuds et de la
 profondeur sans appliquer `maxPaintVisits`. Chaque chemin rectangulaire créé
-doit aussi respecter l’`outlineProfile` (profil de contours) du profil. Le
+doit aussi respecter l’`outlineProfile` (profil de contours) du profil. Un
+nœud `Transform` radial produit compte dans `maxTransforms`, indépendamment
+des appels aux fonctions de transformation SVG déclarés par les groupes ou
+les gradients. Chaque opération déclarée complète compte une fois dans le
+budget source `maxSvgTransformOperations` partagé lors d’une normalisation :
+toute la table pendant l’acquisition SVG entièrement normalisée, ou tout le
+document sélectionné pendant une demande de glyphe mixte SVG/COLR à
+normalisation différée. Elle est comptée lors de l’analyse de sa définition,
+y compris une opération identité ou une définition
+inutilisée. Un appel à trois opérandes `rotate(angle cx cy)` compte toujours
+une seule fois ; réutiliser une définition ne la facture pas de nouveau. Le
 repli ordonné entre profils peut donc ignorer un profil de schéma 3 qui ne
 déclare pas chaque capacité atteinte et sélectionner un profil compatible
 ultérieur.
 
-Tous les identifiants d’élément acceptés sur `svg`, `g` et `linearGradient`
+Tous les identifiants d’élément acceptés sur `svg`, `g`, `linearGradient` et `radialGradient`
 sont globalement uniques. L’unicité des cibles par identifiant de glyphe reste
 un invariant distinct. Les références de peinture sont locales, limitées à un
 fragment `#id` et uniquement dirigées vers une définition antérieure. Une
@@ -169,8 +273,8 @@ produire aucune encre. Une entrée mal formée ou non prise en charge ne publie
 jamais de graphe partiel.
 
 Le sous-ensemble ne prend pas en charge `viewBox`, `userSpaceOnUse`,
-`gradientTransform`, `href`, les gradients radiaux, les remplissages par
-gradient sur `path`, CSS ou les attributs `style`, les découpes SVG générales
+`href`, `xlink:href`, le rayon focal `fr`, les foyers
+radiaux non concentriques, les remplissages par gradient sur `path`, CSS ou les attributs `style`, les découpes SVG générales
 ou chemins de découpe, les masques, contours tracés, scripts, entités,
 animations, ressources externes, ni les éléments et attributs non déclarés.
 Les formats de compression autres que le transport gzip mono-membre autorisé
@@ -240,7 +344,8 @@ découpes) de format 1 avec une `ClipBox` (boîte de découpe) de format 1 est
 acceptée. Les formats variables `PaintVar*`, `ClipBox` format 2, les magasins
 et tables d’index de variations, CFF/CFF2 et les valeurs CPAL/COLR variables ne
 sont pas pris en charge. Le parcours SVG-in-OpenType distinct accepte les
-gradients linéaires statiques bornés par un rectangle décrits plus haut via le
+gradients linéaires et radiaux concentriques statiques, bornés par un
+rectangle, décrits plus haut via le
 schéma 3 ; il n’acquiert pas pour autant les découpes SVG générales, masques,
 contours tracés ou animations.
 
