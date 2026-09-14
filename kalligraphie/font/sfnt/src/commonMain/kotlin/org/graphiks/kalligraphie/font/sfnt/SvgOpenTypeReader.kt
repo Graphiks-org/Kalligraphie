@@ -1157,6 +1157,7 @@ private class SvgGlyphPaintBuilder {
                 return invalid("font.svg.invalid-gradient", "SVG radial-gradient transform exceeds the portable domain.")
             }
         }
+        pathLimitFailure(path, profile)?.let { return it }
         projectedLimitFailure(
             additionalNodes = if (useSolid) 2 else 3,
             additionalReferences = if (useSolid) 1 else 2,

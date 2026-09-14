@@ -1543,6 +1543,64 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     @Test
+    fun reportsRadialRectangleOutlinePointExhaustionAsAResourceLimit() {
+        val twoStops = """
+            <stop offset="0" stop-color="#102030"/>
+            <stop offset="1" stop-color="#90A0B0"/>
+        """.trimIndent()
+        val cases = listOf(
+            Triple("", twoStops, null),
+            Triple("", """<stop offset="1" stop-color="#90A0B0"/>""", GlyphPaintNode.Solid(GlyphColor(144, 160, 176), 1.0)),
+            Triple("r=\"0\"", twoStops, GlyphPaintNode.Solid(GlyphColor(144, 160, 176), 1.0)),
+        )
+        for ((attributes, stops, expectedSolid) in cases) {
+            val document = radialSvgDocument(
+                attributes = attributes,
+                stops = stops,
+                rectangle = """<rect x="10" y="20" width="30" height="40" fill="url(#radial)"/>""",
+            )
+            val tooSmall = radialGradientProfile(outlineProfile = svgOutlineProfile().copy(maxPoints = 3))
+
+            val failure = assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, tooSmall))
+            assertEquals(FontDiagnosticLocation.Table("SVG "), failure.location)
+
+            val admitted = radialGradientProfile(outlineProfile = svgOutlineProfile().copy(maxPoints = 4))
+            val paint = assertIs<GlyphRepresentation.Paint>(resolveSvgDocument(document, listOf(admitted)).representation).paint
+            if (expectedSolid == null) {
+                val radial = assertIs<GlyphPaintNode.RadialGradient>(paint.nodes[0])
+                assertEquals(GlyphPaintPoint(0.5, 0.5), radial.c0)
+                assertEquals(0.0, radial.radius0)
+                assertEquals(GlyphPaintPoint(0.5, 0.5), radial.c1)
+                assertEquals(0.5, radial.radius1)
+                assertEquals(
+                    listOf(
+                        GlyphPaintColorStop(0.0, GlyphColor(16, 32, 48), 1.0),
+                        GlyphPaintColorStop(1.0, GlyphColor(144, 160, 176), 1.0),
+                    ),
+                    radial.colorLine.colorStops,
+                )
+                assertEquals(
+                    GlyphAffineTransform(30.0, 0.0, 0.0, 40.0, 10.0, 20.0),
+                    assertIs<GlyphPaintNode.Transform>(paint.nodes[1]).matrix,
+                )
+            } else {
+                assertEquals(expectedSolid, paint.nodes[0])
+            }
+            val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[paint.rootNode])
+            assertEquals(
+                listOf(
+                    GlyphPaintPathCommand.MoveTo(10.0, 20.0),
+                    GlyphPaintPathCommand.LineTo(40.0, 20.0),
+                    GlyphPaintPathCommand.LineTo(40.0, 60.0),
+                    GlyphPaintPathCommand.LineTo(10.0, 60.0),
+                    GlyphPaintPathCommand.Close,
+                ),
+                clip.path.commands,
+            )
+        }
+    }
+
+    @Test
     fun reportsRectangleOutlinePointExhaustionAsAResourceLimit() {
         for (fill in listOf("#102030", "url(#sky)")) {
             val document = """
@@ -2720,6 +2778,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
         maxTransforms: Int = 1,
         maxClips: Int = 1,
         maxSvgTransformOperations: Int = 4_096,
+        outlineProfile: OutlineProfile = svgOutlineProfile(),
     ): PaintGraphProfile = PaintGraphProfile(
         acceptedNodeKinds = nodeKinds,
         acceptedCompositionModes = listOf(org.graphiks.kalligraphie.api.GlyphPaintCompositionMode.SOURCE_OVER),
@@ -2735,7 +2794,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
             maxClips = maxClips,
             maxSvgTransformOperations = maxSvgTransformOperations,
         ),
-        outlineProfile = svgOutlineProfile(),
+        outlineProfile = outlineProfile,
         schemaVersion = 3,
         acceptedGradientExtendModes = extendModes,
         acceptedGradientInterpolationSpaces = interpolationSpaces,

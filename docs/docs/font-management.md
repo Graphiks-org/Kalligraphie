@@ -138,7 +138,7 @@ negative-determinant matrices reflect the paint. A singular gradient transform
 remains unsupported. Malformed syntax, including malformed rotation or skew
 arity, separators, units, unknown function names, partial lists, non-finite
 values, and composition outside the portable numeric domain are invalid data
-and prevent publication of the complete asset. Exact odd quarter turns
+and prevent successful normalization of the affected SVG data. Exact odd quarter turns
 (`90 + 180*k` degrees) are skew asymptotes and therefore invalid. A scale
 factor, matrix coefficient, rotation angle, or skew angle written as non-zero
 but converted to zero is invalid, as is a non-finite tangent; center
@@ -207,10 +207,11 @@ clips, gradients, color stops, and depth must all fit. Paint visits are also
 bounded for schema 2 and later; schema 1 retains its historical node and depth
 checks without applying `maxPaintVisits`. A generated radial transform counts
 against `maxTransforms`, independently of authored group or gradient
-`translate`, `scale`, `rotate`, and `matrix` operations. Every complete
-authored operation counts
-once against the shared, table-wide `maxSvgTransformOperations` source budget
-when its definition is parsed, including identity operations and unused
+transform function calls. Every complete authored operation counts once against
+the shared `maxSvgTransformOperations` source budget for one normalization
+operation: the complete table during fully normalized SVG acquisition, or the
+selected whole document during a lazy mixed SVG/COLR glyph request. It is
+charged when its definition is parsed, including identity operations and unused
 definitions. A three-operand `rotate(angle cx cy)` call still counts once;
 referencing one definition repeatedly does not charge it again.
 Each generated rectangle path must also satisfy the profile's `outlineProfile`.

@@ -166,7 +166,7 @@ singulière reste non prise en charge. Une syntaxe mal formée — notamment une
 arité, un séparateur ou une unité invalide pour une rotation ou inclinaison, un
 nom de fonction inconnu ou une liste partielle —, une valeur non finie ou une
 composition hors du domaine numérique portable constitue une donnée invalide
-et empêche la publication de la ressource complète. Les quarts de tour impairs
+et empêche la normalisation réussie des données SVG concernées. Les quarts de tour impairs
 exacts (`90 + 180*k` degrés) sont des asymptotes d’inclinaison et sont donc
 invalides. Un facteur d’échelle, un coefficient de matrice, un angle de
 rotation ou d’inclinaison écrit comme non nul mais converti en zéro est
@@ -250,11 +250,13 @@ du schéma 2 ; le schéma 1 conserve ses contrôles historiques des nœuds et de
 profondeur sans appliquer `maxPaintVisits`. Chaque chemin rectangulaire créé
 doit aussi respecter l’`outlineProfile` (profil de contours) du profil. Un
 nœud `Transform` radial produit compte dans `maxTransforms`, indépendamment
-des opérations SVG `translate`, `scale`, `rotate` et `matrix` déclarées par les
-groupes ou les gradients. Chaque opération déclarée complète compte une fois
-dans le budget
-source `maxSvgTransformOperations`, partagé à l’échelle de la table, lors de
-l’analyse de sa définition, y compris une opération identité ou une définition
+des appels aux fonctions de transformation SVG déclarés par les groupes ou
+les gradients. Chaque opération déclarée complète compte une fois dans le
+budget source `maxSvgTransformOperations` partagé lors d’une normalisation :
+toute la table pendant l’acquisition SVG entièrement normalisée, ou tout le
+document sélectionné pendant une demande de glyphe mixte SVG/COLR à
+normalisation différée. Elle est comptée lors de l’analyse de sa définition,
+y compris une opération identité ou une définition
 inutilisée. Un appel à trois opérandes `rotate(angle cx cy)` compte toujours
 une seule fois ; réutiliser une définition ne la facture pas de nouveau. Le
 repli ordonné entre profils peut donc ignorer un profil de schéma 3 qui ne
