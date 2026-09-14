@@ -346,7 +346,8 @@ public data class FontRenderAssetKey(
     }
 
     /**
-     * Content-based identity without [generation].
+     * Immutable semantic identity: portable profiles omit [generation], while native
+     * profiles retain their provider generation and bridge/runtime context.
      *
      * This value is recreated from immutable fields and therefore does not retain an asset or
      * provider resource. Use this value, rather than this reopening key, when sharing portable

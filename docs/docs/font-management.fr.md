@@ -8,6 +8,11 @@ bibliothèque fournit des octets SFNT capturés à `Kalligraphie.embedded(...)`,
 sélectionne un enregistrement de face stable, crée une instance de fonte, puis utilise une
 ressource de rendu pour matérialiser une représentation portable de glyphe.
 
+Le module facultatif d’[accès natif aux fontes](native-font-access.md) ajoute
+une route CoreText explicite sur les JVM macOS prises en charge sans modifier
+le shaping (transformation du texte en glyphes) ni la géométrie d’édition
+portables. Le consommateur possède la durée de vie native et le rendu.
+
 Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;

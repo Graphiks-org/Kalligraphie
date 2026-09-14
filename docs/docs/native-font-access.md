@@ -1,0 +1,305 @@
+# Native font access
+
+Kalligraphie can certify an explicitly accepted CoreText font route while keeping
+text analysis, shaping, fallback, positioning and editing geometry in the portable
+pipeline. The application still owns its document and renderer. Native access
+does not replace a `GlyphRun` with a platform text layout or draw pixels for you.
+
+## Optional Apple module
+
+Use `:kalligraphie:platform:apple` alongside the main `:kalligraphie` module.
+Its publication coordinate is `org.graphiks:kalligraphie-platform-apple`; a
+Kotlin Multiplatform consumer resolves the JVM variant. This route requires
+macOS 15 or later, an x64 or arm64 JVM, and JDK 25. Start the application JVM
+with `--enable-native-access=ALL-UNNAMED` for its native calls.
+
+See the [Apple API reference](api/kalligraphie/platform/apple/org.graphiks.kalligraphie.platform.apple/index.md)
+for catalogue, policy and lease contracts.
+
+The main artifact does not depend on this module and does not load Apple
+frameworks. The common API carries native route identities and ownership
+contracts, not CoreText pointers or kffi types. The optional module uses kffi
+internally and loads only the native surface needed for font access.
+
+The internal kffi dependency is pinned to
+`org.graphiks:kffi-jvm:1.0.0-20260913.233427-53`, not a moving snapshot.
+Projects resolving it need the Central Portal development repository, narrowly
+filtered to that artifact. The exact JAR SHA-256 is
+`11508ebc6e06de32fc9dbe3e9e745c9e0b6d66e2abd177837113f5406a1e1a59`.
+The build verifies dependency checksums. A timestamped development artifact
+can eventually be removed by its repository; this pin is not a permanent
+availability guarantee or a claim that a stable kffi release exists.
+
+Add this repository in the consuming project's `settings.gradle.kts`,
+alongside its normal Maven repositories:
+
+```kotlin
+dependencyResolutionManagement {
+    repositories {
+        mavenCentral()
+        maven {
+            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+            content { includeModule("org.graphiks", "kffi-jvm") }
+        }
+    }
+}
+```
+
+The repository filter does not make the development artifact immutable;
+keep dependency verification enabled when resolving it.
+
+## Capture an exact font source
+
+`CoreTextFontCatalog.capture(portable, policy, cancellationToken)` adapts a
+portable catalogue with immutable accessible OpenType bytes and a reliable
+copy preflight. It preserves face IDs, metadata and complete underlying
+`FontInstanceKey` values, including size and geometry. Portable mapping,
+metrics and shaping interpretation are unchanged.
+
+The native font is constructed from those exact captured bytes through
+`CGFont` and `CTFont`, never by looking up a family name. No platform font
+matching, hidden fallback or new character-to-glyph mapping is authorized.
+
+Native eligibility is deliberately conservative: static monochrome
+single-face TrueType, default geometry and default render variant only.
+Collections, CFF/CFF2, variation data, synthetic bold/italic, color/bitmap
+tables and non-default visual variants are outside this route. Unsupported
+native faces retain the portable capabilities of their underlying provider.
+
+The factory requires explicit `CoreTextFontAccessPolicy` limits; there is no
+implicitly unlimited capture. For example, an application may choose:
+
+```kotlin
+val policy = CoreTextFontAccessPolicy(
+    maxSourceBytesPerFace = 2_000_000L,
+    maxCapturedSourceBytes = 8_000_000L,
+    maxTransientOwnedBytes = 8_000_000L,
+)
+```
+
+These are application example values, not recommended universal thresholds.
+Handle the factory's typed success, failure or cancellation before using the
+adapted catalogue.
+
+## Negotiate native or portable access
+
+The adapted catalogue exposes its exact `nativeProfile`. Include that value
+in `FontAccessRequirementsSnapshot.renderable(...)` only if the consumer can
+use this bridge. Ordered profiles express preferences, not permission to
+hide cancellation or native allocation failures behind a cheaper route.
+
+To accept native access followed by a portable outline alternative:
+
+```kotlin
+val requirements = FontAccessRequirementsSnapshot.renderable(
+    acceptedProfiles = listOf(catalog.nativeProfile, outlineProfile),
+)
+```
+
+Here `catalog` is a successful adapted catalogue and `outlineProfile` is the
+consumer's supported portable profile. Set `portableDataRequired = true`
+when an actual portable outline, paint graph or bitmap is needed. This
+excludes native profiles before negotiation; a native certificate is not
+portable glyph data.
+
+Use the adapted resolver and catalogue generation consistently in layout
+requests. Portable assets acquired through that resolver expose its public
+generation while delegating to independently owned underlying resources.
+
+## Final glyph certification
+
+The portable shaper and layout produce the final glyph IDs and placements.
+Native certification validates the exact font context, then every new distinct
+final ID against its verified native glyph count and `CGGlyph` range. This
+includes ligatures, substitutions and layout-derived glyphs such as a visible
+hyphen at a line break. It does not remap their source characters.
+
+Glyph zero and a glyph without ink can be valid native IDs. The existing
+missing-character policy still determines whether they belong in a run.
+An out-of-range glyph is a rejection, not a fabricated empty representation.
+Certification never generates paths, rasterizes glyphs or draws them.
+
+A `NATIVE_HANDLE` certificate carries the actual provider-issued asset key.
+It promises the matching native access route while its asset is live, subject
+to distinct operational failures. Calling portable `resolveGlyph` on a
+native-only asset returns a typed route incompatibility, not a fake outline.
+
+## Own the native lifetime
+
+The immutable layout value and its keys own no font resources. Open a
+`LayoutHandle` while its matching resolver is live, then retain the exact
+published certificate with `retainFontAsset(certificate)`. The returned
+asset is an independent owner and can detach another independent owner.
+
+`JvmEditableParagraphFacade.layout` owns its used shaping backend and closes
+it before publishing the paragraph result. The published immutable paragraph
+does not keep that backend alive; its matching resolver must still be live
+when opening a layout owner.
+
+A `NativeFontRenderAssetHandle` acquires a `NativeFontLease`. For this bridge,
+the platform-specific lease is a `CoreTextFontLease`; `fontRef()` returns
+the usable CoreText font pointer under that lease's lifetime. Handle these
+operations as `FontOperationResult`, including cancellation and typed errors.
+
+Closing an originating layout handle, resolver or render asset does not
+invalidate an already admitted independent child. A child may be used from
+another thread and must itself be closed. A closed owner rejects new
+acquisitions. Close is idempotent and does not wait for its admitted children;
+the last owner/operation releases the underlying native context.
+
+**Raw pointer obligation:** keep the owning lease open for every unmanaged
+native call that uses the pointer, and do not close that lease concurrently
+with such a call. Retaining a pointer alone keeps nothing alive. Kotlin
+callbacks and scoped helpers cannot mechanically prevent pointer escape;
+they are not a substitute for ownership. Kalligraphie's own operations
+protect themselves with admitted child operations.
+
+## Drawing geometry belongs to the consumer
+
+`CTFont` uses an identity matrix and a numeric point size equal to
+`layoutSize.value`. This convention does not convert layout units into
+physical display points.
+
+Feed the final positioned glyph IDs and origins, including shaping offsets,
+to the consumer renderer. Respect each placement's visual transform around
+its origin. Apply layout-unit-to-device conversion, zoom and axis conventions
+consistently once. Do not reshape, recalculate advances/carets, or multiply
+already positioned origins by the font size a second time.
+
+When using `CTFontDrawGlyphs`, save/restore the consumer's graphics state and
+preserve the text matrix explicitly with `CGContextGetTextMatrix` and
+`CGContextSetTextMatrix`: the call changes the context's font, text size and
+text matrix, and the text matrix is not included in the documented saved
+graphics-state parameters. See Apple's [drawing contract](https://developer.apple.com/documentation/coretext/ctfontdrawglyphs(_:_:_:_:_:))
+and [saved graphics state](https://developer.apple.com/documentation/coregraphics/cgcontext/savegstate()).
+Native drawing and portable representation rasterization are not promised
+to be pixel-identical.
+
+The following Kotlin integration uses the application's CoreGraphics/CoreText
+bindings (these C drawing functions are not exported by Kalligraphie). `success`
+means the application's exhaustive handling of `FontOperationResult`; failures
+and cancellation must stop drawing. `paragraph` is the published
+`ParagraphLayout`, and `resolver` is its matching live resolver:
+
+```kotlin
+val layoutOwner = success(paragraph.openLayoutHandle(resolver))
+try {
+    for (line in paragraph.lines) {
+        for (run in line.positionedGlyphRuns) {
+            for (glyph in run.glyphs) {
+                val certificate = requireNotNull(glyph.materializationCertificate)
+                require(certificate.route == GlyphMaterializationRoute.NATIVE_HANDLE)
+                val asset = success(layoutOwner.retainFontAsset(certificate))
+                    as NativeFontRenderAssetHandle
+                try {
+                    val lease = success(asset.acquireNativeFontLease()) as CoreTextFontLease
+                    try {
+                        val font = success(lease.fontRef())
+                        val previousTextMatrix = CGContextGetTextMatrix(context)
+                        CGContextSaveGState(context)
+                        try {
+                            CGContextTranslateCTM(context,
+                                glyph.origin.x.value.toDouble(), glyph.origin.y.value.toDouble())
+                            val t = glyph.transform
+                            CGContextConcatCTM(context, CGAffineTransform(
+                                t.a.toDouble(), t.b.toDouble(), t.c.toDouble(), t.d.toDouble(), 0.0, 0.0))
+                            CGContextScaleCTM(context, 1.0, -1.0)
+                            CGContextSetTextMatrix(context, CGAffineTransformIdentity)
+                            CTFontDrawGlyphs(font, listOf(certificate.glyphId.value),
+                                listOf(CGPoint(0.0, 0.0)), 1, context)
+                        } finally {
+                            CGContextRestoreGState(context)
+                            CGContextSetTextMatrix(context, previousTextMatrix)
+                        }
+                    } finally { success(lease.close()) }
+                } finally { success(asset.close()) }
+            }
+        }
+    }
+} finally { success(layoutOwner.close()) }
+```
+
+The bindings marshal the glyph list as `CGGlyph` and positions as `CGPoint`
+buffers whose lifetime covers the call. The context's current transformation
+matrix (CTM) must already map physical layout coordinates to device coordinates.
+For example, a device scale of `0.1` maps 10 layout units to one pixel;
+apply zoom there once. The drawing mapping is
+`deviceFromLayout * translate(origin) * glyphTransform * flipGlyphY`.
+Layout coordinates run x-right/y-down; CoreText glyph-local coordinates run
+x-right/y-up. The local flip does not flip the published origin or multiply
+the font size. `LineLayout.positionedGlyphRuns` and fragment origins already
+include paragraph translation: never add `line.baseline` again.
+`EditableLine.positionedGlyphRuns` instead uses line-baseline-relative origins
+and needs exactly one explicit line-to-paragraph translation.
+
+For the audited Liberation Sans A at size 2048 and paragraph origin `(100,950)`,
+device scale `0.1` and device translation `(20,0)`, design-space crossbar point
+`(686,480)` maps to `(98.6,47)`, while counter point `(686,800)` maps to
+`(98.6,15)`. These independently audited interior points exercise placement
+and axis conversion without requiring native/portable pixel equality.
+
+## Reopening and immutable identity
+
+Keep an asset key when later reopening is required, but do not treat it as
+a universal font locator. Reopening requires a live resolver from the exact
+adapted provider/generation and the same profile, complete variant,
+bridge contract and captured runtime interpretation.
+
+The native reopening token is opaque, not a native address. Reopening creates
+a semantically equivalent font for the exact key; it does not promise the same
+pointer. Portable semantic identities can share equal source content across
+generations; native semantic identities retain their provider/generation and
+bridge/runtime context.
+
+## Cancellation and failures
+
+Token-aware acquisition and `reopen` overloads preserve the historical
+signatures' `CancellationToken.none` behavior. The layout pipeline and
+`openLayoutHandle(resolver, cancellationToken)` propagate their operation
+token through native preparation. Checks occur before work, between native
+creation steps, between newly validated glyph IDs and before ownership
+transfer. A native C call cannot necessarily be interrupted while executing;
+checks resume when it returns. Failure/cancellation transfers no partial
+owner or certificate, and cleanup is unconditional and non-cancellable.
+
+An unsupported native font subset/profile/geometry/variant can proceed to a
+subsequent explicitly accepted alternative. Closed resources, wrong
+generation/context, mandatory estimate failures, owning-operation/access
+limits, cancellation, library/symbol loading and native allocation/creation
+failures stop the operation. A native constructor returning `NULL` is an
+operational creation failure, not evidence of an empty glyph.
+
+Default cooperative overloads call the historical operation. Kotlin interface
+delegation is different: `FontAssetResolverHandle by delegate` and
+`FontInstance by delegate` independently delegate every overload when compiled
+against the updated interface. A decorator customizing `reopen` or
+`acquireRenderAsset` must also override the token-aware overload used by the
+caller and forward its received token. Overriding only the historical overload
+does not intercept the independently delegated token-aware overload.
+
+## Controlled bytes, not process memory
+
+`FontInstance.estimateOpenTypeDataCopy()` reports exact immutable source
+bytes and a conservative bound on provider-owned source-copy allocations,
+including the returned data container. A provider that cannot establish
+the mandatory bound is rejected before copying; unknown is not zero.
+
+`maxSourceBytesPerFace` bounds each captured source.
+`maxCapturedSourceBytes` bounds the new captured-source total.
+`maxTransientOwnedBytes` admits simultaneously controlled source-copy and
+native-creation buffers across resolvers from this snapshot. Reservations
+are released on transfer, failure or cancellation. Structured access-limit
+errors identify the phase, dimension, maximum and observed charge.
+
+Normal acquisition and direct reopening both apply bridge admission; an
+unlimited optional operation-pool byte limit does not bypass it. Existing
+operation limits also bound the live assets owned by a layout operation.
+Borrowing/detaching shares the existing context without copying source data
+or creating another font.
+
+These charges exclude original caller-owned catalogue data, JVM object
+overhead, delayed garbage collection and private OS allocations. They are
+not a bound on process RSS. The provider keeps no idle native font cache.
+Consumer-retained owners require explicit closure and are not cache entries
+that the engine evicts. A full performance baseline and shared native cache
+budget are separate capabilities, not guarantees of this access route.

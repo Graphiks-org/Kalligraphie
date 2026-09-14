@@ -7,6 +7,11 @@ consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
 selects a stable face record, creates a font instance, and uses a render asset handle to
 materialize a portable glyph representation.
 
+The optional [native font access](native-font-access.md) module adds an
+explicit CoreText route on supported macOS JVMs without changing the portable
+shaping or editing pipeline. Native lifetime and rendering remain under
+consumer ownership.
+
 The supported functional scope is intentionally narrow:
 
 - JVM reference target only;

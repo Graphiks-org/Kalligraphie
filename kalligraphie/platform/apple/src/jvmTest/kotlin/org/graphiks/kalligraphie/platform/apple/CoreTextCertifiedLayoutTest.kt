@@ -10,6 +10,60 @@ import kotlin.test.*
 
 class CoreTextCertifiedLayoutTest {
     @Test
+    fun nativeFontGeometryUsesTheInstanceSizeExactlyOnce() {
+        val catalog = liberationCatalog()
+        val resolver = success(catalog.openAssetResolver())
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile))
+        try {
+            for ((size, expected) in listOf(2048f to listOf(4.0, 0.0, 1362.0, 1409.0),
+                1024f to listOf(2.0, 0.0, 681.0, 704.5))) {
+                val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+                val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(size))))
+                val asset = assertIs<NativeFontRenderAssetHandle>(success(font.acquireRenderAsset(
+                    resolver, FontRenderVariantSnapshot.default, requirements, CancellationToken.none)))
+                try {
+                    val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+                    try {
+                        val bounds = CoreTextConsumerProbe.pathBounds(success(lease.fontRef()), 36)
+                        assertEquals(4, bounds.size)
+                        expected.zip(bounds).forEach { (want, actual) -> assertEquals(want, actual, 0.000001) }
+                    } finally { success(lease.close()) }
+                } finally { success(asset.close()) }
+            }
+        } finally { success(resolver.close()) }
+    }
+
+    @Test
+    fun finalParagraphGlyphDrawsAtAuditedDeviceLocationsAndPreservesConsumerState() {
+        val catalog = liberationCatalog()
+        val resolver = success(catalog.openAssetResolver())
+        try {
+            val paragraph = paragraph(catalog, resolver, "A", 2048f, 10000f)
+            val placed = paragraph.lines.single().positionedGlyphRuns.single().glyphs.single()
+            val handle = success(paragraph.openLayoutHandle(resolver))
+            try {
+                val asset = assertIs<NativeFontRenderAssetHandle>(success(handle.retainFontAsset(
+                    checkNotNull(placed.materializationCertificate))))
+                try {
+                    val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+                    try {
+                        val observation = CoreTextDrawingProbe.draw(success(lease.fontRef()), placed)
+                        // Independent raw glyf audit: (686,480) crossbar, (686,800) counter,
+                        // (-160,480) outside. Paragraph origin (100,950), device scale 0.1,
+                        // glyph-local y flip and device translation (20,0) give
+                        // (98.6,47), (98.6,15), (14,47). Audit: unchanged Liberation
+                        // on-curve glyf contours, crossbar below counter edge y=561.
+                        assertTrue(observation.crossbarAlpha > 240)
+                        assertEquals(0, observation.counterAlpha)
+                        assertEquals(0, observation.outsideAlpha)
+                        assertEquals(listOf(1.2, 0.1, 0.2, 0.9, 7.0, 11.0), observation.textMatrix)
+                        assertEquals(listOf(0.1, 0.0, 0.0, 0.1, 20.0, 0.0), observation.ctm)
+                    } finally { success(lease.close()) }
+                } finally { success(asset.close()) }
+            } finally { success(handle.close()) }
+        } finally { success(resolver.close()) }
+    }
+    @Test
     fun cancellationDuringNativeRootReopeningTransfersNoParagraphOwnerAndLaterHandoffSucceeds() {
         val catalog = success(CoreTextFontCatalog.capture(portableFixture("/fonts/dejavu/DejaVuSans.ttf"),
             CoreTextFontAccessPolicy(2_000_000L, 8_000_000L, 2_271_228L)))
