@@ -612,7 +612,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
             </svg>
         """.trimIndent()
 
-        assertIs<FontError.UnsupportedRepresentationProfile>(
+        assertIs<FontError.ResourceLimitExceeded>(
             acquireSvgFailure(document, clipProfile(maxOutlinePoints = 3)),
         )
     }
@@ -736,7 +736,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
             </svg>
         """.trimIndent()
 
-        assertIs<FontError.UnsupportedRepresentationProfile>(
+        assertIs<FontError.ResourceLimitExceeded>(
             acquireSvgFailure(document, clipProfile(maxOutlinePoints = 3)),
         )
     }
@@ -1383,7 +1383,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
             clipProfile(maxOutlinePoints = 2),
         )
         for (profile in outlineLimitProfiles) {
-            assertIs<FontError.UnsupportedRepresentationProfile>(acquireSvgFailure(document, profile))
+            assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(document, profile))
         }
     }
 
@@ -1407,13 +1407,13 @@ class SvgInOpenTypeGlyphRepresentationTest {
 
         for (document in documents) {
             assertIs<GlyphRepresentation.Paint>(resolveSvgDocument(document, listOf(exact)).representation)
-            assertIs<FontError.UnsupportedRepresentationProfile>(
+            assertIs<FontError.ResourceLimitExceeded>(
                 acquireSvgFailure(document, clipProfile(maxOutlineBytes = 129, maxOutlineContours = 2, maxOutlinePoints = 6)),
             )
-            assertIs<FontError.UnsupportedRepresentationProfile>(
+            assertIs<FontError.ResourceLimitExceeded>(
                 acquireSvgFailure(document, clipProfile(maxOutlineBytes = 130, maxOutlineContours = 1, maxOutlinePoints = 6)),
             )
-            assertIs<FontError.UnsupportedRepresentationProfile>(
+            assertIs<FontError.ResourceLimitExceeded>(
                 acquireSvgFailure(document, clipProfile(maxOutlineBytes = 130, maxOutlineContours = 2, maxOutlinePoints = 5)),
             )
         }
@@ -1507,7 +1507,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
             acquireSvgFailure(solid, clipProfile(nodeKinds = listOf(GlyphPaintNodeKind.PATH))),
         )
         assertIs<FontError.ResourceLimitExceeded>(acquireSvgFailure(solid, clipProfile(maxNodes = 1)))
-        assertIs<FontError.UnsupportedRepresentationProfile>(
+        assertIs<FontError.ResourceLimitExceeded>(
             acquireSvgFailure(solid, clipProfile(maxOutlinePoints = 2)),
         )
 

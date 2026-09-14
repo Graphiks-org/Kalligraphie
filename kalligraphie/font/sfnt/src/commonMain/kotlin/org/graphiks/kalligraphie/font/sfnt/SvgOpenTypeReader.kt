@@ -1380,7 +1380,7 @@ private class SvgGlyphPaintBuilder {
         }
         pathLimitFailure(path, profile)?.let { return it }
         if (!path.fits(profile) || clipPath?.fits(profile) == false) {
-            return unsupported("SVG paint graph exceeds the selected outline profile.")
+            return limit("SVG paint graph exceeds the selected outline resource limits.")
         }
         val clipIncrement = if (clipPath == null) 0 else 1
         val shapeClipIncrement = if (usesUnboundedSolid) 1 else 0
@@ -1428,7 +1428,7 @@ private class SvgGlyphPaintBuilder {
         if (definition.colorStops.isEmpty()) return null
         pathLimitFailure(path, profile)?.let { return it }
         if (!path.fits(profile) || clipPath?.fits(profile) == false) {
-            return unsupported("SVG paint graph exceeds the selected outline profile.")
+            return limit("SVG paint graph exceeds the selected outline resource limits.")
         }
         return when (definition) {
             is SvgLinearGradient ->
@@ -1985,7 +1985,7 @@ private fun validateRawClipPath(
         contourCount > profile.outlineProfile.maxContours ||
         byteWeight > profile.outlineProfile.maxBytes
     ) {
-        return unsupported("SVG clip path exceeds the selected outline profile.")
+        return limit("SVG clip path exceeds the selected outline resource limits.")
     }
     return FontOperationResult.Success(Unit)
 }
