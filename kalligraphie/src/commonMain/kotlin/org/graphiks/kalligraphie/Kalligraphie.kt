@@ -1,6 +1,8 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontCacheBudget
+import org.graphiks.kalligraphie.api.FontCacheScope
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -13,6 +15,7 @@ import org.graphiks.kalligraphie.api.TextDecodingProfile
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogFactory
+import org.graphiks.kalligraphie.font.core.FontCacheCoordinator
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 
 /**
@@ -23,6 +26,14 @@ import org.graphiks.kalligraphie.unicode.TextSnapshots
  */
 @OptIn(KalligraphieInternalApi::class)
 public object Kalligraphie {
+    /**
+     * Creates a caller-owned domain bounding aggregate retention across attached font captures.
+     * Local policies still apply; source snapshots and consumer-owned assets are excluded.
+     * Charges include reservations, cleanup in progress and uncertain cleanup. Closing the domain
+     * disables caching while leaving captures and independent consumer owners usable.
+     */
+    public fun fontCacheScope(budget: FontCacheBudget): FontCacheScope = FontCacheScope(FontCacheCoordinator(budget))
+
     /**
      * Decodes UTF-8 source slices into one immutable, canonical [TextDecodingResult].
      *
@@ -109,6 +120,7 @@ public object Kalligraphie {
      * audit trails.
      * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
      * complete portable representations; this does not bound sources or caller-owned assets.
+     * @param cacheScope optional shared retention owner; a closed domain leaves this capture usable uncached.
      * @return a catalog snapshot, or a typed failure describing why the bytes
      * cannot be consumed.
      */
@@ -116,9 +128,11 @@ public object Kalligraphie {
         sourceBytes: ByteArray,
         provenance: FontSourceProvenance,
         cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+        cacheScope: FontCacheScope? = null,
     ): FontOperationResult<FontCatalogSnapshot> = embedded(
         listOf(FontSource(sourceBytes = sourceBytes, provenance = provenance)),
         cachePolicy,
+        cacheScope,
     )
 
     /**
@@ -135,9 +149,11 @@ public object Kalligraphie {
      *
      * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
      * complete portable representations; this does not bound sources or caller-owned assets.
+     * @param cacheScope optional shared retention owner; local bounds and disabled defaults still apply.
      */
     public fun embedded(
         sources: List<FontSource>,
         cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
-    ): FontOperationResult<FontCatalogSnapshot> = EmbeddedFontCatalogFactory.create(sources, cachePolicy)
+        cacheScope: FontCacheScope? = null,
+    ): FontOperationResult<FontCatalogSnapshot> = EmbeddedFontCatalogFactory.create(sources, cachePolicy, cacheScope)
 }

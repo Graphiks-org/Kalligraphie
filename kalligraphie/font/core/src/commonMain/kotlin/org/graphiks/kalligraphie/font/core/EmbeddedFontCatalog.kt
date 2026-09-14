@@ -15,6 +15,7 @@ import org.graphiks.kalligraphie.api.FontFaceCapabilities
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontFaceRecord
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
+import org.graphiks.kalligraphie.api.FontCacheScope
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.KalligraphieInternalApi
 import org.graphiks.kalligraphie.api.FontProviderId
@@ -66,12 +67,14 @@ import kotlin.concurrent.atomics.ExperimentalAtomicApi
  * @param entries captured source bytes, provenance, and parsed metadata for every face.
  * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
  * complete portable representations; this does not bound sources or caller-owned assets.
+ * @param cacheScope optional shared retention owner; a closed scope keeps captures usable uncached.
  */
 @KalligraphieInternalApi
 public class EmbeddedFontCatalog(
     override val generation: FontCatalogGeneration,
     entries: List<EmbeddedFontCatalogEntry>,
     cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+    cacheScope: FontCacheScope? = null,
 ) : FontCatalogSnapshot {
     private val resources: Map<FontFaceId, PreparedFontResource>
     private val parsedFonts: Map<FontFaceId, ParsedTrueTypeFont>
@@ -97,7 +100,7 @@ public class EmbeddedFontCatalog(
         require(ids.distinct().size == ids.size) {
             "An embedded font catalog must not contain the same source twice."
         }
-        val representations = FontMaterializationCache(cachePolicy)
+        val representations = FontMaterializationCache(cachePolicy, cacheScope)
         resources = ids.zip(capturedEntries).associate { (id, entry) ->
             id to PreparedFontResource(
                 preparedFont = PreparedTrueTypeFont(entry.source, entry.parsedFont),
@@ -309,10 +312,11 @@ public data class EmbeddedFontCatalogEntry(
  */
 @KalligraphieInternalApi
 public object EmbeddedFontCatalogFactory {
-    /** Creates one immutable embedded catalog after validating every supplied source. */
+    /** Creates one immutable catalog after validation, optionally sharing only representation retention. */
     public fun create(
         sources: List<FontSource>,
         cachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+        cacheScope: FontCacheScope? = null,
     ): FontOperationResult<FontCatalogSnapshot> {
         val capturedSources = sources.toList()
         if (capturedSources.isEmpty()) return invalidCatalog("An embedded font catalog requires at least one source.")
@@ -346,7 +350,7 @@ public object EmbeddedFontCatalogFactory {
                 (source.id as FontSourceId.Portable).contentDigest.value
             },
         )
-        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, cachePolicy), diagnostics)
+        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, cachePolicy, cacheScope), diagnostics)
     }
 
     private fun invalidCatalog(message: String): FontOperationResult.Failure =
@@ -520,7 +524,11 @@ internal class PreparedFontResource(
         key: GlyphRepresentationKey,
         result: Success<GlyphRepresentation>,
     ) {
-        representations.put(faceId, key, result, cachedRepresentationCharge(key, result))
+        try {
+            representations.put(faceId, key, result, cachedRepresentationCharge(key, result))
+        } catch (_: OutOfMemoryError) {
+            // An unavailable retention estimate does not invalidate the complete representation.
+        }
     }
 
     internal fun acquireLease(): PreparedFontResourceLease {
@@ -779,7 +787,9 @@ private fun Long.saturatingAdd(other: Long): Long =
 private fun Long.saturatingMultiply(other: Long): Long =
     if (this == 0L || other == 0L) 0L else if (this > Long.MAX_VALUE / other) Long.MAX_VALUE else this * other
 
-private const val CACHE_ENTRY_ENVELOPE_BYTES: Long = 120L
+// Includes the payload, reservation, three queue links, capture/face ledgers and up to two
+// 32-level trie paths. Shared prefixes make this deliberately conservative for later entries.
+private const val CACHE_ENTRY_ENVELOPE_BYTES: Long = 4_096L
 
 @OptIn(ExperimentalAtomicApi::class)
 internal class PreparedFontResourceLease(

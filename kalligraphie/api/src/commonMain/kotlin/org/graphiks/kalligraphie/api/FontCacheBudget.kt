@@ -1,11 +1,14 @@
 package org.graphiks.kalligraphie.api
 
 /**
- * Independent upper bounds for evictable font representation retention.
+ * Independent upper bounds for font materialization retention owned by a cache.
  *
  * Every limit is non-negative. [Long.MAX_VALUE] leaves a dimension practically unbounded.
  * These limits exclude source snapshots and caller-owned render assets; they do not bound
  * total process memory or change glyph materialization results.
+ * At every level, charges include accessible entries, admission reservations, references being
+ * released and conservative residual charges from incomplete cleanup. Index removal alone
+ * does not make their charge available for another entry.
  */
 public data class FontCacheBudget(
     /** Maximum conservatively estimated bytes retained by cached keys, results and diagnostics. */

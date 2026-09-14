@@ -7,6 +7,7 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontCacheScope
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -48,6 +49,8 @@ public class MacosSystemFontCatalogOptions(
      * limits and caller-owned render assets are separate from this evictable retention policy.
      */
     public val materializationCachePolicy: FontMaterializationCachePolicy = FontMaterializationCachePolicy.disabled,
+    /** Optional shared owner of portable retention; closed scopes keep the snapshot usable uncached. */
+    public val cacheScope: FontCacheScope? = null,
 ) {
     /** Immutable system font roots searched in their supplied order. */
     public val roots: List<String> = Collections.unmodifiableList(roots.toList())
@@ -165,7 +168,7 @@ public object MacosSystemFontCatalog {
             provider = FontProviderId("macos-system-opentype"),
             value = "snapshot-${nextGeneration.incrementAndGet()}",
         )
-        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, options.materializationCachePolicy))
+        return FontOperationResult.Success(EmbeddedFontCatalog(generation, entries, options.materializationCachePolicy, options.cacheScope))
     }
 
     private fun candidates(roots: List<String>, maximumPaths: Int): Discovery {
