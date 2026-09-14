@@ -701,7 +701,7 @@ class SvgInOpenTypeGlyphRepresentationTest {
     }
 
     @Test
-    fun singularPathGradientsStillRequireAnExactlyCompatibleOutlineProfile() {
+    fun pathGradientOutlineExhaustionIsAResourceLimitBeforeSingularOmission() {
         val triangle = "M0 0 L10 0 L0 10 Z"
         val twoContours = "M0 0 L10 0 L0 10 Z M20 20 L30 20 L20 30 Z"
         val linearDefinition = """
@@ -745,23 +745,39 @@ class SvgInOpenTypeGlyphRepresentationTest {
         )
 
         for (case in rejected) {
-            assertIs<FontError.UnsupportedRepresentationProfile>(
-                acquireSvgFailure(case.document, case.profile),
-                case.name,
-            )
+            for (transform in listOf("scale(1 1)", "scale(0 1)")) {
+                val failure = assertIs<FontError.ResourceLimitExceeded>(
+                    acquireSvgFailure(case.document.replace("scale(0 1)", transform), case.profile),
+                    "${case.name}: $transform",
+                )
+                assertEquals(FontDiagnosticLocation.Table("SVG "), failure.location)
+            }
         }
 
+        val admitted = gradientProfile(maxOutlineBytes = 81, maxOutlineContours = 1, maxOutlinePoints = 3)
         assertIs<GlyphRepresentation.Empty>(
             resolveSvgDocument(
                 singularPathGradientDocument(solidDefinition, triangle),
-                listOf(
-                    gradientProfile(
-                        maxOutlineBytes = 81,
-                        maxOutlineContours = 1,
-                        maxOutlinePoints = 3,
-                    ),
-                ),
+                listOf(admitted),
             ).representation,
+        )
+        val paint = assertIs<GlyphRepresentation.Paint>(
+            resolveSvgDocument(
+                singularPathGradientDocument(solidDefinition, triangle).replace("scale(0 1)", "scale(1 1)"),
+                listOf(admitted),
+            ).representation,
+        ).paint
+        assertEquals(GlyphPaintNode.Solid(GlyphColor(170, 187, 204), 1.0), paint.nodes[0])
+        val clip = assertIs<GlyphPaintNode.PathClip>(paint.nodes[paint.rootNode])
+        assertEquals(0, clip.paint)
+        assertEquals(
+            listOf(
+                GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+                GlyphPaintPathCommand.LineTo(10.0, 0.0),
+                GlyphPaintPathCommand.LineTo(0.0, 10.0),
+                GlyphPaintPathCommand.Close,
+            ),
+            clip.path.commands,
         )
     }
 

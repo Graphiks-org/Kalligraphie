@@ -1152,16 +1152,8 @@ private class SvgGlyphPaintBuilder {
         if (rectangle == null && definition.coordinateSpace != SvgGradientCoordinateSpace.USER_SPACE_ON_USE) {
             return unsupported("SVG object-bounding-box gradients are not supported for paths.")
         }
-        if (
-            rectangle == null &&
-            definition.colorStops.isNotEmpty() &&
-            (
-                path.pointCount > profile.outlineProfile.maxPoints ||
-                    path.contourCount > profile.outlineProfile.maxContours ||
-                    path.estimatedByteSize > profile.outlineProfile.maxBytes
-            )
-        ) {
-            return unsupported("SVG paint graph exceeds the selected profile.")
+        if (rectangle == null && definition.colorStops.isNotEmpty()) {
+            pathLimitFailure(path, profile)?.let { return it }
         }
         return when (definition) {
             is SvgLinearGradient -> appendLinearGradientPath(path, definition, rectangle, transform, profile)
