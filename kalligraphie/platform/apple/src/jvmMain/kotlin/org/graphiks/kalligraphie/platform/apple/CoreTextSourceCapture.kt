@@ -19,7 +19,7 @@ internal inline fun <T> nativeResult(diagnostics: List<FontDiagnostic> = emptyLi
     try { FontOperationResult.Success(value, diagnostics) } catch (failure: OutOfMemoryError) {
         val cleanup = when (value) {
             is FontRenderAssetHandle -> value.close()
-            is NativeFontLease -> value.close()
+            is PlatformFontLease -> value.close()
             is FontAssetResolverHandle -> value.close()
             else -> FontOperationResult.Success(Unit)
         }
@@ -32,18 +32,18 @@ internal inline fun <T> nativeResult(diagnostics: List<FontDiagnostic> = emptyLi
     FontOperationResult.Failure(FontError.FontDataFailure("font.native-allocation-failed", "Native access could not allocate its admitted buffers.", FontDiagnosticLocation.Source), diagnostics)
 }
 internal fun checkedAdd(left: Long, right: Long): Long = try { Math.addExact(left, right) } catch (_: ArithmeticException) { Long.MAX_VALUE }
-internal fun checkLimit(phase: NativeFontAccessPhase, dimension: NativeFontAccessDimension, maximum: Long, observed: Long) {
-    if (observed > maximum) fail(NativeFontAccessLimitExceeded(phase, dimension, maximum, observed))
+internal fun checkLimit(phase: PlatformFontAccessPhase, dimension: PlatformFontAccessDimension, maximum: Long, observed: Long) {
+    if (observed > maximum) fail(PlatformFontAccessLimitExceeded(phase, dimension, maximum, observed))
 }
 
 /** Minimal shared transient admission, containing no catalogue or source reference. */
 internal class CoreTextByteAdmission(private val maximum: Long) {
     private var reserved = 0L
-    fun reserve(bytes: Long, phase: NativeFontAccessPhase): AutoCloseable {
+    fun reserve(bytes: Long, phase: PlatformFontAccessPhase): AutoCloseable {
         val reservation = AutoCloseable { synchronized(this) { reserved -= bytes } }
         synchronized(this) {
             val observed = checkedAdd(reserved, bytes)
-            checkLimit(phase, NativeFontAccessDimension.TRANSIENT_OWNED_BYTES, maximum, observed)
+            checkLimit(phase, PlatformFontAccessDimension.TRANSIENT_OWNED_BYTES, maximum, observed)
             reserved = observed
         }
         return reservation
@@ -51,7 +51,7 @@ internal class CoreTextByteAdmission(private val maximum: Long) {
 }
 
 /** Private captured leaf and once-validated supported-source proof; never exposed or recopied. */
-internal class CoreTextCapturedSource(val bytes: ByteArray, val face: FontFaceId, val metadata: FontFaceMetadata, val nativeEligible: Boolean)
+internal class CoreTextCapturedSource(val bytes: ByteArray, val face: FontFaceId, val metadata: FontFaceMetadata, val platformEligible: Boolean)
 
 internal object CoreTextSourceCapture {
     private data class Preflight(val record: FontFaceRecord, val instance: FontInstance, val estimate: OpenTypeDataCopyEstimate)
@@ -66,18 +66,18 @@ internal object CoreTextSourceCapture {
             if (estimate.sourceBytes < 0 || estimate.maxOwnedCopyBytes < estimate.sourceBytes) {
                 nativeFailure("font.open-type-copy-estimate-invalid", "The provider supplied an invalid immutable source-copy bound.")
             }
-            checkLimit(NativeFontAccessPhase.SOURCE_CAPTURE, NativeFontAccessDimension.SOURCE_BYTES_PER_FACE, policy.maxSourceBytesPerFace, estimate.sourceBytes)
+            checkLimit(PlatformFontAccessPhase.SOURCE_CAPTURE, PlatformFontAccessDimension.SOURCE_BYTES_PER_FACE, policy.maxSourceBytesPerFace, estimate.sourceBytes)
             total = checkedAdd(total, estimate.sourceBytes)
-            checkLimit(NativeFontAccessPhase.SOURCE_CAPTURE, NativeFontAccessDimension.CAPTURED_SOURCE_BYTES, policy.maxCapturedSourceBytes, total)
+            checkLimit(PlatformFontAccessPhase.SOURCE_CAPTURE, PlatformFontAccessDimension.CAPTURED_SOURCE_BYTES, policy.maxCapturedSourceBytes, total)
             // Every mandatory transient bound is also admitted before the first copy begins.
-            checkLimit(NativeFontAccessPhase.SOURCE_CAPTURE, NativeFontAccessDimension.TRANSIENT_OWNED_BYTES,
+            checkLimit(PlatformFontAccessPhase.SOURCE_CAPTURE, PlatformFontAccessDimension.TRANSIENT_OWNED_BYTES,
                 policy.maxTransientOwnedBytes, checkedAdd(estimate.maxOwnedCopyBytes, estimate.sourceBytes))
             Preflight(record, instance, estimate)
         }
         val captured = linkedMapOf<FontFaceId, CoreTextCapturedSource>()
         for ((record, instance, estimate) in preflights) {
             checkCancellation(token)
-            admission.reserve(checkedAdd(estimate.maxOwnedCopyBytes, estimate.sourceBytes), NativeFontAccessPhase.SOURCE_CAPTURE).use {
+            admission.reserve(checkedAdd(estimate.maxOwnedCopyBytes, estimate.sourceBytes), PlatformFontAccessPhase.SOURCE_CAPTURE).use {
                 checkCancellation(token)
                 val data = instance.copyOpenTypeData().valueOrAbort()
                 checkCancellation(token)

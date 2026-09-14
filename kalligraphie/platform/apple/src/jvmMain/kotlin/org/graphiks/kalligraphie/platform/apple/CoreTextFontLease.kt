@@ -4,7 +4,7 @@ import java.lang.foreign.MemorySegment
 import org.graphiks.kalligraphie.api.*
 
 /** Independently owned CoreText font reference, usable from any thread while its lease is open. */
-public interface CoreTextFontLease : NativeFontLease {
+public interface CoreTextFontLease : PlatformFontLease {
     /**
      * Returns the exact CTFontRef pointer while this owning lease is open, or ResourceClosed.
      * The caller must retain this lease for every unmanaged native use and must not close it
@@ -16,7 +16,7 @@ public interface CoreTextFontLease : NativeFontLease {
 
 internal class OwnedCoreTextFontLease(override val key: FontRenderAssetKey, private val context: CoreTextFontContext,
     private val owner: CoreTextResourceOwner) : CoreTextFontLease {
-    override val routeIdentity: NativeFontRouteIdentity get() = context.route
+    override val routeIdentity: PlatformFontRouteIdentity get() = context.route
     override fun fontRef(): FontOperationResult<MemorySegment> = nativeResult {
         if (!owner.isOpen()) fail(FontError.ResourceClosed("CoreText font lease is closed."))
         MemorySegment.ofAddress(context.font)
@@ -25,7 +25,7 @@ internal class OwnedCoreTextFontLease(override val key: FontRenderAssetKey, priv
         val operation = owner.acquireChild() ?: fail(FontError.ResourceClosed("CoreText font lease is closed."))
         operation.use {
             checkCancellation(cancellationToken)
-            if (key.nativeContext?.routeIdentity != context.route) nativeFailure("font.native-context-proof-failed", "Native font lease has a different exact context.")
+            if (key.platformContext?.routeIdentity != context.route) nativeFailure("font.platform-context-proof-failed", "Platform font lease has a different exact context.")
             if (glyphId.value > 65535 || glyphId.value >= context.glyphCount) fail(FontError.GlyphOutOfRange(glyphId.value))
             checkCancellation(cancellationToken)
         }

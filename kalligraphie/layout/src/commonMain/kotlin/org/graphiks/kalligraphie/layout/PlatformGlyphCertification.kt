@@ -3,22 +3,22 @@ package org.graphiks.kalligraphie.layout
 import org.graphiks.kalligraphie.api.*
 
 /** Cleanup refusal is terminal regardless of the provider's cleanup error kind. */
-internal const val NATIVE_GLYPH_CLEANUP_FAILURE_CODE: String = "font.native-glyph-validation-cleanup-failed"
+internal const val PLATFORM_GLYPH_CLEANUP_FAILURE_CODE: String = "font.platform-glyph-validation-cleanup-failed"
 
 /**
- * Proves distinct final glyph IDs through a temporary independently owned native lease.
- * No native owner escapes into evidence. Cooperative checks run between provider calls.
+ * Proves distinct final glyph IDs through a temporary independently owned platform lease.
+ * No platform owner escapes into evidence. Cooperative checks run between provider calls.
  * Unconditional cleanup preserves cancellation as primary; any other cleanup failure is
  * terminal, retaining the original proof and provider cleanup errors as diagnostics.
  */
-internal fun validateNativeGlyphs(
-    asset: NativeFontRenderAssetHandle,
+internal fun validatePlatformGlyphs(
+    asset: PlatformFontRenderAssetHandle,
     glyphIds: List<GlyphId>,
     cancellationToken: CancellationToken,
 ): FontOperationResult<Map<GlyphId, GlyphMaterializationRoute>> {
     if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
     if (glyphIds.isEmpty()) return FontOperationResult.Success(emptyMap())
-    val acquired = asset.acquireNativeFontLease(cancellationToken)
+    val acquired = asset.acquirePlatformFontLease(cancellationToken)
     val lease = when (acquired) {
         is FontOperationResult.Success -> acquired.value
         is FontOperationResult.Failure -> return acquired
@@ -32,8 +32,8 @@ internal fun validateNativeGlyphs(
             else -> {
                 if (proof is FontOperationResult.Failure) diagnostics += proof.error.toDiagnostic()
                 val terminalError = FontError.FontDataFailure(
-                    NATIVE_GLYPH_CLEANUP_FAILURE_CODE,
-                    "Native glyph validation lease cleanup failed: ${error.message}",
+                    PLATFORM_GLYPH_CLEANUP_FAILURE_CODE,
+                    "Platform glyph validation lease cleanup failed: ${error.message}",
                     error.location,
                 )
                 diagnostics += terminalError.toDiagnostic()
@@ -42,7 +42,7 @@ internal fun validateNativeGlyphs(
         }
     }
     try {
-        result = proveNativeGlyphs(asset, lease, glyphIds, cancellationToken)
+        result = provePlatformGlyphs(asset, lease, glyphIds, cancellationToken)
     } finally {
         diagnostics += when (val proof = result) {
             is FontOperationResult.Success -> proof.diagnostics
@@ -56,7 +56,7 @@ internal fun validateNativeGlyphs(
                 failCleanup(closed.error)
             }
             is FontOperationResult.Cancelled -> {
-                val error = FontError.Cancelled("Native validation lease cleanup was cancelled.")
+                val error = FontError.Cancelled("Platform validation lease cleanup was cancelled.")
                 diagnostics += closed.diagnostics + error.toDiagnostic()
                 failCleanup(error)
             }
@@ -72,14 +72,14 @@ internal fun validateNativeGlyphs(
     }
 }
 
-private fun proveNativeGlyphs(
-    asset: NativeFontRenderAssetHandle,
-    lease: NativeFontLease,
+private fun provePlatformGlyphs(
+    asset: PlatformFontRenderAssetHandle,
+    lease: PlatformFontLease,
     glyphIds: List<GlyphId>,
     cancellationToken: CancellationToken,
 ): FontOperationResult<Map<GlyphId, GlyphMaterializationRoute>> {
-    if (lease.key != asset.key || asset.key.nativeContext == null || lease.routeIdentity != asset.key.nativeContext?.routeIdentity) {
-        val error = FontError.FontDataFailure("font.native-context-proof-failed", "Native validation lease does not match the complete issued asset key and runtime context.", FontDiagnosticLocation.FaceId(asset.key.fontInstanceKey.face))
+    if (lease.key != asset.key || asset.key.platformContext == null || lease.routeIdentity != asset.key.platformContext?.routeIdentity) {
+        val error = FontError.FontDataFailure("font.platform-context-proof-failed", "Platform validation lease does not match the complete issued asset key and runtime context.", FontDiagnosticLocation.FaceId(asset.key.fontInstanceKey.face))
         return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
     }
     val routes = linkedMapOf<GlyphId, GlyphMaterializationRoute>()
@@ -91,7 +91,7 @@ private fun proveNativeGlyphs(
             is FontOperationResult.Failure -> return validated.copy(diagnostics = diagnostics + validated.diagnostics)
             is FontOperationResult.Cancelled -> return validated.copy(diagnostics = diagnostics + validated.diagnostics)
         }
-        routes[glyphId] = GlyphMaterializationRoute.NATIVE_HANDLE
+        routes[glyphId] = GlyphMaterializationRoute.PLATFORM_HANDLE
     }
     if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled(diagnostics)
     return FontOperationResult.Success(routes, diagnostics)

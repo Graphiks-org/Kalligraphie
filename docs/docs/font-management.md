@@ -7,9 +7,9 @@ consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
 selects a stable face record, creates a font instance, and uses a render asset handle to
 materialize a portable glyph representation.
 
-The optional [native font access](native-font-access.md) module adds an
+The optional [platform font access](platform-font-access.md) module adds an
 explicit CoreText route on supported macOS JVMs without changing the portable
-shaping or editing pipeline. Native lifetime and rendering remain under
+shaping or editing pipeline. Platform-resource lifetime and rendering remain under
 consumer ownership.
 
 The supported functional scope is intentionally narrow:
@@ -641,11 +641,11 @@ val retainedBytesPerFace = perFaceBudget.retainedBytes
 
 These bounds cover evictable representations, keys and diagnostics, not source snapshots,
 caller-owned assets or total process memory. No entry owns a resolver, asset, catalog or
-native resource. Closing the last resolver or asset lease of a face releases that face's
+platform resource. Closing the last resolver or asset lease of a face releases that face's
 entries; detached assets keep their ordinary independent lease. Other faces remain usable.
 
-Catalogs do not share a provider-wide or engine-wide budget. Native resource participation
-and that shared ownership scope will be introduced with a native route. Functional glyph
+Catalogs do not share a provider-wide or engine-wide budget. Platform resource participation
+and that shared ownership scope will be introduced with a platform cache route. Functional glyph
 tests establish observable transparency; they do not measure retention or prove cache
 admission. Accounting belongs to future opt-in instrumentation, outside `check`.
 
@@ -797,7 +797,7 @@ interrupt a `reopen`, `detach`, or `close` already in progress. The initial
 factory currently implements its atomic acquisition with reopen and detach,
 but those operations are not part of the `LayoutHandle` abstraction. This API
 does not make a layout session own these resources and introduces no GPU,
-atlas, native-rendering, or rendering policy.
+atlas, platform-rendering, or rendering policy.
 
 The embedded HarfBuzz 14.3.0 backend is the JVM reference implementation. Its
 Linux and macOS x64/arm64 resources are pinned, hash-verified, and never found

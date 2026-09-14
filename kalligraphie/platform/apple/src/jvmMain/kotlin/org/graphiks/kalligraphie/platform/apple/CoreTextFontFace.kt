@@ -15,11 +15,11 @@ internal class CoreTextFontFace(private val delegate: FontFace, private val gene
 internal class CoreTextFontInstance(private val delegate: FontInstance, private val generation: FontCatalogGeneration,
     private val source: CoreTextCapturedSource?, private val runtime: CoreTextRuntimeIdentity) : FontInstance by delegate {
     override fun estimateRenderAssetBytes(renderVariant: FontRenderVariantSnapshot, profile: GlyphRepresentationProfile): FontOperationResult<Long> =
-        if (profile == runtime.profile && source?.nativeEligible == true && renderVariant == FontRenderVariantSnapshot.default && key.geometry == FontGeometryParameters()) {
+        if (profile == runtime.profile && source?.platformEligible == true && renderVariant == FontRenderVariantSnapshot.default && key.geometry == FontGeometryParameters()) {
             // One controlled CFData source copy retained live; private OS/font allocations excluded.
             FontOperationResult.Success(source.bytes.size.toLong())
-        } else if (profile is NativeHandleProfile) {
-            FontOperationResult.Failure(FontError.UnsupportedRepresentationProfile("CoreText cannot estimate this native profile, geometry or variant."))
+        } else if (profile is PlatformHandleProfile) {
+            FontOperationResult.Failure(FontError.UnsupportedRepresentationProfile("CoreText cannot estimate this platform profile, geometry or variant."))
         } else delegate.estimateRenderAssetBytes(renderVariant, profile)
 
     override fun acquireRenderAsset(resolver: FontAssetResolverHandle, variant: FontRenderVariantKey,

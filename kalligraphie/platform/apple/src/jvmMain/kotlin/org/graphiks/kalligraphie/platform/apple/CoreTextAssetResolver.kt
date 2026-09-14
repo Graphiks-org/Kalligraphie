@@ -2,7 +2,7 @@ package org.graphiks.kalligraphie.platform.apple
 
 import org.graphiks.kalligraphie.api.*
 
-/** Owns its private portable resolver and translates exact selections into issued native keys. */
+/** Owns its private portable resolver and translates exact selections into issued platform keys. */
 internal class CoreTextAssetResolver(override val generation: FontCatalogGeneration,
     private val delegate: FontAssetResolverHandle, private val sources: Map<FontFaceId, CoreTextCapturedSource>,
     private val runtime: CoreTextRuntimeIdentity, private val bindings: CoreTextBindings,
@@ -16,13 +16,13 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
             var refusal: FontOperationResult.Failure? = null
             for (profile in requirements.acceptedProfiles) {
                 checkCancellation(token)
-                val result = if (profile is NativeHandleProfile) nativeResult {
-                    if (profile != runtime.profile) fail(FontError.UnsupportedRepresentationProfile("This native bridge profile does not match CoreText."))
+                val result = if (profile is PlatformHandleProfile) nativeResult {
+                    if (profile != runtime.profile) fail(FontError.UnsupportedRepresentationProfile("This platform bridge profile does not match CoreText."))
                     val source = sources[instance.key.face]
                         ?: fail(FontError.AssetUnavailable("The instance source is absent from this captured generation."))
-                    if (!source.nativeEligible) fail(FontError.UnsupportedRepresentationProfile("This source subset has no CoreText native route."))
+                    if (!source.platformEligible) fail(FontError.UnsupportedRepresentationProfile("This source subset has no CoreText platform route."))
                     var key = FontRenderAssetKey(instance.key, variant.key, profile, generation, variant.takeUnless { it == FontRenderVariantSnapshot.default })
-                    key = key.copy(nativeContext = runtime.context(key))
+                    key = key.copy(platformContext = runtime.context(key))
                     nativeAsset(source, key, token)
                 } else {
                     val portableRequirements = FontAccessRequirementsSnapshot.renderable(listOf(profile), requirements.portableDataRequired)
@@ -47,11 +47,11 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
             checkCancellation(cancellationToken)
             if (key.generation != generation) fail(FontError.IncompatibleCatalogGeneration("Asset key belongs to another adapted provider generation."))
             val source = sources[key.fontInstanceKey.face] ?: fail(FontError.AssetUnavailable("Asset face is absent from the captured generation."))
-            if (key.representationProfile is NativeHandleProfile) {
-                if (key.representationProfile != runtime.profile || key.nativeContext != runtime.context(key)) fail(FontError.AssetUnavailable("Native key has a different bridge/runtime or invalid reopening token."))
+            if (key.representationProfile is PlatformHandleProfile) {
+                if (key.representationProfile != runtime.profile || key.platformContext != runtime.context(key)) fail(FontError.AssetUnavailable("Platform key has a different bridge/runtime or invalid reopening token."))
                 nativeResult { nativeAsset(source, key, cancellationToken) }
             } else {
-                if (key.nativeContext != null) fail(FontError.AssetUnavailable("Portable asset key cannot carry native context."))
+                if (key.platformContext != null) fail(FontError.AssetUnavailable("Portable asset key cannot carry platform context."))
                 val variant = key.variantSnapshot ?: if (key.variant == FontRenderVariantKey.default) FontRenderVariantSnapshot.default
                     else fail(FontError.AssetUnavailable("Non-default portable variant requires its complete snapshot."))
                 wrapPortable(delegate.reopen(key.copy(generation = delegate.generation), cancellationToken), key.fontInstanceKey, variant,
@@ -65,7 +65,7 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
         var transferred = false
         try {
             resourceOwner = CoreTextResourceOwner { context.release(); FontOperationResult.Success(Unit) }
-            val asset = CoreTextNativeAsset(key, context, resourceOwner)
+            val asset = CoreTextPlatformAsset(key, context, resourceOwner)
             checkCancellation(token)
             transferred = true
             return asset
@@ -127,7 +127,7 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
     private companion object {
         // Initialized before any resolver instance/admitted asset, so exhaustion fallback allocates nothing.
         val ALLOCATION_FAILURE = FontOperationResult.Failure(FontError.FontDataFailure("font.native-allocation-failed",
-            "Native resolver cleanup could not allocate its result.", FontDiagnosticLocation.Source))
+            "Platform resolver cleanup could not allocate its result.", FontDiagnosticLocation.Source))
         val CANCELLED = FontOperationResult.Cancelled()
     }
 }

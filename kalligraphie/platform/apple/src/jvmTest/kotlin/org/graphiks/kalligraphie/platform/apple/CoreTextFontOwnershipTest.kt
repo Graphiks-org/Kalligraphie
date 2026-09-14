@@ -4,11 +4,11 @@ import org.graphiks.kalligraphie.api.*
 import kotlin.test.*
 
 class CoreTextFontOwnershipTest {
-    @Test fun nativeReopeningAdmittedBeforeResolverClosureTransfersAnIndependentAuditedOwner() {
+    @Test fun platformReopeningAdmittedBeforeResolverClosureTransfersAnIndependentAuditedOwner() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
         try {
-            val original = nativeAsset(catalog, resolver)
+            val original = platformAsset(catalog, resolver)
             val key = original.key
             success(original.close())
             val token = BlockingCoreTextToken()
@@ -25,7 +25,7 @@ class CoreTextFontOwnershipTest {
                     if (held.isDone || !token.awaitCheckpoint()) break
                     token.advance()
                 }
-                val reopened = assertIs<NativeFontRenderAssetHandle>(success(held.get(10, java.util.concurrent.TimeUnit.SECONDS)))
+                val reopened = assertIs<PlatformFontRenderAssetHandle>(success(held.get(10, java.util.concurrent.TimeUnit.SECONDS)))
                 try { assertEquals(key, reopened.key); assertAuditedAdvance(reopened) }
                 finally { success(reopened.close()) }
                 success(resolver.close())
@@ -49,7 +49,7 @@ class CoreTextFontOwnershipTest {
             val requirements = FontAccessRequirementsSnapshot.renderable(portableOutlineProfile)
             val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
             val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
-            val unsupported = FontAccessRequirementsSnapshot.renderable(listOf(NativeHandleProfile("another.bridge", "1")))
+            val unsupported = FontAccessRequirementsSnapshot.renderable(listOf(PlatformHandleProfile("another.bridge", "1")))
             assertIs<FontOperationResult.Cancelled>(font.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, unsupported, cancellingAfterDispatch()))
             assertIs<FontOperationResult.Cancelled>(font.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements, cancellingAfterDispatch()))
             assertIs<FontOperationResult.Cancelled>(font.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, requirements, cancellingAfterDispatch()))
@@ -68,16 +68,16 @@ class CoreTextFontOwnershipTest {
         val catalog = liberationCatalog(CoreTextFontAccessPolicy(2_000_000L, 8_000_000L, 1_232_136L))
         val first = success(catalog.openAssetResolver())
         val second = success(catalog.openAssetResolver())
-        val savedAsset = nativeAsset(catalog, second)
+        val savedAsset = platformAsset(catalog, second)
         val savedKey = savedAsset.key
         success(savedAsset.close())
-        val font = nativeFont(catalog)
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile))
+        val font = platformFont(catalog)
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile))
         val token = BlockingCoreTextToken()
         val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
         val held = worker.submit<FontOperationResult<FontRenderAssetHandle>> { font.acquireRenderAsset(first, FontRenderVariantSnapshot.default, requirements, token) }
         try {
-            var refused: NativeFontAccessLimitExceeded? = null
+            var refused: PlatformFontAccessLimitExceeded? = null
             // Advance actual checkpoints until a real simultaneous creation is refused, rather
             // than assuming a wrapper-specific token invocation number indicates reservation.
             for (attempt in 0 until 80) {
@@ -89,15 +89,15 @@ class CoreTextFontOwnershipTest {
                 }
             }
             val exceeded = assertNotNull(refused, "Simultaneous direct acquisitions did not enforce shared finite admission.")
-            assertEquals(NativeFontAccessPhase.NATIVE_CREATION, exceeded.phase)
-            assertEquals(NativeFontAccessDimension.TRANSIENT_OWNED_BYTES, exceeded.dimension)
+            assertEquals(PlatformFontAccessPhase.NATIVE_CREATION, exceeded.phase)
+            assertEquals(PlatformFontAccessDimension.TRANSIENT_OWNED_BYTES, exceeded.dimension)
             assertEquals(1_232_136L, exceeded.maximum)
             assertEquals(1_642_848L, exceeded.observed)
-            val reopenLimit = assertIs<NativeFontAccessLimitExceeded>(assertIs<FontOperationResult.Failure>(second.reopen(savedKey)).error)
+            val reopenLimit = assertIs<PlatformFontAccessLimitExceeded>(assertIs<FontOperationResult.Failure>(second.reopen(savedKey)).error)
             assertEquals(exceeded, reopenLimit)
             token.cancel()
             assertIs<FontOperationResult.Cancelled>(held.get(10, java.util.concurrent.TimeUnit.SECONDS))
-            val later = nativeAsset(catalog, second)
+            val later = platformAsset(catalog, second)
             try { assertAuditedAdvance(later) } finally { success(later.close()) }
         } finally {
             token.cancel()
@@ -110,16 +110,16 @@ class CoreTextFontOwnershipTest {
     @Test fun portableDataNegotiationAndDetachedOutlineKeepTheFrozenSourceAfterResolverClosure() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile, portableOutlineProfile), portableDataRequired = true)
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile, portableOutlineProfile), portableDataRequired = true)
         try {
             val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
             val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
             val asset = success(font.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, requirements))
             try {
-                assertFalse(asset is NativeFontRenderAssetHandle)
+                assertFalse(asset is PlatformFontRenderAssetHandle)
                 assertEquals(catalog.generation, asset.key.generation)
                 assertEquals(portableOutlineProfile, asset.key.representationProfile)
-                assertNull(asset.key.nativeContext)
+                assertNull(asset.key.platformContext)
                 val reopened = success(resolver.reopen(asset.key))
                 try {
                     val detached = success(asset.detach())
@@ -139,27 +139,27 @@ class CoreTextFontOwnershipTest {
             } finally { success(asset.close()) }
         } finally { success(resolver.close()) }
     }
-    @Test fun exactNativeKeyReopensAuditedAccessAndRejectsForeignGenerationOrContext() {
+    @Test fun exactPlatformKeyReopensAuditedAccessAndRejectsForeignGenerationOrContext() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
         val foreignCatalog = liberationCatalog()
         val foreign = success(foreignCatalog.openAssetResolver())
         try {
-            val parent = nativeAsset(catalog, resolver)
+            val parent = platformAsset(catalog, resolver)
             val key = parent.key
             success(parent.close())
-            val reopened = assertIs<NativeFontRenderAssetHandle>(success(resolver.reopen(key)))
+            val reopened = assertIs<PlatformFontRenderAssetHandle>(success(resolver.reopen(key)))
             try {
                 assertEquals(key, reopened.key)
                 assertAuditedAdvance(reopened)
                 assertIs<FontError.IncompatibleCatalogGeneration>(assertIs<FontOperationResult.Failure>(foreign.reopen(key)).error)
-                val context = checkNotNull(key.nativeContext)
-                val altered = listOf(key.copy(nativeContext = context.copy(reopenToken = "another.token")),
-                    key.copy(nativeContext = context.copy(routeIdentity = context.routeIdentity.copy(runtimeInterpretationId = "another.runtime"))),
-                    key.copy(representationProfile = catalog.nativeProfile.copy(bridgeId = "another.bridge")),
+                val context = checkNotNull(key.platformContext)
+                val altered = listOf(key.copy(platformContext = context.copy(reopenToken = "another.token")),
+                    key.copy(platformContext = context.copy(routeIdentity = context.routeIdentity.copy(runtimeInterpretationId = "another.runtime"))),
+                    key.copy(representationProfile = catalog.platformProfile.copy(bridgeId = "another.bridge")),
                     key.copy(fontInstanceKey = key.fontInstanceKey.copy(layoutSize = LayoutUnit(1024f))))
                 for (bad in altered) assertIs<FontError.AssetUnavailable>(assertIs<FontOperationResult.Failure>(resolver.reopen(bad)).error)
-                val other = nativeAsset(foreignCatalog, foreign)
+                val other = platformAsset(foreignCatalog, foreign)
                 try { assertNotEquals(key.semanticIdentity, other.key.semanticIdentity); assertAuditedAdvance(other) }
                 finally { success(other.close()) }
                 success(resolver.close())
@@ -170,11 +170,11 @@ class CoreTextFontOwnershipTest {
     @Test fun independentlyDetachedOwnersAndAdmittedChildSurviveParentClosureAcrossThreads() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
-        val parent = nativeAsset(catalog, resolver)
-        val first = assertIs<NativeFontRenderAssetHandle>(success(parent.detach()))
-        val second = assertIs<NativeFontRenderAssetHandle>(success(parent.detach()))
-        val grandchild = assertIs<NativeFontRenderAssetHandle>(success(first.detach()))
-        val lease = assertIs<CoreTextFontLease>(success(grandchild.acquireNativeFontLease()))
+        val parent = platformAsset(catalog, resolver)
+        val first = assertIs<PlatformFontRenderAssetHandle>(success(parent.detach()))
+        val second = assertIs<PlatformFontRenderAssetHandle>(success(parent.detach()))
+        val grandchild = assertIs<PlatformFontRenderAssetHandle>(success(first.detach()))
+        val lease = assertIs<CoreTextFontLease>(success(grandchild.acquirePlatformFontLease()))
         val entered = java.util.concurrent.CountDownLatch(1)
         val query = java.util.concurrent.CountDownLatch(1)
         val worker = java.util.concurrent.Executors.newSingleThreadExecutor()
@@ -186,8 +186,8 @@ class CoreTextFontOwnershipTest {
         try {
             assertTrue(entered.await(10, java.util.concurrent.TimeUnit.SECONDS))
             success(parent.close()); success(first.close()); success(grandchild.close()); success(resolver.close())
-            assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(parent.acquireNativeFontLease()).error)
-            assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(grandchild.acquireNativeFontLease()).error)
+            assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(parent.acquirePlatformFontLease()).error)
+            assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(grandchild.acquirePlatformFontLease()).error)
             query.countDown()
             assertEquals(1366.0, answer.get(10, java.util.concurrent.TimeUnit.SECONDS), 0.000001)
             assertAuditedAdvance(second)
@@ -198,12 +198,12 @@ class CoreTextFontOwnershipTest {
             success(lease.close()); success(grandchild.close()); success(second.close()); success(first.close()); success(parent.close()); success(resolver.close())
         }
     }
-    @Test fun nativeValidationAcceptsZeroAndNoInkButRejectsTheFirstMissingIdentifier() {
+    @Test fun platformValidationAcceptsZeroAndNoInkButRejectsTheFirstMissingIdentifier() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
-        val asset = nativeAsset(catalog, resolver)
+        val asset = platformAsset(catalog, resolver)
         try {
-            val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+            val lease = assertIs<CoreTextFontLease>(success(asset.acquirePlatformFontLease()))
             try {
                 success(lease.validateGlyph(GlyphId(0)))
                 success(lease.validateGlyph(GlyphId(3))) // Liberation space is glyph 3, with no ink.

@@ -11,8 +11,8 @@ public enum class GlyphRepresentationProfileKind {
     /** A portable decoded bitmap. */
     BITMAP,
 
-    /** A platform-native borrowed handle. */
-    NATIVE_HANDLE,
+    /** A platform-specific borrowed handle. */
+    PLATFORM_HANDLE,
 }
 
 /**
@@ -73,10 +73,10 @@ public data class GlyphRepresentationProfileKey(
                 ).joinToString(";"),
             )
 
-        /** Returns the complete identity of one native-handle profile. */
-        public fun nativeHandle(profile: NativeHandleProfile): GlyphRepresentationProfileKey =
+        /** Returns the complete identity of one platform-handle profile. */
+        public fun platformHandle(profile: PlatformHandleProfile): GlyphRepresentationProfileKey =
             GlyphRepresentationProfileKey(
-                kind = GlyphRepresentationProfileKind.NATIVE_HANDLE,
+                kind = GlyphRepresentationProfileKind.PLATFORM_HANDLE,
                 schemaVersion = profile.schemaVersion,
                 parameters = listOf(profile.bridgeKind, profile.bridgeVersion, profile.bridgeId)
                     .joinToString(":") { value -> "${value.length}:$value" },
@@ -140,7 +140,7 @@ private fun BitmapLimits.canonicalBitmapLimits(): String =
  * Stable cache identity of one glyph representation request.
  *
  * A key binds a semantic asset identity, glyph id, visual variant, and selected profile. It has
- * no reopening capability. Portable identities exclude the catalog generation; native identities
+ * no reopening capability. Portable identities exclude the catalog generation; platform identities
  * retain their exact generation and bridge/runtime context. Reopening remains the responsibility
  * of [FontRenderAssetKey] plus a live resolver in the matching provider domain.
  */
@@ -153,7 +153,7 @@ public data class GlyphRepresentationKey(
     public val variant: FontRenderVariantKey,
     /** Exact representation profile accepted by the consumer. */
     public val profile: GlyphRepresentationProfileKey,
-    /** Canonical parameters specific to a bitmap or native representation, if any. */
+    /** Canonical parameters specific to a bitmap or platform representation, if any. */
     public val routeParameters: String = "none",
 ) {
     init {
@@ -165,7 +165,7 @@ public data class GlyphRepresentationKey(
      * Creates a semantic representation key from one generation-bound asset key.
      *
      * Portable reopening context is discarded: equal portable assets captured by later generations
-     * receive the same representation key. Native identities retain generation and bridge/runtime
+     * receive the same representation key. Platform identities retain generation and bridge/runtime
      * context. Their [FontRenderAssetKey] values are still required for reopening.
      */
     public constructor(

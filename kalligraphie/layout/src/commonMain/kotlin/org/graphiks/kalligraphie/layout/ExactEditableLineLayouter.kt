@@ -1034,12 +1034,12 @@ public object ExactEditableLineLayouter : EditableLineLayouter {
         proofs: GlyphMaterializationProofs,
         pool: OperationRenderAssetPool,
     ): CertificationResult {
-        if (asset is org.graphiks.kalligraphie.api.NativeFontRenderAssetHandle &&
-            asset.key.representationProfile is org.graphiks.kalligraphie.api.NativeHandleProfile) {
+        if (asset is org.graphiks.kalligraphie.api.PlatformFontRenderAssetHandle &&
+            asset.key.representationProfile is org.graphiks.kalligraphie.api.PlatformHandleProfile) {
             val glyphIds = placements.flatMap { placement -> placement.fontGlyphs.map { it.shapedGlyph.glyphId } }.distinct()
             val known = proofs.requestedRoutes(asset.key, glyphIds, pool)
             val missing = glyphIds.filterNot(known::containsKey)
-            val routes = if (missing.isEmpty()) known else when (val validated = validateNativeGlyphs(asset, missing, request.cancellationToken)) {
+            val routes = if (missing.isEmpty()) known else when (val validated = validatePlatformGlyphs(asset, missing, request.cancellationToken)) {
                 is FontOperationResult.Success -> {
                     proofs.record(asset.key, validated.value)
                     known + validated.value

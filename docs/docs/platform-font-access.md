@@ -1,9 +1,15 @@
-# Native font access
+# Platform font access
 
 Kalligraphie can certify an explicitly accepted CoreText font route while keeping
 text analysis, shaping, fallback, positioning and editing geometry in the portable
-pipeline. The application still owns its document and renderer. Native access
+pipeline. The application still owns its document and renderer. Platform access
 does not replace a `GlyphRun` with a platform text layout or draw pixels for you.
+
+Platform access describes a route dependent on a consumer-accepted platform
+bridge, not the programming language used to implement it. A platform handle
+is an opaque resource reference, not necessarily a memory address. In this
+guide, native calls, pointers and allocations refer specifically to the
+CoreText C interoperability implementation.
 
 ## Optional Apple module
 
@@ -17,7 +23,7 @@ See the [Apple API reference](api/kalligraphie/platform/apple/org.graphiks.kalli
 for catalogue, policy and lease contracts.
 
 The main artifact does not depend on this module and does not load Apple
-frameworks. The common API carries native route identities and ownership
+frameworks. The common API carries platform route identities and ownership
 contracts, not CoreText pointers or kffi types. The optional module uses kffi
 internally and loads only the native surface needed for font access.
 
@@ -58,15 +64,15 @@ copy preflight. It preserves face IDs, metadata and complete underlying
 `FontInstanceKey` values, including size and geometry. Portable mapping,
 metrics and shaping interpretation are unchanged.
 
-The native font is constructed from those exact captured bytes through
+The platform font is constructed from those exact captured bytes through
 `CGFont` and `CTFont`, never by looking up a family name. No platform font
 matching, hidden fallback or new character-to-glyph mapping is authorized.
 
-Native eligibility is deliberately conservative: static monochrome
+Platform eligibility is deliberately conservative: static monochrome
 single-face TrueType, default geometry and default render variant only.
 Collections, CFF/CFF2, variation data, synthetic bold/italic, color/bitmap
 tables and non-default visual variants are outside this route. Unsupported
-native faces retain the portable capabilities of their underlying provider.
+platform faces retain the portable capabilities of their underlying provider.
 
 The factory requires explicit `CoreTextFontAccessPolicy` limits; there is no
 implicitly unlimited capture. For example, an application may choose:
@@ -83,25 +89,25 @@ These are application example values, not recommended universal thresholds.
 Handle the factory's typed success, failure or cancellation before using the
 adapted catalogue.
 
-## Negotiate native or portable access
+## Negotiate platform or portable access
 
-The adapted catalogue exposes its exact `nativeProfile`. Include that value
+The adapted catalogue exposes its exact `platformProfile`. Include that value
 in `FontAccessRequirementsSnapshot.renderable(...)` only if the consumer can
 use this bridge. Ordered profiles express preferences, not permission to
 hide cancellation or native allocation failures behind a cheaper route.
 
-To accept native access followed by a portable outline alternative:
+To accept platform access followed by a portable outline alternative:
 
 ```kotlin
 val requirements = FontAccessRequirementsSnapshot.renderable(
-    acceptedProfiles = listOf(catalog.nativeProfile, outlineProfile),
+    acceptedProfiles = listOf(catalog.platformProfile, outlineProfile),
 )
 ```
 
 Here `catalog` is a successful adapted catalogue and `outlineProfile` is the
 consumer's supported portable profile. Set `portableDataRequired = true`
 when an actual portable outline, paint graph or bitmap is needed. This
-excludes native profiles before negotiation; a native certificate is not
+excludes platform profiles before negotiation; a platform certificate is not
 portable glyph data.
 
 Use the adapted resolver and catalogue generation consistently in layout
@@ -111,22 +117,22 @@ generation while delegating to independently owned underlying resources.
 ## Final glyph certification
 
 The portable shaper and layout produce the final glyph IDs and placements.
-Native certification validates the exact font context, then every new distinct
-final ID against its verified native glyph count and `CGGlyph` range. This
+Platform certification validates the exact font context, then every new distinct
+final ID against its verified platform glyph count and `CGGlyph` range. This
 includes ligatures, substitutions and layout-derived glyphs such as a visible
 hyphen at a line break. It does not remap their source characters.
 
-Glyph zero and a glyph without ink can be valid native IDs. The existing
+Glyph zero and a glyph without ink can be valid platform IDs. The existing
 missing-character policy still determines whether they belong in a run.
 An out-of-range glyph is a rejection, not a fabricated empty representation.
 Certification never generates paths, rasterizes glyphs or draws them.
 
-A `NATIVE_HANDLE` certificate carries the actual provider-issued asset key.
-It promises the matching native access route while its asset is live, subject
+A `PLATFORM_HANDLE` certificate carries the actual provider-issued asset key.
+It promises the matching platform access route while its asset is live, subject
 to distinct operational failures. Calling portable `resolveGlyph` on a
-native-only asset returns a typed route incompatibility, not a fake outline.
+platform-only asset returns a typed route incompatibility, not a fake outline.
 
-## Own the native lifetime
+## Own the platform-resource lifetime
 
 The immutable layout value and its keys own no font resources. Open a
 `LayoutHandle` while its matching resolver is live, then retain the exact
@@ -138,7 +144,7 @@ it before publishing the paragraph result. The published immutable paragraph
 does not keep that backend alive; its matching resolver must still be live
 when opening a layout owner.
 
-A `NativeFontRenderAssetHandle` acquires a `NativeFontLease`. For this bridge,
+A `PlatformFontRenderAssetHandle` acquires a `PlatformFontLease`. For this bridge,
 the platform-specific lease is a `CoreTextFontLease`; `fontRef()` returns
 the usable CoreText font pointer under that lease's lifetime. Handle these
 operations as `FontOperationResult`, including cancellation and typed errors.
@@ -153,7 +159,7 @@ The adapted resolver preserves its private portable resolver's typed cleanup
 result when closure drains immediately. If admitted acquire/reopen operations
 are still running, close returns without waiting; the last completing
 operation carries deferred cleanup diagnostics. A cleanup refusal is terminal
-(`font.native-resolver-cleanup-failed`), while primary cancellation stays
+(`font.platform-resolver-cleanup-failed`), while primary cancellation stays
 cancelled. Any asset that cannot be transferred is closed first. Repeated
 close does not retry drainage. Portable resolve/instantiate and owned
 acquire/reopen/detach adaptation preserve successful provider diagnostics;
@@ -185,7 +191,7 @@ preserve the text matrix explicitly with `CGContextGetTextMatrix` and
 text matrix, and the text matrix is not included in the documented saved
 graphics-state parameters. See Apple's [drawing contract](https://developer.apple.com/documentation/coretext/ctfontdrawglyphs(_:_:_:_:_:))
 and [saved graphics state](https://developer.apple.com/documentation/coregraphics/cgcontext/savegstate()).
-Native drawing and portable representation rasterization are not promised
+Platform drawing and portable representation rasterization are not promised
 to be pixel-identical.
 
 The following Kotlin integration uses the application's CoreGraphics/CoreText
@@ -201,11 +207,11 @@ try {
         for (run in line.positionedGlyphRuns) {
             for (glyph in run.glyphs) {
                 val certificate = requireNotNull(glyph.materializationCertificate)
-                require(certificate.route == GlyphMaterializationRoute.NATIVE_HANDLE)
+                require(certificate.route == GlyphMaterializationRoute.PLATFORM_HANDLE)
                 val asset = success(layoutOwner.retainFontAsset(certificate))
-                    as NativeFontRenderAssetHandle
+                    as PlatformFontRenderAssetHandle
                 try {
-                    val lease = success(asset.acquireNativeFontLease()) as CoreTextFontLease
+                    val lease = success(asset.acquirePlatformFontLease()) as CoreTextFontLease
                     try {
                         val font = success(lease.fontRef())
                         val previousTextMatrix = CGContextGetTextMatrix(context)
@@ -249,7 +255,7 @@ For the audited Liberation Sans A at size 2048 and paragraph origin `(100,950)`,
 device scale `0.1` and device translation `(20,0)`, design-space crossbar point
 `(686,480)` maps to `(98.6,47)`, while counter point `(686,800)` maps to
 `(98.6,15)`. These independently audited interior points exercise placement
-and axis conversion without requiring native/portable pixel equality.
+and axis conversion without requiring platform/portable pixel equality.
 
 ## Reopening and immutable identity
 
@@ -258,10 +264,10 @@ a universal font locator. Reopening requires a live resolver from the exact
 adapted provider/generation and the same profile, complete variant,
 bridge contract and captured runtime interpretation.
 
-The native reopening token is opaque, not a native address. Reopening creates
+The platform reopening token is opaque, not a native address. Reopening creates
 a semantically equivalent font for the exact key; it does not promise the same
 pointer. Portable semantic identities can share equal source content across
-generations; native semantic identities retain their provider/generation and
+generations; platform semantic identities retain their provider/generation and
 bridge/runtime context.
 
 ## Cancellation and failures
@@ -269,13 +275,13 @@ bridge/runtime context.
 Token-aware acquisition and `reopen` overloads preserve the historical
 signatures' `CancellationToken.none` behavior. The layout pipeline and
 `openLayoutHandle(resolver, cancellationToken)` propagate their operation
-token through native preparation. Checks occur before work, between native
+token through platform preparation. Checks occur before work, between native
 creation steps, between newly validated glyph IDs and before ownership
 transfer. A native C call cannot necessarily be interrupted while executing;
 checks resume when it returns. Failure/cancellation transfers no partial
 owner or certificate, and cleanup is unconditional and non-cancellable.
 
-An unsupported native font subset/profile/geometry/variant can proceed to a
+An unsupported platform font subset/profile/geometry/variant can proceed to a
 subsequent explicitly accepted alternative. Closed resources, wrong
 generation/context, mandatory estimate failures, owning-operation/access
 limits, cancellation, library/symbol loading and native allocation/creation
@@ -312,7 +318,7 @@ or creating another font.
 
 These charges exclude original caller-owned catalogue data, JVM object
 overhead, delayed garbage collection and private OS allocations. They are
-not a bound on process RSS. The provider keeps no idle native font cache.
+not a bound on process RSS. The provider keeps no idle platform font cache.
 Consumer-retained owners require explicit closure and are not cache entries
-that the engine evicts. A full performance baseline and shared native cache
+that the engine evicts. A full performance baseline and shared platform cache
 budget are separate capabilities, not guarantees of this access route.

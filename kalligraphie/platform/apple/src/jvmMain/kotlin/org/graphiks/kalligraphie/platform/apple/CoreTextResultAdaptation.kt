@@ -47,7 +47,7 @@ internal fun <T> completeCoreTextCleanup(primary: FontOperationResult<T>, cleanu
     val retained = diagnostics + cleanupError.toDiagnostic()
     if (primary is FontOperationResult.Cancelled) return primary.copy(diagnostics = retained)
     val original = if (primary is FontOperationResult.Failure) listOf(primary.error.toDiagnostic()) else emptyList()
-    val terminal = FontError.FontDataFailure("font.native-resolver-cleanup-failed",
+    val terminal = FontError.FontDataFailure("font.platform-resolver-cleanup-failed",
         "CoreText adapter resource cleanup failed: ${cleanupError.message}", cleanupError.location)
     return FontOperationResult.Failure(terminal, retained + original + terminal.toDiagnostic())
 }

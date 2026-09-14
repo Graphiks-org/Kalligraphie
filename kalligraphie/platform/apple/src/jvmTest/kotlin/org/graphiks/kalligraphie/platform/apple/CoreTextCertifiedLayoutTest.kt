@@ -10,19 +10,19 @@ import kotlin.test.*
 
 class CoreTextCertifiedLayoutTest {
     @Test
-    fun nativeFontGeometryUsesTheInstanceSizeExactlyOnce() {
+    fun platformFontGeometryUsesTheInstanceSizeExactlyOnce() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile))
         try {
             for ((size, expected) in listOf(2048f to listOf(4.0, 0.0, 1362.0, 1409.0),
                 1024f to listOf(2.0, 0.0, 681.0, 704.5))) {
                 val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
                 val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(size))))
-                val asset = assertIs<NativeFontRenderAssetHandle>(success(font.acquireRenderAsset(
+                val asset = assertIs<PlatformFontRenderAssetHandle>(success(font.acquireRenderAsset(
                     resolver, FontRenderVariantSnapshot.default, requirements, CancellationToken.none)))
                 try {
-                    val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+                    val lease = assertIs<CoreTextFontLease>(success(asset.acquirePlatformFontLease()))
                     try {
                         val bounds = CoreTextConsumerProbe.pathBounds(success(lease.fontRef()), 36)
                         assertEquals(4, bounds.size)
@@ -42,10 +42,10 @@ class CoreTextCertifiedLayoutTest {
             val placed = paragraph.lines.single().positionedGlyphRuns.single().glyphs.single()
             val handle = success(paragraph.openLayoutHandle(resolver))
             try {
-                val asset = assertIs<NativeFontRenderAssetHandle>(success(handle.retainFontAsset(
+                val asset = assertIs<PlatformFontRenderAssetHandle>(success(handle.retainFontAsset(
                     checkNotNull(placed.materializationCertificate))))
                 try {
-                    val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+                    val lease = assertIs<CoreTextFontLease>(success(asset.acquirePlatformFontLease()))
                     try {
                         val observation = CoreTextDrawingProbe.draw(success(lease.fontRef()), placed)
                         // Independent raw glyf audit: (686,480) crossbar, (686,800) counter,
@@ -75,7 +75,7 @@ class CoreTextCertifiedLayoutTest {
         val worker = Executors.newSingleThreadExecutor()
         val pending = worker.submit<FontOperationResult<LayoutHandle<ParagraphLayout>>> { paragraph.openLayoutHandle(resolver, token) }
         try {
-            var refusal: NativeFontAccessLimitExceeded? = null
+            var refusal: PlatformFontAccessLimitExceeded? = null
             // Advance real cooperative checkpoints until simultaneous reopening is refused.
             // This observes finite admission while the root is still being created, rather
             // than treating any checkpoint count as a correctness oracle.
@@ -88,15 +88,15 @@ class CoreTextCertifiedLayoutTest {
                 }
             }
             val exceeded = assertNotNull(refusal, "Root reopening did not forward cooperative cancellation during admitted native creation.")
-            assertEquals(NativeFontAccessPhase.NATIVE_CREATION, exceeded.phase)
-            assertEquals(NativeFontAccessDimension.TRANSIENT_OWNED_BYTES, exceeded.dimension)
+            assertEquals(PlatformFontAccessPhase.NATIVE_CREATION, exceeded.phase)
+            assertEquals(PlatformFontAccessDimension.TRANSIENT_OWNED_BYTES, exceeded.dimension)
             assertEquals(2_271_228L, exceeded.maximum)
             assertEquals(3_028_304L, exceeded.observed)
             token.cancel()
             assertIs<FontOperationResult.Cancelled>(pending.get(10, TimeUnit.SECONDS))
             val handle = success(paragraph.openLayoutHandle(resolver))
             try {
-                val asset = assertIs<NativeFontRenderAssetHandle>(success(handle.retainFontAsset(certificate)))
+                val asset = assertIs<PlatformFontRenderAssetHandle>(success(handle.retainFontAsset(certificate)))
                 try { assertHyphen(asset) } finally { success(asset.close()) }
             } finally { success(handle.close()) }
         } finally {
@@ -109,39 +109,39 @@ class CoreTextCertifiedLayoutTest {
     }
 
     @Test
-    fun explicitlyAcceptedNativeRoutePrecedesThePortableOutline() {
+    fun explicitlyAcceptedPlatformRoutePrecedesThePortableOutline() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
         try {
-            val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile, portableOutlineProfile))
+            val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile, portableOutlineProfile))
             val placed = assertIs<EditableLineResult.Success>(line(catalog, resolver, requirements)).line
                 .positionedGlyphRuns.single().glyphs.single()
             assertEquals(GlyphId(36), placed.shapedGlyph.glyphId)
             assertEquals(1366f, placed.advance.x.value)
             val certificate = checkNotNull(placed.materializationCertificate)
-            assertEquals(GlyphMaterializationRoute.NATIVE_HANDLE, certificate.route)
-            assertEquals(catalog.nativeProfile, certificate.assetKey.representationProfile)
-            val asset = assertIs<NativeFontRenderAssetHandle>(success(resolver.reopen(certificate.assetKey)))
+            assertEquals(GlyphMaterializationRoute.PLATFORM_HANDLE, certificate.route)
+            assertEquals(catalog.platformProfile, certificate.assetKey.representationProfile)
+            val asset = assertIs<PlatformFontRenderAssetHandle>(success(resolver.reopen(certificate.assetKey)))
             try { assertAuditedAdvance(asset) } finally { success(asset.close()) }
         } finally { success(resolver.close()) }
     }
 
     @Test
-    fun orderedNativeCompatibilityAndPortableRequirementPublishTheAuditedOutline() {
+    fun orderedPlatformCompatibilityAndPortableRequirementPublishTheAuditedOutline() {
         val catalog = liberationCatalog()
         val resolver = success(catalog.openAssetResolver())
         try {
-            val incompatible = catalog.nativeProfile.copy(bridgeVersion = "incompatible")
+            val incompatible = catalog.platformProfile.copy(bridgeVersion = "incompatible")
             for (requirements in listOf(
                 FontAccessRequirementsSnapshot.renderable(listOf(incompatible, portableOutlineProfile)),
-                FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile, portableOutlineProfile), portableDataRequired = true),
+                FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile, portableOutlineProfile), portableDataRequired = true),
             )) {
                 val line = assertIs<EditableLineResult.Success>(line(catalog, resolver, requirements)).line
                 val certificate = checkNotNull(line.positionedGlyphRuns.single().glyphs.single().materializationCertificate)
                 assertEquals(GlyphId(36), certificate.glyphId)
                 assertEquals(GlyphMaterializationRoute.OUTLINE, certificate.route)
                 assertEquals(portableOutlineProfile, certificate.assetKey.representationProfile)
-                assertNull(certificate.assetKey.nativeContext)
+                assertNull(certificate.assetKey.platformContext)
                 val asset = success(resolver.reopen(certificate.assetKey))
                 try {
                     assertEquals(DesignBounds(4, 0, 1362, 1409),
@@ -152,18 +152,18 @@ class CoreTextCertifiedLayoutTest {
     }
 
     @Test
-    fun nativeAccessPolicyAndCancellationAreNotHiddenByPortableSuccess() {
+    fun platformAccessPolicyAndCancellationAreNotHiddenByPortableSuccess() {
         val catalog = liberationCatalog(CoreTextFontAccessPolicy(2_000_000L, 8_000_000L, 1_232_136L))
         val resolver = success(catalog.openAssetResolver())
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile, portableOutlineProfile))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile, portableOutlineProfile))
         val token = BlockingCoreTextToken()
         val worker = Executors.newSingleThreadExecutor()
         val pending = worker.submit<FontOperationResult<FontRenderAssetHandle>> {
-            nativeFont(catalog).acquireRenderAsset(resolver, FontRenderVariantSnapshot.default,
-                FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile)), token)
+            platformFont(catalog).acquireRenderAsset(resolver, FontRenderVariantSnapshot.default,
+                FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile)), token)
         }
         try {
-            var refusal: NativeFontAccessLimitExceeded? = null
+            var refusal: PlatformFontAccessLimitExceeded? = null
             for (attempt in 0 until 80) {
                 if (!token.awaitCheckpoint()) break
                 when (val simultaneous = line(catalog, resolver, requirements)) {
@@ -175,8 +175,8 @@ class CoreTextCertifiedLayoutTest {
                     is EditableLineResult.Cancelled -> fail("Independent non-cancelled layout was cancelled.")
                 }
             }
-            val exceeded = assertNotNull(refusal, "Native admission refusal was hidden by a portable layout success.")
-            assertEquals(NativeFontAccessPhase.NATIVE_CREATION, exceeded.phase)
+            val exceeded = assertNotNull(refusal, "Platform admission refusal was hidden by a portable layout success.")
+            assertEquals(PlatformFontAccessPhase.NATIVE_CREATION, exceeded.phase)
             assertEquals(1_232_136L, exceeded.maximum)
             assertEquals(1_642_848L, exceeded.observed)
             token.cancel()
@@ -212,7 +212,7 @@ class CoreTextCertifiedLayoutTest {
     }
 
     @Test
-    fun brokenSoftHyphenCertifiesTheVisibleFinalGlyphThroughNativeAccess() {
+    fun brokenSoftHyphenCertifiesTheVisibleFinalGlyphThroughPlatformAccess() {
         val catalog = success(CoreTextFontCatalog.capture(portableFixture("/fonts/dejavu/DejaVuSans.ttf"), generousPolicy))
         val resolver = success(catalog.openAssetResolver())
         try {
@@ -222,7 +222,7 @@ class CoreTextCertifiedLayoutTest {
             assertEquals(listOf(range(0, 3), range(3, 10)), paragraph.lines.map { it.range })
             val allCertificates = paragraph.lines.flatMap { it.positionedGlyphRuns }.flatMap { it.glyphs }
                 .map { checkNotNull(it.materializationCertificate) }
-            assertTrue(allCertificates.all { it.route == GlyphMaterializationRoute.NATIVE_HANDLE })
+            assertTrue(allCertificates.all { it.route == GlyphMaterializationRoute.PLATFORM_HANDLE })
             assertEquals(1, allCertificates.map { it.assetKey }.distinct().size)
             val placed = paragraph.lines.first().positionedGlyphRuns.flatMap { it.glyphs }
                 .single { it.provenance is GlyphProvenance.Derived }
@@ -233,14 +233,14 @@ class CoreTextCertifiedLayoutTest {
             assertEquals(360.83984375f, placed.advance.x.value)
             val certificate = checkNotNull(placed.materializationCertificate)
             assertEquals(GlyphId(16), certificate.glyphId)
-            assertEquals(GlyphMaterializationRoute.NATIVE_HANDLE, certificate.route)
-            val asset = assertIs<NativeFontRenderAssetHandle>(success(resolver.reopen(certificate.assetKey)))
+            assertEquals(GlyphMaterializationRoute.PLATFORM_HANDLE, certificate.route)
+            val asset = assertIs<PlatformFontRenderAssetHandle>(success(resolver.reopen(certificate.assetKey)))
             try { assertHyphen(asset) } finally { success(asset.close()) }
         } finally { success(resolver.close()) }
     }
 
     @Test
-    fun nativeParagraphRendererChildrenSurviveAllOriginalOwnersOnAnotherThread() {
+    fun platformParagraphRendererChildrenSurviveAllOriginalOwnersOnAnotherThread() {
         for (fixture in listOf("/fonts/dejavu/DejaVuSans.ttf", "/fonts/liberation/LiberationSans-Regular.ttf")) {
             val catalog = success(CoreTextFontCatalog.capture(portableFixture(fixture), generousPolicy))
             val resolver = success(catalog.openAssetResolver())
@@ -250,11 +250,11 @@ class CoreTextCertifiedLayoutTest {
                 .single { if (hyphen) it.provenance is GlyphProvenance.Derived else true }
             val certificate = checkNotNull(placed.materializationCertificate)
             val handle = success(paragraph.openLayoutHandle(resolver))
-            val retained = assertIs<NativeFontRenderAssetHandle>(success(handle.retainFontAsset(certificate)))
-            val first = assertIs<NativeFontRenderAssetHandle>(success(retained.detach()))
-            val second = assertIs<NativeFontRenderAssetHandle>(success(retained.detach()))
-            val firstLease = assertIs<CoreTextFontLease>(success(first.acquireNativeFontLease()))
-            val secondLease = assertIs<CoreTextFontLease>(success(second.acquireNativeFontLease()))
+            val retained = assertIs<PlatformFontRenderAssetHandle>(success(handle.retainFontAsset(certificate)))
+            val first = assertIs<PlatformFontRenderAssetHandle>(success(retained.detach()))
+            val second = assertIs<PlatformFontRenderAssetHandle>(success(retained.detach()))
+            val firstLease = assertIs<CoreTextFontLease>(success(first.acquirePlatformFontLease()))
+            val secondLease = assertIs<CoreTextFontLease>(success(second.acquirePlatformFontLease()))
             val worker = Executors.newSingleThreadExecutor()
             try {
                 assertEquals(certificate.assetKey, firstLease.key)
@@ -262,7 +262,7 @@ class CoreTextCertifiedLayoutTest {
                 success(retained.close()); success(first.close()); success(second.close())
                 success(handle.close()); success(resolver.close())
                 assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(handle.retainFontAsset(certificate)).error)
-                assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(retained.acquireNativeFontLease()).error)
+                assertIs<FontError.ResourceClosed>(assertIs<FontOperationResult.Failure>(retained.acquirePlatformFontLease()).error)
                 worker.submit<Unit> {
                     success(firstLease.validateGlyph(certificate.glyphId))
                     assertEquals(if (hyphen) 360.83984375 else 1366.0,
@@ -281,8 +281,8 @@ class CoreTextCertifiedLayoutTest {
         }
     }
 
-    private fun assertHyphen(asset: NativeFontRenderAssetHandle) {
-        val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+    private fun assertHyphen(asset: PlatformFontRenderAssetHandle) {
+        val lease = assertIs<CoreTextFontLease>(success(asset.acquirePlatformFontLease()))
         try {
             success(lease.validateGlyph(GlyphId(16)))
             assertEquals(360.83984375, CoreTextConsumerProbe.horizontalAdvance(success(lease.fontRef()), 16), 0.000001)
@@ -314,19 +314,19 @@ class CoreTextCertifiedLayoutTest {
                     LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
                 ),
                 baseDirection = BaseDirection.LEFT_TO_RIGHT, language = "en", fontCatalog = catalog,
-                resolutionPolicy = FontResolutionPolicySnapshot(catalog.generation, "audited-native-paragraph", "1", listOf(FontResolutionCandidate(face)), face),
+                resolutionPolicy = FontResolutionPolicySnapshot(catalog.generation, "audited-platform-paragraph", "1", listOf(FontResolutionCandidate(face)), face),
                 fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(size)),
                 materialization = EditableLineMaterialization.Renderable(resolver, FontRenderVariantSnapshot.default,
-                    FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile))),
+                    FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile))),
             ),
         )).layout
     }
 
     @Test
-    fun finalAmiriLigatureUsesTheExactNativeFontWithoutRemappingCharacters() {
+    fun finalAmiriLigatureUsesTheExactPlatformFontWithoutRemappingCharacters() {
         val catalog = success(CoreTextFontCatalog.capture(portableFixture("/fonts/amiri/Amiri-Regular.ttf"), generousPolicy))
         val resolver = success(catalog.openAssetResolver())
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile))
         val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
         val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1000f))))
         val snapshot = Kalligraphie.decodeUtf16(TextVersion.create(), listOf(TextSlice.Utf16("ffi".toCharArray()))).snapshot
@@ -341,10 +341,10 @@ class CoreTextCertifiedLayoutTest {
             assertEquals(GlyphId(6631), placed.shapedGlyph.glyphId)
             assertEquals(795f, placed.advance.x.value)
             val certificate = checkNotNull(placed.materializationCertificate)
-            assertEquals(GlyphMaterializationRoute.NATIVE_HANDLE, certificate.route)
-            val asset = assertIs<NativeFontRenderAssetHandle>(success(resolver.reopen(certificate.assetKey)))
+            assertEquals(GlyphMaterializationRoute.PLATFORM_HANDLE, certificate.route)
+            val asset = assertIs<PlatformFontRenderAssetHandle>(success(resolver.reopen(certificate.assetKey)))
             try {
-                val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+                val lease = assertIs<CoreTextFontLease>(success(asset.acquirePlatformFontLease()))
                 try {
                     success(lease.validateGlyph(GlyphId(6631)))
                     assertEquals(795.0, CoreTextConsumerProbe.horizontalAdvance(success(lease.fontRef()), 6631), 0.000001)

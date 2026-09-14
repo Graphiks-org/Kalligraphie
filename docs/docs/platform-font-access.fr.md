@@ -1,11 +1,17 @@
-# Accès natif aux fontes
+# Accès aux fontes via la plateforme
 
 Kalligraphie peut certifier une route CoreText explicitement acceptée tout en
 conservant l’analyse du texte, le shaping (transformation du texte en glyphes),
 le repli entre fontes, le positionnement et la géométrie d’édition dans son
 pipeline (chaîne de traitement) portable. L’application garde son document et son renderer (moteur
-de rendu). L’accès natif ne remplace pas un `GlyphRun` par une mise en page
+de rendu). L’accès de plateforme ne remplace pas un `GlyphRun` par une mise en page
 de plateforme et ne dessine aucun pixel à sa place.
+
+L’accès de plateforme désigne une route dépendant d’une liaison explicitement
+acceptée par le consommateur, pas le langage de son implémentation. Un handle
+de plateforme (référence opaque vers une ressource) n’est pas nécessairement
+une adresse mémoire. Dans ce guide, appels, pointeurs et allocations natifs
+désignent précisément l’implémentation d’interopérabilité avec l’API C CoreText.
 
 ## Module Apple facultatif
 
@@ -17,7 +23,7 @@ arm64 et JDK 25. Lancer la JVM applicative avec
 `--enable-native-access=ALL-UNNAMED` pour les appels natifs.
 
 Voir la [référence API Apple](api/kalligraphie/platform/apple/org.graphiks.kalligraphie.platform.apple/index.md)
-pour les contrats du catalogue, des limites et des propriétaires natifs.
+pour les contrats du catalogue, des limites et des propriétaires de plateforme.
 
 L’artefact principal ne dépend pas de ce module et ne charge aucun framework
 Apple (bibliothèque de plateforme). L’API commune ne transporte que des
@@ -65,16 +71,16 @@ de face, les métadonnées et les `FontInstanceKey` complets restent identiques,
 y compris la taille et la géométrie. Les correspondances caractères/glyphes,
 les métriques et l’interprétation du shaping portable sont conservées.
 
-La fonte native est construite depuis ces octets exacts via `CGFont` puis
+La fonte de plateforme est construite depuis ces octets exacts via `CGFont` puis
 `CTFont`, jamais par une recherche de nom de famille. Cela n’autorise ni
 substitution de fonte par la plateforme, ni fallback caché (repli implicite),
 ni nouvelle correspondance entre les caractères et les glyphes finaux.
 
-L’éligibilité native est volontairement restrictive : TrueType statique,
+L’éligibilité à la plateforme est volontairement restrictive : TrueType statique,
 monochrome, à face unique, géométrie et variante de rendu par défaut.
 Les collections, CFF/CFF2, données de variation, gras/italique synthétiques,
 tables couleur ou bitmap (images matricielles) et variantes visuelles non
-canoniques sont exclues de cette route. Les faces incompatibles avec le natif
+canoniques sont exclues de cette route. Les faces incompatibles avec la plateforme
 conservent les capacités portables de leur fournisseur sous-jacent.
 
 La fabrique exige des limites explicites dans `CoreTextFontAccessPolicy` ;
@@ -93,27 +99,27 @@ Ces valeurs illustrent un choix applicatif, pas des seuils universellement
 recommandés. Traiter la réussite, l’échec typé ou l’annulation de la fabrique
 avant d’utiliser le catalogue adapté.
 
-## Négocier l’accès natif ou portable
+## Négocier l’accès de plateforme ou portable
 
-Le catalogue adapté expose son `nativeProfile` exact. L’inclure dans
+Le catalogue adapté expose son `platformProfile` exact. L’inclure dans
 `FontAccessRequirementsSnapshot.renderable(...)` uniquement si le
 consommateur sait utiliser ce bridge (liaison avec la plateforme). Les profils
 ordonnés expriment une préférence, pas l’autorisation de masquer une
 annulation ou un échec d’allocation par une route moins coûteuse.
 
-Pour accepter l’accès natif puis un contour portable :
+Pour accepter l’accès de plateforme puis un contour portable :
 
 ```kotlin
 val requirements = FontAccessRequirementsSnapshot.renderable(
-    acceptedProfiles = listOf(catalog.nativeProfile, outlineProfile),
+    acceptedProfiles = listOf(catalog.platformProfile, outlineProfile),
 )
 ```
 
 Ici `catalog` est le catalogue adapté obtenu avec succès et `outlineProfile`
 est le profil portable compris par le consommateur. Fournir
 `portableDataRequired = true` lorsqu’un contour, un graphe de peinture ou un
-bitmap portable est réellement nécessaire. Les profils natifs sont alors
-exclus avant négociation : un certificat natif n’est pas une représentation
+bitmap portable est réellement nécessaire. Les profils de plateforme sont alors
+exclus avant négociation : un certificat de plateforme n’est pas une représentation
 portable de glyphe.
 
 Utiliser ensemble le résolveur adapté et la génération du catalogue adapté
@@ -124,25 +130,25 @@ ressources sous-jacentes possédées indépendamment.
 ## Certifier les glyphes finaux
 
 Le moteur de shaping portable et la mise en page produisent les identifiants et
-placements finaux. La certification native valide le contexte exact de fonte,
+placements finaux. La certification de plateforme valide le contexte exact de fonte,
 puis chaque nouvel identifiant final distinct dans la plage vérifiée des
-glyphes natifs et du type `CGGlyph`. Cela comprend ligatures, substitutions et
+glyphes de plateforme et du type `CGGlyph`. Cela comprend ligatures, substitutions et
 glyphes dérivés par la mise en page, notamment le tiret visible à une coupure.
 Les caractères sources ne sont pas remappés.
 
-Le glyphe zéro et un glyphe sans encre peuvent être des identifiants natifs
+Le glyphe zéro et un glyphe sans encre peuvent être des identifiants de plateforme
 valides. La politique existante des caractères manquants détermine toujours
 leur présence dans le texte composé. Un identifiant hors plage est refusé,
 jamais transformé en fausse représentation vide. La certification ne génère
 aucun contour, ne rasterise pas (ne convertit pas en pixels) et ne dessine pas.
 
-Un certificat `NATIVE_HANDLE` porte la clé effectivement émise par le
-fournisseur. Il garantit l’acquisition de la route native correspondante tant
+Un certificat `PLATFORM_HANDLE` porte la clé effectivement émise par le
+fournisseur. Il garantit l’acquisition de la route de plateforme correspondante tant
 que la ressource est vivante, sous réserve d’échecs opérationnels distincts.
-`resolveGlyph` portable sur une ressource exclusivement native retourne une
+`resolveGlyph` portable sur une ressource exclusivement de plateforme retourne une
 incompatibilité de route typée, pas un faux contour.
 
-## Posséder la durée de vie native
+## Posséder la durée de vie des ressources de plateforme
 
 La valeur de mise en page immuable et ses clés ne possèdent aucune ressource
 de fonte. Ouvrir un `LayoutHandle` tant que son résolveur correspondant est
@@ -155,8 +161,8 @@ sous-jacent) utilisé et le ferme avant publication du résultat. Le paragraphe
 immuable publié ne conserve pas ce moteur ; son résolveur correspondant doit
 toutefois rester vivant pour ouvrir un propriétaire de mise en page.
 
-Un `NativeFontRenderAssetHandle` acquiert un `NativeFontLease` (propriétaire
-natif indépendant). Pour cette liaison, le propriétaire de plateforme est
+Un `PlatformFontRenderAssetHandle` acquiert un `PlatformFontLease` (propriétaire
+de plateforme indépendant). Pour cette liaison, le propriétaire spécialisé est
 un `CoreTextFontLease` ; `fontRef()` retourne le pointeur CoreText utilisable
 pendant sa durée de vie. Traiter ces opérations comme des
 `FontOperationResult`, avec leurs annulations et échecs typés.
@@ -172,7 +178,7 @@ Le résolveur adapté conserve le résultat typé de fermeture de son résolveur
 portable privé lorsque le drainage est immédiat. Si des acquire/reopen admis
 sont encore en cours, la fermeture retourne sans attendre ; la dernière
 opération terminée porte les diagnostics du drainage différé. Un refus de
-cleanup (nettoyage) est terminal (`font.native-resolver-cleanup-failed`),
+cleanup (nettoyage) est terminal (`font.platform-resolver-cleanup-failed`),
 tandis qu’une annulation primaire reste une annulation. Toute ressource non
 transférable est d’abord fermée. Une fermeture répétée ne retente pas le
 drainage. Les adaptations portables resolve/instantiate et acquire/reopen/detach
@@ -208,13 +214,13 @@ préserver explicitement la matrice de texte avec `CGContextGetTextMatrix` et
 matrice de texte ; cette dernière ne fait pas partie des paramètres
 documentés de l’état graphique sauvegardé. Voir le [contrat de dessin Apple](https://developer.apple.com/documentation/coretext/ctfontdrawglyphs(_:_:_:_:_:))
 et les [paramètres sauvegardés](https://developer.apple.com/documentation/coregraphics/cgcontext/savegstate()).
-Aucune identité pixel par pixel n’est garantie entre rendu natif et
+Aucune identité pixel par pixel n’est garantie entre rendu de plateforme et
 rasterisation d’une représentation portable.
 
-L’[exemple Kotlin complet du guide anglais](https://graphiks-org.github.io/Kalligraphie/native-font-access.html#drawing-geometry-belongs-to-the-consumer)
+L’[exemple Kotlin complet du guide anglais](https://graphiks-org.github.io/Kalligraphie/platform-font-access.html#drawing-geometry-belongs-to-the-consumer)
 utilise les bindings applicatifs (liaisons aux fonctions C), non exportés par
 Kalligraphie, avec les véritables `openLayoutHandle`, `retainFontAsset`,
-`acquireNativeFontLease`, `fontRef` et `close`. Les buffers `CGGlyph` et
+`acquirePlatformFontLease`, `fontRef` et `close`. Les buffers `CGGlyph` et
 `CGPoint` restent vivants pendant l’appel. Le propriétaire conserve le lease
 ouvert durant tout le dessin et ferme chaque ressource dans `finally`.
 
@@ -243,12 +249,12 @@ Conserver une clé lorsque la réouverture ultérieure est nécessaire, sans la
 considérer comme un localisateur universel de fonte. La réouverture exige un
 résolveur vivant du fournisseur et de la génération adaptés exacts, avec le
 même profil, la variante complète, le contrat de liaison et l’interprétation
-du runtime capturée (environnement natif d’exécution).
+du runtime capturée (environnement d’exécution de la plateforme).
 
-Le token de réouverture natif (jeton opaque) n’est pas une adresse mémoire.
+Le token de réouverture de plateforme (jeton opaque) n’est pas une adresse mémoire.
 La réouverture crée une fonte sémantiquement équivalente pour la clé exacte,
 sans garantir le même pointeur. Les identités sémantiques portables peuvent
-partager un contenu source égal entre générations ; les identités natives
+partager un contenu source égal entre générations ; les identités de plateforme
 conservent leur fournisseur/génération et leur contexte de liaison/runtime.
 
 ## Annulation et échecs
@@ -256,14 +262,14 @@ conservent leur fournisseur/génération et leur contexte de liaison/runtime.
 Les surcharges d’acquisition et de `reopen` avec token préservent le
 comportement `CancellationToken.none` des signatures historiques. Le pipeline
 de mise en page et `openLayoutHandle(resolver, cancellationToken)` transmettent
-leur token à la préparation native. Les contrôles ont lieu avant le travail,
+leur token à la préparation de plateforme. Les contrôles ont lieu avant le travail,
 entre les créations natives, entre les nouveaux identifiants validés et avant
 transfert de propriété. Un appel C natif n’est pas forcément interruptible
 pendant son exécution ; les contrôles reprennent à son retour. Un échec ou une
 annulation ne transfère ni propriétaire ni certificat partiel. Le nettoyage
 est inconditionnel et non annulable.
 
-Une incompatibilité de fonte/profil/géométrie/variante native permet d’essayer
+Une incompatibilité de fonte/profil/géométrie/variante de plateforme permet d’essayer
 une alternative ultérieure explicitement acceptée. Une ressource fermée,
 mauvaise génération/contexte, estimation obligatoire indisponible, limite
 d’accès/opération, annulation, erreur de chargement de bibliothèque/symbole ou
@@ -303,8 +309,8 @@ recopier les octets ni créer une nouvelle fonte.
 Ces charges excluent le catalogue initial possédé par l’appelant, le surcoût
 des objets JVM, la collecte mémoire différée et les allocations privées du
 système. Elles ne bornent pas la RSS (mémoire physique résidente) du processus.
-Le fournisseur ne conserve aucun cache (mémoire de réutilisation) de fontes natives inactives. Les
+Le fournisseur ne conserve aucun cache (mémoire de réutilisation) de fontes de plateforme inactives. Les
 propriétaires retenus par le consommateur exigent une fermeture explicite et
 ne sont pas des entrées de cache évincées par le moteur. Une référence
-complète de performance et un budget de cache natif partagé sont des
+complète de performance et un budget de cache de plateforme partagé sont des
 capacités distinctes, pas des garanties de cette route d’accès.

@@ -250,8 +250,8 @@ public enum class GlyphMaterializationRoute {
     /** The final glyph was validated as decoded portable bitmap pixels. */
     BITMAP,
 
-    /** The final glyph was validated for an explicitly negotiated native bridge. */
-    NATIVE_HANDLE,
+    /** The final glyph was validated for an explicitly negotiated platform bridge. */
+    PLATFORM_HANDLE,
 
     /** The final glyph was validated as a glyph without ink. */
     EMPTY,
@@ -260,7 +260,7 @@ public enum class GlyphMaterializationRoute {
 /**
  * Immutable record that one final positioned glyph passed one exact materialization route.
  *
- * A certificate contains no render asset, outline payload, native handle, or borrowed resource.
+ * A certificate contains no render asset, outline payload, platform handle, or borrowed resource.
  * Its validity is limited to the exact [assetKey] and [glyphId] synchronously inspected while
  * the borrowed resolver was open. This public value records a trusted layouter result; its
  * constructor is not a cryptographic authenticity mechanism for manually constructed values.
@@ -290,8 +290,8 @@ public data class GlyphMaterializationCertificate(
             GlyphMaterializationRoute.BITMAP -> require(assetKey.representationProfile is BitmapProfile) {
                 "A bitmap certificate requires a bitmap profile."
             }
-            GlyphMaterializationRoute.NATIVE_HANDLE -> require(assetKey.representationProfile is NativeHandleProfile) {
-                "A native-handle certificate requires a native-handle profile."
+            GlyphMaterializationRoute.PLATFORM_HANDLE -> require(assetKey.representationProfile is PlatformHandleProfile) {
+                "A platform-handle certificate requires a platform-handle profile."
             }
             GlyphMaterializationRoute.EMPTY -> Unit
         }
@@ -819,7 +819,7 @@ public sealed interface EditableLineMaterialization {
      *
      * The asset provider chooses the first route it can certify in the declared profile order.
      * A successful line retains only certificates and asset keys; it never retains an asset,
-     * resolver, native handle, or paint/bitmap payload.
+     * resolver, platform handle, or paint/bitmap payload.
      */
     public class Renderable(
         /** Borrowed resolver used only during the synchronous layout call. */

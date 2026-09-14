@@ -5,7 +5,7 @@ import org.graphiks.kalligraphie.api.*
 
 /** Minimal immutable proven native context; owns explicit refs, no catalogue/source/layout. */
 internal class CoreTextFontContext private constructor(val font: Long, val glyphCount: Int,
-    val route: NativeFontRouteIdentity, private val graphics: Long, private val provider: Long,
+    val route: PlatformFontRouteIdentity, private val graphics: Long, private val provider: Long,
     private val data: Long, private val bindings: CoreTextBindings) {
     fun release() {
         try { bindings.releaseFont(font) } finally {
@@ -18,13 +18,13 @@ internal class CoreTextFontContext private constructor(val font: Long, val glyph
         fun create(source: CoreTextCapturedSource, key: FontRenderAssetKey, bindings: CoreTextBindings,
             admission: CoreTextByteAdmission, token: CancellationToken): CoreTextFontContext {
             checkCancellation(token)
-            if (!source.nativeEligible || key.fontInstanceKey.layoutSize.value <= 0f || !key.fontInstanceKey.layoutSize.value.isFinite() ||
+            if (!source.platformEligible || key.fontInstanceKey.layoutSize.value <= 0f || !key.fontInstanceKey.layoutSize.value.isFinite() ||
                 key.fontInstanceKey.geometry != FontGeometryParameters() || key.variant != FontRenderVariantKey.default || key.variantSnapshot != null) {
                 fail(FontError.UnsupportedRepresentationProfile("CoreText requires supported static TrueType source, positive size and default geometry/variant."))
             }
-            val context = checkNotNull(key.nativeContext)
+            val context = checkNotNull(key.platformContext)
             val charge = source.bytes.size.toLong() * 2L
-            admission.reserve(charge, NativeFontAccessPhase.NATIVE_CREATION).use {
+            admission.reserve(charge, PlatformFontAccessPhase.NATIVE_CREATION).use {
                 checkCancellation(token)
                 var data = 0L; var provider = 0L; var graphics = 0L; var font = 0L
                 var transferred = false
@@ -60,7 +60,7 @@ internal class CoreTextFontContext private constructor(val font: Long, val glyph
                     checkCancellation(token)
                     if (size != key.fontInstanceKey.layoutSize.value.toDouble() || upem != source.metadata.unitsPerEm.toLong() ||
                         glyphs != source.metadata.glyphCount.toLong() || !identity) {
-                        nativeFailure("font.native-context-proof-failed", "The native font disagrees with exact source metadata, size or identity matrix.")
+                        nativeFailure("font.platform-context-proof-failed", "The native font disagrees with exact source metadata, size or identity matrix.")
                     }
                     val result = CoreTextFontContext(font, glyphs.toInt(), context.routeIdentity, graphics, provider, data, bindings)
                     transferred = true

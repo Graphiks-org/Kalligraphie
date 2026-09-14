@@ -665,13 +665,13 @@ internal object FontFallbackResolver {
             }
             is FontOperationResult.Cancelled -> return Validation.Cancelled(acquired.diagnostics)
         }
-        if (asset is org.graphiks.kalligraphie.api.NativeFontRenderAssetHandle &&
-            asset.key.representationProfile is org.graphiks.kalligraphie.api.NativeHandleProfile) {
+        if (asset is org.graphiks.kalligraphie.api.PlatformFontRenderAssetHandle &&
+            asset.key.representationProfile is org.graphiks.kalligraphie.api.PlatformHandleProfile) {
             val glyphIds = shaped.glyphs.map { it.glyphId }.distinct()
             val known = proofs.requestedRoutes(asset.key, glyphIds, pool)
             val missing = glyphIds.filterNot(known::containsKey)
             if (missing.isEmpty()) return Validation.Valid
-            return when (val validated = validateNativeGlyphs(asset, missing, request.cancellationToken)) {
+            return when (val validated = validatePlatformGlyphs(asset, missing, request.cancellationToken)) {
                 is FontOperationResult.Success -> {
                     proofs.record(asset.key, validated.value)
                     Validation.Valid
@@ -810,7 +810,7 @@ internal object FontFallbackResolver {
         is org.graphiks.kalligraphie.api.OutlineProfile -> outline
         is org.graphiks.kalligraphie.api.PaintGraphProfile -> paintGraph
         is org.graphiks.kalligraphie.api.BitmapProfile -> bitmap
-        is org.graphiks.kalligraphie.api.NativeHandleProfile -> nativeHandle
+        is org.graphiks.kalligraphie.api.PlatformHandleProfile -> platformHandle
     }
 
     private fun FontError.isTerminal(): Boolean = this is FontError.ResourceClosed ||

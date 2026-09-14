@@ -59,14 +59,14 @@ internal class CoreTextBindings {
         val length = temp.bufferOf(0L)
         val shape = FunctionShape(AbiType.I32, listOf(AbiType.Pointer, AbiType.Pointer, AbiType.Pointer, AbiType.Pointer, AbiType.I64))
         fun query(output: Long): Int = engine.callGeneric(sysctl, shape, name.handler.rawValue, output, length.handler.rawValue, 0L, 0L) as Int
-        if (query(0L) != 0) nativeFailure("font.native-runtime-identity-unavailable", "Cannot query the kernel OS build length.")
+        if (query(0L) != 0) nativeFailure("font.platform-runtime-identity-unavailable", "Cannot query the kernel OS build length.")
         val size = length.readLong()
-        if (size <= 1 || size > 1024) nativeFailure("font.native-runtime-identity-unavailable", "Kernel OS build has an invalid bounded length.")
+        if (size <= 1 || size > 1024) nativeFailure("font.platform-runtime-identity-unavailable", "Kernel OS build has an invalid bounded length.")
         val bytes = temp.allocateBuffer(size.toULong())
-        if (query(bytes.handler.rawValue) != 0 || length.readLong() !in 2..size) nativeFailure("font.native-runtime-identity-unavailable", "Cannot query the complete kernel OS build.")
+        if (query(bytes.handler.rawValue) != 0 || length.readLong() !in 2..size) nativeFailure("font.platform-runtime-identity-unavailable", "Cannot query the complete kernel OS build.")
         val leaf = ByteArray(length.readLong().toInt())
         bytes.readBytes(leaf)
-        if (leaf.last() != 0.toByte()) nativeFailure("font.native-runtime-identity-unavailable", "Kernel OS build is not terminated.")
+        if (leaf.last() != 0.toByte()) nativeFailure("font.platform-runtime-identity-unavailable", "Kernel OS build is not terminated.")
         String(leaf, 0, leaf.size - 1, Charsets.US_ASCII)
     }
     private fun pointer(result: Any?): Long = (result as MemorySegment).address()

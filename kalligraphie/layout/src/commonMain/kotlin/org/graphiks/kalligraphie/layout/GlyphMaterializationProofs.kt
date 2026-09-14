@@ -6,7 +6,7 @@ import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
-import org.graphiks.kalligraphie.api.NativeHandleProfile
+import org.graphiks.kalligraphie.api.PlatformHandleProfile
 
 /**
  * Operation-local evidence that a live asset has already resolved exact glyph routes.
@@ -25,7 +25,7 @@ internal class GlyphMaterializationProofs {
     ): GlyphMaterializationProof? = routesByAsset.entries.firstNotNullOfOrNull { (assetKey, routes) ->
         if (
             pool.owns(assetKey) &&
-            assetKey.representationProfile !is NativeHandleProfile &&
+            assetKey.representationProfile !is PlatformHandleProfile &&
             assetKey.fontInstanceKey == instance.key &&
             assetKey.generation == materialization.resolver.generation &&
             assetKey.variant == materialization.renderVariant.key &&

@@ -3,9 +3,9 @@ package org.graphiks.kalligraphie.layout
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontInstanceKey
-import org.graphiks.kalligraphie.api.NativeFontRenderAssetHandle
-import org.graphiks.kalligraphie.api.NativeHandleProfile
-import org.graphiks.kalligraphie.api.NativeFontAccessLimitExceeded
+import org.graphiks.kalligraphie.api.PlatformFontRenderAssetHandle
+import org.graphiks.kalligraphie.api.PlatformHandleProfile
+import org.graphiks.kalligraphie.api.PlatformFontAccessLimitExceeded
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditorOperationLimitExceeded
 import org.graphiks.kalligraphie.api.EditorOperationLimitKind
@@ -107,21 +107,21 @@ internal class OperationRenderAssetPool(
         }
         if (acquired is FontOperationResult.Success) {
             val key = acquired.value.key
-            val nativeProfile = representationProfile as? NativeHandleProfile
-            val context = key.nativeContext
-            val nativeMatches = if (nativeProfile == null) context == null else
-                acquired.value is NativeFontRenderAssetHandle && context != null &&
+            val platformProfile = representationProfile as? PlatformHandleProfile
+            val context = key.platformContext
+            val platformMatches = if (platformProfile == null) context == null else
+                acquired.value is PlatformFontRenderAssetHandle && context != null &&
                     context.reopenToken.isNotBlank() &&
-                    context.routeIdentity.bridgeKind == nativeProfile.bridgeKind &&
-                    context.routeIdentity.bridgeId == nativeProfile.bridgeId &&
-                    context.routeIdentity.bridgeVersion == nativeProfile.bridgeVersion &&
+                    context.routeIdentity.bridgeKind == platformProfile.bridgeKind &&
+                    context.routeIdentity.bridgeId == platformProfile.bridgeId &&
+                    context.routeIdentity.bridgeVersion == platformProfile.bridgeVersion &&
                     context.routeIdentity.runtimeInterpretationId.isNotBlank()
             if (key.fontInstanceKey != selection.instance ||
                 (key.variantSnapshot ?: FontRenderVariantSnapshot.default) != selection.renderVariant ||
                 key.variant != selection.renderVariant.key || key.representationProfile != selection.profile ||
-                key.generation != selection.generation || !nativeMatches) {
-                val mismatch = if (!nativeMatches) FontError.FontDataFailure(
-                    "font.native-context-proof-failed", "Acquired native asset does not match the requested bridge context.",
+                key.generation != selection.generation || !platformMatches) {
+                val mismatch = if (!platformMatches) FontError.FontDataFailure(
+                    "font.platform-context-proof-failed", "Acquired platform asset does not match the requested bridge context.",
                     FontDiagnosticLocation.FaceId(instance.key.face),
                 ) else FontError.InvalidFontData("Acquired render asset key does not match the complete operation selection.", FontDiagnosticLocation.FaceId(instance.key.face))
                 val closeDiagnostics = closeUnexpectedAsset(acquired.value)
@@ -206,16 +206,16 @@ internal class OperationRenderAssetPool(
 internal fun FontError.isTerminalMaterializationFailure(): Boolean =
     this is FontError.ResourceClosed ||
         this is FontError.IncompatibleCatalogGeneration ||
-        this is NativeFontAccessLimitExceeded ||
+        this is PlatformFontAccessLimitExceeded ||
         this is FontError.ShapingResourceLimitExceeded ||
         this is FontError.EditorOperationLimitExceeded ||
         this is FontError.Cancelled ||
         code == OperationRenderAssetPool.ESTIMATE_UNAVAILABLE_CODE ||
-        code == NATIVE_GLYPH_CLEANUP_FAILURE_CODE ||
+        code == PLATFORM_GLYPH_CLEANUP_FAILURE_CODE ||
         code in setOf(
             "font.open-type-copy-estimate-unavailable", "font.open-type-copy-estimate-invalid",
-            "font.native-context-proof-failed", "font.native-library-load-failed",
+            "font.platform-context-proof-failed", "font.native-library-load-failed",
             "font.native-symbol-resolution-failed", "font.native-allocation-failed",
-            "font.native-resolver-cleanup-failed",
-            "font.native-font-creation-failed", "font.native-runtime-identity-unavailable",
+            "font.platform-resolver-cleanup-failed",
+            "font.native-font-creation-failed", "font.platform-runtime-identity-unavailable",
         )

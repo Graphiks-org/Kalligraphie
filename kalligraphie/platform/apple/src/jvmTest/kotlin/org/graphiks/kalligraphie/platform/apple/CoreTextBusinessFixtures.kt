@@ -7,21 +7,21 @@ import kotlin.test.assertIs
 internal fun <T> success(result: FontOperationResult<T>): T = assertIs<FontOperationResult.Success<T>>(result, result.toString()).value
 internal fun portableFixture(path: String): FontCatalogSnapshot {
     val bytes = checkNotNull(CoreTextFontAccessTest::class.java.getResourceAsStream(path)).use { it.readBytes() }
-    return success(Kalligraphie.embedded(bytes, FontSourceProvenance("audited native access fixture")))
+    return success(Kalligraphie.embedded(bytes, FontSourceProvenance("audited platform access fixture")))
 }
 internal val generousPolicy = CoreTextFontAccessPolicy(2_000_000L, 8_000_000L, 8_000_000L)
 
 internal val portableOutlineProfile = OutlineProfile(maxBytes = 1_000_000, maxContours = 1_024, maxPoints = 65_536, maxCompositeDepth = 16, maxCompositeComponents = 256)
 internal fun liberationCatalog(policy: CoreTextFontAccessPolicy = generousPolicy): CoreTextFontCatalogSnapshot =
     success(CoreTextFontCatalog.capture(portableFixture("/fonts/liberation/LiberationSans-Regular.ttf"), policy))
-internal fun nativeFont(catalog: CoreTextFontCatalogSnapshot): FontInstance {
-    val face = success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile))))
+internal fun platformFont(catalog: CoreTextFontCatalogSnapshot): FontInstance {
+    val face = success(catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile))))
     return success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
 }
-internal fun nativeAsset(catalog: CoreTextFontCatalogSnapshot, resolver: FontAssetResolverHandle, token: CancellationToken = CancellationToken.none): NativeFontRenderAssetHandle =
-    assertIs(success(nativeFont(catalog).acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, FontAccessRequirementsSnapshot.renderable(listOf(catalog.nativeProfile)), token)))
-internal fun assertAuditedAdvance(asset: NativeFontRenderAssetHandle, advance: Double = 1366.0) {
-    val lease = assertIs<CoreTextFontLease>(success(asset.acquireNativeFontLease()))
+internal fun platformAsset(catalog: CoreTextFontCatalogSnapshot, resolver: FontAssetResolverHandle, token: CancellationToken = CancellationToken.none): PlatformFontRenderAssetHandle =
+    assertIs(success(platformFont(catalog).acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, FontAccessRequirementsSnapshot.renderable(listOf(catalog.platformProfile)), token)))
+internal fun assertAuditedAdvance(asset: PlatformFontRenderAssetHandle, advance: Double = 1366.0) {
+    val lease = assertIs<CoreTextFontLease>(success(asset.acquirePlatformFontLease()))
     try { kotlin.test.assertEquals(advance, CoreTextConsumerProbe.horizontalAdvance(success(lease.fontRef()), 36), 0.000001) }
     finally { success(lease.close()) }
 }

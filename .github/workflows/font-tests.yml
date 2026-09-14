@@ -102,7 +102,7 @@ jobs:
           done
       - run: ./gradlew --no-daemon :kalligraphie:shaping:jvmTest
 
-  apple-native-fonts:
+  apple-platform-fonts:
     name: CoreText font journeys (${{ matrix.target }})
     strategy:
       fail-fast: false
@@ -125,7 +125,7 @@ jobs:
           java-version: '25'
           cache: gradle
       - run: chmod +x gradlew
-      - name: Exercise exact fonts, native ownership and certified layouts
+      - name: Exercise exact fonts, platform ownership and certified layouts
         run: ./gradlew --no-daemon :kalligraphie:platform:apple:jvmTest
 
   harfbuzz-source-rebuild-macos:
