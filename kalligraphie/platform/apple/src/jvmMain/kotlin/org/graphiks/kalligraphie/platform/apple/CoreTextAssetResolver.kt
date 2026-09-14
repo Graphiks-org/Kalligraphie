@@ -87,22 +87,47 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
         try {
             result = coreTextResult { block() }
         } finally {
-            val drainage = operation.closeResult()
             val completed = result
-            if (completed != null) {
-                if (completed is FontOperationResult.Success) {
-                    var transferable = false
-                    try {
-                        val primary = if (token.isCancellationRequested()) FontOperationResult.Cancelled(completed.diagnostics) else completed
-                        result = completeCoreTextCleanup(primary, drainage)
-                        transferable = result is FontOperationResult.Success
-                    } finally {
-                        if (!transferable) result = completeCoreTextCleanup(checkNotNull(result), completed.value.close())
+            var transferable = false
+            var cancelled = completed is FontOperationResult.Cancelled
+            try {
+                // Ownership is protected before release, including its callback/result allocation.
+                val drainage = cleanupResult { operation.closeResult() }
+                if (completed != null) {
+                    var primary = completed
+                    if (completed is FontOperationResult.Success && token.isCancellationRequested()) {
+                        cancelled = true
+                        primary = FontOperationResult.Cancelled(completed.diagnostics)
+                        result = primary
                     }
-                } else result = completeCoreTextCleanup(completed, drainage)
+                    result = completeCoreTextCleanup(primary, drainage)
+                    transferable = result is FontOperationResult.Success
+                }
+            } catch (_: OutOfMemoryError) {
+                result = allocationOutcome(result, cancelled)
+            } finally {
+                if (!transferable && completed is FontOperationResult.Success) {
+                    val closed = cleanupResult { completed.value.close() }
+                    val primary = result ?: ALLOCATION_FAILURE
+                    result = try { completeCoreTextCleanup(primary, closed) }
+                    catch (_: OutOfMemoryError) { allocationOutcome(primary, cancelled) }
+                }
             }
         }
         checkNotNull(result)
     }
-    override fun close(): FontOperationResult<Unit> = owner.closeResult()
+    private inline fun cleanupResult(block: () -> FontOperationResult<Unit>): FontOperationResult<Unit> =
+        try { block() } catch (_: OutOfMemoryError) { ALLOCATION_FAILURE }
+
+    private fun allocationOutcome(primary: FontOperationResult<*>?, cancelled: Boolean): FontOperationResult<Nothing> =
+        if (primary is FontOperationResult.Cancelled) primary else if (cancelled) CANCELLED else ALLOCATION_FAILURE
+
+    override fun close(): FontOperationResult<Unit> = cleanupResult { owner.closeResult() }
+
+    private companion object {
+        // Initialized before any resolver instance/admitted asset, so exhaustion fallback allocates nothing.
+        val ALLOCATION_FAILURE = FontOperationResult.Failure(FontError.FontDataFailure("font.native-allocation-failed",
+            "Native resolver cleanup could not allocate its result.", FontDiagnosticLocation.Source))
+        val CANCELLED = FontOperationResult.Cancelled()
+    }
 }
