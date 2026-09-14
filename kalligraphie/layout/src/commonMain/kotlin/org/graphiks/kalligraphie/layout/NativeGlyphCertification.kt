@@ -2,10 +2,14 @@ package org.graphiks.kalligraphie.layout
 
 import org.graphiks.kalligraphie.api.*
 
+/** Cleanup refusal is terminal regardless of the provider's cleanup error kind. */
+internal const val NATIVE_GLYPH_CLEANUP_FAILURE_CODE: String = "font.native-glyph-validation-cleanup-failed"
+
 /**
  * Proves distinct final glyph IDs through a temporary independently owned native lease.
- * No native owner escapes into evidence. Cooperative checks run between provider calls;
- * unconditional lease cleanup preserves diagnostics and cannot turn a cleanup failure into success.
+ * No native owner escapes into evidence. Cooperative checks run between provider calls.
+ * Unconditional cleanup preserves cancellation as primary; any other cleanup failure is
+ * terminal, retaining the original proof and provider cleanup errors as diagnostics.
  */
 internal fun validateNativeGlyphs(
     asset: NativeFontRenderAssetHandle,
@@ -22,6 +26,21 @@ internal fun validateNativeGlyphs(
     }
     val diagnostics = acquired.diagnostics.toMutableList()
     var result: FontOperationResult<Map<GlyphId, GlyphMaterializationRoute>> = FontOperationResult.Success(emptyMap())
+    fun failCleanup(error: FontError) {
+        when (val proof = result) {
+            is FontOperationResult.Cancelled -> Unit
+            else -> {
+                if (proof is FontOperationResult.Failure) diagnostics += proof.error.toDiagnostic()
+                val terminalError = FontError.FontDataFailure(
+                    NATIVE_GLYPH_CLEANUP_FAILURE_CODE,
+                    "Native glyph validation lease cleanup failed: ${error.message}",
+                    error.location,
+                )
+                diagnostics += terminalError.toDiagnostic()
+                result = FontOperationResult.Failure(terminalError)
+            }
+        }
+    }
     try {
         result = proveNativeGlyphs(asset, lease, glyphIds, cancellationToken)
     } finally {
@@ -34,12 +53,12 @@ internal fun validateNativeGlyphs(
             is FontOperationResult.Success -> diagnostics += closed.diagnostics
             is FontOperationResult.Failure -> {
                 diagnostics += closed.diagnostics + closed.error.toDiagnostic()
-                if (result is FontOperationResult.Success) result = closed
+                failCleanup(closed.error)
             }
             is FontOperationResult.Cancelled -> {
                 val error = FontError.Cancelled("Native validation lease cleanup was cancelled.")
                 diagnostics += closed.diagnostics + error.toDiagnostic()
-                if (result is FontOperationResult.Success) result = FontOperationResult.Failure(error)
+                failCleanup(error)
             }
         }
     }

@@ -211,6 +211,7 @@ internal fun FontError.isTerminalMaterializationFailure(): Boolean =
         this is FontError.EditorOperationLimitExceeded ||
         this is FontError.Cancelled ||
         code == OperationRenderAssetPool.ESTIMATE_UNAVAILABLE_CODE ||
+        code == NATIVE_GLYPH_CLEANUP_FAILURE_CODE ||
         code in setOf(
             "font.open-type-copy-estimate-unavailable", "font.open-type-copy-estimate-invalid",
             "font.native-context-proof-failed", "font.native-library-load-failed",
