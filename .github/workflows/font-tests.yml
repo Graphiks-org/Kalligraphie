@@ -101,6 +101,8 @@ jobs:
             fi
           done
       - run: ./gradlew --no-daemon :kalligraphie:shaping:jvmTest
+      - name: Exercise directory captures and system-catalog shaping and glyphs
+        run: ./gradlew --no-daemon :kalligraphie:jvmTest --tests '*FontDirectoryCatalogTest*' --tests '*SystemFontCatalogJourneyTest*'
 
   apple-platform-fonts:
     name: CoreText font journeys (${{ matrix.target }})

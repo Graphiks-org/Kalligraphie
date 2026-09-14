@@ -1,6 +1,6 @@
 # Gestion des fontes
 
-Kalligraphie propose une prise en charge de fontes TrueType embarquées via
+Kalligraphie propose des fontes TrueType embarquées ou capturées dans des répertoires via
 `org.graphiks:kalligraphie`, uniquement sur la cible de référence de la
 machine virtuelle Java (JVM). Les contrats publics restent portables, mais
 cette prise en charge exécutable est limitée à la JVM. L’utilisateur de la
@@ -17,7 +17,8 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;
 - fontes TrueType SFNT statiques uniquement : `0x00010000` et `true` ;
-- des sources OpenType embarquées, avec l’index de face `0` pour chaque source ;
+- des sources OpenType embarquées à face unique, d’index `0`, et des collections
+  TTC version 1 ou 2 capturées dans des répertoires, avec leurs indices d’origine ;
 - `LAYOUT_ONLY` pour la table `cmap` (correspondance entre caractères et
   glyphes) et les métriques ;
 - `RENDERABLE` avec un `OutlineProfile`, un `PaintGraphProfile` ou un
@@ -50,6 +51,135 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   l’identique ;
 - ressources de rendu détachées qui restent utilisables après la fermeture du
   gestionnaire propriétaire ou de la ressource attachée.
+
+## Capturer des répertoires de fontes sur la JVM
+
+`FontDirectoryCatalog.open(options, cancellationToken)` capture les fichiers
+lisibles de racines explicites. Les fournisseurs Linux et macOS appliquent les
+mêmes règles dans des domaines distincts :
+
+```kotlin
+import org.graphiks.kalligraphie.FontDirectoryCatalog
+import org.graphiks.kalligraphie.FontDirectoryCatalogOptions
+import org.graphiks.kalligraphie.LinuxSystemFontCatalog
+import org.graphiks.kalligraphie.MacosSystemFontCatalog
+import org.graphiks.kalligraphie.MacosSystemFontCatalogOptions
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontOperationResult
+
+fun requireCapture(result: FontOperationResult<FontCatalogSnapshot>): FontCatalogSnapshot =
+    when (result) {
+        is FontOperationResult.Success -> {
+            result.diagnostics.forEach { println(it) }
+            result.value
+        }
+        is FontOperationResult.Failure -> {
+            result.diagnostics.forEach { println(it) }
+            error("Échec de capture : ${result.error}")
+        }
+        is FontOperationResult.Cancelled -> {
+            result.diagnostics.forEach { println(it) }
+            error("Capture annulée")
+        }
+    }
+
+val options = FontDirectoryCatalogOptions(
+    roots = listOf("/usr/share/fonts"),
+    maxPathsToVisit = 512,
+    maxFaces = 32,
+    maxFacesToExamine = 128,
+    maxSourceBytes = 16 * 1024 * 1024,
+    maxTotalSourceBytes = 64 * 1024 * 1024,
+    maxDiagnostics = 64,
+)
+val explicit = requireCapture(FontDirectoryCatalog.open(options))
+// Sur Linux ; sans options, utilise les racines système, utilisateur et XDG.
+val linux = requireCapture(LinuxSystemFontCatalog.open(options = options))
+// Autre possibilité sur macOS ; sans options, utilise les racines standard.
+val macos = requireCapture(MacosSystemFontCatalog.open(
+    options = MacosSystemFontCatalogOptions(roots = listOf("/Library/Fonts")),
+))
+```
+
+Les appels propres à un OS sont des alternatives : chacun retourne un échec
+typé de prise en charge sur un autre OS. Chaque `open` accepte aussi un
+`CancellationToken` ; l’annulation est coopérative entre opérations du système
+de fichiers et n’interrompt pas un appel OS bloqué. Une annulation ne publie
+aucun snapshot (instantané immuable) partiel. Les options invalides, comme des
+limites non positives ou des racines répétées, sont refusées à la construction.
+
+La découverte considère `.ttf`, `.otf`, `.ttc` et `.otc` sans suivre les liens
+symboliques. L’extension `.otf` n’implique pas des contours CFF : le contenu SFNT
+détermine la prise en charge. Le TrueType statique est supporté ; CFF/CFF2 et
+les données de fontes variables sont exclus de cette route. Les candidats
+capturés sont ordonnés lexicalement, puis par indice d’origine dans chaque
+collection. La découverte est bornée et peut omettre des candidats ; elle ne
+reproduit pas exactement les fontes activées par Fontconfig ou CoreText. La
+capture du système de fichiers n’est pas globalement atomique.
+
+Examiner les diagnostics même sur `Success` : racines absentes ou illisibles,
+sources ou faces refusées et limites atteintes peuvent laisser un inventaire
+partiel utilisable. Sans face acceptée, l’opération retourne `Failure`.
+`maxDiagnostics` borne les diagnostics retournés ;
+`font.capture.diagnostics-truncated` est inclus dans cette limite lorsque des
+détails sont omis. `maxPathsToVisit` compte les chemins inspectés, racines comprises ;
+`maxFacesToExamine` compte les répertoires de faces examinés, refus compris ;
+`maxFaces` limite les faces acceptées après examen de la source. Ces limites ont des sens distincts.
+
+Chaque collection retenue doit pouvoir faire examiner toutes ses faces dans le
+budget `maxFacesToExamine` restant. Une source TTC/OTC dépassant ce budget est
+refusée entièrement avec `ResourceLimitExceeded` et un diagnostic avant tout
+examen de ses répertoires de faces ; aucun préfixe de collection partiellement
+examinée n’est admis. Une collection valide à deux faces exige donc au moins
+deux places d’examen restantes, même avec `maxFaces` égal à un. Ce refus fondé
+sur le nombre de faces ne consomme aucune place d’examen : des sources distinctes
+qui tiennent dans le budget peuvent encore former un catalogue partiel utilisable.
+
+Les en-têtes de collection et les plages de tous leurs répertoires de faces doivent
+être adressables sans débordement. Un répertoire tenté non sûr fait refuser tout
+son conteneur d’origine, avec des diagnostics d’offset (décalage dans les octets)
+numériques ; cette tentative compte dans le budget d’examen. Des faces voisines
+adressables mais incompatibles ou aux métadonnées invalides peuvent être exclues
+individuellement ; les faces retenues gardent leur indice d’origine. Après examen
+complet de la source, la limite distincte `maxFaces` peut omettre des faces acceptées.
+Ces contrôles empêchent l’admission d’un conteneur dont des répertoires n’ont pas
+été examinés ; ils ne prétendent pas reproduire le container sanitizer (validateur
+de sécurité du conteneur) de HarfBuzz pour toute table non prise en charge.
+
+`FontFaceId.source` identifie le conteneur capturé d’origine et `faceIndex`
+sélectionne sa face. `copyOpenTypeData()` retourne les octets du conteneur
+d’origine et l’identité de face sélectionnée : aucune extraction de fonte à
+face unique, réécriture ou renumérotation n’est effectuée. Les faces voisines
+partagent la source retenue. `maxSourceBytes` borne chaque conteneur lu ;
+`maxTotalSourceBytes` compte une fois chaque conteneur unique accepté. Ces
+budgets ne plafonnent pas la mémoire du processus : copies défensives, lectures
+temporaires, métadonnées et mémoire de décodage sont exclues. Utiliser
+`estimateOpenTypeDataCopy()` pour estimer les allocations contrôlées avant copie.
+La rétention des représentations portables relève séparément de
+`materializationCachePolicy` et de `cacheScope`, facultatif : le cache (mémoire
+de rétention réutilisable) fermé permet encore des opérations sans rétention.
+
+Rafraîchir explicitement avec un nouvel `open` après installation ou suppression :
+
+```kotlin
+val refreshed = requireCapture(FontDirectoryCatalog.open(options))
+// Utiliser refreshed.generation et un nouveau résolveur pour les nouvelles mises en page.
+```
+
+Chaque capture réussie possède une nouvelle génération, même à fichiers
+identiques. Conserver les clés de layout (mise en page), résolveur et ressources
+dans cette génération ; rouvrir une ancienne clé de ressource dans une nouvelle
+génération échoue. Les instances capturées et ressources de rendu possédées
+indépendamment gardent leurs données après remplacement ou suppression des
+fichiers. Fermer chaque résolveur, propriétaire de mise en page et ressource de
+rendu acquis ; fermer un propriétaire initial n’invalide pas ses enfants
+indépendants déjà admis. Le snapshot lui-même n’a pas d’opération `close`.
+
+Les appels Kotlin existants à `MacosSystemFontCatalogOptions` et
+`MacosSystemFontCatalog.open` restent compatibles au niveau source grâce aux
+paramètres finaux par défaut. Leurs signatures JVM ont changé : recompiler les
+consommateurs des anciens constructeurs ou points d’entrée ; les appels déjà
+compilés ne sont pas compatibles au niveau binaire.
 
 ### Transport et limites des documents SVG
 

@@ -49,6 +49,15 @@ public class PreparedTrueTypeFont internal constructor(
      */
     public constructor(source: FontSource, parsedFont: ParsedTrueTypeFont) : this(source.copyBytes(), parsedFont)
 
+    /** @suppress Creates sibling decoders sharing one private defensive source copy. */
+    public companion object {
+        /** @suppress Assembly-only factory; no mutable backing escapes. */
+        public fun prepareFaces(source: FontSource, faces: List<ParsedTrueTypeFont>): List<PreparedTrueTypeFont> {
+            val capturedBytes = source.copyBytes()
+            return faces.map { PreparedTrueTypeFont(capturedBytes, it) }
+        }
+    }
+
     private val glyphDataCache = AtomicReference<FontOperationResult<PreparedGlyphData>?>(null)
 
     /**

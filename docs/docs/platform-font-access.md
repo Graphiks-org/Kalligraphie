@@ -11,6 +11,46 @@ is an opaque resource reference, not necessarily a memory address. In this
 guide, native calls, pointers and allocations refer specifically to the
 CoreText C interoperability implementation.
 
+## Target capabilities and discovery
+
+Directory discovery and platform rendering are separate capabilities. The main
+JVM artifact offers `FontDirectoryCatalog`, `LinuxSystemFontCatalog` and
+`MacosSystemFontCatalog`; see [capture usage and bounds](font-management.md#capture-font-directories-on-the-jvm).
+The system providers capture accessible directory files, not an exact activated
+registry. They require explicit reopening to refresh and preserve independently
+owned resources from the previous generation.
+
+| Target / provider | Discovery and source data | Operational shaping | Glyph access and refresh |
+|---|---|---|---|
+| JVM `FontDirectoryCatalog` | Explicit readable roots; standalone static TrueType and TTC 1/2, original source/index | Bundled HarfBuzz on Linux/macOS x64 and arm64 | Portable advertised outline/paint/bitmap profiles; new `open` for refresh |
+| Linux JVM `LinuxSystemFontCatalog` | System, legacy user and XDG roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on Linux x64 and arm64 | Same portable routes; no Fontconfig registry matching or automatic refresh |
+| macOS JVM `MacosSystemFontCatalog` | Standard system/user roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; no CoreText registry matching or automatic refresh |
+| macOS JVM optional CoreText adapter | Exact bytes from a portable catalogue; eligible standalone static monochrome TrueType only | Preserves portable shaping; no CoreText layout substitution | Explicitly accepted platform handle, or underlying portable routes; collections excluded from the platform route |
+| Windows JVM | No Windows system-font provider | No bundled operational HarfBuzz target | Portable contracts do not establish a complete Windows font journey |
+| Android / Kotlin Native / iOS | No system-directory provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
+| CFF/CFF2 data on any target | Not supported by these capture providers | No delivered CFF shaping journey | No CFF portable or CoreText route in this scope |
+
+The standalone embedded route remains available on the JVM. File extensions do
+not establish outline support: `.otf` may contain supported TrueType or unsupported
+CFF. Directory admission is bounded: a TTC/OTC source whose complete face count
+exceeds the remaining examination budget is rejected whole, with a typed limit
+diagnostic, before examining any of its directories. No partially examined
+collection prefix is published. Separate completely examined sources can still
+form a partial catalog; the accepted-face cap applies independently after source
+examination, preserving original selected indices. These checks do not claim
+general equivalence with HarfBuzz's sanitizer for unsupported tables. A discovered face is not
+a guarantee that every backend or representation profile can use it. The
+four-target Linux/macOS JVM CI matrix runs actual directory and system-catalog
+shaping/glyph journeys alongside the full shaper tests and native dependency
+audit; that does not establish Windows, mobile or CFF support.
+
+New raw native symbols, types, ABI declarations, constants and library access
+belong in kffi. Kalligraphie owns typographic adaptation, capture, provenance,
+identity, generations, diagnostics and font-resource lifetime. Existing CoreText
+code uses kffi's generic JVM downcall engine but still declares native details
+locally, as do the legacy HarfBuzz bindings; extracting those existing declarations
+remains follow-up work. Directory capture adds no raw native bindings.
+
 ## Optional Apple module
 
 Use `:kalligraphie:platform:apple` alongside the main `:kalligraphie` module.

@@ -135,7 +135,7 @@ private class HarfBuzzJvmBackend(
             val prepared = preparedFonts.acquire(
                 request.font.key,
                 source = { copyFontBytes(request) },
-                create = { bytes -> nativeLibrary.prepare(bytes, layoutSize) },
+                create = { bytes -> nativeLibrary.prepare(bytes, request.font.key.face.faceIndex, layoutSize) },
             )
             try {
                 observeCancellation(request)
@@ -666,7 +666,7 @@ internal class HarfBuzzNativeLibrary(
 
     fun versionString(): String = address(versionString).reinterpret(MAX_VERSION_BYTES).getString(0)
 
-    fun prepare(fontBytes: ByteArray, layoutSize: Float): PreparedHarfBuzzFont {
+    fun prepare(fontBytes: ByteArray, faceIndex: Int, layoutSize: Float): PreparedHarfBuzzFont {
         val arena = Arena.ofShared()
         var blob: MemorySegment = MemorySegment.NULL
         var face: MemorySegment = MemorySegment.NULL
@@ -675,7 +675,7 @@ internal class HarfBuzzNativeLibrary(
             val copiedFont = arena.allocate(fontBytes.size.toLong(), 1)
             copiedFont.copyFrom(MemorySegment.ofArray(fontBytes))
             blob = requireNativeHandle(address(blobCreate, copiedFont, fontBytes.size, HB_MEMORY_MODE_READONLY, MemorySegment.NULL, MemorySegment.NULL), "blob")
-            face = requireNativeHandle(address(faceCreate, blob, 0), "face")
+            face = requireNativeHandle(address(faceCreate, blob, faceIndex), "face")
             val designToLayout = DesignToLayoutScale.create(layoutSize, int(faceGetUpem, face))
             font = requireNativeHandle(address(fontCreate, face), "font")
             callVoid(otFontSetFuncs, font)

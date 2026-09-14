@@ -40,13 +40,16 @@ public object SfntReader {
      * with diagnostics identifying the invalid container or table.
      */
     public fun readMetadata(source: FontSource): FontOperationResult<ParsedTrueTypeFont> {
-        val bytes = source.copyBytes()
-        if (bytes.size < 12) {
+        return readMetadataAt(source.copyBytes(), 0)
+    }
+
+    internal fun readMetadataAt(bytes: ByteArray, directoryOffset: Int): FontOperationResult<ParsedTrueTypeFont> {
+        if (directoryOffset < 0 || directoryOffset.toLong() + 12L > bytes.size) {
             return failure(FontError.InvalidFontData("SFNT header is truncated."))
         }
 
-        val scalerType = readUInt32(bytes, 0) ?: return failure(FontError.OutOfBounds("Could not read scaler type.", FontDiagnosticLocation.Source))
-        val containerTag = bytes.decodeAsciiTag(0)
+        val scalerType = readUInt32(bytes, directoryOffset) ?: return failure(FontError.OutOfBounds("Could not read scaler type.", FontDiagnosticLocation.Source))
+        val containerTag = bytes.decodeAsciiTag(directoryOffset)
         if (scalerType != 0x00010000u && containerTag != "true") {
             val message = when (containerTag) {
                 "ttcf", "OTTO", "typ1" -> "Unsupported SFNT container: $containerTag"
@@ -55,22 +58,22 @@ public object SfntReader {
             return failure(FontError.UnsupportedContainer(message))
         }
 
-        val numTables = readUInt16(bytes, 4) ?: return failure(FontError.OutOfBounds("Could not read table count.", FontDiagnosticLocation.Source))
+        val numTables = readUInt16(bytes, directoryOffset + 4) ?: return failure(FontError.OutOfBounds("Could not read table count.", FontDiagnosticLocation.Source))
         val directoryLength = numTables.toLong() * 16L
-        checkedRangeEnd(12L, directoryLength, bytes.size)
+        checkedRangeEnd(directoryOffset.toLong() + 12L, directoryLength, bytes.size)
             ?: return failure(
                 FontError.OutOfBounds("SFNT directory exceeds source length.", FontDiagnosticLocation.Source),
                 FontDiagnosticData(
-                    offset = 12L,
+                    offset = directoryOffset.toLong() + 12L,
                     length = directoryLength,
-                    observedValue = 12L + directoryLength,
+                    observedValue = directoryOffset.toLong() + 12L + directoryLength,
                     limit = bytes.size.toLong(),
                 ),
             )
 
         val records = LinkedHashMap<String, TableRecord>(numTables.toInt())
         val diagnostics = mutableListOf<FontDiagnostic>()
-        var offset = 12
+        var offset = directoryOffset + 12
         repeat(numTables.toInt()) {
             val tag = bytes.decodeAsciiTag(offset)
             val tableOffset = readUInt32(bytes, offset + 8)?.toLong()
