@@ -275,3 +275,62 @@ Le runner n’impose aucun seuil de latence. `check` exclut la tâche de mesure,
 même si la variable opt-in est définie, et ce travail n’ajoute ni renderer (moteur
 de rendu), ni rasterizer (moteur de pixellisation), ni API GPU, ni bridge
 (pont) natif.
+
+## Rétention partagée et propriété native
+
+Le module Apple fournit une mesure exécutable séparée, passant par les vrais
+consommateurs publics de contours, peinture, bitmaps et CoreText. Cette tâche
+`JavaExec` reste hors `check` et requiert les mêmes versions macOS/JDK et droits
+d'accès natifs que la route Apple. Activez-la explicitement et écrivez le rapport
+hors du dépôt :
+
+```bash
+env KALLIGRAPHIE_SHARED_FONT_CACHE_MEASUREMENT=true \
+  KALLIGRAPHIE_SHARED_FONT_CACHE_OUTPUT=/tmp/kalligraphie-shared-retention.txt \
+  ./gradlew :kalligraphie:platform:apple:sharedFontCacheMeasurement --rerun-tasks
+```
+
+Le rapport consigne empreintes du corpus, tailles source, révision et état des
+sources mesurées, OS, architecture, JVM et identité complète de route. L'enregistreur
+interne borné est désactivé par défaut et attaché avant toute rétention ; ses cellules
+préallouées archivent les comptes supprimés. Il rapporte budgets, charges courantes
+et maxima au moment de chaque événement, pour les quatre dimensions et catégories
+actives, réservées, en cours de libération et résiduelles, par domaine, capture et
+face. Les changements de catégorie sont observés après comptabilité complète, et
+les acquittements confirmés avant suppression des comptes. Les maxima de catégories
+peuvent provenir d'instants différents : leur somme n'est pas un pic simultané. La
+saturation de l'enregistreur invalide explicitement l'exhaustivité de la mesure.
+
+Les profils exercent chaque dimension par domaine/capture/face, les budgets nuls,
+les résultats individuellement trop lourds et des acquisitions concurrentes réelles
+de contours/peinture/bitmaps/contextes natifs. Limites de contours, couleurs de palette,
+pixels décodés exacts et avances natives indépendantes auditées valident le comportement.
+Un profil d'octets natifs amorce 48 contextes de tailles distinctes de la fonte GDEF
+de 1772 octets, ferme leurs propriétaires consommateurs, puis acquiert DejaVu de
+757076 octets dans un domaine natif limité à 757076 octets. Le candidat tient seul,
+mais nécessite l'abandon des 48 petites charges. Décisions, victimes et fallback
+(retour sans rétention) enregistrés montrent le quota interne actuel de 32 victimes
+et deux décisions. Amorçage froid, acquisition indexée chaude, fallback, drainage du
+domaine et fermeture consommateur ont leurs propres latences observées et comptes
+de visites d'index ; aucun seuil temporel ou budget d'image universel n'est promis.
+Ce sont des observations uniques de scénario, sans préchauffage statistique.
+L'amorçage froid chronomètre les 48 acquisitions publiques face/instance/ressource,
+la validation des métriques natives et la fermeture consommateur ; capture du
+catalogue et ouverture du résolveur précèdent cet intervalle. La mesure chaude
+répète une acquisition amorcée, avec validation et fermeture. Le fallback acquiert
+et valide le grand consommateur conservé ; sa fermeture finale est séparée. La
+première initialisation du probe (sonde native) peut affecter l'observation froide.
+L'allocation de l'enregistreur et des rapports reste hors de ces intervalles : c'est
+la mémoire du programme de mesure, pas une charge de rétention du cache.
+
+Des compteurs natifs opt-in (activés explicitement), limités au processus de mesure,
+rapportent les références possédées créées avec succès de CFData, CGDataProvider,
+CGFont et CTFont, les unités de libération API confirmées, les résultats incertains
+et les octets de copie source CFData sous propriété explicite. Ils ne mesurent ni
+`malloc`, ni les caches privés du système, ni la désallocation physique par l'OS.
+À une frontière drainée sans réservation, libération en cours ou incertitude
+résiduelle, la propriété native explicite restante après abandon des références du
+cache appartient exclusivement aux consommateurs survivants. Leurs métriques restent
+utilisables après fermeture du domaine. Un défaut de libération conserve toute la
+charge résiduelle prudente et son incertitude ; il ne permet pas d'annoncer drainage
+confirmé ou mémoire exclusivement consommateur.

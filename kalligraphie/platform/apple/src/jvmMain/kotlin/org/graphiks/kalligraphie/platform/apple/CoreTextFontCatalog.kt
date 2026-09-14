@@ -31,6 +31,13 @@ public object CoreTextFontCatalog {
      * while consumer owners and new acquisitions remain usable. Without a scope, enabled retention
      * uses this capture's local budget. The portable catalogue's own cache is not reconfigured.
      * No additional native retention occurs with the default disabled policy.
+     * Pass the same scope to the portable capture to include its representations. Each retained
+     * context charges the known N-byte CFData source copy and four owned native resource units,
+     * not total OS memory or malloc calls. Reservations, retirement and residual uncertainty stay
+     * charged at all levels until cache reference release is confirmed. Resolver close reports
+     * known deferred cache cleanup faults on first and repeated calls without retrying releases.
+     * Drain resolvers/scopes outside the rendering critical path. Trailing parameters require
+     * JVM consumer recompilation; custom providers' independent caches do not participate.
      */
     public fun capture(portable: FontCatalogSnapshot, policy: CoreTextFontAccessPolicy,
         cancellationToken: CancellationToken = CancellationToken.none,

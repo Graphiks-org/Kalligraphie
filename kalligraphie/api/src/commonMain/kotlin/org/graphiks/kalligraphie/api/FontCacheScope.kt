@@ -21,6 +21,11 @@ public interface FontCacheScopeBackend {
  * Drainage may be proportional to retained entries: close outside the rendering critical path.
  * A close result reports known cleanup faults, including faults learned since an earlier close;
  * it does not certify completion of concurrent cleanup and never retries a partial release.
+ * All four dimensions include active entries, pending reservations, retiring references and
+ * residual cleanup charges. Relinquished cache references leave the budget even when consumer
+ * owners keep their resources alive; captured sources and private OS memory are excluded.
+ * Pass the same domain separately to portable and CoreText captures to aggregate both routes;
+ * adaptation does not reconfigure an existing capture, and custom providers' own caches are excluded.
  */
 public class FontCacheScope
 /**

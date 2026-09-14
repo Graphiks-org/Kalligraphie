@@ -309,8 +309,72 @@ recopier les octets ni créer une nouvelle fonte.
 Ces charges excluent le catalogue initial possédé par l’appelant, le surcoût
 des objets JVM, la collecte mémoire différée et les allocations privées du
 système. Elles ne bornent pas la RSS (mémoire physique résidente) du processus.
-Le fournisseur ne conserve aucun cache (mémoire de réutilisation) de fontes de plateforme inactives. Les
-propriétaires retenus par le consommateur exigent une fermeture explicite et
-ne sont pas des entrées de cache évincées par le moteur. Une référence
-complète de performance et un budget de cache de plateforme partagé sont des
-capacités distinctes, pas des garanties de cette route d’accès.
+Les propriétaires retenus par le consommateur exigent une fermeture explicite et
+ne sont pas des entrées de cache évincées par le moteur.
+
+## Rétention partagée des contextes
+
+La rétention de contextes CoreText est désactivée par défaut. Une politique locale
+activée sans domaine garde un budget privé par capture. Pour cumuler représentations
+portables et contextes éligibles, injectez un seul domaine dans les deux captures :
+
+```kotlin
+val budget = FontCacheBudget(16L * 1024 * 1024, 1_000_000, 8L * 1024 * 1024, 32)
+val policy = FontMaterializationCachePolicy(budget, budget)
+val scope = Kalligraphie.fontCacheScope(budget)
+val portable = success(Kalligraphie.embedded(bytes, provenance, policy, scope))
+val native = success(CoreTextFontCatalog.capture(
+    portable, accessPolicy, cachePolicy = policy, cacheScope = scope,
+))
+```
+
+L'adaptation ne change ni la politique ni le domaine du catalogue portable. Toutes
+les dimensions par domaine, capture et face doivent tenir simultanément. Seule la
+route TrueType statique monochrome existante, avec géométrie et variante par défaut,
+est conservée ; aucun format, provider (fournisseur) ou moteur n'est ajouté. Les
+caches indépendants des fournisseurs personnalisés sont exclus. Chaque contexte
+compte une enveloppe gérée prudente de 4096 octets, plus 1024 octets de métadonnées
+fixes de clé/propriétaire et les chaînes variables, N octets pour la copie CFData
+connue de la source, zéro pixel décodé et quatre unités natives : CFData,
+CGDataProvider, CGFont, CTFont. Ces unités dénombrent les ressources explicites,
+pas les appels d'allocation internes ni la mémoire inconnue des frameworks
+(bibliothèques système). L'admission temporaire de création reste indépendante.
+
+Les charges actives, réservées, en cours de libération et résiduelles comptent à
+chaque niveau. Une référence évincée reste facturée jusqu'à son abandon confirmé ;
+un nettoyage partiel ou échoué conserve prudemment toute sa charge résiduelle. Après
+l'abandon de la référence de cache, les ressources indépendantes du consommateur
+deviennent de la mémoire externe, même si elles gardent le contexte physique vivant.
+Sources capturées, propriétaires exclusivement consommateurs, surcoût JVM, délai
+du GC (ramasse-miettes) et mémoire privée du système sont exclus ; une libération
+de cache en cours ne l'est jamais.
+
+La fermeture du dernier résolveur, après drainage de ses opérations admises, libère
+les références de cache de sa capture. Une réouverture préserve son identité et ses
+charges en attente. Un défaut de nettoyage propre au cache ne transforme pas une
+acquisition typographique réussie en échec : la première fermeture et les suivantes
+rapportent le premier défaut connu sous une forme bornée, y compris un défaut appris
+pendant un drainage différé. Un échec ou une annulation de fermeture portable reste
+primaire et reçoit les diagnostics du cache. Les fermetures répétées ne retentent
+jamais la libération de cette référence.
+
+`scope.close()` désactive la rétention et libère les références hors coordination.
+Il rapporte les défauts connus et peut retourner avant la fin d'un nettoyage
+concurrent. Les propriétaires existants, acquisitions suivantes et nouvelles
+captures utilisant ce domaine fermé restent utilisables sans cache privé de
+remplacement. Fermez résolveurs/domaines hors du chemin critique de rendu : le
+drainage peut libérer toutes les entrées et la latence native n'est pas universellement
+bornée. Fermez chaque ressource, propriétaire détaché et lease (droit temporaire de
+durée de vie) indépendant selon son contrat habituel.
+Un ordre de fermeture pratique consiste à fermer chaque résolveur à la fin de son
+travail d'acquisition, puis le domaine partagé à la fin de la réutilisation, tous
+deux hors du chemin de rendu. Les ressources et leases de rendu différé peuvent
+rester utilisables et être fermés indépendamment plus tard.
+
+Les signatures JVM de capture/constructeur modifiées exigent une recompilation ; les
+appels Kotlin ordinaires retrouvent leurs valeurs par défaut après recompilation.
+Les déclarations d'assemblage internes ne proposent pas de SPI (interface d'extension)
+publique de cache personnalisé. La
+[mesure facultative](glyph-materialization-measurement.fr.md#retention-partagee-et-propriete-native)
+consigne séparément maxima instantanés, travail d'admission borné et propriété des
+ressources physiques ; elle ne promet pas une latence de rendu universelle.

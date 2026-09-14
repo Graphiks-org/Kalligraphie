@@ -318,7 +318,65 @@ or creating another font.
 
 These charges exclude original caller-owned catalogue data, JVM object
 overhead, delayed garbage collection and private OS allocations. They are
-not a bound on process RSS. The provider keeps no idle platform font cache.
-Consumer-retained owners require explicit closure and are not cache entries
-that the engine evicts. A full performance baseline and shared platform cache
-budget are separate capabilities, not guarantees of this access route.
+not a bound on process RSS. Consumer-retained owners require explicit closure
+and are not cache entries that the engine evicts.
+
+## Shared context retention
+
+CoreText context retention is disabled by default. An enabled local policy without
+a scope retains within a private capture budget. To aggregate portable representations
+and eligible platform contexts, supply one scope explicitly to both captures:
+
+```kotlin
+val budget = FontCacheBudget(16L * 1024 * 1024, 1_000_000, 8L * 1024 * 1024, 32)
+val policy = FontMaterializationCachePolicy(budget, budget)
+val scope = Kalligraphie.fontCacheScope(budget)
+val portable = success(Kalligraphie.embedded(bytes, provenance, policy, scope))
+val native = success(CoreTextFontCatalog.capture(
+    portable, accessPolicy, cachePolicy = policy, cacheScope = scope,
+))
+```
+
+The portable catalog's policy/scope is not changed by adaptation. All four
+scope/capture/face dimensions must fit simultaneously. Only the existing static,
+monochrome TrueType route with default geometry and variant is retained; this adds
+no format, provider or engine. Custom providers' independent caches are excluded.
+Each context charges a conservative managed envelope of 4096 bytes plus 1024 bytes
+of fixed key/owner metadata and variable strings, source length N for CFData's known
+copy, zero decoded pixels and four native units: CFData, CGDataProvider, CGFont,
+CTFont. These units count explicit resources, not internal allocation calls or
+unknown framework memory. Transient creation admission remains independent.
+
+Active, reserved, retiring and residual charges all count at every level. An evicted
+cache reference remains charged until confirmed relinquishment; failed or partial
+cleanup conservatively retains its full residual charge. Once the cache reference
+is relinquished, independently owned consumer resources become external memory,
+even when they keep the physical context alive. Captured sources, caller-only
+owners, JVM overhead, GC timing and private OS memory do not count; ongoing cache
+release is not an exclusion.
+
+Closing the last resolver after its admitted operations drain clears the capture's
+cache references. Reopening preserves its capture identity and outstanding charges.
+Cache-only cleanup faults do not turn successful typographic acquisition into failure:
+the first and repeated resolver `close()` report the first known bounded fault,
+including a fault learned during deferred drainage. A portable close failure or
+cancellation remains primary and receives cache diagnostics. Repeated closes never
+retry the cache reference's release.
+
+`scope.close()` disables retention and drains references outside coordination. It
+reports known faults and can return before concurrent cleanup finishes. Existing
+consumer owners, subsequent acquisitions and new captures using the closed scope
+remain usable uncached; there is no private replacement. Close resolvers/scopes
+outside the rendering critical path, since drainage can release every retained
+entry and native release latency is not universally bounded. Close every independent
+asset, detached owner and lease according to its ordinary lifetime contract.
+A practical shutdown order is to close each resolver when its acquisition work
+ends, then close the shared scope when reuse ends, both off the rendering path.
+Delayed render assets and leases may remain usable and close independently later.
+
+Changed trailing JVM capture/constructor signatures require consumer recompilation;
+ordinary Kotlin calls retain defaults after recompilation. Internal assembly
+declarations do not expose a supported custom-cache SPI. The
+[optional measurement](glyph-materialization-measurement.md#shared-retention-and-native-ownership)
+separately records event-time charge maxima, bounded admission work and physical
+resource ownership; these observations are not a universal rendering latency promise.
