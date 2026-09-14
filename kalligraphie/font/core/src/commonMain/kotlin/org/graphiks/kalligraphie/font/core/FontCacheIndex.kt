@@ -13,13 +13,20 @@ internal class CacheIndex<T> {
     }
     internal class Item<T>(val key: Any, val value: T, val hash: Int, var next: Item<T>? = null)
     private val root = Branch<T>()
+    var lastVisits: Int = 0
+        private set
 
     fun get(key: Any): T? {
+        lastVisits = 0
         val hash = key.hashCode()
         var branch = root
-        for (bit in 0 until 32) branch = (if ((hash ushr bit) and 1 == 0) branch.zero else branch.one) ?: return null
+        for (bit in 0 until 32) {
+            lastVisits++
+            branch = (if ((hash ushr bit) and 1 == 0) branch.zero else branch.one) ?: return null
+        }
         var item = branch.items
         while (item != null) {
+            lastVisits++
             if (item.key == key) return item.value
             item = item.next
         }
@@ -27,15 +34,18 @@ internal class CacheIndex<T> {
     }
 
     fun prepare(key: Any, value: T): Insertion<T>? {
+        lastVisits = 0
         val hash = key.hashCode()
         var branch = root
         for (bit in 0 until 32) {
+            lastVisits++
             val one = (hash ushr bit) and 1 != 0
             val child = if (one) branch.one else branch.zero
             if (child == null) {
                 val subtree = Branch<T>()
                 var leaf = subtree
                 for (remaining in bit + 1 until 32) {
+                    lastVisits++
                     val next = Branch<T>()
                     if ((hash ushr remaining) and 1 == 0) leaf.zero = next else leaf.one = next
                     leaf = next
@@ -49,6 +59,7 @@ internal class CacheIndex<T> {
         var item = branch.items
         var collisions = 0
         while (item != null) {
+            lastVisits++
             if (item.key == key || ++collisions >= 32) return null
             item = item.next
         }
@@ -62,12 +73,14 @@ internal class CacheIndex<T> {
         }
     }
 
-    fun remove(item: Item<T>) { remove(root, item, item.hash, 0) }
+    fun remove(item: Item<T>) { lastVisits = 0; remove(root, item, item.hash, 0) }
     private fun remove(branch: Branch<T>, target: Item<T>, hash: Int, bit: Int): Boolean {
+        lastVisits++
         if (bit == 32) {
             var previous: Item<T>? = null
             var item = branch.items
             while (item != null) {
+                lastVisits++
                 if (item === target) {
                     if (previous == null) branch.items = item.next else previous.next = item.next
                     break

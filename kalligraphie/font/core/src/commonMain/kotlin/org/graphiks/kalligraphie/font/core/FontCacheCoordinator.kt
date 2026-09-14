@@ -87,6 +87,20 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
     private val releaseException = RELEASE_EXCEPTION
     private val releaseAllocationFailure = RELEASE_ALLOCATION_FAILURE
     private val completed = RELEASED
+    private var measurement: FontCacheMeasurement? = null
+
+    /**
+     * Attaches a preallocated isolated-run recorder before any retention.
+     * @suppress
+     */
+    public fun measure(recorder: FontCacheMeasurement) {
+        lock()
+        try {
+            check(measurement == null && ledger.count == 0L && participants == null)
+            ledger.measurementSlot = recorder.register(0, budget)
+            measurement = recorder
+        } finally { gate.store(0) }
+    }
 
     /** Creates a lightweight capture identity without registering an empty record. */
     public fun participant(policy: FontMaterializationCachePolicy): FontCacheParticipant = FontCacheParticipant(identity, policy)
@@ -96,14 +110,21 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
      * acquire a child immediately on this payload before reading any native context from it.
      */
     public fun get(participant: FontCacheParticipant, faceId: FontFaceId, completeKey: Any): FontCachePayload? {
-        if (participant.identity !== identity || !gate.compareAndSet(0, 1)) return null
+        if (participant.identity !== identity) return null
+        if (!gate.compareAndSet(0, 1)) { measurement?.contended(); return null }
         try {
             if (closed) return null
-            val entry = participant.record?.faces?.get(faceId)?.entries?.get(completeKey) ?: return null
+            val capture = participant.record ?: return null
+            val face = capture.faces.get(faceId)
+            measurement?.indexed(capture.faces.lastVisits)
+            if (face == null) return null
+            val entry = face.entries.get(completeKey)
+            measurement?.indexed(face.entries.lastVisits)
+            if (entry == null) return null
             if (entry.state != ACTIVE || entry.captureEpoch != participant.epoch || entry.faceEpoch != entry.face.epoch) return null
             promote(entry)
             return entry.payload
-        } catch (_: OutOfMemoryError) {
+        } catch (_: FontCacheAllocationError) {
             return null
         } finally { gate.store(0) }
     }
@@ -114,20 +135,27 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
      * All metadata needed to publish is allocated before the charged reservation is installed.
      */
     public fun reserve(participant: FontCacheParticipant, faceId: FontFaceId, completeKey: Any, charge: FontCacheCharge): FontCacheReservation? {
-        if (participant.identity !== identity || !charge.fits(participant.policy.perFace) ||
-            !charge.fits(participant.policy.perCatalog) || !charge.fits(budget)) return null
+        var retained = false
+        var attempts = 0
+        var count = 0
         try {
+            if (participant.identity !== identity || !charge.fits(participant.policy.perFace) ||
+                !charge.fits(participant.policy.perCatalog) || !charge.fits(budget)) return null
             val entry = CacheNode(completeKey, charge)
             val reservation = FontCacheReservation(this, entry)
             val retired = arrayOfNulls<CacheNode>(MAX_VICTIMS)
-            var count = 0
-            if (!gate.compareAndSet(0, 1)) return null
+            attempts++
+            if (!gate.compareAndSet(0, 1)) { measurement?.contended(); return null }
             try {
                 if (closed) return null
                 val record = participant.record
-                val face = record?.faces?.get(faceId)
-                if (face?.entries?.get(completeKey) != null) return null
-                if (fits(participant, face, charge)) return install(participant, faceId, entry, reservation)
+                val face = indexed(record?.faces, faceId)
+                if (indexed(face?.entries, completeKey) != null) return null
+                if (fits(participant, face, charge)) {
+                    val installed = install(participant, faceId, entry, reservation)
+                    retained = installed != null
+                    return installed
+                }
                 // Project successful acknowledgements only for selecting relevant victims.
                 // Actual admission still uses unchanged total charges until cleanup finishes.
                 val scopeAvailable = ledger.total.copy()
@@ -150,17 +178,21 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
                 }
             } finally { gate.store(0) }
             for (index in 0 until count) release(retired[index]!!)
-            if (count == 0 || !gate.compareAndSet(0, 1)) return null
+            if (count == 0) return null
+            attempts++
+            if (!gate.compareAndSet(0, 1)) { measurement?.contended(); return null }
             try {
                 if (closed) return null
-                val face = participant.record?.faces?.get(faceId)
-                if (face?.entries?.get(completeKey) != null || !fits(participant, face, charge)) return null
-                return install(participant, faceId, entry, reservation)
+                val face = indexed(participant.record?.faces, faceId)
+                if (indexed(face?.entries, completeKey) != null || !fits(participant, face, charge)) return null
+                val installed = install(participant, faceId, entry, reservation)
+                retained = installed != null
+                return installed
             } finally { gate.store(0) }
-        } catch (_: OutOfMemoryError) {
+        } catch (_: FontCacheAllocationError) {
             // All allocations precede charged mutations and retirement; release never allocates.
             return null
-        }
+        } finally { measurement?.admission(retained, attempts, count) }
     }
 
     private fun fits(participant: FontCacheParticipant, face: CacheFaceRecord?, charge: FontCacheCharge): Boolean =
@@ -170,9 +202,13 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
 
     private fun install(participant: FontCacheParticipant, faceId: FontFaceId, entry: CacheNode, reservation: FontCacheReservation): FontCacheReservation? {
         val capture = participant.record ?: CacheParticipantRecord(participant)
-        val face = capture.faces.get(faceId) ?: CacheFaceRecord(faceId, capture)
-        val faceInsertion = if (face.ledger.count == 0L) capture.faces.prepare(faceId, face) ?: return null else null
-        val insertion = face.entries.prepare(entry.key!!, entry) ?: return null
+        val face = indexed(capture.faces, faceId) ?: CacheFaceRecord(faceId, capture)
+        val faceInsertion = if (face.ledger.count == 0L) prepared(capture.faces, faceId, face) ?: return null else null
+        val insertion = prepared(face.entries, entry.key!!, entry) ?: return null
+        measurement?.let {
+            if (capture.ledger.measurementSlot < 0) capture.ledger.measurementSlot = it.register(1, participant.policy.perCatalog)
+            if (face.ledger.measurementSlot < 0) face.ledger.measurementSlot = it.register(2, participant.policy.perFace)
+        }
         // No allocation, platform work, user callback or checked addition follows this boundary.
         if (participant.record == null) {
             capture.next = participants
@@ -190,13 +226,14 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
         entry.faceEpoch = face.epoch
         charge(entry, RESERVED, true)
         entry.state = RESERVED
+        observe(entry)
         return reservation
     }
 
     internal fun publish(entry: CacheNode, payload: FontCachePayload): Boolean {
-        if (!gate.compareAndSet(0, 1)) return false
+        if (!gate.compareAndSet(0, 1)) { measurement?.contended(); measurement?.unpublished(); return false }
         try {
-            if (entry.state != RESERVED || closed || entry.captureEpoch != entry.capture.participant.epoch || entry.faceEpoch != entry.face.epoch) return false
+            if (entry.state != RESERVED || closed || entry.captureEpoch != entry.capture.participant.epoch || entry.faceEpoch != entry.face.epoch) { measurement?.unpublished(); return false }
             entry.payload = payload
             transition(entry, ACTIVE)
             promote(entry)
@@ -208,7 +245,7 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
         lock()
         try {
             if (entry.state != RESERVED) return
-            entry.face.entries.remove(entry.indexItem!!)
+            removed(entry.face.entries, entry.indexItem!!)
             entry.indexItem = null
             entry.key = null
             if (payload == null) {
@@ -292,7 +329,7 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
         victims.remove(entry)
         entry.capture.victims.remove(entry)
         entry.face.victims.remove(entry)
-        entry.face.entries.remove(entry.indexItem!!)
+        removed(entry.face.entries, entry.indexItem!!)
         entry.indexItem = null
         entry.key = null
         transition(entry, RETIRING)
@@ -302,7 +339,7 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
         var fault: FontOperationResult.Failure? = null
         try {
             if (entry.payload!!.release() !is FontOperationResult.Success) fault = incompleteRelease
-        } catch (_: OutOfMemoryError) { fault = releaseAllocationFailure
+        } catch (_: FontCacheAllocationError) { fault = releaseAllocationFailure
         } catch (_: Throwable) { fault = releaseException }
         lock()
         try {
@@ -320,6 +357,14 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
         charge(entry, entry.state, false)
         charge(entry, state, true)
         entry.state = state
+        observe(entry)
+    }
+
+    private fun observe(entry: CacheNode) {
+        val recorder = measurement ?: return
+        recorder.record(ledger, entry.state)
+        recorder.record(entry.capture.ledger, entry.state)
+        recorder.record(entry.face.ledger, entry.state)
     }
 
     private fun charge(entry: CacheNode, state: Int, add: Boolean) {
@@ -331,10 +376,11 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
     private fun acknowledge(entry: CacheNode) {
         charge(entry, entry.state, false)
         entry.state = RELEASED_STATE
+        observe(entry)
         val face = entry.face
         val capture = entry.capture
         if (face.ledger.count == 0L) {
-            capture.faces.remove(face.indexItem!!)
+            removed(capture.faces, face.indexItem!!)
             face.indexItem = null
         }
         if (capture.ledger.count == 0L) {
@@ -347,6 +393,24 @@ public class FontCacheCoordinator(private val budget: FontCacheBudget) : FontCac
     }
 
     private fun lock() { while (!gate.compareAndSet(0, 1)) { /* Mandatory accounting acknowledgement. */ } }
+
+    private fun <T> indexed(index: CacheIndex<T>?, key: Any): T? {
+        if (index == null) return null
+        val value = index.get(key)
+        measurement?.indexed(index.lastVisits)
+        return value
+    }
+
+    private fun <T> prepared(index: CacheIndex<T>, key: Any, value: T): CacheIndex.Insertion<T>? {
+        val insertion = index.prepare(key, value)
+        measurement?.prepared(index.lastVisits)
+        return insertion
+    }
+
+    private fun <T> removed(index: CacheIndex<T>, item: CacheIndex.Item<T>) {
+        index.remove(item)
+        measurement?.removed(index.lastVisits)
+    }
 
     /** Concrete facade assembly, rejecting alternate backends rather than creating a replacement. */
     public companion object {
@@ -382,6 +446,7 @@ internal class CacheAmounts(var bytes: Long = 0, var pixels: Long = 0, var nativ
 }
 
 internal class CacheLedger {
+    var measurementSlot = -1
     val total = CacheAmounts()
     val categories = Array(4) { CacheAmounts() }
     var count = 0L

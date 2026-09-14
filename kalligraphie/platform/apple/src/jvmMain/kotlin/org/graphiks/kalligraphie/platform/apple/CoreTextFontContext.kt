@@ -6,11 +6,11 @@ import org.graphiks.kalligraphie.api.*
 /** Minimal immutable proven native context; owns explicit refs, no catalogue/source/layout. */
 internal class CoreTextFontContext private constructor(val font: Long, val glyphCount: Int,
     val route: PlatformFontRouteIdentity, private val graphics: Long, private val provider: Long,
-    private val data: Long, private val bindings: CoreTextBindings) {
+    private val data: Long, private val dataBytes: Long, private val bindings: CoreTextBindings) {
     fun release() {
         try { bindings.releaseFont(font) } finally {
             try { bindings.releaseGraphics(graphics) } finally {
-                try { bindings.releaseProvider(provider) } finally { bindings.releaseData(data) }
+                try { bindings.releaseProvider(provider) } finally { bindings.releaseData(data, dataBytes) }
             }
         }
     }
@@ -28,6 +28,8 @@ internal class CoreTextFontContext private constructor(val font: Long, val glyph
             admission: CoreTextByteAdmission, token: CancellationToken): CoreTextFontContext {
             checkCancellation(token)
             validate(source, key)
+            // Initialize opt-in counter storage before acquiring the first physical resource.
+            CoreTextResourceMeasurement.enabled
             val context = checkNotNull(key.platformContext)
             val charge = source.bytes.size.toLong() * 2L
             admission.reserve(charge, PlatformFontAccessPhase.NATIVE_CREATION).use {
@@ -45,12 +47,16 @@ internal class CoreTextFontContext private constructor(val font: Long, val glyph
                         buffer.writeBytes(source.bytes)
                         checkCancellation(token)
                         data = created(bindings.data(buffer.handler.rawValue, source.bytes.size.toLong()))
+                        CoreTextResourceMeasurement.created(0, source.bytes.size.toLong())
                         checkCancellation(token)
                         provider = created(bindings.provider(data))
+                        CoreTextResourceMeasurement.created(1)
                         checkCancellation(token)
                         graphics = created(bindings.graphics(provider))
+                        CoreTextResourceMeasurement.created(2)
                         checkCancellation(token)
                         font = created(bindings.font(graphics, key.fontInstanceKey.layoutSize.value.toDouble()))
+                        CoreTextResourceMeasurement.created(3)
                         checkCancellation(token)
                     }
                     // Free the N-byte transfer before the 48-byte matrix result is allocated.
@@ -68,14 +74,14 @@ internal class CoreTextFontContext private constructor(val font: Long, val glyph
                         glyphs != source.metadata.glyphCount.toLong() || !identity) {
                         nativeFailure("font.platform-context-proof-failed", "The native font disagrees with exact source metadata, size or identity matrix.")
                     }
-                    val result = CoreTextFontContext(font, glyphs.toInt(), context.routeIdentity, graphics, provider, data, bindings)
+                    val result = CoreTextFontContext(font, glyphs.toInt(), context.routeIdentity, graphics, provider, data, source.bytes.size.toLong(), bindings)
                     transferred = true
                     return result
                 } finally {
                     if (!transferred) {
                         try { bindings.releaseFont(font) } finally {
                             try { bindings.releaseGraphics(graphics) } finally {
-                                try { bindings.releaseProvider(provider) } finally { bindings.releaseData(data) }
+                                try { bindings.releaseProvider(provider) } finally { bindings.releaseData(data, source.bytes.size.toLong()) }
                             }
                         }
                     }

@@ -526,7 +526,7 @@ internal class PreparedFontResource(
     ) {
         try {
             representations.put(faceId, key, result, cachedRepresentationCharge(key, result))
-        } catch (_: OutOfMemoryError) {
+        } catch (_: FontCacheAllocationError) {
             // An unavailable retention estimate does not invalidate the complete representation.
         }
     }

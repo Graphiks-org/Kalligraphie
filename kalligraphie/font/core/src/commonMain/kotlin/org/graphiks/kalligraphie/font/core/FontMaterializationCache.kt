@@ -38,7 +38,7 @@ internal class FontMaterializationCache(policy: FontMaterializationCachePolicy, 
         try {
             payload = PortableFontCachePayload(result)
             if (reservation.publish(payload)) return
-        } catch (_: OutOfMemoryError) {
+        } catch (_: FontCacheAllocationError) {
             // Optional retention cannot turn a complete typographic result into a failure.
         }
         reservation.abandon(payload)

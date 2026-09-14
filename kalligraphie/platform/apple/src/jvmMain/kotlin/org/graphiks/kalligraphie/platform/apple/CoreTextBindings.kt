@@ -42,10 +42,16 @@ internal class CoreTextBindings {
     fun graphics(provider: Long): Long = engine.callP1P(graphicsCreate, provider)
     fun font(graphics: Long, size: Double): Long = pointer(engine.callGeneric(fontCreate,
         FunctionShape(AbiType.Pointer, listOf(AbiType.Pointer, AbiType.F64, AbiType.Pointer, AbiType.Pointer)), graphics, size, 0L, 0L))
-    fun releaseFont(font: Long) { if (font != 0L) engine.callV1P(cfRelease, font) }
-    fun releaseGraphics(graphics: Long) { if (graphics != 0L) engine.callV1P(graphicsRelease, graphics) }
-    fun releaseProvider(provider: Long) { if (provider != 0L) engine.callV1P(providerRelease, provider) }
-    fun releaseData(data: Long) { if (data != 0L) engine.callV1P(cfRelease, data) }
+    fun releaseFont(font: Long) { release(cfRelease, font, 3) }
+    fun releaseGraphics(graphics: Long) { release(graphicsRelease, graphics, 2) }
+    fun releaseProvider(provider: Long) { release(providerRelease, provider, 1) }
+    fun releaseData(data: Long, bytes: Long) { release(cfRelease, data, 0, bytes) }
+    private fun release(symbol: Long, resource: Long, kind: Int, bytes: Long = 0) {
+        if (resource == 0L) return
+        try { engine.callV1P(symbol, resource) }
+        catch (failure: Throwable) { CoreTextResourceMeasurement.uncertain(kind); throw failure }
+        CoreTextResourceMeasurement.released(kind, bytes)
+    }
     fun size(font: Long): Double = engine.callD1P(getSize, font)
     fun upem(font: Long): Long = engine.callI1P(getUpem, font) and 0xffffffffL
     fun glyphCount(font: Long): Long = engine.callL1P(getGlyphCount, font)
