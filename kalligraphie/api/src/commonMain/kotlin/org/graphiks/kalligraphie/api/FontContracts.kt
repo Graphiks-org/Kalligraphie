@@ -595,7 +595,9 @@ public interface FontInstance {
      *
      * The returned [OpenTypeFontData] remains independent of this instance and may be
      * shared between threads. The caller owns every byte-array copy requested from it;
-     * modifying such a copy never changes the instance. Implementations that cannot
+     * modifying such a copy never changes the instance. Bytes may retain the complete original
+     * TrueType collection rather than an extracted SFNT; [OpenTypeFontData.face] separately
+     * identifies the selected original collection face. Implementations that cannot
      * preserve this isolation return a typed capability failure rather than exposing
      * provider, platform, or native storage.
      */
@@ -702,6 +704,8 @@ private inline fun cancelledAssetTransfer(token: CancellationToken, dispatch: ()
  * The container captures its input before construction and returns a fresh copy from
  * [copyBytes]. It contains no borrowed, native, or platform-specific storage. Instances
  * are safe to share between threads; callers own returned arrays and may mutate them.
+ * Bytes may retain the complete original TrueType collection; [face] selects its original
+ * zero-based face index separately, without extracting or rewriting a standalone SFNT.
  */
 public class OpenTypeFontData(
     /** Identity of the face described by these bytes. */

@@ -95,15 +95,18 @@ public class EmbeddedFontCatalog(
             require(entry.source.id !is FontSourceId.Opaque) {
                 "The embedded OpenType provider requires a portable source identity."
             }
-            FontFaceId(entry.source.id, 0)
+            FontFaceId(entry.source.id, entry.faceIndex)
         }
         require(ids.distinct().size == ids.size) {
-            "An embedded font catalog must not contain the same source twice."
+            "An embedded font catalog must not contain the same face twice."
         }
         val representations = FontMaterializationCache(cachePolicy, cacheScope)
+        val preparedFaces = capturedEntries.groupBy { it.source.id }.values.flatMap { siblings ->
+            siblings.zip(PreparedTrueTypeFont.prepareFaces(siblings.first().source, siblings.map { it.parsedFont }))
+        }.associate { (entry, prepared) -> FontFaceId(entry.source.id, entry.faceIndex) to prepared }
         resources = ids.zip(capturedEntries).associate { (id, entry) ->
             id to PreparedFontResource(
-                preparedFont = PreparedTrueTypeFont(entry.source, entry.parsedFont),
+                preparedFont = preparedFaces.getValue(id),
                 sourceByteSize = entry.source.sizeInBytes,
                 faceId = id,
                 representations = representations,
@@ -300,8 +303,10 @@ private fun supportsEbdtFormatOneRoute(
 public data class EmbeddedFontCatalogEntry(
     /** Captured portable font source. */
     public val source: FontSource,
-    /** Parsed metadata for the source's sole TrueType face. */
+    /** Parsed metadata at the selected source directory. */
     public val parsedFont: ParsedTrueTypeFont,
+    /** Original zero-based face index in the source container. */
+    public val faceIndex: Int = 0,
 )
 
 /**
