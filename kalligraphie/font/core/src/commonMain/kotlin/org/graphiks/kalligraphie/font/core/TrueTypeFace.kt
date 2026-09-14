@@ -19,6 +19,7 @@ import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontInstanceKey
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.OpenTypeFontData
+import org.graphiks.kalligraphie.api.OpenTypeDataCopyEstimate
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderAssetKey
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
@@ -155,6 +156,11 @@ internal data class TrueTypeFontInstance(
 
     override fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> =
         FontOperationResult.Success(OpenTypeFontData(faceId, resource.preparedFont.copySourceBytes()))
+
+    override fun estimateOpenTypeDataCopy(): FontOperationResult<OpenTypeDataCopyEstimate> {
+        val size = resource.sourceByteSize.toLong()
+        return FontOperationResult.Success(OpenTypeDataCopyEstimate(size, size * 2L))
+    }
 
     override fun estimateRenderAssetBytes(
         renderVariant: FontRenderVariantSnapshot,

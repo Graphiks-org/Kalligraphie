@@ -78,7 +78,7 @@ public data class GlyphRepresentationProfileKey(
             GlyphRepresentationProfileKey(
                 kind = GlyphRepresentationProfileKind.NATIVE_HANDLE,
                 schemaVersion = profile.schemaVersion,
-                parameters = listOf(profile.bridgeKind, profile.bridgeVersion)
+                parameters = listOf(profile.bridgeKind, profile.bridgeVersion, profile.bridgeId)
                     .joinToString(":") { value -> "${value.length}:$value" },
             )
     }
@@ -140,11 +140,12 @@ private fun BitmapLimits.canonicalBitmapLimits(): String =
  * Stable cache identity of one glyph representation request.
  *
  * A key binds a semantic asset identity, glyph id, visual variant, and selected profile. It has
- * no reopening capability and deliberately excludes a catalog generation: reopening remains the
- * responsibility of [FontRenderAssetKey] plus a live resolver in the matching provider domain.
+ * no reopening capability. Portable identities exclude the catalog generation; native identities
+ * retain their exact generation and bridge/runtime context. Reopening remains the responsibility
+ * of [FontRenderAssetKey] plus a live resolver in the matching provider domain.
  */
 public data class GlyphRepresentationKey(
-    /** Content-based asset identity, without a provider generation or reopening capability. */
+    /** Semantic asset identity, without an ownership or reopening capability. */
     public val assetIdentity: FontRenderAssetSemanticIdentity,
     /** Glyph selected from the asset's face. */
     public val glyphId: GlyphId,
@@ -163,9 +164,9 @@ public data class GlyphRepresentationKey(
     /**
      * Creates a semantic representation key from one generation-bound asset key.
      *
-     * The reopening context is intentionally discarded: equal portable assets captured by later
-     * generations receive the same representation key, while their [FontRenderAssetKey] values
-     * remain distinct and are still required for reopening.
+     * Portable reopening context is discarded: equal portable assets captured by later generations
+     * receive the same representation key. Native identities retain generation and bridge/runtime
+     * context. Their [FontRenderAssetKey] values are still required for reopening.
      */
     public constructor(
         assetKey: FontRenderAssetKey,

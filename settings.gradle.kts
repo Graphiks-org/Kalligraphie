@@ -17,6 +17,11 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        maven {
+            name = "KffiPinnedDevelopmentArtifact"
+            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
+            content { includeModule("org.graphiks", "kffi-jvm") }
+        }
     }
 }
 
@@ -31,3 +36,4 @@ include(":kalligraphie:font:core")
 include(":kalligraphie:font:sfnt")
 include(":kalligraphie:font:scaler")
 include(":kalligraphie:font:glyph")
+include(":kalligraphie:platform:apple")
