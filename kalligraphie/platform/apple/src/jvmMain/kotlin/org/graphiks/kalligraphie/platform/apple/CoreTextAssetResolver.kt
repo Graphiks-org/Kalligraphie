@@ -6,8 +6,10 @@ import org.graphiks.kalligraphie.api.*
 internal class CoreTextAssetResolver(override val generation: FontCatalogGeneration,
     private val delegate: FontAssetResolverHandle, private val sources: Map<FontFaceId, CoreTextCapturedSource>,
     private val runtime: CoreTextRuntimeIdentity, private val bindings: CoreTextBindings,
-    private val admission: CoreTextByteAdmission) : FontAssetResolverHandle {
-    private val owner = CoreTextResourceOwner { delegate.close() }
+    private val admission: CoreTextByteAdmission, private val cache: CoreTextContextCache) : FontAssetResolverHandle {
+    private val owner = CoreTextResourceOwner {
+        try { delegate.close() } finally { cache.resolverDrained() }
+    }
     fun acquire(instance: FontInstance, variant: FontRenderVariantSnapshot, requirements: FontAccessRequirementsSnapshot,
         token: CancellationToken): FontOperationResult<FontRenderAssetHandle> = admittedOperation(token) {
         coreTextResult {
@@ -60,12 +62,17 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
         }
     }
     private fun nativeAsset(source: CoreTextCapturedSource, key: FontRenderAssetKey, token: CancellationToken): FontRenderAssetHandle {
+        checkCancellation(token)
+        CoreTextFontContext.validate(source, key)
+        cache.get(key, token)?.let { return it }
         val context = CoreTextFontContext.create(source, key, bindings, admission, token)
         var resourceOwner: CoreTextResourceOwner? = null
         var transferred = false
         try {
             resourceOwner = CoreTextResourceOwner { context.release(); FontOperationResult.Success(Unit) }
             val asset = CoreTextPlatformAsset(key, context, resourceOwner)
+            checkCancellation(token)
+            cache.retain(key, context, resourceOwner, source.bytes.size.toLong(), token)
             checkCancellation(token)
             transferred = true
             return asset
@@ -122,7 +129,16 @@ internal class CoreTextAssetResolver(override val generation: FontCatalogGenerat
     private fun allocationOutcome(primary: FontOperationResult<*>?, cancelled: Boolean): FontOperationResult<Nothing> =
         if (primary is FontOperationResult.Cancelled) primary else if (cancelled) CANCELLED else ALLOCATION_FAILURE
 
-    override fun close(): FontOperationResult<Unit> = cleanupResult { owner.closeResult() }
+    override fun close(): FontOperationResult<Unit> = cleanupResult {
+        val portable = cleanupResult { owner.closeResult() }
+        val nativeCache = cache.fault()
+        when {
+            nativeCache is FontOperationResult.Success -> portable
+            portable is FontOperationResult.Success -> nativeCache
+            else -> portable.withCoreTextDiagnostics(portable.coreTextDiagnostics() + nativeCache.coreTextDiagnostics() +
+                (nativeCache as FontOperationResult.Failure).error.toDiagnostic())
+        }
+    }
 
     private companion object {
         // Initialized before any resolver instance/admitted asset, so exhaustion fallback allocates nothing.

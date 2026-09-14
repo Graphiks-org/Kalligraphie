@@ -640,14 +640,60 @@ val retainedBytesPerFace = perFaceBudget.retainedBytes
 ```
 
 These bounds cover evictable representations, keys and diagnostics, not source snapshots,
-caller-owned assets or total process memory. No entry owns a resolver, asset, catalog or
-platform resource. Closing the last resolver or asset lease of a face releases that face's
+caller-owned assets or total process memory. Portable payloads retain immutable representation
+data without owning a resolver, asset, catalog or platform resource. Closing the last resolver or asset lease of a face releases that face's
 entries; detached assets keep their ordinary independent lease. Other faces remain usable.
 
-Catalogs do not share a provider-wide or engine-wide budget. Platform resource participation
-and that shared ownership scope will be introduced with a platform cache route. Functional glyph
-tests establish observable transparency; they do not measure retention or prove cache
-admission. Accounting belongs to future opt-in instrumentation, outside `check`.
+### Sharing retention across captures
+
+Create one caller-owned `FontCacheScope` and pass it to every participating capture:
+
+```kotlin
+val scope = Kalligraphie.fontCacheScope(
+    FontCacheBudget(32L * 1024 * 1024, 4_000_000, 16L * 1024 * 1024, 64),
+)
+val first = Kalligraphie.embedded(firstBytes, firstProvenance, cachePolicy, scope)
+val second = Kalligraphie.embedded(secondBytes, secondProvenance, cachePolicy, scope)
+// With system fonts: MacosSystemFontCatalogOptions(materializationCachePolicy = cachePolicy, cacheScope = scope).
+```
+
+The scope adds an aggregate bound; each capture's `perCatalog` and `perFace` bounds
+still apply in every dimension. A scope does not activate a disabled local policy.
+Without an explicit scope, an enabled policy has a private capture budget. There is
+no process-global cache or implicit sharing between equal font sources. Custom
+providers retaining their own caches outside these factories do not participate.
+To include CoreText contexts, pass the same scope to both the portable capture and
+`CoreTextFontCatalog.capture(..., cachePolicy = nativePolicy, cacheScope = scope)`;
+adapting a portable catalog does not reconfigure its policy or scope. See
+[platform font access](platform-font-access.md#shared-context-retention).
+
+Every bound includes active entries, pending reservations, retiring references and
+residual charges from uncertain cleanup. Removing an indexed entry does not create
+capacity until its cache reference is relinquished. The managed estimate covers keys,
+diagnostics, immutable representation data and a conservative metadata envelope
+(currently 4096 bytes per portable entry, plus variable key/result data). Captured
+source snapshots, caller-only assets, temporary buffers, private OS memory and GC
+timing are excluded. A pending or retiring cache reference is never excluded as
+temporary or OS memory. Portable entries charge zero native bytes and units; the
+current CoreText context charges source length N and four explicit native resource
+units, independently of unknown framework memory.
+
+`scope.close()` disables retention and drains cache references without closing
+catalogs or consumer owners. Existing acquisitions, detached owners and new captures
+using that closed scope remain usable uncached; no private replacement cache is
+created. A first or repeated close reports only known cleanup faults and never
+retries a partial release. Concurrent cleanup can finish after close returns, so
+its success does not prove complete drainage. Drain outside the rendering critical
+path: explicit close may release every retained entry. Consumer-only native memory
+can remain alive after successful cache drainage and belongs to its independent
+owners until they close.
+
+Trailing scope parameters preserve ordinary recompiled Kotlin calls, but changed
+JVM method/constructor signatures require recompilation. The assembly declarations
+are internal opt-in contracts, not a supported custom-cache SPI. Functional glyph
+tests establish observable transparency; the separate
+[opt-in retention measurement](glyph-materialization-measurement.md#shared-retention-and-native-ownership)
+records accounting and structural costs outside `check`.
 
 On macOS, the JVM artifact also exposes `MacosSystemFontCatalog.open()`. It
 captures bounded, regular `.ttf` files into a portable snapshot and uses the

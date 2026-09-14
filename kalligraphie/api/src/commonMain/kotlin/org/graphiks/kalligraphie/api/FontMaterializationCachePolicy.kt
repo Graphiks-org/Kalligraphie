@@ -1,14 +1,16 @@
 package org.graphiks.kalligraphie.api
 
 /**
- * Simultaneous per-face and per-catalog bounds for portable representation retention.
+ * Simultaneous per-face and per-capture bounds for font materialization retention.
  *
  * Admission and least-recently-used eviction are coordinated atomically within one captured
  * catalog. An oversized result is returned without retention. Only complete immutable
- * successes are eligible; cancellation and operational failures are never cached. Retention
+ * successes and independently owned platform contexts are eligible; cancellation and operational
+ * failures are never cached. Retention
  * never changes route selection, representation identity, certificates or diagnostics.
  * Closing the last resolver or asset lease of a face releases that face's evictable entries.
- * Catalogs do not share a provider-wide or engine-wide budget.
+ * An explicitly supplied [FontCacheScope] additionally bounds aggregate retention across captures;
+ * without one, each captured catalog retains its independent budget.
  *
  * The historical byte-only constructor and [maxEvictableBytesPerFace] getter remain available.
  * This data class intentionally does not retain source or binary compatibility for its generated

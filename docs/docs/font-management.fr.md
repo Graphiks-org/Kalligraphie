@@ -727,9 +727,65 @@ val (perFaceBudget, perCatalogBudget) = updatedPolicy
 val retainedBytesPerFace = perFaceBudget.retainedBytes
 ```
 
-Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Aucune entrée ne possède de gestionnaire, ressource de rendu, catalogue ou ressource de plateforme. La fermeture du dernier lease (droit temporaire de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
+Ces limites portent sur les représentations évictables, leurs clés et diagnostics, pas sur les sources capturées, les ressources possédées par le consommateur ou la mémoire totale du processus. Les entrées portables gardent les données immuables de représentation sans posséder de gestionnaire, ressource de rendu, catalogue ou ressource de plateforme. La fermeture du dernier lease (droit temporaire de durée de vie) de gestionnaire ou de ressource d'une face libère les entrées de cette face ; les ressources détachées conservent leur lease indépendant. Les autres faces restent utilisables.
 
-Les catalogues ne partagent pas encore de budget au niveau provider/engine (fournisseur/moteur). Cette portée de propriété et la participation des ressources de plateforme seront introduites avec une route de cache de plateforme. Les tests de glyphes démontrent la transparence observable ; ils ne mesurent pas la rétention et ne prouvent pas l'admission du cache. La comptabilité appartient à une future instrumentation opt-in (activée explicitement), hors `check`.
+### Partager la rétention entre captures
+
+Créez un `FontCacheScope`, domaine de rétention possédé par l'appelant, et passez-le
+à chaque capture participante :
+
+```kotlin
+val scope = Kalligraphie.fontCacheScope(
+    FontCacheBudget(32L * 1024 * 1024, 4_000_000, 16L * 1024 * 1024, 64),
+)
+val first = Kalligraphie.embedded(firstBytes, firstProvenance, cachePolicy, scope)
+val second = Kalligraphie.embedded(secondBytes, secondProvenance, cachePolicy, scope)
+// Fontes système : MacosSystemFontCatalogOptions(materializationCachePolicy = cachePolicy, cacheScope = scope).
+```
+
+Le domaine ajoute une limite cumulative ; `perCatalog` et `perFace` continuent de
+s'appliquer dans chaque dimension. Il n'active pas une politique locale désactivée.
+Sans domaine explicite, une politique activée garde son budget privé par capture.
+Il n'existe aucun cache global au processus ni partage implicite entre sources
+identiques. Les providers (fournisseurs) personnalisés qui gardent leurs propres
+caches hors de ces fabriques ne participent pas. Pour inclure CoreText, passez le
+même domaine à la capture portable et à
+`CoreTextFontCatalog.capture(..., cachePolicy = nativePolicy, cacheScope = scope)` :
+l'adaptation d'un catalogue portable ne reconfigure ni sa politique ni son domaine.
+Voir [l'accès aux fontes de plateforme](platform-font-access.fr.md#retention-partagee-des-contextes).
+
+Chaque limite cumule les entrées actives, les réservations en attente, les références
+retirées dont la libération est en cours et les charges résiduelles de nettoyage
+incertain. Retirer une entrée de l'index ne crée aucune place avant l'abandon confirmé
+de sa référence de cache. L'estimation gérée comprend clés, diagnostics, données
+immuables et une enveloppe prudente de métadonnées (actuellement 4096 octets par
+entrée portable, auxquels s'ajoutent les données variables de clé et résultat).
+Sources capturées, ressources possédées uniquement par l'appelant, buffers (tampons)
+temporaires, mémoire privée du système et délai du GC (ramasse-miettes) sont exclus.
+Une référence de cache en attente ou en cours de libération n'est jamais exclue comme
+mémoire temporaire ou système. Les entrées portables comptent zéro octet et zéro
+unité natifs ; le contexte CoreText actuel compte la longueur source N et quatre
+ressources natives explicites, indépendamment de la mémoire inconnue des frameworks
+(bibliothèques système).
+
+`scope.close()` désactive la rétention et libère les références de cache sans fermer
+catalogues ni propriétaires consommateurs. Les acquisitions existantes, ressources
+détachées et nouvelles captures utilisant ce domaine fermé restent utilisables sans
+cache ; aucun cache privé de remplacement n'est créé. La première fermeture et les
+suivantes rapportent uniquement les défauts de nettoyage connus, sans retenter une
+libération partielle. Un nettoyage concurrent peut finir après le retour : un succès
+ne prouve donc pas le drainage complet. Effectuez ce drainage hors du chemin critique
+de rendu, car la fermeture explicite peut libérer toutes les entrées. La mémoire
+native exclusivement possédée par les consommateurs peut rester vivante après
+drainage réussi, jusqu'à leur propre fermeture.
+
+Les paramètres de domaine ajoutés en fin de signature préservent les appels Kotlin
+ordinaires recompilés, mais les signatures JVM modifiées exigent une recompilation.
+Les déclarations d'assemblage sont des contrats internes opt-in (activés explicitement),
+pas une SPI (interface d'extension) publique de cache personnalisé. Les tests de glyphes
+démontrent la transparence observable ; la
+[mesure facultative de rétention](glyph-materialization-measurement.fr.md#retention-partagee-et-propriete-native)
+consigne comptabilité et coûts structurels hors `check`.
 
 Sur macOS, l’artefact JVM expose aussi `MacosSystemFontCatalog.open()`. Il
 capture, sous limites, les fichiers `.ttf` réguliers dans un instantané

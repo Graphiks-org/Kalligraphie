@@ -240,3 +240,55 @@ process-memory measurement; it can be negative after GC.
 The runner has no latency threshold. Functional `check` runs exclude the
 measurement task even when the opt-in variable is set, and the runner does
 not add a renderer, rasterizer, GPU API, or native bridge.
+
+## Shared retention and native ownership
+
+The Apple module provides a separate executable measurement through real public
+portable outline, paint, bitmap and CoreText consumers. It is a `JavaExec` task,
+outside `check`, and requires the same macOS/JDK/native-access support as the Apple
+route. Enable it explicitly and write its report outside the repository:
+
+```bash
+env KALLIGRAPHIE_SHARED_FONT_CACHE_MEASUREMENT=true \
+  KALLIGRAPHIE_SHARED_FONT_CACHE_OUTPUT=/tmp/kalligraphie-shared-retention.txt \
+  ./gradlew :kalligraphie:platform:apple:sharedFontCacheMeasurement --rerun-tasks
+```
+
+The report records corpus hashes and source sizes, measured revision/working-tree
+state, OS, architecture, JVM and full platform route identity. The bounded internal
+recorder is disabled by default and attached before retention; its preallocated
+cells archive pruned ledgers. It reports configured budgets, current charge and
+event-time maxima for all four dimensions and active/reserved/retiring/residual
+categories at scope, capture and face levels. Category moves are observed only
+after complete accounting, and confirmed acknowledgements before pruning. Separate
+category maxima may occur at different times: their sum is not a simultaneous peak.
+Recorder saturation explicitly invalidates completeness rather than hiding events.
+
+Profiles apply pressure to every scope/capture/face dimension, zero and individually
+oversized budgets, and concurrent real outline/paint/bitmap/native acquisitions.
+Audited contour bounds, palette colors, exact decoded pixels and independent native
+advances validate consumer behavior. A native-byte profile seeds 48 actual sized
+contexts from the 1772-byte GDEF font, closes their consumer owners, then acquires
+the 757076-byte DejaVu font under a 757076-byte native scope limit. The candidate
+individually fits but requires all 48 small charges to be relinquished. Recorded
+decisions, victim counts and uncached fallbacks expose the current internal
+32-victim/two-decision quota. Cold seeding, hot indexed acquisition, fallback,
+scope drainage and caller closure have separate observed latencies and index-visit
+evidence; there is no timing threshold or universal frame-budget promise.
+These are single scenario observations without statistical warmup. Cold seeding
+times all 48 public face/instance/asset acquisitions, native metric validation and
+consumer closure; catalog capture/resolver opening occur beforehand. Hot timing
+repeats one seeded acquisition with validation and closure. Fallback timing acquires
+and validates the held large consumer; its final closure is separate. First native
+probe setup can affect the cold observation. Recorder/report allocation is outside
+those intervals and is measurement-harness memory, not retained cache charge.
+
+Process-scoped opt-in native counters report successful owned CFData,
+CGDataProvider, CGFont and CTFont creation references, confirmed API release units,
+uncertain release outcomes and known CFData source-copy bytes under explicit
+ownership. They do not measure `malloc`, private OS caching or prove physical OS
+deallocation. At a drained boundary with no reservations, retirement or residual
+uncertainty, remaining explicit native ownership after cache-reference release
+belongs exclusively to surviving consumers. Their metrics remain usable through
+scope closure. A release fault retains conservative residual cache charge and
+uncertainty; it cannot be reported as confirmed drainage or caller-only memory.
