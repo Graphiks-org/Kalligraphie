@@ -107,7 +107,7 @@ public object SvgOpenTypeReader {
      *
      * [profile] bounds source bytes, document records, authored transform operations, graph nodes,
      * paths, depth, and path geometry before publication. Every complete authored group, gradient,
-     * or clip-path definition function call shares the same source-operation budget regardless of
+     * or clip definition/child function call shares the same source-operation budget regardless of
      * operand count and independently of generated paint-graph transform nodes. The operation
      * is all-or-nothing:
      * malformed or unsupported content returns a typed failure and no partial data. The returned

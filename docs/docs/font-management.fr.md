@@ -29,10 +29,13 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   conteneurs `svg` et `g` ; éléments `path` (chemins) auto-fermants avec les
   commandes `M`, `L`, `H`, `V`, `C`, `S` et `Z` ; et sous-ensemble statique
   `defs` (définitions), `linearGradient` (gradient linéaire), `radialGradient`
-  (gradient radial) et `stop` (arrêt de couleur), appliqué uniquement aux éléments `rect` (rectangles)
-  auto-fermants. Les chemins et rectangles acceptent un remplissage opaque
-  `#RRGGBB` ou `fill="none"` ; un rectangle peut aussi référencer un gradient
-  linéaire ou radial concentrique local défini auparavant. Les transformations
+  (gradient radial) et `stop` (arrêt de couleur). Les chemins et rectangles
+  acceptent un remplissage `#RRGGBB` ou `fill="none"`, avec un `fill-opacity`
+  facultatif, et peuvent référencer un gradient linéaire ou radial concentrique
+  local antérieur dans les espaces de coordonnées décrits plus bas. Ils peuvent
+  aussi référencer un `clipPath` (définition de découpe) borné en
+  `userSpaceOnUse`, avec un unique enfant chemin ou rectangle à angles vifs.
+  Les transformations
   `translate`, `scale`, `rotate`, `skewX`, `skewY` et `matrix` (matrice affine
   à six coefficients) sont prises en charge. Le sous-ensemble exact des
   gradients et les exclusions restantes sont décrits ci-dessous ;
@@ -265,8 +268,10 @@ et `PATH_CLIP`. Un `RadialGradient` produit exige les mêmes capacités
 d’interpolation et d’extension, ainsi que `RADIAL_GRADIENT`, `TRANSFORM` et
 `PATH_CLIP`. Une réduction en peinture unie exige à la place `SOLID` et
 `PATH_CLIP`, mais pas l’espace d’interpolation ni le mode d’interpolation
-d’alpha ou d’extension de la définition. Les rectangles et chemins unis utilisent
-`PATH`. Un document qui possède plusieurs racines peintes exige aussi `GROUP` et
+d’alpha ou d’extension de la définition. Les rectangles et chemins unis opaques
+utilisent `PATH` ; les peintures unies translucides utilisent la forme
+`SOLID`/`PATH_CLIP` décrite plus bas. Un document qui possède plusieurs racines
+peintes exige aussi `GROUP` et
 `SOURCE_OVER`. Les limites existantes sont contrôlées
 avant publication : les octets source et décodés, transformations, définitions
 de gradient et arrêts analysés, ainsi que les nœuds, références, chemins,
@@ -289,6 +294,34 @@ repli ordonné entre profils peut donc ignorer un profil de schéma 3 qui ne
 déclare pas chaque capacité atteinte et sélectionner un profil compatible
 ultérieur.
 
+### Opacité du remplissage SVG
+
+Les éléments `path` et `rect` peints et pris en charge peuvent déclarer
+`fill-opacity` comme un nombre fini sans unité ou un pourcentage. Sa valeur par
+défaut est `1` et elle est ramenée dans `0.0..1.0`. Une entrée mal formée ou
+non finie retourne `FontDataFailure` avec le code
+`font.svg.invalid-fill-opacity`, même avec `fill="none"`.
+
+Une peinture unie opaque conserve son nœud `Path` existant. Une peinture unie
+translucide est normalisée en `Solid(color, opacity)` sous le `PathClip`
+(découpe par chemin) de la forme : elle exige `SOLID` et `PATH_CLIP` plutôt que
+`PATH`. Une découpe externe enveloppe tout ce sous-graphe. Pour un gradient,
+chaque référence produit une ligne de couleur immuable dont les opacités des
+arrêts sont multipliées par l’opacité de la forme, y compris l’arrêt terminal
+d’une réduction unie. La définition partagée et les utilisations suivantes
+restent inchangées. Les modes d’interpolation et capacités de gradient
+existants continuent de s’appliquer.
+
+Une opacité nulle omet la peinture normalisée seulement après validation de la
+géométrie atteinte, de la peinture et de ses références, des types de nœud
+requis et des limites de ressources projetées. Elle ne contourne ni un
+gradient non vide incompatible ni une forme invalide. Les définitions de
+gradient vides valides, `fill="none"` et les rectangles peints d’aire nulle
+conservent leurs comportements distincts existants sans encre. Les enfants de
+découpe ne peuvent déclarer ni `fill-opacity`, ni `fill`, ni autre attribut de
+peinture. L’attribut `opacity` sur un élément ou groupe et l’opacité CSS restent
+hors du sous-ensemble.
+
 ### Découpe SVG bornée dans l’espace utilisateur
 
 Le sous-ensemble accepte un `clip path` (chemin de découpe) sous la forme d’un
@@ -296,19 +329,25 @@ Le sous-ensemble accepte un `clip path` (chemin de découpe) sous la forme d’u
 dans `defs`. Il doit porter un `id` valide et globalement unique ;
 `clipPathUnits` doit être absent ou exactement égal à `userSpaceOnUse`
 (coordonnées absolues dans l’espace utilisateur). Son unique enfant est
-exactement un `path` auto-fermant, avec le seul attribut `d`, les commandes de
-chemin statiques prises en charge et la règle de remplissage non nulle. Un
+exactement un `path` auto-fermant, avec `d` requis, les commandes de chemin
+statiques prises en charge et la règle de remplissage non nulle, ou un `rect`
+à angles vifs. Ce rectangle accepte `x/y` facultatifs (défaut `0`) et
+`width/height` requis, finis, sans unité et non négatifs. Une dimension
+négative non nulle reste invalide même si un sous-dépassement numérique la
+décodait comme zéro. Les angles arrondis et autres attributs de rectangle ne
+sont pas pris en charge. Un
 `path` ou `rect` peint et pris en charge peut ajouter un attribut
 `clip-path="url(#id)"` qui référence un `clipPath` local antérieur. La
-définition accepte un attribut `transform` absent, vide ou composé uniquement
-d’espaces comme identité, ou une `transform list` (liste de transformations)
-qui suit la même grammaire bornée décrite plus haut. Elle n’accepte ni
-remplissage, style, `clip-rule`, ID sur son enfant, groupe, forme, découpe
-imbriquée, référence, animation, autre élément ou autre attribut.
+définition et son enfant acceptent chacun un attribut `transform` absent, vide
+ou composé uniquement d’espaces comme identité, ou une `transform list`
+(liste de transformations) qui suit la même grammaire bornée décrite plus
+haut. Ils n’acceptent ni remplissage, style, `clip-rule`, ID sur l’enfant,
+groupe, autre forme, découpe imbriquée, référence, animation, ni élément ou
+attribut non déclaré.
 
 Pour chaque utilisation atteinte, la transformation effective `T` de la forme
 matérialise la forme peinte, tandis que le chemin de la définition utilise
-`T * C * D`, où `C` est la transformation de la définition et `D` celle de son
+`T * C * P`, où `C` est la transformation de la définition et `P` celle de son
 enfant, toutes deux composées dans l’ordre déclaré. Les coordonnées de découpe
 déclarées doivent rester finies et respecter exactement les limites de
 `outlineProfile` (profil de contours), même pour une définition inutilisée ;
@@ -324,27 +363,33 @@ union de chemins ni calcul de boîte englobante. La réutilisation d’une
 définition sous plusieurs transformations matérialise et comptabilise une
 découpe distincte à chaque référence sans réanalyse ni capture de `T`.
 
-Ce sous-ensemble exige exactement le schéma de peinture 3 et `PATH_CLIP` pour
-chaque découpe atteinte. Chaque utilisation ajoute un nœud, une référence, un
+Les définitions de découpe exigent exactement le schéma de peinture 3, même
+inutilisées ; chaque découpe atteinte exige aussi `PATH_CLIP`. Chaque
+utilisation ajoute un nœud, une référence, un
 chemin, une découpe et un niveau de profondeur produits ; elle est facturée
 indépendamment à `maxNodes`, `maxReferences`, `maxPaths`, `maxClips`,
 `maxDepth` et `maxPaintVisits`. Son chemin et le chemin peint doivent tous deux
-respecter exactement l’`outlineProfile` (profil de contours). Les opérations de
-découpe déclarées consomment une seule fois le budget source partagé à l’échelle
-de la table `maxSvgTransformOperations` lors de l’analyse de la définition, y
-compris pour une définition inutilisée ; la réutilisation ne consomme aucune
-opération source supplémentaire. La matérialisation du chemin de découpe ne
+respecter exactement l’`outlineProfile` (profil de contours). Un dépassement
+des limites de points, contours ou octets retourne `ResourceLimitExceeded`
+pour la table `SVG `, pas une incompatibilité de capacité. Les opérations
+déclarées de la définition et de son enfant consomment une seule fois le budget
+source partagé `maxSvgTransformOperations` lors de leur analyse, même
+inutilisées. Ce budget couvre toute la table pendant l’acquisition entièrement
+normalisée, ou tout le document sélectionné pendant la matérialisation différée
+mixte SVG/COLR. La réutilisation ne consomme aucune opération source
+supplémentaire. La matérialisation du chemin de découpe ne
 produit aucun nœud `Transform` et ne facture pas `maxTransforms` : les budgets
 existants du gradient, des arrêts et des transformations de la peinture enfant
-restent inchangés. Une transformation `T` ou une composition effective `T * C`
-singulière omet la peinture seulement après validation de la forme, de la
+restent inchangés. Une composition effective `T * C * P` singulière ou un
+rectangle de découpe d’aire nulle omet la peinture seulement après validation
+de la forme, de la
 définition, de la référence, des capacités, des limites de contours et des
 limites projetées du graphe. `fill="none"` et
 les rectangles d’aire nulle conservent leur résultat sans encre après validation
 des attributs source et de toute référence locale de découpe.
 
 `objectBoundingBox` (boîte englobante de l’objet), les unités inconnues, les
-définitions vides ou contenant plusieurs chemins, le contenu interdit et les
+définitions vides ou contenant plusieurs enfants, le contenu interdit et les
 références mal formées, externes, futures, non résolues ou visant un élément
 qui n’est pas un `clipPath` restent hors du sous-ensemble, même sans utilisation
 ou lorsque la forme ne produirait aucune encre. Les données de chemin mal
@@ -367,7 +412,7 @@ pourcentage ou valeurs par défaut de l’espace utilisateur qui dépendent du
 viewport, `href`, `xlink:href`, le rayon focal `fr`, les foyers
 radiaux non concentriques, les gradients `objectBoundingBox` sur `path`, CSS ou
 les attributs `style`, les découpes SVG hors du sous-ensemble exact
-`userSpaceOnUse` à chemin unique décrit ci-dessus, les masques, contours tracés,
+`userSpaceOnUse` à enfant unique décrit ci-dessus, les masques, contours tracés,
 scripts, entités, animations, ressources externes, ni les éléments et attributs
 non déclarés. Les formats de compression autres que le transport gzip
 mono-membre autorisé restent refusés.
@@ -437,7 +482,7 @@ acceptée. Les formats variables `PaintVar*`, `ClipBox` format 2, les magasins
 et tables d’index de variations, CFF/CFF2 et les valeurs CPAL/COLR variables ne
 sont pas pris en charge. Le parcours SVG-in-OpenType distinct accepte les
 gradients linéaires et radiaux concentriques statiques ainsi que les découpes
-bornées à chemin unique dans l’espace utilisateur décrites plus haut via le
+bornées à enfant unique dans l’espace utilisateur décrites plus haut via le
 schéma 3 ; il n’acquiert pas pour autant les découpes SVG générales, masques,
 contours tracés ou animations.
 
