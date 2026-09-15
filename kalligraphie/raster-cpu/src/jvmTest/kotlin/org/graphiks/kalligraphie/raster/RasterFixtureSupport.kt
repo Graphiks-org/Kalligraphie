@@ -40,6 +40,7 @@ internal fun openRasterFixture(
     bytes: ByteArray,
     requirements: FontAccessRequirementsSnapshot,
     renderVariant: FontRenderVariantSnapshot = FontRenderVariantSnapshot.default,
+    layoutSize: LayoutUnit = LayoutUnit(2_048f),
 ): RasterFixture {
     val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
         Kalligraphie.embedded(
@@ -55,7 +56,7 @@ internal fun openRasterFixture(
             catalog.resolveFace(catalog.faces.single().id, requirements),
         ).value
         val instance = assertIs<FontOperationResult.Success<FontInstance>>(
-            face.instantiate(FontInstanceDescriptor(LayoutUnit(2_048f))),
+            face.instantiate(FontInstanceDescriptor(layoutSize)),
         ).value
         val asset = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
             instance.acquireRenderAsset(resolver, renderVariant, requirements),
