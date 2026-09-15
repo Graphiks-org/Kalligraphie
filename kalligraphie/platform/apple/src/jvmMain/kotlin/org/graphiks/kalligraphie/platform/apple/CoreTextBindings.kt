@@ -1,80 +1,55 @@
 package org.graphiks.kalligraphie.platform.apple
 
 import org.graphiks.kffi.MemoryAllocator
-import org.graphiks.kffi.engine.JvmDowncallEngine
-import org.graphiks.kffi.engine.JvmDowncallEngine.AbiType
-import org.graphiks.kffi.engine.JvmDowncallEngine.FunctionShape
-import java.lang.foreign.MemorySegment
-import java.lang.foreign.ValueLayout
+import org.graphiks.kffi.NativeAddress
+import org.graphiks.kffi.apple.AppleBindingException
+import org.graphiks.kffi.apple.AppleBindingFailure
+import org.graphiks.kffi.coretext.CoreText
+import org.graphiks.kffi.darwin.DarwinSystemInformation
 
-/** Minimal bindings, initialized only by the opted-in factory on a supported platform. */
+/** Font-policy adapter, initialized only by the opted-in factory on a supported platform. */
 internal class CoreTextBindings {
-    private val engine = JvmDowncallEngine
-    init {
-        for (framework in listOf("CoreFoundation", "CoreGraphics", "CoreText")) {
-            try { System.load("/System/Library/Frameworks/$framework.framework/$framework") }
-            catch (failure: UnsatisfiedLinkError) { nativeFailure("font.native-library-load-failed", "Cannot load $framework: ${failure.message}") }
-            catch (failure: SecurityException) { nativeFailure("font.native-library-load-failed", "Cannot load $framework: ${failure.message}") }
+    private val api = bindingCall { CoreText() }
+
+    private inline fun <T> bindingCall(block: () -> T): T = try { block() }
+    catch (failure: AppleBindingException) {
+        val code = when (failure.failure) {
+            AppleBindingFailure.LIBRARY_LOAD -> "font.native-library-load-failed"
+            AppleBindingFailure.SYMBOL_RESOLUTION -> "font.native-symbol-resolution-failed"
+            AppleBindingFailure.SYSTEM_INFORMATION -> "font.platform-runtime-identity-unavailable"
+            AppleBindingFailure.UNSUPPORTED_PLATFORM -> "font.platform-unsupported"
         }
-        engine.registerStructLayout(matrixName, 48L, 8L, listOf("a", "b", "c", "d", "tx", "ty").mapIndexed { index, name ->
-            JvmDowncallEngine.StructField(name, JvmDowncallEngine.FieldKind.FLOAT64, index * 8L)
-        })
+        nativeFailure(code, failure.message ?: "Apple platform binding failed.")
     }
-    private fun symbol(name: String): Long = try { engine.resolveSymbol(name) } catch (failure: UnsatisfiedLinkError) {
-        nativeFailure("font.native-symbol-resolution-failed", "Cannot resolve $name: ${failure.message}")
-    } catch (failure: Exception) {
-        nativeFailure("font.native-symbol-resolution-failed", "Cannot resolve $name: ${failure.message}")
-    }
-    private val dataCreate = symbol("CFDataCreate")
-    private val providerCreate = symbol("CGDataProviderCreateWithCFData")
-    private val graphicsCreate = symbol("CGFontCreateWithDataProvider")
-    private val fontCreate = symbol("CTFontCreateWithGraphicsFont")
-    private val cfRelease = symbol("CFRelease")
-    private val providerRelease = symbol("CGDataProviderRelease")
-    private val graphicsRelease = symbol("CGFontRelease")
-    private val getSize = symbol("CTFontGetSize")
-    private val getUpem = symbol("CTFontGetUnitsPerEm")
-    private val getGlyphCount = symbol("CTFontGetGlyphCount")
-    private val getMatrix = symbol("CTFontGetMatrix")
-    private val sysctl = symbol("sysctlbyname")
-    fun data(bytes: Long, size: Long): Long = pointer(engine.callGeneric(dataCreate, FunctionShape(AbiType.Pointer, listOf(AbiType.Pointer, AbiType.Pointer, AbiType.I64)), 0L, bytes, size))
-    fun provider(data: Long): Long = engine.callP1P(providerCreate, data)
-    fun graphics(provider: Long): Long = engine.callP1P(graphicsCreate, provider)
-    fun font(graphics: Long, size: Double): Long = pointer(engine.callGeneric(fontCreate,
-        FunctionShape(AbiType.Pointer, listOf(AbiType.Pointer, AbiType.F64, AbiType.Pointer, AbiType.Pointer)), graphics, size, 0L, 0L))
-    fun releaseFont(font: Long) { release(cfRelease, font, 3) }
-    fun releaseGraphics(graphics: Long) { release(graphicsRelease, graphics, 2) }
-    fun releaseProvider(provider: Long) { release(providerRelease, provider, 1) }
-    fun releaseData(data: Long, bytes: Long) { release(cfRelease, data, 0, bytes) }
-    private fun release(symbol: Long, resource: Long, kind: Int, bytes: Long = 0) {
+
+    fun data(bytes: Long, size: Long): Long = bindingCall { api.createData(NativeAddress(bytes), size).rawValue }
+    fun provider(data: Long): Long = bindingCall { api.createProvider(NativeAddress(data)).rawValue }
+    fun graphics(provider: Long): Long = bindingCall { api.createGraphicsFont(NativeAddress(provider)).rawValue }
+    fun font(graphics: Long, size: Double): Long = bindingCall { api.createFont(NativeAddress(graphics), size).rawValue }
+
+    fun releaseFont(font: Long) { release(font, 3) { api.releaseCF(it) } }
+    fun releaseGraphics(graphics: Long) { release(graphics, 2) { api.releaseGraphicsFont(it) } }
+    fun releaseProvider(provider: Long) { release(provider, 1) { api.releaseProvider(it) } }
+    fun releaseData(data: Long, bytes: Long) { release(data, 0, bytes) { api.releaseCF(it) } }
+    private inline fun release(resource: Long, kind: Int, bytes: Long = 0, block: (NativeAddress) -> Unit) {
         if (resource == 0L) return
-        try { engine.callV1P(symbol, resource) }
+        try { bindingCall { block(NativeAddress(resource)) } }
         catch (failure: Throwable) { CoreTextResourceMeasurement.uncertain(kind); throw failure }
         CoreTextResourceMeasurement.released(kind, bytes)
     }
-    fun size(font: Long): Double = engine.callD1P(getSize, font)
-    fun upem(font: Long): Long = engine.callI1P(getUpem, font) and 0xffffffffL
-    fun glyphCount(font: Long): Long = engine.callL1P(getGlyphCount, font)
-    fun identityMatrix(font: Long, allocator: MemoryAllocator): Boolean {
-        val result = engine.invokeStructReturnAfterPointer(getMatrix, allocator, matrixName, font)
-        val segment = MemorySegment.ofAddress(result.rawValue).reinterpret(48L)
-        return listOf(1.0, 0.0, 0.0, 1.0, 0.0, 0.0).withIndex().all { (index, expected) -> segment.get(ValueLayout.JAVA_DOUBLE, index * 8L) == expected }
+
+    fun size(font: Long): Double = bindingCall { api.fontSize(NativeAddress(font)) }
+    fun upem(font: Long): Long = bindingCall { api.unitsPerEm(NativeAddress(font)).toLong() }
+    fun glyphCount(font: Long): Long = bindingCall { api.glyphCount(NativeAddress(font)) }
+    fun identityMatrix(font: Long, allocator: MemoryAllocator): Boolean = bindingCall {
+        val value = api.fontMatrix(NativeAddress(font), allocator)
+        value.a == 1.0 && value.b == 0.0 && value.c == 0.0 && value.d == 1.0 && value.tx == 0.0 && value.ty == 0.0
     }
-    fun kernelBuild(): String = MemoryAllocator().use { temp ->
-        val name = temp.allocateFrom("kern.osversion")
-        val length = temp.bufferOf(0L)
-        val shape = FunctionShape(AbiType.I32, listOf(AbiType.Pointer, AbiType.Pointer, AbiType.Pointer, AbiType.Pointer, AbiType.I64))
-        fun query(output: Long): Int = engine.callGeneric(sysctl, shape, name.handler.rawValue, output, length.handler.rawValue, 0L, 0L) as Int
-        if (query(0L) != 0) nativeFailure("font.platform-runtime-identity-unavailable", "Cannot query the kernel OS build length.")
-        val size = length.readLong()
-        if (size <= 1 || size > 1024) nativeFailure("font.platform-runtime-identity-unavailable", "Kernel OS build has an invalid bounded length.")
-        val bytes = temp.allocateBuffer(size.toULong())
-        if (query(bytes.handler.rawValue) != 0 || length.readLong() !in 2..size) nativeFailure("font.platform-runtime-identity-unavailable", "Cannot query the complete kernel OS build.")
-        val leaf = ByteArray(length.readLong().toInt())
-        bytes.readBytes(leaf)
-        if (leaf.last() != 0.toByte()) nativeFailure("font.platform-runtime-identity-unavailable", "Kernel OS build is not terminated.")
-        String(leaf, 0, leaf.size - 1, Charsets.US_ASCII)
+
+    fun kernelBuild(): String {
+        val bytes = bindingCall { DarwinSystemInformation.readSysctlBytes("kern.osversion", 1024L) }
+        if (bytes.size !in 2..1024 || bytes.last() != 0.toByte())
+            nativeFailure("font.platform-runtime-identity-unavailable", "Kernel OS build is incomplete or unterminated.")
+        return String(bytes, 0, bytes.size - 1, Charsets.US_ASCII)
     }
-    private fun pointer(result: Any?): Long = (result as MemorySegment).address()
-    private companion object { const val matrixName = "org.graphiks.kalligraphie.coretext.CGAffineTransform" }
 }

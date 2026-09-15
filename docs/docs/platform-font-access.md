@@ -46,10 +46,12 @@ audit; that does not establish Windows, mobile or CFF support.
 
 New raw native symbols, types, ABI declarations, constants and library access
 belong in kffi. Kalligraphie owns typographic adaptation, capture, provenance,
-identity, generations, diagnostics and font-resource lifetime. Existing CoreText
-code uses kffi's generic JVM downcall engine but still declares native details
-locally, as do the legacy HarfBuzz bindings; extracting those existing declarations
-remains follow-up work. Directory capture adds no raw native bindings.
+identity, generations, diagnostics and font-resource lifetime. The optional Apple
+module uses kffi's dedicated CoreText bindings and Darwin system-information
+service; native framework loading, symbols, signatures and matrix layout belong
+to kffi. The legacy HarfBuzz bindings still declare native details locally;
+their extraction remains follow-up work. Directory capture adds no raw native
+bindings.
 
 ## Optional Apple module
 
@@ -65,12 +67,15 @@ for catalogue, policy and lease contracts.
 The main artifact does not depend on this module and does not load Apple
 frameworks. The common API carries platform route identities and ownership
 contracts, not CoreText pointers or kffi types. The optional module uses kffi
-internally and loads only the native surface needed for font access.
+CoreText bindings internally and loads only the native surface needed for font
+access, when the opted-in factory creates its adapter on a supported platform.
+The portable targets retain their existing requirements, including Android API 24.
 
 The internal kffi dependency uses
-`org.graphiks:kffi-jvm:1.0.0-SNAPSHOT`, following the latest publication of
+`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT`, following the latest publication of
 the current development line. Projects resolving it need the Central Portal
-snapshot repository, narrowly filtered to that artifact. The Apple module
+snapshot repository, narrowly filtered to the CoreText and generic runtime
+root/JVM artifacts required by its publication metadata. The Apple module
 rechecks changing artifacts on every online dependency
 resolution; it does not pin a timestamped artifact or enforce a global
 dependency-checksum policy. A newer publication can change between builds
@@ -85,7 +90,12 @@ dependencyResolutionManagement {
         mavenCentral()
         maven {
             url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            content { includeModule("org.graphiks", "kffi-jvm") }
+            content {
+                includeModule("org.graphiks", "kffi-coretext")
+                includeModule("org.graphiks", "kffi-coretext-jvm")
+                includeModule("org.graphiks", "kffi")
+                includeModule("org.graphiks", "kffi-jvm")
+            }
         }
     }
 }

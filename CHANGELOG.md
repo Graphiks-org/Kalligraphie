@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- The optional Apple module uses dedicated kffi CoreText bindings and Darwin system-information access instead of declaring native frameworks, symbols and layouts locally; font certification, resource ownership, budgets, cancellation and public leases retain their existing contracts.
 - macOS directory capture retains existing Kotlin call defaults but appends examination/diagnostic options and cancellation parameters: recompile consumers because the JVM constructor/factory entry points changed. Captures refresh explicitly into isolated generations.
 - Font captures accept a trailing optional shared cache scope; recompile JVM consumers using changed factory/constructor signatures. Existing Kotlin calls retain their defaults and CoreText retention stays disabled by default.
 - Paint schema 3 appends interpolation parameters to `GlyphPaintColorLine` and `PaintGraphProfile`, and three SVG transport bounds to `PaintGraphLimits`: recompile consumers using the changed JVM constructors or generated copy signatures, handle `PathClip` and the new interpolation enums, and regenerate persisted profile fingerprints even for schema 1 or 2. Historical COLR interpolation defaults are preserved; see the bilingual font-management migration notes.
