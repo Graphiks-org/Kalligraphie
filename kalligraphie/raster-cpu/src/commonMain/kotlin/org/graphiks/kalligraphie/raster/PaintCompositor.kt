@@ -181,6 +181,9 @@ internal object PaintCompositor {
             if (pixels > limits.maxPixelsPerImage.toLong()) {
                 throw RasterLimitReached("maxPixelsPerImage", pixels, limits.maxPixelsPerImage.toLong())
             }
+            if (pixels > Int.MAX_VALUE.toLong() / 4L) {
+                throw RasterLimitReached("maxPixelsPerImage", pixels, Int.MAX_VALUE.toLong() / 4L)
+            }
         }
 
         private fun checkCanvasSize(width: Long, height: Long) {

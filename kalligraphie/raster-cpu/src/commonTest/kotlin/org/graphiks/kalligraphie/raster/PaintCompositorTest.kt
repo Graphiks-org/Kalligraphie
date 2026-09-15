@@ -120,6 +120,27 @@ class PaintCompositorTest {
         assertEquals(RasterLimits.Default.maxWidthPx.toLong(), refusal.limit)
     }
 
+    @Test
+    fun refusesANodeLargerThanTheAllocationGuard() {
+        val node = pathNode(0.0, 0.0, 24_000.0, 0.0, 24_000.0, 24_000.0, 0.0, 24_000.0, color = GlyphColor(0, 0, 0))
+        val paint = GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = 0,
+            nodes = listOf(node),
+        )
+        val limits = RasterLimits.Default.copy(
+            maxWidthPx = 24_000,
+            maxHeightPx = 24_000,
+            maxPixelsPerImage = Int.MAX_VALUE,
+        )
+        val refusal = assertFailsWith<RasterLimitReached> {
+            PaintCompositor.rasterize(paint, 1.0, 1, 0, 0, limits)
+        }
+        assertEquals("maxPixelsPerImage", refusal.field)
+        assertEquals(576_000_000L, refusal.observed)
+        assertEquals(536_870_911L, refusal.limit)
+    }
+
     private fun pathNode(
         vararg coordinates: Double,
         color: GlyphColor,
