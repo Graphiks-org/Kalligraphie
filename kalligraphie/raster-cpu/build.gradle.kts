@@ -38,4 +38,5 @@ tasks.register<Test>("rasterDumps") {
     testClassesDirs = rasterJvmTestTask.get().testClassesDirs
     classpath = rasterJvmTestTask.get().classpath
     filter.includeTestsMatching("$rasterDumpClass.writesDeterministicDumpsOnlyWhenExplicitlyEnabled")
+    outputs.upToDateWhen { false }
 }

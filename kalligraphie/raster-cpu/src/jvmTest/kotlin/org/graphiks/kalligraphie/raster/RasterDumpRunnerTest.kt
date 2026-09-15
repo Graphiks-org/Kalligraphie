@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphResolution
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -35,10 +36,15 @@ class RasterDumpRunnerTest {
                     fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
                 ).value,
             ).outline
-            val image = assertIs<RasterResult.Success<A8Image>>(
-                GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(pixelsPerEm = 64.0)),
+            val request = OutlineRasterRequest(pixelsPerEm = 64.0)
+            val first = assertIs<RasterResult.Success<A8Image>>(
+                GlyphRasterizer.rasterizeOutline(outline, request),
             ).value
-            images["liberation-a-64.pgm"] = pgm(image)
+            val second = assertIs<RasterResult.Success<A8Image>>(
+                GlyphRasterizer.rasterizeOutline(outline, request),
+            ).value
+            assertEquals(first, second, "repeated rasterization must be identical")
+            images["liberation-a-64.pgm"] = pgm(first)
         }
 
         val manifest = buildString {
@@ -55,10 +61,13 @@ class RasterDumpRunnerTest {
         for ((name, bytes) in images) {
             val target = outputDirectory.resolve(name)
             val second = outputDirectory.resolve("$name.second")
-            Files.write(target, bytes)
-            Files.write(second, bytes)
-            assertTrue(Files.mismatch(target, second) == -1L, "repeated dumps must be identical for $name")
-            Files.delete(second)
+            try {
+                Files.write(target, bytes)
+                Files.write(second, bytes)
+                assertTrue(Files.mismatch(target, second) == -1L, "repeated dumps must be identical for $name")
+            } finally {
+                Files.deleteIfExists(second)
+            }
         }
         Files.writeString(outputDirectory.resolve("manifest.md"), manifest)
     }
@@ -68,6 +77,12 @@ class RasterDumpRunnerTest {
         return header + image.copyPixels()
     }
 
-    private fun gitCommit(): String =
-        ProcessBuilder("git", "rev-parse", "HEAD").start().inputStream.bufferedReader().readText().trim()
+    private fun gitCommit(): String {
+        val process = ProcessBuilder("git", "rev-parse", "HEAD").redirectErrorStream(true).start()
+        val output = process.inputStream.bufferedReader().readText().trim()
+        check(process.waitFor() == 0 && output.matches(Regex("[0-9a-f]{40}"))) {
+            "Could not identify the dumped commit: $output"
+        }
+        return output
+    }
 }
