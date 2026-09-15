@@ -10,7 +10,7 @@ import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
-import org.graphiks.kalligraphie.api.FontRenderVariantKey
+import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OutlineProfile
@@ -32,7 +32,7 @@ internal class RasterFixture(
 internal fun openRasterFixture(
     bytes: ByteArray,
     requirements: FontAccessRequirementsSnapshot,
-    variant: FontRenderVariantKey = FontRenderVariantKey.default,
+    renderVariant: FontRenderVariantSnapshot = FontRenderVariantSnapshot.default,
 ): RasterFixture {
     val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
         Kalligraphie.embedded(
@@ -51,7 +51,7 @@ internal fun openRasterFixture(
             face.instantiate(FontInstanceDescriptor(LayoutUnit(2_048f))),
         ).value
         val asset = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
-            instance.acquireRenderAsset(resolver, variant, requirements),
+            instance.acquireRenderAsset(resolver, renderVariant, requirements),
         ).value
         return RasterFixture(instance, asset, resolver)
     } catch (error: Throwable) {

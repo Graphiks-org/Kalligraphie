@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.raster
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
@@ -22,6 +23,7 @@ class PaintConformanceTest {
         openRasterFixture(
             fixtureBytes("/fonts/emoji-two-colr-v0/EmojiTwoCOLRv0.ttf"),
             requirements,
+            renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = 0),
         ).use { fixture ->
             val glyph = assertIs<FontOperationResult.Success<GlyphResolution>>(
                 fixture.instance.resolveGlyph(0x1F600),
