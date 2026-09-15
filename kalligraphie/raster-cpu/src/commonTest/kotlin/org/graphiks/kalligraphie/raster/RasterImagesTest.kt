@@ -49,5 +49,11 @@ class RasterImagesTest {
     @Test
     fun rgbaImageRejectsMismatchedSize() {
         assertFailsWith<IllegalArgumentException> { Rgba8Image(1, 1, 0, 0, ByteArray(3)) }
+        assertFailsWith<IllegalArgumentException> { Rgba8Image(-1, 0, 0, 0, ByteArray(0)) }
+    }
+
+    @Test
+    fun rgbaImageRejectsOverflowingDimensions() {
+        assertFailsWith<IllegalArgumentException> { Rgba8Image(Int.MAX_VALUE, Int.MAX_VALUE, 0, 0, ByteArray(4)) }
     }
 }

@@ -75,8 +75,9 @@ public class Rgba8Image(
     init {
         require(width >= 0) { "width must be non-negative." }
         require(height >= 0) { "height must be non-negative." }
-        val expected = width.toLong() * height.toLong() * 4L
-        require(expected <= Int.MAX_VALUE.toLong()) { "pixel count exceeds the maximum buffer size." }
+        val pixels = width.toLong() * height.toLong()
+        require(pixels <= Int.MAX_VALUE.toLong() / 4L) { "pixel count exceeds the maximum buffer size." }
+        val expected = pixels * 4L
         require(captured.size == expected.toInt()) { "pixel count does not match the image dimensions." }
     }
 
