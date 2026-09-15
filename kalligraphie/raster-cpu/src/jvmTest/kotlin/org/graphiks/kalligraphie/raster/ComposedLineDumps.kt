@@ -91,9 +91,9 @@ internal object ComposedLineDumps {
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(
             catalog.openAssetResolver(),
         ).value
+        val assets = LinkedHashMap<FontFaceId, FontRenderAssetHandle>()
         try {
             val requirements = FontAccessRequirementsSnapshot.renderable(listOf(outlineProfile()))
-            val assets = LinkedHashMap<FontFaceId, FontRenderAssetHandle>()
             sources.forEach { source ->
                 val faceId = FontFaceId(source.id, 0)
                 val face = assertIs<FontOperationResult.Success<FontFace>>(
@@ -108,7 +108,11 @@ internal object ComposedLineDumps {
             }
             return MultiFaceFixture(catalog, resolver, assets)
         } catch (error: Throwable) {
-            resolver.close()
+            try {
+                assets.values.forEach { asset -> asset.close() }
+            } finally {
+                resolver.close()
+            }
             throw error
         }
     }
