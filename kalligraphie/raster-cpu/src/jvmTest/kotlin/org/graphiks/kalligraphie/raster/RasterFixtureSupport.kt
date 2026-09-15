@@ -12,8 +12,12 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
+import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.PaintGraphLimits
+import org.graphiks.kalligraphie.api.PaintGraphProfile
 import kotlin.test.assertIs
 
 /** Owns one render asset and its resolver lease; [close] releases the asset, then the resolver lease. */
@@ -23,8 +27,11 @@ internal class RasterFixture(
     private val resolver: FontAssetResolverHandle,
 ) : AutoCloseable {
     override fun close() {
-        assertIs<FontOperationResult.Success<Unit>>(asset.close())
-        assertIs<FontOperationResult.Success<Unit>>(resolver.close())
+        try {
+            assertIs<FontOperationResult.Success<Unit>>(asset.close())
+        } finally {
+            assertIs<FontOperationResult.Success<Unit>>(resolver.close())
+        }
     }
 }
 
@@ -69,6 +76,24 @@ internal fun outlineProfile(): OutlineProfile = OutlineProfile(
     maxPoints = 16_384,
     maxCompositeDepth = 16,
     maxCompositeComponents = 256,
+)
+
+internal fun paintProfile(): PaintGraphProfile = PaintGraphProfile(
+    acceptedNodeKinds = listOf(GlyphPaintNodeKind.SOLID_OUTLINE, GlyphPaintNodeKind.GROUP),
+    acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
+    limits = PaintGraphLimits(
+        maxNodes = 8,
+        maxReferences = 6,
+        maxDepth = 2,
+        maxSourceBytes = 200_000,
+        maxPaths = 6,
+        maxPalettes = 2,
+        maxPaletteEntries = 2_000,
+        maxColorRecords = 2_000,
+        maxBaseGlyphRecords = 3_000,
+        maxLayerRecords = 30_000,
+    ),
+    outlineProfile = outlineProfile(),
 )
 
 internal fun fixtureBytes(path: String): ByteArray =

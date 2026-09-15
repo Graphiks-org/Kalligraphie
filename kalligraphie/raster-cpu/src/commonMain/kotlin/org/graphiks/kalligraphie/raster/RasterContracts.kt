@@ -66,7 +66,7 @@ public sealed interface RasterDiagnostic {
         override val field: String,
         /** Observed value at the moment of refusal. */
         public val observed: Long,
-        /** Declared limit from [RasterLimits]. */
+        /** Declared limit from [RasterLimits], or the stricter platform allocation guard when one applies. */
         public val limit: Long,
     ) : RasterDiagnostic
 

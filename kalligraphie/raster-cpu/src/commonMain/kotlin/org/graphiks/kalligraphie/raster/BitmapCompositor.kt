@@ -17,8 +17,8 @@ import org.graphiks.kalligraphie.api.GlyphColor
  */
 internal object BitmapCompositor {
     fun rasterize(bitmap: BitmapGlyphIR, ink: GlyphColor): Rgba8Image {
-        require(bitmap.pixelFormat == BitmapPixelFormat.ALPHA_8) {
-            "BitmapCompositor supports ALPHA_8 bitmaps only."
+        if (bitmap.pixelFormat != BitmapPixelFormat.ALPHA_8) {
+            throw RasterRequestRejected("pixelFormat", "only ALPHA_8 bitmaps are supported.")
         }
         val samples = bitmap.copyDecodedPixels()
         require(samples.size <= Int.MAX_VALUE / 4) { "decoded sample count exceeds the allocation guard." }

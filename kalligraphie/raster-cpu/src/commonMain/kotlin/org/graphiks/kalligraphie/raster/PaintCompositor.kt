@@ -69,8 +69,8 @@ internal object PaintCompositor {
                 is GlyphPaintNode.Path -> tinted(coverageOfPath(node), node.color)
 
                 is GlyphPaintNode.Group -> {
-                    require(node.compositionMode == GlyphPaintCompositionMode.SOURCE_OVER) {
-                        "Unsupported paint composition mode."
+                    if (node.compositionMode != GlyphPaintCompositionMode.SOURCE_OVER) {
+                        throw RasterRequestRejected("compositionMode", "unsupported paint composition mode.")
                     }
                     composite(node.children.mapNotNull { child -> build(child, depth + 1) })
                 }
