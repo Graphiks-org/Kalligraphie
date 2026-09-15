@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.raster
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class CoverageRasterTest {
@@ -12,6 +13,15 @@ class CoverageRasterTest {
         assertEquals(4, image.width)
         assertEquals(4, image.height)
         for (y in 0 until 4) for (x in 0 until 4) assertEquals(255, image[x, y], "pixel ($x, $y)")
+    }
+
+    @Test
+    fun combinesLeftAndTopBearingsWithSamples() {
+        val square = contour(3.0, 2.0, 4.0, 2.0, 4.0, 3.0, 3.0, 3.0)
+        val image = CoverageRaster.rasterize(listOf(square), left = 3, top = 2, width = 1, height = 1)
+        assertEquals(255, image[0, 0])
+        assertEquals(3, image.left)
+        assertEquals(2, image.top)
     }
 
     @Test
@@ -32,6 +42,15 @@ class CoverageRasterTest {
     }
 
     @Test
+    fun containsReportsHoleInteriorAndExterior() {
+        val outer = contour(0.0, 0.0, 8.0, 0.0, 8.0, 8.0, 0.0, 8.0)
+        val inner = contour(2.0, 2.0, 2.0, 6.0, 6.0, 6.0, 6.0, 2.0)
+        assertTrue(CoverageRaster.contains(listOf(outer, inner), 1.5, 1.5))
+        assertFalse(CoverageRaster.contains(listOf(outer, inner), 4.0, 4.0))
+        assertFalse(CoverageRaster.contains(listOf(outer, inner), 9.0, 9.0))
+    }
+
+    @Test
     fun selfIntersectingBowtieFillsBothLobes() {
         val bowtie = contour(0.0, 0.0, 8.0, 8.0, 8.0, 0.0, 0.0, 8.0)
         val image = CoverageRaster.rasterize(listOf(bowtie), left = 0, top = 0, width = 8, height = 8)
@@ -48,7 +67,17 @@ class CoverageRasterTest {
     fun outsidePixelsStayEmpty() {
         val square = contour(0.0, 0.0, 2.0, 0.0, 2.0, 2.0, 0.0, 2.0)
         val image = CoverageRaster.rasterize(listOf(square), left = 0, top = 0, width = 4, height = 4)
-        assertEquals(0, image[3, 3])
+        for (y in 0 until 4) {
+            for (x in 0 until 4) {
+                if (x >= 2 || y >= 2) assertEquals(0, image[x, y], "pixel ($x, $y)")
+            }
+        }
+    }
+
+    @Test
+    fun emptyContourListProducesAnEmptyImage() {
+        val image = CoverageRaster.rasterize(emptyList(), left = 0, top = 0, width = 2, height = 2)
+        for (y in 0 until 2) for (x in 0 until 2) assertEquals(0, image[x, y], "pixel ($x, $y)")
     }
 
     private fun contour(vararg coordinates: Double): FlatContour {

@@ -48,17 +48,19 @@ internal object CoverageRaster {
         return A8Image(width, height, left, top, pixels)
     }
 
+    /** Counts signed crossings with the half-open convention `a.y <= y < b.y`, mirrored when descending. */
     private fun windingNumber(contours: List<FlatContour>, x: Double, y: Double): Int {
         var winding = 0
-        for (contour in contours) {
-            val points = contour.points
-            if (points.size < 2) continue
-            for (index in points.indices) {
+        for (contourIndex in contours.indices) {
+            val points = contours[contourIndex].points
+            val pointCount = points.size
+            if (pointCount < 2) continue
+            for (index in 0 until pointCount) {
                 val a = points[index]
-                val b = points[(index + 1) % points.size]
+                val b = points[(index + 1) % pointCount]
                 if (a.y <= y) {
-                    if (b.y > y && isLeft(a, b, x, y) > 0.0) winding += 1
-                } else if (b.y <= y && isLeft(a, b, x, y) < 0.0) {
+                    if (b.y > y && crossingSide(a, b, x, y) > 0.0) winding += 1
+                } else if (b.y <= y && crossingSide(a, b, x, y) < 0.0) {
                     winding -= 1
                 }
             }
@@ -66,6 +68,6 @@ internal object CoverageRaster {
         return winding
     }
 
-    private fun isLeft(a: FlatPoint, b: FlatPoint, x: Double, y: Double): Double =
+    private fun crossingSide(a: FlatPoint, b: FlatPoint, x: Double, y: Double): Double =
         (b.x - a.x) * (y - a.y) - (x - a.x) * (b.y - a.y)
 }
