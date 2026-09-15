@@ -19,6 +19,7 @@ class RasterDumpRunnerTest {
                 "KALLIGRAPHIE_RASTER_DUMPS_OUTPUT is required when dumps are enabled."
             },
         )
+        require(outputDirectory.isAbsolute) { "KALLIGRAPHIE_RASTER_DUMPS_OUTPUT must be an absolute path." }
         Files.createDirectories(outputDirectory)
 
         val images = mutableMapOf<String, ByteArray>()
