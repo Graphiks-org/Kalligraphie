@@ -241,6 +241,19 @@ class PaintCompositorTest {
         assertEquals(4, image.width)
     }
 
+    @Test
+    fun refusesUnsupportedNodeKinds() {
+        val paint = GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = 0,
+            nodes = listOf(GlyphPaintNode.Solid(GlyphColor(255, 0, 0), 1.0)),
+        )
+        val refusal = assertFailsWith<RasterRequestRejected> {
+            PaintCompositor.rasterize(paint, 1_000.0, 1_000, 0, 0, RasterLimits.Default)
+        }
+        assertEquals("nodeKind", refusal.field)
+    }
+
     private fun pathNode(
         vararg coordinates: Double,
         color: GlyphColor,
