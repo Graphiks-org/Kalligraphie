@@ -85,17 +85,17 @@ public sealed interface RasterDiagnostic {
  * [RasterDiagnostic] and never transfers partial output.
  */
 public sealed interface RasterResult<out T> {
-        /** Successful rasterization producing one immutable value. */
-        public data class Success<T>(
-            /** The immutable rasterization output. */
-            public val value: T,
-        ) : RasterResult<T>
+    /** Successful rasterization producing one immutable value. */
+    public data class Success<T>(
+        /** The immutable rasterization output. */
+        public val value: T,
+    ) : RasterResult<T>
 
-        /** Typed refusal with at least one diagnostic. */
-        public data class Failure(
-            /** At least one typed reason for the refusal; never empty. */
-            public val diagnostics: List<RasterDiagnostic>,
-        ) : RasterResult<Nothing> {
+    /** Typed refusal with at least one diagnostic. */
+    public data class Failure(
+        /** At least one typed reason for the refusal; never empty. */
+        public val diagnostics: List<RasterDiagnostic>,
+    ) : RasterResult<Nothing> {
         init {
             require(diagnostics.isNotEmpty()) { "A failure must carry at least one diagnostic." }
         }
