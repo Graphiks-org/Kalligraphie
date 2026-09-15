@@ -74,6 +74,11 @@ internal object PaintCompositor {
                     }
                     composite(node.children.mapNotNull { child -> build(child, depth + 1) })
                 }
+
+                else -> throw RasterRequestRejected(
+                    "nodeKind",
+                    "unsupported paint node kind ${node::class.simpleName}.",
+                )
             }
         }
 
