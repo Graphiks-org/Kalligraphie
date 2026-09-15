@@ -14,6 +14,7 @@ kotlinx-serialization = "1.8.0"
 androidx-activity-compose = "1.10.1"
 icu4j = "77.1"
 okio = "3.18.1"
+kffi = "1.0.0-SNAPSHOT"
 
 [libraries]
 # Coroutines
@@ -36,6 +37,9 @@ ktor-serialization-kotlinx-json = { module = "io.ktor:ktor-serialization-kotlinx
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity-compose" }
 icu4j = { module = "com.ibm.icu:icu4j", version.ref = "icu4j" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+
+# Native bindings
+kffi-coretext-jvm = { module = "org.graphiks:kffi-coretext-jvm", version.ref = "kffi" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
