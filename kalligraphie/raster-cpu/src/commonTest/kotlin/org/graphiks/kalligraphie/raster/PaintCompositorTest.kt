@@ -68,6 +68,58 @@ class PaintCompositorTest {
         }
     }
 
+    @Test
+    fun refusesAHugeUnionSpanBeforeAllocating() {
+        val near = pathNode(0.0, 0.0, 4.0, 0.0, 4.0, 4.0, 0.0, 4.0, color = GlyphColor(255, 0, 0))
+        val far = pathNode(
+            1_100_000_000.0, 0.0,
+            1_100_000_004.0, 0.0,
+            1_100_000_004.0, 4.0,
+            1_100_000_000.0, 4.0,
+            color = GlyphColor(0, 0, 255),
+        )
+        val paint = GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = 2,
+            nodes = listOf(near, far, GlyphPaintNode.Group(listOf(0, 1))),
+        )
+        val refusal = assertFailsWith<RasterLimitReached> {
+            PaintCompositor.rasterize(paint, 1.0, 1, 0, 0, RasterLimits.Default)
+        }
+        assertEquals("maxWidthPx", refusal.field)
+        assertEquals(1_100_000_004L, refusal.observed)
+        assertEquals(RasterLimits.Default.maxWidthPx.toLong(), refusal.limit)
+    }
+
+    @Test
+    fun refusesAUnionSpanWiderThanIntRangeBeforeAllocating() {
+        val near = pathNode(
+            -2_100_000_000.0, 0.0,
+            -2_099_999_996.0, 0.0,
+            -2_099_999_996.0, 4.0,
+            -2_100_000_000.0, 4.0,
+            color = GlyphColor(255, 0, 0),
+        )
+        val far = pathNode(
+            2_100_000_000.0, 0.0,
+            2_100_000_004.0, 0.0,
+            2_100_000_004.0, 4.0,
+            2_100_000_000.0, 4.0,
+            color = GlyphColor(0, 0, 255),
+        )
+        val paint = GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = 2,
+            nodes = listOf(near, far, GlyphPaintNode.Group(listOf(0, 1))),
+        )
+        val refusal = assertFailsWith<RasterLimitReached> {
+            PaintCompositor.rasterize(paint, 1.0, 1, 0, 0, RasterLimits.Default)
+        }
+        assertEquals("maxWidthPx", refusal.field)
+        assertEquals(4_200_000_004L, refusal.observed)
+        assertEquals(RasterLimits.Default.maxWidthPx.toLong(), refusal.limit)
+    }
+
     private fun pathNode(
         vararg coordinates: Double,
         color: GlyphColor,

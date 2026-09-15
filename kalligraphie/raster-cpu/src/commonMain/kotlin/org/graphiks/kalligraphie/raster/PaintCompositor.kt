@@ -110,16 +110,16 @@ internal object PaintCompositor {
             if (layers.isEmpty()) return null
             val left = layers.minOf { layer -> layer.left }
             val top = layers.minOf { layer -> layer.top }
-            val right = layers.maxOf { layer -> layer.left + layer.width }
-            val bottom = layers.maxOf { layer -> layer.top + layer.height }
+            val right = layers.maxOf { layer -> layer.left.toLong() + layer.width.toLong() }
+            val bottom = layers.maxOf { layer -> layer.top.toLong() + layer.height.toLong() }
             val width = right - left
             val height = bottom - top
-            checkCanvas(width, height)
-            val canvas = ByteArray(width * height * 4)
+            checkCanvasSize(width, height)
+            val canvas = ByteArray(width.toInt() * height.toInt() * 4)
             for (layer in layers) {
-                blendInto(canvas, width, left, top, layer)
+                blendInto(canvas, width.toInt(), left, top, layer)
             }
-            return Layer(left, top, width, height, canvas)
+            return Layer(left, top, width.toInt(), height.toInt(), canvas)
         }
 
         private fun blendInto(canvas: ByteArray, canvasWidth: Int, canvasLeft: Int, canvasTop: Int, layer: Layer) {
@@ -180,6 +180,22 @@ internal object PaintCompositor {
             val pixels = width.toLong() * height.toLong()
             if (pixels > limits.maxPixelsPerImage.toLong()) {
                 throw RasterLimitReached("maxPixelsPerImage", pixels, limits.maxPixelsPerImage.toLong())
+            }
+        }
+
+        private fun checkCanvasSize(width: Long, height: Long) {
+            if (width > limits.maxWidthPx.toLong()) {
+                throw RasterLimitReached("maxWidthPx", width, limits.maxWidthPx.toLong())
+            }
+            if (height > limits.maxHeightPx.toLong()) {
+                throw RasterLimitReached("maxHeightPx", height, limits.maxHeightPx.toLong())
+            }
+            val pixels = width * height
+            if (pixels > limits.maxPixelsPerImage.toLong()) {
+                throw RasterLimitReached("maxPixelsPerImage", pixels, limits.maxPixelsPerImage.toLong())
+            }
+            if (pixels > Int.MAX_VALUE.toLong() / 4L) {
+                throw RasterLimitReached("maxPixelsPerImage", pixels, Int.MAX_VALUE.toLong() / 4L)
             }
         }
     }
