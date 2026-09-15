@@ -1,0 +1,58 @@
+package org.graphiks.kalligraphie.raster
+
+import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontGlyphRequest
+import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
+import org.graphiks.kalligraphie.api.GlyphPaintNode
+import org.graphiks.kalligraphie.api.GlyphRepresentation
+import org.graphiks.kalligraphie.api.GlyphResolution
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertTrue
+
+class PaintConformanceTest {
+    @Test
+    fun emojiTwoColorGlyphProducesAStableRgbaFingerprint() {
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(paintProfile()))
+        openRasterFixture(
+            fixtureBytes("/fonts/emoji-two-colr-v0/EmojiTwoCOLRv0.ttf"),
+            requirements,
+            renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = 0),
+        ).use { fixture ->
+            val glyph = assertIs<FontOperationResult.Success<GlyphResolution>>(
+                fixture.instance.resolveGlyph(0x1F600),
+            ).value.glyphId
+            assertEquals(1_443, glyph.value)
+            val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
+                fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
+            ).value
+            val paint = assertIs<GlyphRepresentation.Paint>(representation).paint
+
+            val solidOutline = paint.nodes
+                .filterIsInstance<GlyphPaintNode.SolidOutline>()
+                .firstOrNull()
+            assertIs<GlyphPaintNode.SolidOutline>(solidOutline, "the emoji paint graph must contain a solid outline")
+            val unitsPerEm = solidOutline.outline.unitsPerEm
+            val image = assertIs<RasterResult.Success<Rgba8Image>>(
+                GlyphRasterizer.rasterizePaint(
+                    paint,
+                    PaintRasterRequest(pixelsPerEm = 64.0, unitsPerEm = unitsPerEm),
+                ),
+            ).value
+
+            val pixels = image.copyPixels()
+            assertTrue(pixels.any { sample -> sample.toInt() != 0 }, "color glyph must produce ink")
+            assertEquals(EXPECTED_PAINT_WIDTH_PX, image.width)
+            assertEquals(EXPECTED_PAINT_HEIGHT_PX, image.height)
+            assertEquals(EXPECTED_PAINT_SHA256, sha256(pixels))
+        }
+    }
+
+    private companion object {
+        const val EXPECTED_PAINT_SHA256 = "8146d2e52d2ffb5a673b752fcd0b88694332815752c3add8b2544a6ca68bcc29"
+        const val EXPECTED_PAINT_WIDTH_PX = 71
+        const val EXPECTED_PAINT_HEIGHT_PX = 72
+    }
+}
