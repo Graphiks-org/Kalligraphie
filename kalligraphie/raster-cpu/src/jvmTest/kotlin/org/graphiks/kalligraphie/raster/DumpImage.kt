@@ -37,11 +37,11 @@ internal fun ppm(image: Rgba8Image): ByteArray {
  * outside the canvas are skipped deterministically.
  */
 internal class A8Canvas(val width: Int, val height: Int) {
-    private val pixels = ByteArray(width * height)
-
     init {
         require(width > 0 && height > 0) { "canvas dimensions must be positive." }
     }
+
+    private val pixels = ByteArray(width * height)
 
     /** Returns the canvas sample at [x], [y] in the inclusive range `0..255`. */
     fun sample(x: Int, y: Int): Int {
@@ -49,7 +49,11 @@ internal class A8Canvas(val width: Int, val height: Int) {
         return pixels[y * width + x].toInt() and 0xFF
     }
 
-    /** Draws [image] at [penX] with its baseline at [baselineY], flipped vertically. */
+    /**
+     * Draws [image] at [penX] with its baseline at [baselineY], flipped vertically.
+     *
+     * Coverage samples are scaled by [ink] (the eight-bit ink value, default 255).
+     */
     fun drawCoverage(image: A8Image, penX: Int, baselineY: Int, ink: Int = 255) {
         require(ink in 0..255) { "ink must be in 0..255." }
         val x0 = penX + image.left
@@ -83,18 +87,11 @@ internal class A8Canvas(val width: Int, val height: Int) {
  * orientation.
  */
 internal class RgbaCanvas(val width: Int, val height: Int) {
-    private val pixels = ByteArray(width * height * 4)
-
     init {
         require(width > 0 && height > 0) { "canvas dimensions must be positive." }
-        for (index in 0 until width * height) {
-            val base = index * 4
-            pixels[base] = -1
-            pixels[base + 1] = -1
-            pixels[base + 2] = -1
-            pixels[base + 3] = -1
-        }
     }
+
+    private val pixels = ByteArray(width * height * 4).apply { fill(-1) }
 
     /** Returns the packed non-premultiplied pixel `0xAARRGGBB` at [x], [y]. */
     fun pixel(x: Int, y: Int): Int {
