@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.raster
 
 import org.graphiks.kalligraphie.api.BitmapGlyphIR
+import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.GlyphColor
 
 /**
@@ -10,10 +11,17 @@ import org.graphiks.kalligraphie.api.GlyphColor
  * participates, so the exact strike identity is preserved. Output bearings are
  * the bitmap's own `originX` and `originY` relative to the glyph origin, and the
  * ink's alpha multiplies each sample with round-to-nearest integer arithmetic.
+ *
+ * Callers must enforce the canvas limits (including `pixels <= Int.MAX_VALUE / 4`)
+ * before calling; `rasterize` itself allocates `width * height * 4` bytes.
  */
 internal object BitmapCompositor {
     fun rasterize(bitmap: BitmapGlyphIR, ink: GlyphColor): Rgba8Image {
+        require(bitmap.pixelFormat == BitmapPixelFormat.ALPHA_8) {
+            "BitmapCompositor supports ALPHA_8 bitmaps only."
+        }
         val samples = bitmap.copyDecodedPixels()
+        require(samples.size <= Int.MAX_VALUE / 4) { "decoded sample count exceeds the allocation guard." }
         val pixels = ByteArray(samples.size * 4)
         for (index in samples.indices) {
             val alpha = (((samples[index].toInt() and 0xFF) * ink.alpha) + 127) / 255

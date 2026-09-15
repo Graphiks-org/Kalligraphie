@@ -35,4 +35,40 @@ class BitmapCompositorTest {
         assertEquals(0x640A141E, image[0, 1])
         assertEquals(0x320A141E, image[1, 1])
     }
+
+    @Test
+    fun roundsHalfUpInsteadOfTruncating() {
+        val bitmap = BitmapGlyphIR(
+            glyphId = GlyphId(3),
+            strike = BitmapStrike(16, 16),
+            width = 1,
+            height = 1,
+            originX = 0,
+            originY = 0,
+            metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+            pixelFormat = BitmapPixelFormat.ALPHA_8,
+            colorSpace = GlyphColorSpace.SRGB,
+            decodedPixels = byteArrayOf(1),
+        )
+        val image = BitmapCompositor.rasterize(bitmap, GlyphColor(10, 20, 30, 128))
+        assertEquals(0x010A141E, image[0, 0])
+    }
+
+    @Test
+    fun keepsInkChannelsUnderATransparentAlpha() {
+        val bitmap = BitmapGlyphIR(
+            glyphId = GlyphId(3),
+            strike = BitmapStrike(16, 16),
+            width = 1,
+            height = 1,
+            originX = 0,
+            originY = 0,
+            metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+            pixelFormat = BitmapPixelFormat.ALPHA_8,
+            colorSpace = GlyphColorSpace.SRGB,
+            decodedPixels = byteArrayOf(-1),
+        )
+        val image = BitmapCompositor.rasterize(bitmap, GlyphColor(10, 20, 30, 0))
+        assertEquals(0x000A141E, image[0, 0])
+    }
 }
