@@ -114,26 +114,6 @@ class RasterDumpRunnerTest {
         Files.writeString(outputDirectory.resolve("manifest.md"), manifest)
     }
 
-    private fun pgm(image: A8Image): ByteArray {
-        val header = "P5\n${image.width} ${image.height}\n255\n".toByteArray(Charsets.US_ASCII)
-        return header + image.copyPixels()
-    }
-
-    private fun ppm(image: Rgba8Image): ByteArray {
-        val header = "P6\n${image.width} ${image.height}\n255\n".toByteArray(Charsets.US_ASCII)
-        val pixels = image.copyPixels()
-        val composited = ByteArray(image.width * image.height * 3)
-        for (index in 0 until image.width * image.height) {
-            val alpha = pixels[index * 4 + 3].toInt() and 0xFF
-            for (channel in 0 until 3) {
-                val color = pixels[index * 4 + channel].toInt() and 0xFF
-                composited[index * 3 + channel] =
-                    ((color * alpha + 255 * (255 - alpha) + 127) / 255).toByte()
-            }
-        }
-        return header + composited
-    }
-
     private fun repositoryRoot(): Path {
         var candidate: Path? = Path.of("").toAbsolutePath().normalize()
         while (candidate != null) {
@@ -152,9 +132,3 @@ class RasterDumpRunnerTest {
         return output
     }
 }
-
-/** One rendered demonstration artifact: the encoded bytes plus a human-readable note. */
-internal class Dump(
-    val bytes: ByteArray,
-    val note: String = "",
-)

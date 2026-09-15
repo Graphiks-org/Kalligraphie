@@ -158,3 +158,12 @@ internal class RgbaCanvas(val width: Int, val height: Int) {
         return header + rgb
     }
 }
+
+/** One rendered demonstration artifact: the encoded bytes plus a human-readable note. */
+internal class Dump(
+    val bytes: ByteArray,
+    val note: String = "",
+) {
+    /** Returns a copy of this dump with an optional replacement [note]. */
+    fun copy(note: String = this.note): Dump = Dump(bytes, note)
+}

@@ -6,15 +6,16 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphRepresentation
-import org.graphiks.kalligraphie.api.GlyphResolution
 import kotlin.test.assertIs
 
 /**
  * Renders per-font alphabet sheets into demonstration dumps.
  *
- * Every listed code point must resolve to a real glyph with ink: an unassigned
- * or unmapped code point fails the sheet instead of leaving a silent hole. Each
- * glyph is drawn left-aligned on a shared row baseline inside a uniform cell.
+ * The sheet functions require every listed code point to resolve to a real
+ * glyph with ink: an unassigned or unmapped code point fails the sheet instead
+ * of leaving a silent hole. Each glyph is drawn left-aligned on a shared row
+ * baseline inside a uniform cell. [bitmapDump] renders one normalized bitmap
+ * strike instead.
  */
 internal object GlyphSheetDumps {
     private const val COLUMNS = 16
@@ -22,40 +23,43 @@ internal object GlyphSheetDumps {
 
     /** Renders an outline sheet as a flipped P5 PGM (white ink on black). */
     fun outlineSheet(
-        name: String,
         fontPath: String,
         codepoints: List<Int>,
         pixelsPerEm: Double,
-    ): Dump = openRasterFixture(fixtureBytes(fontPath), outlineRequirements()).use { fixture ->
-        val images = codepoints.map { codepoint -> resolveOutline(fixture, codepoint, pixelsPerEm) }
-        Dump(
-            bytes = renderCoverageSheet(images),
-            note = "$COLUMNS columns, ${pixelsPerEm.toInt()} pixels per em, flipped vertically",
-        )
+    ): Dump {
+        require(codepoints.isNotEmpty()) { "a sheet needs at least one code point." }
+        return openRasterFixture(fixtureBytes(fontPath), outlineRequirements()).use { fixture ->
+            val images = codepoints.map { codepoint -> resolveOutline(fixture, codepoint, pixelsPerEm) }
+            Dump(
+                bytes = renderCoverageSheet(images),
+                note = "$COLUMNS columns, ${pixelsPerEm.toInt()} pixels per em, flipped vertically",
+            )
+        }
     }
 
     /** Renders a color sheet as a flipped P6 PPM (glyph colors over white). */
     fun paintSheet(
-        name: String,
         fontPath: String,
         codepoints: List<Int>,
         pixelsPerEm: Double,
         paletteIndex: Int,
-    ): Dump = openRasterFixture(
-        fixtureBytes(fontPath),
-        FontAccessRequirementsSnapshot.renderable(listOf(paintProfile())),
-        renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = paletteIndex),
-    ).use { fixture ->
-        val images = codepoints.map { codepoint -> resolvePaint(fixture, codepoint, pixelsPerEm) }
-        Dump(
-            bytes = renderColorSheet(images),
-            note = "$COLUMNS columns, ${pixelsPerEm.toInt()} pixels per em, palette $paletteIndex, flipped vertically",
-        )
+    ): Dump {
+        require(codepoints.isNotEmpty()) { "a sheet needs at least one code point." }
+        return openRasterFixture(
+            fixtureBytes(fontPath),
+            FontAccessRequirementsSnapshot.renderable(listOf(paintProfile())),
+            renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = paletteIndex),
+        ).use { fixture ->
+            val images = codepoints.map { codepoint -> resolvePaint(fixture, codepoint, pixelsPerEm) }
+            Dump(
+                bytes = renderColorSheet(images),
+                note = "$COLUMNS columns, ${pixelsPerEm.toInt()} pixels per em, palette $paletteIndex, flipped vertically",
+            )
+        }
     }
 
     /** Renders one normalized bitmap strike as a P6 PPM (black ink over white). */
     fun bitmapDump(
-        name: String,
         fontPath: String,
         codepoint: Int,
     ): Dump = openRasterFixture(
@@ -64,18 +68,16 @@ internal object GlyphSheetDumps {
     ).use { fixture ->
         val glyph = resolveGlyph(fixture, codepoint)
         val bitmap = assertIs<GlyphRepresentation.Bitmap>(
-            assertIs<FontOperationResult.Success<GlyphRepresentation>>(
-                fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
-                "${label(codepoint)} is not a bitmap representation",
-            ).value,
+            requireSuccess(codepoint, "materialization", fixture.asset.resolveGlyph(FontGlyphRequest(glyph))),
             "${label(codepoint)} is not a bitmap representation",
         ).bitmap
-        val image = assertIs<RasterResult.Success<Rgba8Image>>(
+        val image = requireRasterized(
+            codepoint,
             GlyphRasterizer.rasterizeBitmap(
                 bitmap,
                 BitmapRasterRequest(org.graphiks.kalligraphie.api.GlyphColor(0, 0, 0, 255)),
             ),
-        ).value
+        )
         val canvas = RgbaCanvas(image.width + 2 * PADDING, image.height + 2 * PADDING)
         canvas.drawBitmap(image, PADDING, PADDING)
         Dump(
@@ -86,27 +88,30 @@ internal object GlyphSheetDumps {
 
     private fun resolveOutline(fixture: RasterFixture, codepoint: Int, pixelsPerEm: Double): A8Image {
         val glyph = resolveGlyph(fixture, codepoint)
-        val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
+        val representation = requireSuccess(
+            codepoint,
+            "materialization",
             fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
-            "${label(codepoint)} is not an outline representation",
-        ).value
+        )
         val outline = assertIs<GlyphRepresentation.Outline>(
             representation,
             "${label(codepoint)} is not an outline representation",
         ).outline
-        val image = assertIs<RasterResult.Success<A8Image>>(
+        val image = requireRasterized(
+            codepoint,
             GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(pixelsPerEm)),
-        ).value
+        )
         check(image.width > 0 && image.height > 0) { "${label(codepoint)} produced no ink" }
         return image
     }
 
     private fun resolvePaint(fixture: RasterFixture, codepoint: Int, pixelsPerEm: Double): Rgba8Image {
         val glyph = resolveGlyph(fixture, codepoint)
-        val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
+        val representation = requireSuccess(
+            codepoint,
+            "materialization",
             fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
-            "${label(codepoint)} is not a paint representation",
-        ).value
+        )
         val paint = assertIs<GlyphRepresentation.Paint>(
             representation,
             "${label(codepoint)} is not a paint representation",
@@ -115,23 +120,41 @@ internal object GlyphSheetDumps {
             paint.nodes.filterIsInstance<GlyphPaintNode.SolidOutline>().firstOrNull(),
             "${label(codepoint)} has no solid outline node",
         ).outline.unitsPerEm
-        val image = assertIs<RasterResult.Success<Rgba8Image>>(
+        val image = requireRasterized(
+            codepoint,
             GlyphRasterizer.rasterizePaint(paint, PaintRasterRequest(pixelsPerEm, unitsPerEm)),
-        ).value
+        )
         check(image.width > 0 && image.height > 0) { "${label(codepoint)} produced no ink" }
         return image
     }
 
     private fun resolveGlyph(fixture: RasterFixture, codepoint: Int): Int {
-        val resolution = assertIs<FontOperationResult.Success<GlyphResolution>>(
+        val resolution = requireSuccess(
+            codepoint,
+            "resolution",
             fixture.instance.resolveGlyph(codepoint),
-            "${label(codepoint)} could not be resolved",
-        ).value.glyphId.value
+        ).glyphId.value
         check(resolution != 0) { "${label(codepoint)} resolves to .notdef (glyph 0)" }
         return resolution
     }
 
     private fun label(codepoint: Int): String = "U+" + codepoint.toString(16).uppercase().padStart(4, '0')
+
+    private fun <T> requireSuccess(codepoint: Int, what: String, result: FontOperationResult<T>): T =
+        when (result) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure ->
+                error("${label(codepoint)} $what failed: ${result.error.code}")
+
+            is FontOperationResult.Cancelled -> error("${label(codepoint)} $what was cancelled")
+        }
+
+    private fun <T> requireRasterized(codepoint: Int, result: RasterResult<T>): T =
+        when (result) {
+            is RasterResult.Success -> result.value
+            is RasterResult.Failure ->
+                error("${label(codepoint)} rasterization failed: ${result.diagnostics.joinToString { diagnostic -> diagnostic.field }}")
+        }
 
     private fun renderCoverageSheet(images: List<A8Image>): ByteArray {
         val metrics = sheetMetrics(
