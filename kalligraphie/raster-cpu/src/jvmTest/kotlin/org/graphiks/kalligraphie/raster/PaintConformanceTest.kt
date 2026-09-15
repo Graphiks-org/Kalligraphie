@@ -28,16 +28,17 @@ class PaintConformanceTest {
             val glyph = assertIs<FontOperationResult.Success<GlyphResolution>>(
                 fixture.instance.resolveGlyph(0x1F600),
             ).value.glyphId
+            assertEquals(1_443, glyph.value)
             val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
                 fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
             ).value
             val paint = assertIs<GlyphRepresentation.Paint>(representation).paint
 
-            val unitsPerEm = paint.nodes
+            val solidOutline = paint.nodes
                 .filterIsInstance<GlyphPaintNode.SolidOutline>()
-                .first()
-                .outline
-                .unitsPerEm
+                .firstOrNull()
+            assertIs<GlyphPaintNode.SolidOutline>(solidOutline, "the emoji paint graph must contain a solid outline")
+            val unitsPerEm = solidOutline.outline.unitsPerEm
             val image = assertIs<RasterResult.Success<Rgba8Image>>(
                 GlyphRasterizer.rasterizePaint(
                     paint,
@@ -45,10 +46,11 @@ class PaintConformanceTest {
                 ),
             ).value
 
-            assertTrue(image.width > 0 && image.height > 0)
+            val pixels = image.copyPixels()
+            assertTrue(pixels.any { sample -> sample.toInt() != 0 }, "color glyph must produce ink")
             assertEquals(EXPECTED_PAINT_WIDTH_PX, image.width)
             assertEquals(EXPECTED_PAINT_HEIGHT_PX, image.height)
-            assertEquals(EXPECTED_PAINT_SHA256, sha256(image.copyPixels()))
+            assertEquals(EXPECTED_PAINT_SHA256, sha256(pixels))
         }
     }
 

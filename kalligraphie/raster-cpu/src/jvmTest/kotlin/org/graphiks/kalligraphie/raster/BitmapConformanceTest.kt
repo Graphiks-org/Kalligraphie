@@ -37,10 +37,13 @@ class BitmapConformanceTest {
             val image = assertIs<RasterResult.Success<Rgba8Image>>(
                 GlyphRasterizer.rasterizeBitmap(bitmap, BitmapRasterRequest(GlyphColor(0, 0, 0, 255))),
             ).value
+            val pixels = image.copyPixels()
             assertEquals(13, image.width)
             assertEquals(13, image.height)
-            assertTrue(image.copyPixels().any { sample -> sample.toInt() != 0 })
-            assertEquals(EXPECTED_BITMAP_SHA256, sha256(image.copyPixels()))
+            assertEquals(0, image.left)
+            assertEquals(13, image.top)
+            assertTrue(pixels.any { sample -> sample.toInt() != 0 })
+            assertEquals(EXPECTED_BITMAP_SHA256, sha256(pixels))
         }
     }
 
