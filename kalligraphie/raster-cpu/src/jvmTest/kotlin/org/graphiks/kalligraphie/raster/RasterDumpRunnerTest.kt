@@ -151,9 +151,10 @@ class RasterDumpRunnerTest {
         }
         return output
     }
-
-    private class Dump(
-        val bytes: ByteArray,
-        val note: String = "",
-    )
 }
+
+/** One rendered demonstration artifact: the encoded bytes plus a human-readable note. */
+internal class Dump(
+    val bytes: ByteArray,
+    val note: String = "",
+)
