@@ -52,29 +52,43 @@ internal object ComposedLineDumps {
         "/fonts/noto-devanagari/NotoSansDevanagari-Regular.ttf",
     )
 
-    /** Renders [text] as a flipped P5 PGM using the ordered fallback catalog. */
+    private val OUTLINE_REQUIREMENTS = FontAccessRequirementsSnapshot.renderable(listOf(outlineProfile()))
+
+    /**
+     * Renders [text] as a flipped P5 PGM using the ordered fallback catalog.
+     *
+     * @param language Unicode and shaping language tag applied to the paragraph.
+     * @param baseDirection explicit paragraph base direction.
+     * @param requiredFaces asserts that the layout participates with exactly that many distinct faces;
+     * `0` disables the check.
+     */
     fun line(
         text: String,
         language: String,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         requiredFaces: Int = 0,
-    ): Dump = openMultiFaceFixture().use { fixture ->
-        val line = layoutLine(fixture, text, language, baseDirection)
-        val rendered = renderLine(fixture, line, requiredFaces)
-        Dump(
-            bytes = rendered,
-            note = "composed by the paragraph facade, ${PIXELS_PER_EM.toInt()} pixels per em, flipped vertically",
-        )
+    ): Dump {
+        require(text.isNotEmpty()) { "line text must not be empty." }
+        require(language.isNotBlank()) { "line language must not be blank." }
+        return openMultiFaceFixture().use { fixture ->
+            val line = layoutLine(fixture, text, language, baseDirection)
+            val rendered = renderLine(fixture, line, requiredFaces, text)
+            Dump(
+                bytes = rendered,
+                note = "composed by the paragraph facade, ${PIXELS_PER_EM.toInt()} pixels per em, flipped vertically",
+            )
+        }
     }
 
     private class MultiFaceFixture(
         val catalog: FontCatalogSnapshot,
         val resolver: FontAssetResolverHandle,
-        val assets: Map<FontFaceId, FontRenderAssetHandle>,
+        val assets: LinkedHashMap<FontFaceId, FontRenderAssetHandle>,
     ) : AutoCloseable {
         override fun close() {
+            val results = assets.values.map { asset -> asset.close() }
             try {
-                assets.values.forEach { asset -> assertIs<FontOperationResult.Success<Unit>>(asset.close()) }
+                results.forEach { result -> assertIs<FontOperationResult.Success<Unit>>(result) }
             } finally {
                 assertIs<FontOperationResult.Success<Unit>>(resolver.close())
             }
@@ -93,26 +107,22 @@ internal object ComposedLineDumps {
         ).value
         val assets = LinkedHashMap<FontFaceId, FontRenderAssetHandle>()
         try {
-            val requirements = FontAccessRequirementsSnapshot.renderable(listOf(outlineProfile()))
             sources.forEach { source ->
                 val faceId = FontFaceId(source.id, 0)
                 val face = assertIs<FontOperationResult.Success<FontFace>>(
-                    catalog.resolveFace(faceId, requirements),
+                    catalog.resolveFace(faceId, OUTLINE_REQUIREMENTS),
                 ).value
                 val instance = assertIs<FontOperationResult.Success<FontInstance>>(
                     face.instantiate(FontInstanceDescriptor(LayoutUnit(PIXELS_PER_EM))),
                 ).value
                 assets[faceId] = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
-                    instance.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, requirements),
+                    instance.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, OUTLINE_REQUIREMENTS),
                 ).value
             }
             return MultiFaceFixture(catalog, resolver, assets)
         } catch (error: Throwable) {
-            try {
-                assets.values.forEach { asset -> asset.close() }
-            } finally {
-                resolver.close()
-            }
+            assets.values.forEach { asset -> runCatching { asset.close() } }
+            resolver.close()
             throw error
         }
     }
@@ -123,7 +133,6 @@ internal object ComposedLineDumps {
         language: String,
         baseDirection: BaseDirection,
     ): LineLayout {
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(outlineProfile()))
         val faces = fixture.assets.keys.toList()
         val policy = FontResolutionPolicySnapshot(
             generation = fixture.catalog.generation,
@@ -152,20 +161,30 @@ internal object ComposedLineDumps {
             materialization = EditableLineMaterialization.Renderable(
                 fixture.resolver,
                 FontRenderVariantSnapshot.default,
-                requirements,
+                OUTLINE_REQUIREMENTS,
             ),
             continuation = null,
             cancellationToken = CancellationToken.none,
             operationProfile = EditorOperationProfile.unbounded,
         )
-        val result = assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(request))
+        val result = when (val outcome = JvmEditableParagraphFacade.layout(request)) {
+            is ParagraphLayoutResult.Success -> outcome
+            is ParagraphLayoutResult.Failure -> error(
+                "line '$text' failed: ${outcome.diagnostics.joinToString { diagnostic -> diagnostic.code }}",
+            )
+
+            is ParagraphLayoutResult.Cancelled -> error("line '$text' was cancelled")
+        }
         check(result.coverageStatus == CoverageStatus.COMPLETE) {
             "line '$text' did not cover its complete source range: ${result.coverageStatus}"
+        }
+        check(result.layout.lines.size == 1) {
+            "line '$text' produced ${result.layout.lines.size} lines"
         }
         return result.layout.lines.single()
     }
 
-    private fun renderLine(fixture: MultiFaceFixture, line: LineLayout, requiredFaces: Int): ByteArray {
+    private fun renderLine(fixture: MultiFaceFixture, line: LineLayout, requiredFaces: Int, text: String): ByteArray {
         class Placed(val image: A8Image, val penX: Int, val baselineY: Int)
 
         val placed = ArrayList<Placed>()
@@ -174,26 +193,26 @@ internal object ComposedLineDumps {
             val faceId = run.fontInstanceKey.face
             facesUsed += faceId
             val asset = fixture.assets[faceId] ?: error("line used an unexpected face $faceId")
-            run.glyphs.forEach { glyph ->
+            run.glyphs.forEach glyphLoop@{ glyph ->
                 val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
                     asset.resolveGlyph(FontGlyphRequest(glyph.shapedGlyph.glyphId)),
                 ).value
-                if (representation !is GlyphRepresentation.Outline) return@forEach
+                if (representation !is GlyphRepresentation.Outline) return@glyphLoop
                 val image = assertIs<RasterResult.Success<A8Image>>(
                     GlyphRasterizer.rasterizeOutline(
                         representation.outline,
                         OutlineRasterRequest(PIXELS_PER_EM.toDouble()),
                     ),
                 ).value
-                if (image.width == 0 || image.height == 0) return@forEach
+                if (image.width == 0 || image.height == 0) return@glyphLoop
                 placed += Placed(
                     image = image,
-                    penX = (line.baseline.x.value + glyph.origin.x.value).roundToInt(),
-                    baselineY = (line.baseline.y.value + glyph.origin.y.value).roundToInt(),
+                    penX = glyph.origin.x.value.roundToInt(),
+                    baselineY = glyph.origin.y.value.roundToInt(),
                 )
             }
         }
-        check(placed.isNotEmpty()) { "line produced no ink" }
+        check(placed.isNotEmpty()) { "line '$text' produced no ink" }
         if (requiredFaces > 0) {
             check(facesUsed.size == requiredFaces) {
                 "line used ${facesUsed.size} faces instead of the expected $requiredFaces: $facesUsed"
