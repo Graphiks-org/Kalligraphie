@@ -576,6 +576,57 @@ git commit -m "test(logo): add a deterministic RGBA PNG encoder"
 - Create: `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/raster/logo/KalligraphieLogoFonts.kt`
 - Test: `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/raster/logo/KalligraphieLogoFontsTest.kt`
 
+- [ ] **Step 0: Clarify the `PlacedGlyph` contract in the helpers committed by Task 3**
+
+The Task 3 review found that `PlacedGlyph`'s KDoc was ambiguous about whether `outline` is already translated. This task depends on that invariant, so make it explicit and lock it with assertions before writing new code.
+
+In `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/raster/logo/GlyphOutlines.kt`, replace the `PlacedGlyph` declaration and its comment with:
+
+```kotlin
+/**
+ * One glyph outline placed at a pen position, in the font's own design units.
+ *
+ * [outline] is already translated to [x]/[y]; those fields record the position
+ * for reference only. A consumer applies at most one further uniform shift to
+ * the whole word and must never re-apply the pen position.
+ */
+internal class PlacedGlyph(
+    val glyphId: Int,
+    val x: Double,
+    val y: Double,
+    val outline: GlyphOutlineIR,
+)
+```
+
+and append one sentence to `translated`'s KDoc, after "same floor/ceil rule the outline contract uses.":
+
+```kotlin
+ * The result is rebuilt from the legacy flattened command view, so `components`
+ * is empty, `limits` are the compatibility limits, and `pointCount` is
+ * recomputed.
+```
+
+In `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/raster/logo/GlyphOutlinesTest.kt`, add `import kotlin.test.assertFailsWith` and these two tests to the class:
+
+```kotlin
+    @Test
+    fun roundsTheEnvelopeUpwardsOnTheMaximumSide() {
+        val translated = square().translated(dx = 0.2, dy = 0.0)
+
+        // ceil(100.2) = 101; rounding to nearest would give 100 and break conservatism.
+        assertEquals(DesignBounds(minX = 0, minY = 0, maxX = 101, maxY = 200), translated.bounds)
+    }
+
+    @Test
+    fun rejectsEmptyInkBounds() {
+        assertFailsWith<IllegalArgumentException> { inkBoundsOf(emptyList()) }
+    }
+```
+
+Run: `./gradlew :kalligraphie:raster-cpu:jvmTest --tests "org.graphiks.kalligraphie.raster.logo.GlyphOutlinesTest"`
+
+Expected: PASS — 4 tests, 0 failures.
+
 - [ ] **Step 1: Write the failing test**
 
 Create `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/raster/logo/KalligraphieLogoFontsTest.kt`:
@@ -610,6 +661,13 @@ class KalligraphieLogoFontsTest {
 
             val positions = wordmark.glyphs.map { glyph -> glyph.x }
             assertTrue(positions.zipWithNext().all { (left, right) -> right > left })
+
+            // Each outline must carry its own pen position: a stacking regression would
+            // leave every glyph at the origin and break this ordering.
+            assertTrue(
+                wordmark.glyphs.last().outline.bounds.minX > wordmark.glyphs.first().outline.bounds.maxX,
+                "the last glyph must sit to the right of the first one",
+            )
         }
     }
 }
@@ -651,7 +709,13 @@ import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.assertIs
 
-/** One placed wordmark: glyph outlines with pen positions in the font's own design units. */
+/**
+ * One placed wordmark in the font's own design units.
+ *
+ * Every [PlacedGlyph.outline] is already translated to its pen position, so the
+ * consumer only applies one uniform shift to place the whole word; the pen
+ * positions are carried for reference and must never be applied twice.
+ */
 internal class PlacedWordmark(
     val unitsPerEm: Int,
     val glyphs: List<PlacedGlyph>,
@@ -685,11 +749,12 @@ internal class KalligraphieLogoFonts private constructor(
         val placed = run.glyphs.mapIndexed { index, glyph ->
             val x = pen + glyph.xOffset.value.toDouble() * designPerLayout
             pen += glyph.xAdvance.value.toDouble() * designPerLayout
+            val y = glyph.yOffset.value.toDouble() * designPerLayout
             PlacedGlyph(
                 glyphId = glyph.glyphId.value,
                 x = x,
-                y = glyph.yOffset.value.toDouble() * designPerLayout,
-                outline = outlines[index],
+                y = y,
+                outline = outlines[index].translated(x, y),
             )
         }
         return PlacedWordmark(unitsPerEm, placed)
