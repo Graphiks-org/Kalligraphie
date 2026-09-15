@@ -17,6 +17,18 @@ internal class RasterLimitReached(
 ) : RuntimeException("$field limit reached: observed $observed, limit $limit")
 
 /**
+ * Internal signal that a request produced geometry outside the representable
+ * integer domain.
+ *
+ * The facade converts this signal into a typed [RasterDiagnostic.InvalidRequest];
+ * it never crosses the public API.
+ */
+internal class RasterRequestRejected(
+    val field: String,
+    val detail: String,
+) : RuntimeException("$field rejected: $detail")
+
+/**
  * One point of a flattened pixel-space contour.
  *
  * Points are compared by value, so consecutive duplicates are never emitted.

@@ -194,6 +194,53 @@ class PaintCompositorTest {
         assertEquals(536_870_911L, refusal.limit)
     }
 
+    @Test
+    fun refusesPositionsOutsideTheIntegerDomain() {
+        val node = pathNode(
+            2_100_000_000.0, 0.0,
+            2_100_000_004.0, 0.0,
+            2_100_000_004.0, 4.0,
+            2_100_000_000.0, 4.0,
+            color = GlyphColor(255, 0, 0),
+        )
+        val paint = GlyphPaintIR(schemaVersion = 1, rootNode = 0, nodes = listOf(node))
+        val refusal = assertFailsWith<RasterRequestRejected> {
+            PaintCompositor.rasterize(paint, 1.0, 1, 1_100_000_000, 0, RasterLimits.Default)
+        }
+        assertEquals("originX", refusal.field)
+    }
+
+    @Test
+    fun refusesVerticalPositionsOutsideTheIntegerDomain() {
+        val node = pathNode(
+            0.0, 2_100_000_000.0,
+            4.0, 2_100_000_000.0,
+            4.0, 2_100_000_004.0,
+            0.0, 2_100_000_004.0,
+            color = GlyphColor(255, 0, 0),
+        )
+        val paint = GlyphPaintIR(schemaVersion = 1, rootNode = 0, nodes = listOf(node))
+        val refusal = assertFailsWith<RasterRequestRejected> {
+            PaintCompositor.rasterize(paint, 1.0, 1, 0, 1_100_000_000, RasterLimits.Default)
+        }
+        assertEquals("originY", refusal.field)
+    }
+
+    @Test
+    fun acceptsPositionsAtTheIntegerBoundary() {
+        val node = pathNode(
+            2_100_000_000.0, 0.0,
+            2_100_000_004.0, 0.0,
+            2_100_000_004.0, 4.0,
+            2_100_000_000.0, 4.0,
+            color = GlyphColor(255, 0, 0),
+        )
+        val paint = GlyphPaintIR(schemaVersion = 1, rootNode = 0, nodes = listOf(node))
+        val image = PaintCompositor.rasterize(paint, 1.0, 1, 7, 0, RasterLimits.Default)
+        assertEquals(2_100_000_007, image.left)
+        assertEquals(4, image.width)
+    }
+
     private fun pathNode(
         vararg coordinates: Double,
         color: GlyphColor,

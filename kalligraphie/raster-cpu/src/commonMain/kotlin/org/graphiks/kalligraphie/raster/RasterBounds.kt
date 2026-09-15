@@ -35,6 +35,12 @@ internal fun boundsOf(contours: List<FlatContour>, limits: RasterLimits): PixelB
     if (height > limits.maxHeightPx.toDouble()) {
         throw RasterLimitReached("maxHeightPx", height.toLong(), limits.maxHeightPx.toLong())
     }
+    if (left < Int.MIN_VALUE.toDouble() || left > Int.MAX_VALUE.toDouble()) {
+        throw RasterRequestRejected("originX", "flattened horizontal position is outside the integer domain.")
+    }
+    if (top < Int.MIN_VALUE.toDouble() || top > Int.MAX_VALUE.toDouble()) {
+        throw RasterRequestRejected("originY", "flattened vertical position is outside the integer domain.")
+    }
     return PixelBounds(left.toInt(), top.toInt(), width.toInt(), height.toInt())
 }
 
