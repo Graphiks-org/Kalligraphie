@@ -26,7 +26,7 @@ public object GlyphRasterizer {
         outline: GlyphOutlineIR,
         request: OutlineRasterRequest,
     ): RasterResult<A8Image> {
-        invalidPixelsPerEm(request.pixelsPerEm)?.let { return it }
+        pixelsPerEmFailure(request.pixelsPerEm)?.let { return it }
         return runRaster {
             val contours = ContourFlattener.flattenOutline(
                 contours = outline.contours,
@@ -55,7 +55,7 @@ public object GlyphRasterizer {
         paint: GlyphPaintIR,
         request: PaintRasterRequest,
     ): RasterResult<Rgba8Image> {
-        invalidPixelsPerEm(request.pixelsPerEm)?.let { return it }
+        pixelsPerEmFailure(request.pixelsPerEm)?.let { return it }
         if (request.unitsPerEm <= 0) {
             return RasterResult.Failure(
                 listOf(RasterDiagnostic.InvalidRequest("unitsPerEm", "unitsPerEm must be positive.")),
@@ -77,7 +77,8 @@ public object GlyphRasterizer {
      * Renders [bitmap] one-to-one into RGBA using [BitmapRasterRequest.ink].
      *
      * The exact strike is preserved: no scaling, hinting, or subpixel placement
-     * participates. Canvas limits are enforced before the compositor allocates.
+     * participates; output bearings are the bitmap's own `originX` and `originY`.
+     * Canvas limits are enforced before the compositor allocates.
      */
     public fun rasterizeBitmap(
         bitmap: BitmapGlyphIR,
@@ -100,7 +101,7 @@ public object GlyphRasterizer {
             )
         }
 
-    private fun invalidPixelsPerEm(value: Double): RasterResult.Failure? =
+    private fun pixelsPerEmFailure(value: Double): RasterResult.Failure? =
         if (!value.isFinite() || value <= 0.0) {
             RasterResult.Failure(
                 listOf(RasterDiagnostic.InvalidRequest("pixelsPerEm", "pixelsPerEm must be finite and positive.")),

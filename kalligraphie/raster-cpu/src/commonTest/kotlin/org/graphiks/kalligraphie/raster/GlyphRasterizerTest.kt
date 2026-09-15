@@ -44,6 +44,30 @@ class GlyphRasterizerTest {
     }
 
     @Test
+    fun refusesOriginThatOverflowsTheIntegerDomain() {
+        val failure = assertIs<RasterResult.Failure>(
+            GlyphRasterizer.rasterizeOutline(
+                squareOutline(unitsPerEm = 1_000, size = 500),
+                OutlineRasterRequest(pixelsPerEm = 100.0, originX = Int.MAX_VALUE),
+            ),
+        )
+        assertEquals("originX", assertIs<RasterDiagnostic.InvalidRequest>(failure.diagnostics.single()).field)
+    }
+
+    @Test
+    fun acceptsExtentEndingExactlyAtTheIntegerBoundary() {
+        val result = assertIs<RasterResult.Success<A8Image>>(
+            GlyphRasterizer.rasterizeOutline(
+                squareOutline(unitsPerEm = 1_000, size = 500),
+                OutlineRasterRequest(pixelsPerEm = 100.0, originX = Int.MAX_VALUE - 49),
+            ),
+        )
+        assertEquals(Int.MAX_VALUE - 49, result.value.left)
+        assertEquals(50, result.value.width)
+        assertEquals(255, result.value[25, 25])
+    }
+
+    @Test
     fun invalidPixelsPerEmIsRefusedWithTheFieldName() {
         listOf(0.0, -1.0, Double.POSITIVE_INFINITY, Double.NaN).forEach { value ->
             val failure = assertIs<RasterResult.Failure>(
@@ -62,7 +86,10 @@ class GlyphRasterizerTest {
                 OutlineRasterRequest(pixelsPerEm = 100.0, limits = limits),
             ),
         )
-        assertEquals("maxPixelsPerImage", assertIs<RasterDiagnostic.LimitExceeded>(failure.diagnostics.single()).field)
+        val diagnostic = assertIs<RasterDiagnostic.LimitExceeded>(failure.diagnostics.single())
+        assertEquals("maxPixelsPerImage", diagnostic.field)
+        assertEquals(2_500L, diagnostic.observed)
+        assertEquals(100L, diagnostic.limit)
     }
 
     @Test
@@ -83,7 +110,10 @@ class GlyphRasterizerTest {
         val failure = assertIs<RasterResult.Failure>(
             GlyphRasterizer.rasterizeBitmap(bitmap, BitmapRasterRequest(GlyphColor(0, 0, 0), limits)),
         )
-        assertEquals("maxPixelsPerImage", assertIs<RasterDiagnostic.LimitExceeded>(failure.diagnostics.single()).field)
+        val diagnostic = assertIs<RasterDiagnostic.LimitExceeded>(failure.diagnostics.single())
+        assertEquals("maxPixelsPerImage", diagnostic.field)
+        assertEquals(16L, diagnostic.observed)
+        assertEquals(15L, diagnostic.limit)
     }
 
     @Test
