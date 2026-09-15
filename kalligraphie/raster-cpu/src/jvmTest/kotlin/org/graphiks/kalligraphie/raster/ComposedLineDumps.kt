@@ -170,7 +170,8 @@ internal object ComposedLineDumps {
         val result = when (val outcome = JvmEditableParagraphFacade.layout(request)) {
             is ParagraphLayoutResult.Success -> outcome
             is ParagraphLayoutResult.Failure -> error(
-                "line '$text' failed: ${outcome.diagnostics.joinToString { diagnostic -> diagnostic.code }}",
+                "line '$text' failed: ${outcome.error.code}: ${outcome.error.message} " +
+                    outcome.diagnostics.joinToString { diagnostic -> diagnostic.code },
             )
 
             is ParagraphLayoutResult.Cancelled -> error("line '$text' was cancelled")
