@@ -4,33 +4,35 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
-import kotlin.test.assertTrue
 
 class RasterContractsTest {
     @Test
     fun defaultLimitsArePositive() {
         val limits = RasterLimits.Default
-        assertTrue(limits.maxWidthPx > 0)
-        assertTrue(limits.maxHeightPx > 0)
-        assertTrue(limits.maxPixelsPerImage > 0)
-        assertTrue(limits.maxContours > 0)
-        assertTrue(limits.maxTotalPoints > 0)
-        assertTrue(limits.maxPaintNodes > 0)
-        assertTrue(limits.maxPaintDepth > 0)
+        assertEquals(4_096, limits.maxWidthPx)
+        assertEquals(4_096, limits.maxHeightPx)
+        assertEquals(1 shl 22, limits.maxPixelsPerImage)
+        assertEquals(4_096, limits.maxContours)
+        assertEquals(262_144, limits.maxTotalPoints)
+        assertEquals(4_096, limits.maxPaintNodes)
+        assertEquals(64, limits.maxPaintDepth)
     }
 
     @Test
-    fun limitsRejectNonPositiveValues() {
-        assertFailsWith<IllegalArgumentException> {
-            RasterLimits(
-                maxWidthPx = 0,
-                maxHeightPx = 1,
-                maxPixelsPerImage = 1,
-                maxContours = 1,
-                maxTotalPoints = 1,
-                maxPaintNodes = 1,
-                maxPaintDepth = 1,
-            )
+    fun limitsRejectNonPositiveValuesForEveryField() {
+        val violations: List<(Int) -> RasterLimits> = listOf(
+            { value -> RasterLimits.Default.copy(maxWidthPx = value) },
+            { value -> RasterLimits.Default.copy(maxHeightPx = value) },
+            { value -> RasterLimits.Default.copy(maxPixelsPerImage = value) },
+            { value -> RasterLimits.Default.copy(maxContours = value) },
+            { value -> RasterLimits.Default.copy(maxTotalPoints = value) },
+            { value -> RasterLimits.Default.copy(maxPaintNodes = value) },
+            { value -> RasterLimits.Default.copy(maxPaintDepth = value) },
+        )
+        violations.forEachIndexed { index, build ->
+            listOf(0, -1).forEach { invalid ->
+                assertFailsWith<IllegalArgumentException>("field index $index must reject $invalid") { build(invalid) }
+            }
         }
     }
 
@@ -41,6 +43,14 @@ class RasterContractsTest {
         )
         assertEquals("pixelsPerEm", failure.diagnostics.single().field)
         assertFailsWith<IllegalArgumentException> { RasterResult.Failure(emptyList()) }
+    }
+
+    @Test
+    fun failureSnapshotsItsDiagnostics() {
+        val source = mutableListOf<RasterDiagnostic>(RasterDiagnostic.InvalidRequest("pixelsPerEm", "must be positive"))
+        val failure = RasterResult.Failure(source)
+        source.clear()
+        assertEquals(1, failure.diagnostics.size)
     }
 
     @Test

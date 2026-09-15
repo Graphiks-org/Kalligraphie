@@ -92,13 +92,22 @@ public sealed interface RasterResult<out T> {
     ) : RasterResult<T>
 
     /** Typed refusal with at least one diagnostic. */
-    public data class Failure(
-        /** At least one typed reason for the refusal; never empty. */
-        public val diagnostics: List<RasterDiagnostic>,
+    public class Failure(
+        diagnostics: List<RasterDiagnostic>,
     ) : RasterResult<Nothing> {
+        /** At least one typed reason for the refusal; never empty. */
+        public val diagnostics: List<RasterDiagnostic> = diagnostics.toList()
+
         init {
-            require(diagnostics.isNotEmpty()) { "A failure must carry at least one diagnostic." }
+            require(this.diagnostics.isNotEmpty()) { "A failure must carry at least one diagnostic." }
         }
+
+        override fun equals(other: Any?): Boolean =
+            other is Failure && diagnostics == other.diagnostics
+
+        override fun hashCode(): Int = diagnostics.hashCode()
+
+        override fun toString(): String = "Failure(diagnostics=$diagnostics)"
     }
 }
 
