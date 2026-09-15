@@ -16,15 +16,19 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OutlineProfile
 import kotlin.test.assertIs
 
+/** Owns one render asset and its resolver lease; [close] releases the asset, then the resolver lease. */
 internal class RasterFixture(
     val instance: FontInstance,
     val asset: FontRenderAssetHandle,
+    private val resolver: FontAssetResolverHandle,
 ) : AutoCloseable {
     override fun close() {
-        asset.close()
+        assertIs<FontOperationResult.Success<Unit>>(asset.close())
+        assertIs<FontOperationResult.Success<Unit>>(resolver.close())
     }
 }
 
+/** Opens a fixture; on acquisition failure the resolver lease is released before the error is rethrown. */
 internal fun openRasterFixture(
     bytes: ByteArray,
     requirements: FontAccessRequirementsSnapshot,
@@ -39,16 +43,21 @@ internal fun openRasterFixture(
     val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(
         catalog.openAssetResolver(),
     ).value
-    val face = assertIs<FontOperationResult.Success<FontFace>>(
-        catalog.resolveFace(catalog.faces.single().id, requirements),
-    ).value
-    val instance = assertIs<FontOperationResult.Success<FontInstance>>(
-        face.instantiate(FontInstanceDescriptor(LayoutUnit(2_048f))),
-    ).value
-    val asset = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
-        instance.acquireRenderAsset(resolver, variant, requirements),
-    ).value
-    return RasterFixture(instance, asset)
+    try {
+        val face = assertIs<FontOperationResult.Success<FontFace>>(
+            catalog.resolveFace(catalog.faces.single().id, requirements),
+        ).value
+        val instance = assertIs<FontOperationResult.Success<FontInstance>>(
+            face.instantiate(FontInstanceDescriptor(LayoutUnit(2_048f))),
+        ).value
+        val asset = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
+            instance.acquireRenderAsset(resolver, variant, requirements),
+        ).value
+        return RasterFixture(instance, asset, resolver)
+    } catch (error: Throwable) {
+        resolver.close()
+        throw error
+    }
 }
 
 internal fun outlineRequirements(): FontAccessRequirementsSnapshot =
