@@ -63,9 +63,62 @@ class PaintCompositorTest {
             nodes = listOf(node, GlyphPaintNode.Group(listOf(0, 0, 0))),
         )
         val limits = RasterLimits.Default.copy(maxPaintNodes = 2)
-        assertFailsWith<RasterLimitReached> {
+        val refusal = assertFailsWith<RasterLimitReached> {
             PaintCompositor.rasterize(paint, 1_000.0, 1_000, 0, 0, limits)
         }
+        assertEquals("maxPaintNodes", refusal.field)
+        assertEquals(3L, refusal.observed)
+        assertEquals(2L, refusal.limit)
+    }
+
+    @Test
+    fun refusesGroupNestedBeyondDepthBudget() {
+        val node = pathNode(0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, color = GlyphColor(255, 255, 255))
+        val paint = GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = 2,
+            nodes = listOf(node, GlyphPaintNode.Group(listOf(0)), GlyphPaintNode.Group(listOf(1))),
+        )
+        val limits = RasterLimits.Default.copy(maxPaintDepth = 1)
+        val refusal = assertFailsWith<RasterLimitReached> {
+            PaintCompositor.rasterize(paint, 1_000.0, 1_000, 0, 0, limits)
+        }
+        assertEquals("maxPaintDepth", refusal.field)
+        assertEquals(2L, refusal.observed)
+        assertEquals(1L, refusal.limit)
+    }
+
+    @Test
+    fun refusesANodeSpanningMoreThanTheIntRange() {
+        val wide = pathNode(
+            -2_100_000_000.0, 0.0,
+            2_100_000_000.0, 0.0,
+            2_100_000_000.0, 4.0,
+            -2_100_000_000.0, 4.0,
+            color = GlyphColor(255, 0, 0),
+        )
+        val paint = GlyphPaintIR(schemaVersion = 1, rootNode = 0, nodes = listOf(wide))
+        val refusal = assertFailsWith<RasterLimitReached> {
+            PaintCompositor.rasterize(paint, 1.0, 1, 0, 0, RasterLimits.Default)
+        }
+        assertEquals("maxWidthPx", refusal.field)
+        assertEquals(4_200_000_000L, refusal.observed)
+        assertEquals(RasterLimits.Default.maxWidthPx.toLong(), refusal.limit)
+    }
+
+    @Test
+    fun appliesOriginBearingsToTheCanvas() {
+        val red = pathNode(0.0, 0.0, 4.0, 0.0, 4.0, 4.0, 0.0, 4.0, color = GlyphColor(255, 0, 0))
+        val blue = pathNode(2.0, 0.0, 6.0, 0.0, 6.0, 4.0, 2.0, 4.0, color = GlyphColor(0, 0, 255))
+        val paint = GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = 2,
+            nodes = listOf(red, blue, GlyphPaintNode.Group(listOf(0, 1))),
+        )
+        val image = PaintCompositor.rasterize(paint, 1_000.0, 1_000, 5, -3, RasterLimits.Default)
+        assertEquals(5, image.left)
+        assertEquals(-3, image.top)
+        assertEquals(6, image.width)
     }
 
     @Test

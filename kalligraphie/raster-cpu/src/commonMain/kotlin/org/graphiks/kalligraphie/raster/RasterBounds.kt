@@ -1,20 +1,14 @@
 package org.graphiks.kalligraphie.raster
 
-internal class PixelBounds(
-    val left: Int,
-    val top: Int,
-    val width: Int,
-    val height: Int,
-)
-
 /**
  * Conservative integer envelope of flattened contours.
  *
  * Returns `null` when the geometry has no points or empty area. Bounds are
- * `floor` of the minima and `ceil` of the maxima, so every pixel that can carry
- * coverage is included.
+ * `floor` of the minima and `ceil` of the maxima and stay conservative for the
+ * flattened point set. A span that cannot be represented within [limits] is
+ * refused with [RasterLimitReached] instead of being discarded.
  */
-internal fun boundsOf(contours: List<FlatContour>): PixelBounds? {
+internal fun boundsOf(contours: List<FlatContour>, limits: RasterLimits): PixelBounds? {
     var minX = Double.POSITIVE_INFINITY
     var minY = Double.POSITIVE_INFINITY
     var maxX = Double.NEGATIVE_INFINITY
@@ -30,10 +24,23 @@ internal fun boundsOf(contours: List<FlatContour>): PixelBounds? {
         }
     }
     if (!found) return null
-    val left = kotlin.math.floor(minX).toInt()
-    val top = kotlin.math.floor(minY).toInt()
-    val width = kotlin.math.ceil(maxX).toInt() - left
-    val height = kotlin.math.ceil(maxY).toInt() - top
-    if (width <= 0 || height <= 0) return null
-    return PixelBounds(left, top, width, height)
+    val left = kotlin.math.floor(minX)
+    val top = kotlin.math.floor(minY)
+    val width = kotlin.math.ceil(maxX) - left
+    val height = kotlin.math.ceil(maxY) - top
+    if (width <= 0.0 || height <= 0.0) return null
+    if (width > limits.maxWidthPx.toDouble()) {
+        throw RasterLimitReached("maxWidthPx", width.toLong(), limits.maxWidthPx.toLong())
+    }
+    if (height > limits.maxHeightPx.toDouble()) {
+        throw RasterLimitReached("maxHeightPx", height.toLong(), limits.maxHeightPx.toLong())
+    }
+    return PixelBounds(left.toInt(), top.toInt(), width.toInt(), height.toInt())
 }
+
+internal class PixelBounds(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
+)

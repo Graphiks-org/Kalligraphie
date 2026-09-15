@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.raster
 
 import org.graphiks.kalligraphie.api.GlyphColor
+import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
 import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 
@@ -11,6 +12,12 @@ import org.graphiks.kalligraphie.api.GlyphPaintNode
  * request-level `unitsPerEm`. Children of a group are painted in index order
  * with `SOURCE_OVER` integer arithmetic, so identical graphs produce identical
  * pixels on every platform.
+ *
+ * Each visited node materializes one layer before its group composites, and the
+ * layers stay live until the group finishes, so peak memory scales with the live
+ * stack: roughly `maxPaintNodes × layer bytes`. There is no aggregate byte
+ * budget, so callers processing untrusted graphs must choose
+ * [RasterLimits.maxPaintNodes] and [RasterLimits.maxPixelsPerImage] together.
  */
 internal object PaintCompositor {
     fun rasterize(
@@ -61,7 +68,12 @@ internal object PaintCompositor {
 
                 is GlyphPaintNode.Path -> tinted(coverageOfPath(node), node.color)
 
-                is GlyphPaintNode.Group -> composite(node.children.mapNotNull { child -> build(child, depth + 1) })
+                is GlyphPaintNode.Group -> {
+                    require(node.compositionMode == GlyphPaintCompositionMode.SOURCE_OVER) {
+                        "Unsupported paint composition mode."
+                    }
+                    composite(node.children.mapNotNull { child -> build(child, depth + 1) })
+                }
             }
         }
 
@@ -73,7 +85,7 @@ internal object PaintCompositor {
                 originY = originY.toDouble(),
                 limits = limits,
             )
-            val bounds = boundsOf(contours) ?: return null
+            val bounds = boundsOf(contours, limits) ?: return null
             checkCanvas(bounds.width, bounds.height)
             return CoverageRaster.rasterize(contours, bounds.left, bounds.top, bounds.width, bounds.height)
         }
@@ -86,7 +98,7 @@ internal object PaintCompositor {
                 originY = originY.toDouble(),
                 limits = limits,
             )
-            val bounds = boundsOf(contours) ?: return null
+            val bounds = boundsOf(contours, limits) ?: return null
             checkCanvas(bounds.width, bounds.height)
             return CoverageRaster.rasterize(contours, bounds.left, bounds.top, bounds.width, bounds.height)
         }
@@ -171,19 +183,7 @@ internal object PaintCompositor {
 
         private fun checkCanvas(width: Int, height: Int) {
             if (width <= 0 || height <= 0) return
-            if (width > limits.maxWidthPx) {
-                throw RasterLimitReached("maxWidthPx", width.toLong(), limits.maxWidthPx.toLong())
-            }
-            if (height > limits.maxHeightPx) {
-                throw RasterLimitReached("maxHeightPx", height.toLong(), limits.maxHeightPx.toLong())
-            }
-            val pixels = width.toLong() * height.toLong()
-            if (pixels > limits.maxPixelsPerImage.toLong()) {
-                throw RasterLimitReached("maxPixelsPerImage", pixels, limits.maxPixelsPerImage.toLong())
-            }
-            if (pixels > Int.MAX_VALUE.toLong() / 4L) {
-                throw RasterLimitReached("maxPixelsPerImage", pixels, Int.MAX_VALUE.toLong() / 4L)
-            }
+            checkCanvasSize(width.toLong(), height.toLong())
         }
 
         private fun checkCanvasSize(width: Long, height: Long) {
