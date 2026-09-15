@@ -101,10 +101,7 @@ internal fun paintProfile(): PaintGraphProfile = PaintGraphProfile(
     outlineProfile = outlineProfile(),
 )
 
-/**
- * Shared bitmap profile for the demonstration sheets; the conformance tests keep
- * a parameterized private copy for limit-refusal scenarios.
- */
+/** The bitmap conformance and demonstration routes share this default profile. */
 internal fun bitmapProfile(): BitmapProfile = BitmapProfile(
     strike = BitmapStrike(16, 16),
     acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),

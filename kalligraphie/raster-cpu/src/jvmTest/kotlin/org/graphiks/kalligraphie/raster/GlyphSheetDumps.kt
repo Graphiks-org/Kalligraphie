@@ -152,8 +152,16 @@ internal object GlyphSheetDumps {
     private fun <T> requireRasterized(codepoint: Int, result: RasterResult<T>): T =
         when (result) {
             is RasterResult.Success -> result.value
-            is RasterResult.Failure ->
-                error("${label(codepoint)} rasterization failed: ${result.diagnostics.joinToString { diagnostic -> diagnostic.field }}")
+            is RasterResult.Failure -> error(
+                "${label(codepoint)} rasterization failed: " + result.diagnostics.joinToString { diagnostic ->
+                    when (diagnostic) {
+                        is RasterDiagnostic.LimitExceeded ->
+                            "${diagnostic.field}(observed=${diagnostic.observed}, limit=${diagnostic.limit})"
+
+                        is RasterDiagnostic.InvalidRequest -> "${diagnostic.field}: ${diagnostic.detail}"
+                    }
+                },
+            )
         }
 
     private fun renderCoverageSheet(images: List<A8Image>): ByteArray {

@@ -1,14 +1,10 @@
 package org.graphiks.kalligraphie.raster
 
-import org.graphiks.kalligraphie.api.BitmapLimits
-import org.graphiks.kalligraphie.api.BitmapPixelFormat
-import org.graphiks.kalligraphie.api.BitmapProfile
 import org.graphiks.kalligraphie.api.BitmapStrike
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphColor
-import org.graphiks.kalligraphie.api.GlyphColorSpace
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphResolution
 import kotlin.test.Test
@@ -46,26 +42,6 @@ class BitmapConformanceTest {
             assertEquals(EXPECTED_BITMAP_SHA256, sha256(pixels))
         }
     }
-
-    private fun bitmapProfile(): BitmapProfile = BitmapProfile(
-        strike = BitmapStrike(16, 16),
-        acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
-        acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
-        limits = BitmapLimits(
-            maxStrikes = 3,
-            maxIndexSubtables = 16,
-            maxRecordCount = 16,
-            maxIndexTableBytes = 16_384,
-            maxBitmapTableBytes = 16_384,
-            maxWidth = 16,
-            maxHeight = 16,
-            maxPixels = 256,
-            maxCompressedBytes = 64,
-            maxTotalCompressedBytes = 1_024,
-            maxDecodedBytes = 256,
-            maxTotalDecodedBytes = 1_024,
-        ),
-    )
 
     private companion object {
         const val EXPECTED_BITMAP_SHA256 = "90963133c14da9c3d9c37cdd964bbc709e857d1b69e5b97aa2b417f912d8933f"
