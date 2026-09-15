@@ -26,6 +26,8 @@ env KALLIGRAPHIE_RASTER_DUMPS=true \
     ./gradlew :kalligraphie:raster-cpu:rasterDumps
 ```
 
+Without `KALLIGRAPHIE_RASTER_DUMPS=true`, the task still runs but writes nothing.
+
 `KALLIGRAPHIE_RASTER_DUMPS_OUTPUT` must be an absolute path outside the
 repository. The runner is excluded from `check`; it contains no performance
 threshold.
