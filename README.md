@@ -7,11 +7,7 @@
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-blue?logo=github-actions)](https://github.com/features/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Contributing](https://img.shields.io/badge/Contributing-guide-purple)](CONTRIBUTING.md)
-[![Projet: Planning](https://img.shields.io/badge/Statut-Planning-blue)](https://github.com)
 [![Projet: Incubating](https://img.shields.io/badge/Statut-Incubating-orange)](https://github.com)
-[![Projet: Stable](https://img.shields.io/badge/Statut-Stable-green)](https://github.com)
-[![Projet: Deprecated](https://img.shields.io/badge/Statut-Deprecated-red)](https://github.com)
-[![Projet: Archived](https://img.shields.io/badge/Statut-Archived-lightgrey)](https://github.com)
 
 ---
 
