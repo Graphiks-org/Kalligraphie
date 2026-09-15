@@ -16,8 +16,19 @@ internal class RasterLimitReached(
     val limit: Long,
 ) : RuntimeException("$field limit reached: observed $observed, limit $limit")
 
+/**
+ * One point of a flattened pixel-space contour.
+ *
+ * Points are compared by value, so consecutive duplicates are never emitted.
+ */
 internal data class FlatPoint(val x: Double, val y: Double)
 
+/**
+ * One closed flattened contour in pixel space.
+ *
+ * The first point is not repeated at Close: the last point implicitly connects
+ * back to the first. Contours with fewer than two points are discarded.
+ */
 internal class FlatContour(val points: List<FlatPoint>)
 
 /**
@@ -36,6 +47,20 @@ internal object ContourFlattener {
     /** Maximum subdivision depth applied to one curve segment. */
     const val MaxSubdivisionDepth: Int = 16
 
+    /** Squared form of [TolerancePx]; used for squared-distance flatness tests. */
+    private const val ToleranceSquared: Double = TolerancePx * TolerancePx
+
+    /**
+     * Flattens validated outline contours into closed pixel-space polylines.
+     *
+     * Contours are implicitly closed: the first point is not repeated at Close
+     * and the last point connects back to the first. Contours with fewer than
+     * two points are discarded, and consecutive duplicate points are skipped,
+     * including curve endpoints that coincide with the current point. Both
+     * [RasterLimits.maxContours] and [RasterLimits.maxTotalPoints] are enforced;
+     * a refusal throws [RasterLimitReached] and every emitted point consumes
+     * exactly one budget unit.
+     */
     fun flattenOutline(
         contours: List<GlyphContour>,
         scale: Double,
@@ -55,6 +80,14 @@ internal object ContourFlattener {
         return result
     }
 
+    /**
+     * Flattens a portable paint path into closed pixel-space polylines.
+     *
+     * Commands must come from a validated `GlyphPaintPath`; this function does
+     * not re-validate path structure. Closure, discarded degenerate contours,
+     * duplicate-point skipping, budget accounting, and the refusal shape of
+     * [RasterLimitReached] are identical to [flattenOutline].
+     */
     fun flattenPath(
         commands: List<GlyphPaintPathCommand>,
         scale: Double,
@@ -62,6 +95,10 @@ internal object ContourFlattener {
         originY: Double,
         limits: RasterLimits,
     ): List<FlatContour> {
+        val contourCount = commands.count { command -> command is GlyphPaintPathCommand.MoveTo }
+        if (contourCount > limits.maxContours) {
+            throw RasterLimitReached("maxContours", contourCount.toLong(), limits.maxContours.toLong())
+        }
         val budget = PointBudget(limits)
         return flattenEdges(commands.map { it.toEdge(scale, originX, originY) }, budget)
     }
@@ -179,10 +216,11 @@ internal object ContourFlattener {
         budget: PointBudget,
         depth: Int,
     ) {
-        val toleranceSquared = TolerancePx * TolerancePx
-        if (depth >= MaxSubdivisionDepth || distanceSquaredToSegment(control, from, to) <= toleranceSquared) {
-            budget.consume()
-            out += to
+        if (depth >= MaxSubdivisionDepth || distanceSquaredToSegment(control, from, to) <= ToleranceSquared) {
+            if (to != out.last()) {
+                budget.consume()
+                out += to
+            }
             return
         }
         val first = midpoint(from, control)
@@ -201,13 +239,14 @@ internal object ContourFlattener {
         budget: PointBudget,
         depth: Int,
     ) {
-        val toleranceSquared = TolerancePx * TolerancePx
         if (depth >= MaxSubdivisionDepth ||
-            (distanceSquaredToSegment(control1, from, to) <= toleranceSquared &&
-                distanceSquaredToSegment(control2, from, to) <= toleranceSquared)
+            (distanceSquaredToSegment(control1, from, to) <= ToleranceSquared &&
+                distanceSquaredToSegment(control2, from, to) <= ToleranceSquared)
         ) {
-            budget.consume()
-            out += to
+            if (to != out.last()) {
+                budget.consume()
+                out += to
+            }
             return
         }
         val first = midpoint(from, control1)

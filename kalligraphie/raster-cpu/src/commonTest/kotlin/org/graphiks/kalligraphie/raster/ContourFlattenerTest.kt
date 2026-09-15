@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.raster
 
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.GlyphOutlineIR
+import org.graphiks.kalligraphie.api.GlyphPaintPath
 import org.graphiks.kalligraphie.api.GlyphPaintPathCommand
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -81,6 +82,133 @@ class ContourFlattenerTest {
             ContourFlattener.flattenPath(commands, 1.0, 0.0, 0.0, limits)
         }
     }
+
+    @Test
+    fun allowsGeometryExactlyAtThePointBudget() {
+        val outline = syntheticOutline(
+            GlyphOutlineIR.Command.MoveTo(0, 0),
+            GlyphOutlineIR.Command.LineTo(100, 0),
+            GlyphOutlineIR.Command.LineTo(100, 100),
+            GlyphOutlineIR.Command.LineTo(0, 100),
+            GlyphOutlineIR.Command.Close,
+        )
+        val limits = RasterLimits.Default.copy(maxTotalPoints = 4)
+        val contours = ContourFlattener.flattenOutline(outline.contours, 1.0, 0.0, 0.0, limits)
+        assertEquals(4, contours.single().points.size)
+    }
+
+    @Test
+    fun refusesGeometryOnePointOverTheBudget() {
+        val outline = syntheticOutline(
+            GlyphOutlineIR.Command.MoveTo(0, 0),
+            GlyphOutlineIR.Command.LineTo(100, 0),
+            GlyphOutlineIR.Command.LineTo(100, 100),
+            GlyphOutlineIR.Command.LineTo(0, 100),
+            GlyphOutlineIR.Command.Close,
+        )
+        val limits = RasterLimits.Default.copy(maxTotalPoints = 3)
+        val refusal = assertFailsWith<RasterLimitReached> {
+            ContourFlattener.flattenOutline(outline.contours, 1.0, 0.0, 0.0, limits)
+        }
+        assertEquals("maxTotalPoints", refusal.field)
+        assertEquals(4L, refusal.observed)
+        assertEquals(3L, refusal.limit)
+    }
+
+    @Test
+    fun refusesTooManyOutlineContours() {
+        val outline = syntheticOutline(
+            GlyphOutlineIR.Command.MoveTo(0, 0),
+            GlyphOutlineIR.Command.LineTo(10, 0),
+            GlyphOutlineIR.Command.LineTo(5, 10),
+            GlyphOutlineIR.Command.Close,
+            GlyphOutlineIR.Command.MoveTo(20, 0),
+            GlyphOutlineIR.Command.LineTo(30, 0),
+            GlyphOutlineIR.Command.LineTo(25, 10),
+            GlyphOutlineIR.Command.Close,
+        )
+        val limits = RasterLimits.Default.copy(maxContours = 1)
+        val refusal = assertFailsWith<RasterLimitReached> {
+            ContourFlattener.flattenOutline(outline.contours, 1.0, 0.0, 0.0, limits)
+        }
+        assertEquals("maxContours", refusal.field)
+        assertEquals(2L, refusal.observed)
+        assertEquals(1L, refusal.limit)
+    }
+
+    @Test
+    fun refusesTooManyPathContours() {
+        val path = twoTrianglePath()
+        val limits = RasterLimits.Default.copy(maxContours = 1)
+        val refusal = assertFailsWith<RasterLimitReached> {
+            ContourFlattener.flattenPath(path.commands, 1.0, 0.0, 0.0, limits)
+        }
+        assertEquals("maxContours", refusal.field)
+        assertEquals(2L, refusal.observed)
+        assertEquals(1L, refusal.limit)
+    }
+
+    @Test
+    fun appliesScaleAndOrigin() {
+        val outline = syntheticOutline(
+            GlyphOutlineIR.Command.MoveTo(0, 0),
+            GlyphOutlineIR.Command.LineTo(10, 0),
+            GlyphOutlineIR.Command.LineTo(10, 10),
+            GlyphOutlineIR.Command.LineTo(0, 10),
+            GlyphOutlineIR.Command.Close,
+        )
+        val points = ContourFlattener.flattenOutline(outline.contours, 2.0, 3.0, -2.0, RasterLimits.Default)
+            .single().points
+        assertEquals(FlatPoint(3.0, -2.0), points[0])
+        assertEquals(FlatPoint(23.0, -2.0), points[1])
+        assertEquals(FlatPoint(23.0, 18.0), points[2])
+        assertEquals(FlatPoint(3.0, 18.0), points[3])
+    }
+
+    @Test
+    fun flattensMultiplePathContours() {
+        val contours = ContourFlattener.flattenPath(
+            twoTrianglePath().commands,
+            1.0,
+            0.0,
+            0.0,
+            RasterLimits.Default,
+        )
+        assertEquals(2, contours.size)
+    }
+
+    @Test
+    fun dropsDegenerateCurvesInsteadOfDuplicatingPoints() {
+        val outline = syntheticOutline(
+            GlyphOutlineIR.Command.MoveTo(0, 0),
+            GlyphOutlineIR.Command.QuadraticTo(0, 0, 0, 0),
+            GlyphOutlineIR.Command.Close,
+        )
+        assertEquals(
+            emptyList<FlatContour>(),
+            ContourFlattener.flattenOutline(outline.contours, 1.0, 0.0, 0.0, RasterLimits.Default),
+        )
+        ContourFlattener.flattenOutline(
+            outline.contours,
+            1.0,
+            0.0,
+            0.0,
+            RasterLimits.Default.copy(maxTotalPoints = 1),
+        )
+    }
+
+    private fun twoTrianglePath(): GlyphPaintPath = GlyphPaintPath(
+        listOf(
+            GlyphPaintPathCommand.MoveTo(0.0, 0.0),
+            GlyphPaintPathCommand.LineTo(10.0, 0.0),
+            GlyphPaintPathCommand.LineTo(5.0, 10.0),
+            GlyphPaintPathCommand.Close,
+            GlyphPaintPathCommand.MoveTo(20.0, 0.0),
+            GlyphPaintPathCommand.LineTo(30.0, 0.0),
+            GlyphPaintPathCommand.LineTo(25.0, 10.0),
+            GlyphPaintPathCommand.Close,
+        ),
+    )
 
     private fun syntheticOutline(vararg commands: GlyphOutlineIR.Command): GlyphOutlineIR =
         GlyphOutlineIR(
