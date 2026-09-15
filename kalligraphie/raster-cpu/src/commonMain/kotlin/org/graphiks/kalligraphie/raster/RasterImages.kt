@@ -4,7 +4,7 @@ package org.graphiks.kalligraphie.raster
  * Immutable eight-bit coverage image.
  *
  * Pixels are copied at construction and read row-major: index `y * width + x`,
- * with row zero at [top]. [left] and [top] are whole-pixel bearings relative to
+ * with row zero corresponding to [top]. [left] and [top] are whole-pixel bearings relative to
  * the coordinate origin used by the request.
  */
 public class A8Image(

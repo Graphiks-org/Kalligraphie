@@ -24,15 +24,35 @@ class RasterImagesTest {
     }
 
     @Test
+    fun a8ImageReadsAreBoundsChecked() {
+        val image = A8Image(width = 2, height = 2, left = 0, top = 0, pixels = byteArrayOf(1, 2, 3, 4))
+        assertFailsWith<IllegalArgumentException> { image[-1, 0] }
+        assertFailsWith<IllegalArgumentException> { image[0, image.height] }
+        assertFailsWith<IllegalArgumentException> { image[image.width, 0] }
+    }
+
+    @Test
     fun a8ImageRejectsMismatchedSize() {
         assertFailsWith<IllegalArgumentException> { A8Image(2, 2, 0, 0, byteArrayOf(1)) }
         assertFailsWith<IllegalArgumentException> { A8Image(-1, 0, 0, 0, ByteArray(0)) }
     }
 
     @Test
+    fun a8ImageRejectsOverflowingDimensions() {
+        assertFailsWith<IllegalArgumentException> { A8Image(Int.MAX_VALUE, Int.MAX_VALUE, 0, 0, ByteArray(0)) }
+    }
+
+    @Test
     fun a8EqualityUsesContent() {
         assertEquals(A8Image(1, 1, 0, 0, byteArrayOf(7)), A8Image(1, 1, 0, 0, byteArrayOf(7)))
         assertNotEquals(A8Image(1, 1, 0, 0, byteArrayOf(7)), A8Image(1, 1, 0, 0, byteArrayOf(8)))
+    }
+
+    @Test
+    fun a8EqualityIncludesBearings() {
+        val image = A8Image(1, 1, 0, 0, byteArrayOf(7))
+        assertNotEquals(image, A8Image(1, 1, 1, 0, byteArrayOf(7)))
+        assertNotEquals(image, A8Image(1, 1, 0, 1, byteArrayOf(7)))
     }
 
     @Test
@@ -44,6 +64,24 @@ class RasterImagesTest {
         val image = Rgba8Image(width = 2, height = 1, left = 0, top = 0, pixels = pixels)
         assertEquals(0x280A141E, image[0, 0])
         assertEquals(0x50323C46, image[1, 0])
+    }
+
+    @Test
+    fun rgbaImageCopiesDefensively() {
+        val source = byteArrayOf(10, 20, 30, 40)
+        val image = Rgba8Image(width = 1, height = 1, left = 0, top = 0, pixels = source)
+        source[0] = 99
+        val copy = image.copyPixels()
+        copy[1] = 99
+        assertEquals(0x280A141E, image[0, 0])
+    }
+
+    @Test
+    fun rgbaImageReadsAreBoundsChecked() {
+        val image = Rgba8Image(width = 1, height = 1, left = 0, top = 0, pixels = byteArrayOf(10, 20, 30, 40))
+        assertFailsWith<IllegalArgumentException> { image[-1, 0] }
+        assertFailsWith<IllegalArgumentException> { image[0, image.height] }
+        assertFailsWith<IllegalArgumentException> { image[image.width, 0] }
     }
 
     @Test
