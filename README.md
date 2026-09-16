@@ -1,5 +1,10 @@
 # Kalligraphie
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kalligraphie-wordmark-dark.png">
+  <img alt="Kalligraphie" src="docs/assets/kalligraphie-wordmark-light.png" width="600">
+</picture>
+
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple?logo=kotlin)](https://kotlinlang.org)
 [![Gradle](https://img.shields.io/badge/Gradle-9.6.1-blue?logo=gradle)](https://gradle.org)
 [![AGP](https://img.shields.io/badge/AGP-9.0.0-green?logo=android)](https://developer.android.com/studio/releases/gradle-plugin)

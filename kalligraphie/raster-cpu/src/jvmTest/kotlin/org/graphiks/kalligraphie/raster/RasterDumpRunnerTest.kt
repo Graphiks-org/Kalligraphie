@@ -10,6 +10,7 @@ import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphResolution
+import org.graphiks.kalligraphie.raster.rasterRepositoryRoot
 import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -25,7 +26,7 @@ class RasterDumpRunnerTest {
         )
         require(configuredOutput.isAbsolute) { "KALLIGRAPHIE_RASTER_DUMPS_OUTPUT must be an absolute path." }
         val outputDirectory = configuredOutput.normalize()
-        require(!outputDirectory.startsWith(repositoryRoot())) {
+        require(!outputDirectory.startsWith(rasterRepositoryRoot())) {
             "KALLIGRAPHIE_RASTER_DUMPS_OUTPUT must be outside the repository; received $outputDirectory."
         }
         Files.createDirectories(outputDirectory)
@@ -207,15 +208,6 @@ class RasterDumpRunnerTest {
             bytes = ppm(image),
             note = "RGB over white: out = (c * a + 255 * (255 - a) + 127) / 255",
         )
-    }
-
-    private fun repositoryRoot(): Path {
-        var candidate: Path? = Path.of("").toAbsolutePath().normalize()
-        while (candidate != null) {
-            if (Files.exists(candidate.resolve(".git"))) return candidate
-            candidate = candidate.parent
-        }
-        error("Could not locate the repository root from the test working directory.")
     }
 
     private fun gitCommit(): String {

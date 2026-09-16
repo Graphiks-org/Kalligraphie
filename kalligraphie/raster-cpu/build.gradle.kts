@@ -26,10 +26,13 @@ tasks.named<Copy>("jvmTestProcessResources") {
 }
 
 val rasterDumpClass = "org.graphiks.kalligraphie.raster.RasterDumpRunnerTest"
+val logoDumpClass = "org.graphiks.kalligraphie.raster.logo.KalligraphieLogoDumpTest"
 val rasterJvmTestTask = tasks.named<Test>("jvmTest")
 
 rasterJvmTestTask.configure {
     filter.excludeTestsMatching(rasterDumpClass)
+    filter.excludeTestsMatching(logoDumpClass)
+    inputs.dir(rootProject.layout.projectDirectory.dir("docs/assets")).withPropertyName("logoAssets")
 }
 
 tasks.register<Test>("rasterDumps") {
@@ -38,5 +41,15 @@ tasks.register<Test>("rasterDumps") {
     testClassesDirs = rasterJvmTestTask.get().testClassesDirs
     classpath = rasterJvmTestTask.get().classpath
     filter.includeTestsMatching("$rasterDumpClass.writesDeterministicDumpsOnlyWhenExplicitlyEnabled")
+    outputs.upToDateWhen { false }
+}
+
+tasks.register<Test>("renderLogo") {
+    group = "verification"
+    description = "Regenerates the README logo assets in docs/assets from the deterministic CPU rasterizer."
+    testClassesDirs = rasterJvmTestTask.get().testClassesDirs
+    classpath = rasterJvmTestTask.get().classpath
+    filter.includeTestsMatching("$logoDumpClass.writesTheLogoAssetsOnlyWhenExplicitlyEnabled")
+    environment("KALLIGRAPHIE_LOGO", "true")
     outputs.upToDateWhen { false }
 }

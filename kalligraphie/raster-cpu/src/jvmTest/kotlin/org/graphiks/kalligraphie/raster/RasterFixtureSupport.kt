@@ -1,5 +1,7 @@
 package org.graphiks.kalligraphie.raster
 
+import java.nio.file.Files
+import java.nio.file.Path
 import java.security.MessageDigest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BitmapLimits
@@ -45,6 +47,7 @@ internal fun openRasterFixture(
     bytes: ByteArray,
     requirements: FontAccessRequirementsSnapshot,
     renderVariant: FontRenderVariantSnapshot = FontRenderVariantSnapshot.default,
+    layoutSize: LayoutUnit = LayoutUnit(2_048f),
 ): RasterFixture {
     val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
         Kalligraphie.embedded(
@@ -60,7 +63,7 @@ internal fun openRasterFixture(
             catalog.resolveFace(catalog.faces.single().id, requirements),
         ).value
         val instance = assertIs<FontOperationResult.Success<FontInstance>>(
-            face.instantiate(FontInstanceDescriptor(LayoutUnit(2_048f))),
+            face.instantiate(FontInstanceDescriptor(layoutSize)),
         ).value
         val asset = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
             instance.acquireRenderAsset(resolver, renderVariant, requirements),
@@ -130,3 +133,13 @@ internal fun sha256(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte ->
         (byte.toInt() and 0xFF).toString(16).padStart(2, '0')
     }
+
+/** Locates the repository root by walking up from the test working directory. */
+internal fun rasterRepositoryRoot(): Path {
+    var candidate: Path? = Path.of("").toAbsolutePath().normalize()
+    while (candidate != null) {
+        if (Files.exists(candidate.resolve(".git"))) return candidate
+        candidate = candidate.parent
+    }
+    error("Could not locate the repository root from the test working directory.")
+}
