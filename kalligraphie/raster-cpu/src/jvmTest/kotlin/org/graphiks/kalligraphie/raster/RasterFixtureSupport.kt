@@ -2,6 +2,10 @@ package org.graphiks.kalligraphie.raster
 
 import java.security.MessageDigest
 import org.graphiks.kalligraphie.Kalligraphie
+import org.graphiks.kalligraphie.api.BitmapLimits
+import org.graphiks.kalligraphie.api.BitmapPixelFormat
+import org.graphiks.kalligraphie.api.BitmapProfile
+import org.graphiks.kalligraphie.api.BitmapStrike
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
@@ -12,6 +16,7 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.GlyphColorSpace
 import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
 import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
 import org.graphiks.kalligraphie.api.LayoutUnit
@@ -88,13 +93,34 @@ internal fun paintProfile(): PaintGraphProfile = PaintGraphProfile(
         maxDepth = 2,
         maxSourceBytes = 200_000,
         maxPaths = 6,
-        maxPalettes = 2,
+        maxPalettes = 9,
         maxPaletteEntries = 2_000,
         maxColorRecords = 2_000,
         maxBaseGlyphRecords = 3_000,
         maxLayerRecords = 30_000,
     ),
     outlineProfile = outlineProfile(),
+)
+
+/** The bitmap conformance and demonstration routes share this default profile. */
+internal fun bitmapProfile(): BitmapProfile = BitmapProfile(
+    strike = BitmapStrike(16, 16),
+    acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+    acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+    limits = BitmapLimits(
+        maxStrikes = 3,
+        maxIndexSubtables = 16,
+        maxRecordCount = 16,
+        maxIndexTableBytes = 16_384,
+        maxBitmapTableBytes = 16_384,
+        maxWidth = 16,
+        maxHeight = 16,
+        maxPixels = 256,
+        maxCompressedBytes = 64,
+        maxTotalCompressedBytes = 1_024,
+        maxDecodedBytes = 256,
+        maxTotalDecodedBytes = 1_024,
+    ),
 )
 
 internal fun fixtureBytes(path: String): ByteArray =
