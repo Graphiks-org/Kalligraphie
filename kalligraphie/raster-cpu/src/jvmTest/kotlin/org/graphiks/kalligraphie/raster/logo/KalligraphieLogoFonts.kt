@@ -54,11 +54,15 @@ internal class KalligraphieLogoFonts private constructor(
 
     /** Shapes [text] and resolves every glyph outline at its pen position. */
     fun wordmark(text: String): PlacedWordmark {
+        require(text.isNotEmpty()) { "the wordmark must not be empty." }
         val run = assertIs<FontOperationResult.Success<ShapedGlyphRun>>(
             backend.shape(shapingRequest(text)),
         ).value
         val outlines = run.glyphs.map { glyph -> outlineOf(wordmarkFont, glyph.glyphId) }
         val unitsPerEm = outlines.first().unitsPerEm
+        // Both pinned fixtures declare 1000 units per em and the layout size is 1000,
+        // so this ratio is 1.0 today; it is computed rather than assumed because the
+        // backend converts shaped positions as `design * layoutSize / upem`.
         val designPerLayout = unitsPerEm.toDouble() / wordmarkFont.instance.key.layoutSize.value.toDouble()
 
         var pen = 0.0
@@ -153,7 +157,16 @@ internal class KalligraphieLogoFonts private constructor(
                 badge.close()
                 throw error
             }
-            val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(JvmHarfBuzzShapingBackend.open()).value
+            val backend = try {
+                assertIs<FontOperationResult.Success<ShapingBackend>>(JvmHarfBuzzShapingBackend.open()).value
+            } catch (error: Throwable) {
+                try {
+                    wordmark.close()
+                } finally {
+                    badge.close()
+                }
+                throw error
+            }
             return KalligraphieLogoFonts(badge, wordmark, backend)
         }
     }

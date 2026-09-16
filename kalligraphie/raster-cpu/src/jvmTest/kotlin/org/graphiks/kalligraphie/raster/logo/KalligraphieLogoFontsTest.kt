@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.raster.logo
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class KalligraphieLogoFontsTest {
@@ -34,6 +35,13 @@ class KalligraphieLogoFontsTest {
                 wordmark.glyphs.last().outline.bounds.minX > wordmark.glyphs.first().outline.bounds.maxX,
                 "the last glyph must sit to the right of the first one",
             )
+        }
+    }
+
+    @Test
+    fun rejectsAnEmptyWordmark() {
+        KalligraphieLogoFonts.open().use { fonts ->
+            assertFailsWith<IllegalArgumentException> { fonts.wordmark("") }
         }
     }
 }
