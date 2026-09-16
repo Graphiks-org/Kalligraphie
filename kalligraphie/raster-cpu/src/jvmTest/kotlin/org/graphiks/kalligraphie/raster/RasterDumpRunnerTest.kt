@@ -233,7 +233,7 @@ class RasterDumpRunnerTest {
         // U+03A2 is unassigned.
         val GREEK: List<Int> = (0x391..0x3A9).filter { codepoint -> codepoint != 0x3A2 } + (0x3B1..0x3C9)
         val CYRILLIC: List<Int> = (0x410..0x42F).toList() + (0x430..0x44F).toList()
-        // U+063B–U+063F are unassigned.
+        // Core Arabic letters only: Persian/Urdu variants (U+063B–U+063F) and tatweel (U+0640) are outside the curated set.
         val ARABIC: List<Int> = (0x621..0x63A).toList() + (0x641..0x64A).toList()
         val DEVANAGARI: List<Int> = (0x905..0x939).toList() + (0x966..0x96F).toList()
         // U+1F602 (7 layers) and U+1F604 (10 layers) exceed the shared paint profile maxPaths=6; omitted deliberately.
