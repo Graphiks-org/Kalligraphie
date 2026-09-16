@@ -1184,6 +1184,22 @@ internal fun rasterRepositoryRoot(): java.nio.file.Path {
 }
 ```
 
+Then remove the duplicated private helper that already exists in `RasterDumpRunnerTest.kt`: delete its `private fun repositoryRoot(): Path { ... }` (the whole function, including its KDoc-free body and the `error(...)` line), and change its single call site from `repositoryRoot()` to `rasterRepositoryRoot()`. Add the import `org.graphiks.kalligraphie.raster.rasterRepositoryRoot`.
+
+Finally, remove any imports in `RasterDumpRunnerTest.kt` that its own code no longer uses as a result — `java.nio.file.Path` is still used for `configuredOutput`, so keep it, but check `Files` is still referenced (it is, for `createDirectories`) and drop nothing else blindly.
+
+Run: `./gradlew :kalligraphie:raster-cpu:jvmTest`
+
+Expected: PASS. The dump runner is excluded from `jvmTest`, so also confirm it still compiles and works:
+
+```bash
+env KALLIGRAPHIE_RASTER_DUMPS=true \
+    KALLIGRAPHIE_RASTER_DUMPS_OUTPUT=/tmp/kalligraphie-raster-check \
+    ./gradlew :kalligraphie:raster-cpu:rasterDumps
+```
+
+Expected: PASS, and `/tmp/kalligraphie-raster-check/manifest.md` exists.
+
 - [ ] **Step 2: Write the runner**
 
 Create `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/raster/logo/KalligraphieLogoDumpTest.kt`:
