@@ -13,6 +13,15 @@ public enum class BitmapPixelFormat(
 ) {
     /** One eight-bit alpha sample per pixel. */
     ALPHA_8(1),
+
+    /**
+     * Straight (non-premultiplied) red, green, blue, and alpha samples, one byte per channel.
+     *
+     * Bytes are ordered R, G, B, A; rows run from top to bottom with no padding; channels are
+     * encoded in [GlyphColorSpace.SRGB]. Consumers that need premultiplied alpha convert it
+     * themselves so no decoded value is lost in the portable representation.
+     */
+    RGBA_8888(4),
 }
 
 /**

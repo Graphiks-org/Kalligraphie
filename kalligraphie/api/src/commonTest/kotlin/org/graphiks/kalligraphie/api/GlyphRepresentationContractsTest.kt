@@ -141,6 +141,52 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
+    fun rgbaPixelFormatDeclaresFourBytesPerPixel() {
+        assertEquals(4, BitmapPixelFormat.RGBA_8888.bytesPerPixel)
+        assertEquals(1, BitmapPixelFormat.ALPHA_8.bytesPerPixel)
+    }
+
+    @Test
+    fun colorBitmapRepresentationOwnsItsStraightRgbaPixels() {
+        val decodedPixels = byteArrayOf(10, 20, 30, 40)
+        val bitmap = BitmapGlyphIR(
+            glyphId = GlyphId(4),
+            strike = BitmapStrike(16, 16),
+            width = 1,
+            height = 1,
+            originX = 0,
+            originY = 0,
+            metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+            pixelFormat = BitmapPixelFormat.RGBA_8888,
+            colorSpace = GlyphColorSpace.SRGB,
+            decodedPixels = decodedPixels,
+        )
+        decodedPixels[0] = 99
+
+        assertEquals(4, bitmap.decodedByteCount)
+        assertEquals(BitmapPixelFormat.RGBA_8888, bitmap.pixelFormat)
+        assertContentEquals(byteArrayOf(10, 20, 30, 40), bitmap.copyDecodedPixels())
+    }
+
+    @Test
+    fun colorBitmapRepresentationRejectsAPixelBufferThatDoesNotMatchItsDimensions() {
+        assertFailsWith<IllegalArgumentException> {
+            BitmapGlyphIR(
+                glyphId = GlyphId(4),
+                strike = BitmapStrike(16, 16),
+                width = 1,
+                height = 1,
+                originX = 0,
+                originY = 0,
+                metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+                pixelFormat = BitmapPixelFormat.RGBA_8888,
+                colorSpace = GlyphColorSpace.SRGB,
+                decodedPixels = byteArrayOf(10, 20, 30),
+            )
+        }
+    }
+
+    @Test
     fun certificateCannotBeReusedForAnotherGlyph() {
         val profile = outlineProfile()
         val assetKey = FontRenderAssetKey(
