@@ -163,7 +163,4 @@ internal class RgbaCanvas(val width: Int, val height: Int) {
 internal class Dump(
     val bytes: ByteArray,
     val note: String = "",
-) {
-    /** Returns a copy of this dump with an optional replacement [note]. */
-    fun copy(note: String = this.note): Dump = Dump(bytes, note)
-}
+)

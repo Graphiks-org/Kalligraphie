@@ -195,15 +195,23 @@ internal object ComposedLineDumps {
             facesUsed += faceId
             val asset = fixture.assets[faceId] ?: error("line used an unexpected face $faceId")
             run.glyphs.forEach glyphLoop@{ glyph ->
-                val representation = assertIs<FontOperationResult.Success<GlyphRepresentation>>(
-                    asset.resolveGlyph(FontGlyphRequest(glyph.shapedGlyph.glyphId)),
-                ).value
-                if (representation !is GlyphRepresentation.Outline) return@glyphLoop
+                val resolution = when (val outcome = asset.resolveGlyph(FontGlyphRequest(glyph.shapedGlyph.glyphId))) {
+                    is FontOperationResult.Success -> outcome.value
+                    is FontOperationResult.Failure -> error(
+                        "line '$text' glyph ${glyph.shapedGlyph.glyphId.value} resolution failed: ${outcome.error.code}",
+                    )
+
+                    is FontOperationResult.Cancelled -> error(
+                        "line '$text' glyph ${glyph.shapedGlyph.glyphId.value} resolution was cancelled",
+                    )
+                }
+                val outline = when (resolution) {
+                    is GlyphRepresentation.Outline -> resolution.outline
+                    is GlyphRepresentation.Empty -> return@glyphLoop
+                    else -> error("line '$text' glyph ${glyph.shapedGlyph.glyphId.value} is not an outline")
+                }
                 val image = assertIs<RasterResult.Success<A8Image>>(
-                    GlyphRasterizer.rasterizeOutline(
-                        representation.outline,
-                        OutlineRasterRequest(PIXELS_PER_EM.toDouble()),
-                    ),
+                    GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(PIXELS_PER_EM.toDouble())),
                 ).value
                 if (image.width == 0 || image.height == 0) return@glyphLoop
                 placed += Placed(
