@@ -925,6 +925,27 @@ class KalligraphieLogoTest {
             )
         }
     }
+
+    @Test
+    fun paintsTheFilledSquareAndKnocksTheLetterOut() {
+        KalligraphieLogoFonts.open().use { fonts ->
+            val pixels = KalligraphieLogo.render(fonts, KalligraphieLogo.Ink).image.copyPixels()
+
+            var ink = 0
+            var paper = 0
+            for (index in pixels.indices step 4) {
+                if ((pixels[index + 3].toInt() and 0xFF) < 250) continue
+                val red = pixels[index].toInt() and 0xFF
+                val green = pixels[index + 1].toInt() and 0xFF
+                val blue = pixels[index + 2].toInt() and 0xFF
+                if (red == 0 && green == 0 && blue == 0) ink += 1
+                if (red == 255 && green == 255 && blue == 255) paper += 1
+            }
+
+            assertTrue(ink > 0, "the square and the wordmark must paint ink")
+            assertTrue(paper > 0, "the badge letter must be knocked out in the paper colour")
+        }
+    }
 }
 ```
 
@@ -952,21 +973,24 @@ import org.graphiks.kalligraphie.raster.RasterLimits
 import org.graphiks.kalligraphie.raster.RasterResult
 import org.graphiks.kalligraphie.raster.Rgba8Image
 
-/** One rendered variant: the padded image and the layout that produced it. */
+/** One rendered variant: the padded, transparent-background image. */
 internal class LogoRender(
     val image: Rgba8Image,
-    val pixelsPerEm: Double,
-    val badgeUnitsPerEm: Int,
 )
 
 /** Composes and renders the Kalligraphie lockup with the deterministic CPU rasterizer. */
 internal object KalligraphieLogo {
     const val Wordmark: String = "Kalligraphie"
 
-    /** Ink colour of the light variant. */
+    /** Ink of the light variant: pure black. */
     val Ink: GlyphColor = GlyphColor(0, 0, 0)
 
-    /** Paper colour used to knock the badge letter out of the filled square. */
+    /**
+     * Ink of the dark variant: pure white.
+     *
+     * In the light variant it is also the paper colour the badge letter is
+     * knocked out to, which is where the name comes from.
+     */
     val Paper: GlyphColor = GlyphColor(255, 255, 255)
 
     /** Ink width target before the margin is added, so the final width is close to 1200 px. */
@@ -997,7 +1021,7 @@ internal object KalligraphieLogo {
         maxPaintDepth = 8,
     )
 
-    /** Renders the lockup with [ink] as the dark colour and its opposite as the knockout. */
+    /** Renders the lockup with [ink] as the front colour and its complement as the knockout. */
     fun render(fonts: KalligraphieLogoFonts, ink: GlyphColor): LogoRender {
         val paper = GlyphColor(
             red = 255 - ink.red,
@@ -1015,15 +1039,11 @@ internal object KalligraphieLogo {
             is RasterResult.Failure -> error("logo rasterization failed: ${result.diagnostics}")
         }
         require(rasterized.width > 0 && rasterized.height > 0) { "the logo rendered no ink" }
-        return LogoRender(
-            image = pad(rasterized, MarginPx),
-            pixelsPerEm = layout.pixelsPerEm,
-            badgeUnitsPerEm = layout.badgeUnitsPerEm,
-        )
+        return LogoRender(image = pad(rasterized, MarginPx))
     }
 
     /** Composes the paint graph and the scale that maps its ink to the target width. */
-    internal fun layout(fonts: KalligraphieLogoFonts, ink: GlyphColor, paper: GlyphColor): LogoLayout {
+    private fun layout(fonts: KalligraphieLogoFonts, ink: GlyphColor, paper: GlyphColor): LogoLayout {
         val badgeGlyph = fonts.badgeGlyph()
         val badgeUpem = badgeGlyph.unitsPerEm
         val wordmark = fonts.wordmark(Wordmark)
@@ -1103,7 +1123,7 @@ internal object KalligraphieLogo {
                 endIndex = (y + 1) * image.width * 4,
             )
         }
-        return Rgba8Image(width, height, 0, 0, target)
+        return Rgba8Image(width, height, image.left - margin, image.top - margin, target)
     }
 }
 
