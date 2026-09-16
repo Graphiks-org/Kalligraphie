@@ -236,9 +236,30 @@ byte for byte.
 Nothing to add. The conformance test joins `jvmTest`, already executed by
 `./gradlew check`; the `renderLogo` task is excluded like the other opt-in tasks.
 
+## Orientation
+
+The CPU rasterizer preserves the source axes: a y-up design-space outline maps to
+image rows without negation, so its raw output is vertically mirrored relative to
+image convention. Upstream states this contract explicitly — composed
+demonstration sheets are flipped for readability while "the raw single-glyph
+dumps keep the rasterizer's source orientation"
+(`docs/docs/raster-cpu.md`, commit `0d6a018`). The module's sealed fingerprints
+pin that behaviour and must not change.
+
+The logo therefore flips its composed image once, in `KalligraphieLogo`, before
+padding and encoding. This is a composition concern, not a rasterizer defect, and
+no module outside `raster-cpu`'s test sources is touched.
+
+Verification: an independent FreeType render of the same text (via Pillow) was
+compared against both orientations. The correct orientation correlates at 0.99
+with the rendered wordmark's glyph shapes; the mirrored one at 0.09. The
+wordmark's vertical ink centroid is 0.555 upright and 0.444 mirrored, which the
+orientation regression test pins.
+
 ## Out of scope
 
 - MkDocs site logo, favicon, and social preview images.
 - Any colour accent, gradient, or second logo variant.
-- Changes to the public API of `raster-cpu`, `:kalligraphie`, or any other module.
+- Changes to the public API or the rasterizer behaviour of `raster-cpu`, and any
+  change to its sealed conformance fingerprints.
 - Subsetting or modifying the bundled fonts.
