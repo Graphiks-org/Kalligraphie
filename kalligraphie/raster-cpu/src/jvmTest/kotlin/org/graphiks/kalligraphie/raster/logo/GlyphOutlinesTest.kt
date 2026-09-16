@@ -4,6 +4,7 @@ import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 
 class GlyphOutlinesTest {
     private fun square(): GlyphOutlineIR = GlyphOutlineIR(
@@ -47,5 +48,18 @@ class GlyphOutlinesTest {
             DesignBounds(minX = 0, minY = 0, maxX = 400, maxY = 250),
             inkBoundsOf(glyphs),
         )
+    }
+
+    @Test
+    fun roundsTheEnvelopeUpwardsOnTheMaximumSide() {
+        val translated = square().translated(dx = 0.2, dy = 0.0)
+
+        // ceil(100.2) = 101; rounding to nearest would give 100 and break conservatism.
+        assertEquals(DesignBounds(minX = 0, minY = 0, maxX = 101, maxY = 200), translated.bounds)
+    }
+
+    @Test
+    fun rejectsEmptyInkBounds() {
+        assertFailsWith<IllegalArgumentException> { inkBoundsOf(emptyList()) }
     }
 }

@@ -5,7 +5,13 @@ import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import kotlin.math.ceil
 import kotlin.math.floor
 
-/** One glyph outline resolved from a font and placed at a pen position in its own design units. */
+/**
+ * One glyph outline placed at a pen position, in the font's own design units.
+ *
+ * [outline] is already translated to [x]/[y]; those fields record the position
+ * for reference only. A consumer applies at most one further uniform shift to
+ * the whole word and must never re-apply the pen position.
+ */
 internal class PlacedGlyph(
     val glyphId: Int,
     val x: Double,
@@ -19,6 +25,9 @@ internal class PlacedGlyph(
  * The CPU rasterizer refuses transform nodes, so placement happens on the
  * geometry itself. The conservative integer envelope is recomputed with the
  * same floor/ceil rule the outline contract uses.
+ * The result is rebuilt from the legacy flattened command view, so `components`
+ * is empty, `limits` are the compatibility limits, and `pointCount` is
+ * recomputed.
  */
 internal fun GlyphOutlineIR.translated(dx: Double, dy: Double): GlyphOutlineIR =
     GlyphOutlineIR(
