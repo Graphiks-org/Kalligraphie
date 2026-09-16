@@ -79,7 +79,7 @@ class EbdtFormatOneGlyphRepresentationTest {
                     val warmBitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(glyph)))).bitmap
                     repeat(5) { index ->
                         val pressureRequirements = FontAccessRequirementsSnapshot.renderable(
-                            listOf(bitmapProfile(maxBitmapTableBytes = 16_384 + index + 1)),
+                            listOf(bitmapProfile(maxSourceTableBytes = 16_384 + index + 1)),
                         )
                         val pressureAsset = success(
                             instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, pressureRequirements),
@@ -224,7 +224,7 @@ class EbdtFormatOneGlyphRepresentationTest {
     @Test
     fun rejectsTheWholeBitmapTableBeforePublishingAnAssetWhenItsSourceBytesExceedTheProfileLimit() {
         val catalog = success(Kalligraphie.embedded(fixtureBytes(), FontSourceProvenance("Skia EBDT format 1")))
-        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(maxBitmapTableBytes = 1)))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile(maxSourceTableBytes = 1)))
         val resolver = success(catalog.openAssetResolver())
         val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
         val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
@@ -268,7 +268,7 @@ class EbdtFormatOneGlyphRepresentationTest {
 
     private fun bitmapProfile(
         maxWidth: Int = 16,
-        maxBitmapTableBytes: Int = 16_384,
+        maxSourceTableBytes: Int = 16_384,
         maxRecordCount: Int = 16,
     ): BitmapProfile = BitmapProfile(
         strike = BitmapStrike(16, 16, 1),
@@ -279,7 +279,7 @@ class EbdtFormatOneGlyphRepresentationTest {
             maxIndexSubtables = 16,
             maxRecordCount = maxRecordCount,
             maxIndexTableBytes = 16_384,
-            maxBitmapTableBytes = maxBitmapTableBytes,
+            maxSourceTableBytes = maxSourceTableBytes,
             maxWidth = maxWidth,
             maxHeight = 16,
             maxPixels = 256,

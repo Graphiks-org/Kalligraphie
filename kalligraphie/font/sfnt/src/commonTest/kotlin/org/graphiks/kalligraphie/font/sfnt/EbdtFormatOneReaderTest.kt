@@ -142,7 +142,7 @@ class EbdtFormatOneReaderTest {
             maxIndexSubtables = 1,
             maxRecordCount = maxRecordCount,
             maxIndexTableBytes = 1_024,
-            maxBitmapTableBytes = 1_024,
+            maxSourceTableBytes = 1_024,
             maxWidth = 16,
             maxHeight = 16,
             maxPixels = 256,

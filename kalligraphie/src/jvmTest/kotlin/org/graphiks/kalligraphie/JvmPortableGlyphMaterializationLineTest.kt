@@ -540,7 +540,7 @@ class JvmPortableGlyphMaterializationLineTest {
             maxIndexSubtables = 16,
             maxRecordCount = 16,
             maxIndexTableBytes = 16_384,
-            maxBitmapTableBytes = 16_384,
+            maxSourceTableBytes = 16_384,
             maxWidth = 16,
             maxHeight = 16,
             maxPixels = 256,

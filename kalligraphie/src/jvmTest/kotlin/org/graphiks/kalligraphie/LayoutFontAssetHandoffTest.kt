@@ -783,7 +783,7 @@ class LayoutFontAssetHandoffTest {
             acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
             limits = BitmapLimits(
                 maxStrikes = 3, maxIndexSubtables = 16, maxRecordCount = 16,
-                maxIndexTableBytes = 16_384, maxBitmapTableBytes = 16_384,
+                maxIndexTableBytes = 16_384, maxSourceTableBytes = 16_384,
                 maxWidth = 16, maxHeight = 16, maxPixels = 256,
                 maxCompressedBytes = 64, maxTotalCompressedBytes = 1_024,
                 maxDecodedBytes = 256, maxTotalDecodedBytes = 1_024,

@@ -588,7 +588,7 @@ internal fun estimateEmbeddedRenderAssetBytes(
             .saturatingAdd(estimateSvgRetainedBytes(parsedFont, profile))
         is BitmapProfile -> total
             .saturatingAdd(profile.limits.maxIndexTableBytes.toLong())
-            .saturatingAdd(profile.limits.maxBitmapTableBytes.toLong())
+            .saturatingAdd(profile.limits.maxSourceTableBytes.toLong())
             .saturatingAdd(profile.limits.maxTotalDecodedBytes.toLong())
         is PlatformHandleProfile -> total
     }

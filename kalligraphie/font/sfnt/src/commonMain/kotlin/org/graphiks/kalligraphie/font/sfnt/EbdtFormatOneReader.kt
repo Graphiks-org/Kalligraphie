@@ -130,7 +130,7 @@ public object EbdtFormatOneReader {
                     maxIndexSubtables = MAX_CAPABILITY_INDEX_SUBTABLES,
                     maxRecordCount = MAX_CAPABILITY_RECORDS,
                     maxIndexTableBytes = MAX_CAPABILITY_TABLE_BYTES,
-                    maxBitmapTableBytes = MAX_CAPABILITY_TABLE_BYTES,
+                    maxSourceTableBytes = MAX_CAPABILITY_TABLE_BYTES,
                     maxWidth = MAX_CAPABILITY_DIMENSION,
                     maxHeight = MAX_CAPABILITY_DIMENSION,
                     maxPixels = MAX_CAPABILITY_PIXELS,
@@ -170,7 +170,7 @@ public object EbdtFormatOneReader {
         if (eblcTable.size > profile.limits.maxIndexTableBytes) {
             return limit("EBLC source-byte limit exceeded.", "EBLC")
         }
-        if (ebdtTable.size > profile.limits.maxBitmapTableBytes) {
+        if (ebdtTable.size > profile.limits.maxSourceTableBytes) {
             return limit("EBDT source-byte limit exceeded.", "EBDT")
         }
         if (eblcTable.size < EBLC_HEADER_LENGTH) return invalid("font.eblc.truncated", "EBLC header is truncated.", "EBLC")

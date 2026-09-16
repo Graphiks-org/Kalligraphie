@@ -126,7 +126,7 @@ private fun BitmapLimits.canonicalBitmapLimits(): String =
         maxIndexSubtables,
         maxRecordCount,
         maxIndexTableBytes,
-        maxBitmapTableBytes,
+        maxSourceTableBytes,
         maxWidth,
         maxHeight,
         maxPixels,

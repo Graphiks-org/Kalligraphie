@@ -195,6 +195,14 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
+    fun bitmapProfileKeysEncodeTheSourceTableBound() {
+        assertNotEquals(
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(maxSourceTableBytes = 1_024)),
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(maxSourceTableBytes = 2_048)),
+        )
+    }
+
+    @Test
     fun strikeRejectsABitDepthOutsideTheSupportedRange() {
         assertFailsWith<IllegalArgumentException> { BitmapStrike(16, 16, 0) }
         assertFailsWith<IllegalArgumentException> { BitmapStrike(16, 16, 33) }
@@ -370,7 +378,7 @@ class GlyphRepresentationContractsTest {
             maxIndexSubtables = 16,
             maxRecordCount = 16,
             maxIndexTableBytes = 16_384,
-            maxBitmapTableBytes = maxSourceTableBytes,
+            maxSourceTableBytes = maxSourceTableBytes,
             maxWidth = 16,
             maxHeight = 16,
             maxPixels = 256,

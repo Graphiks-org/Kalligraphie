@@ -55,8 +55,8 @@ public data class BitmapLimits(
     public val maxRecordCount: Int,
     /** Maximum source bytes retained from the complete EBLC index table. */
     public val maxIndexTableBytes: Int,
-    /** Maximum source bytes retained from the complete EBDT bitmap table. */
-    public val maxBitmapTableBytes: Int,
+    /** Maximum source bytes retained from the complete bitmap data table. */
+    public val maxSourceTableBytes: Int,
     /** Maximum decoded bitmap width in pixels. */
     public val maxWidth: Int,
     /** Maximum decoded bitmap height in pixels. */
@@ -77,7 +77,7 @@ public data class BitmapLimits(
         require(maxIndexSubtables > 0) { "maxIndexSubtables must be positive." }
         require(maxRecordCount >= 0) { "maxRecordCount must be non-negative." }
         require(maxIndexTableBytes > 0) { "maxIndexTableBytes must be positive." }
-        require(maxBitmapTableBytes > 0) { "maxBitmapTableBytes must be positive." }
+        require(maxSourceTableBytes > 0) { "maxSourceTableBytes must be positive." }
         require(maxWidth > 0) { "maxWidth must be positive." }
         require(maxHeight > 0) { "maxHeight must be positive." }
         require(maxPixels > 0) { "maxPixels must be positive." }
