@@ -18,13 +18,14 @@ samples, and composition uses integer arithmetic, so identical inputs produce
 identical bytes on every platform.
 
 The opt-in demonstration runner writes PGM and PPM images plus a manifest. Each
-run publishes the raw single-glyph reference dumps, alphabet sheets for latin,
-greek, cyrillic, arabic and devanagari, color sheets (Bungee Color and
+run publishes the raw single-glyph reference dumps, alphabet sheets for Latin,
+Greek, Cyrillic, Arabic and Devanagari, color sheets (Bungee Color and
 EmojiTwo), a normalized EBDT bitmap strike, and real text lines composed
 through the paragraph facade — including a mixed multi-script line resolved by
 three-font fallback. Composed sheets and lines are flipped vertically for
 readability; the raw single-glyph dumps keep the rasterizer's source
-orientation. The dedicated task always executes when invoked explicitly:
+orientation; the EBDT strike keeps its image orientation. The dedicated task
+always executes when invoked explicitly:
 
 ```bash
 env KALLIGRAPHIE_RASTER_DUMPS=true \

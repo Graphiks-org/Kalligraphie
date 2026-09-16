@@ -48,13 +48,24 @@ env KALLIGRAPHIE_RASTER_DUMPS=true \
   `check`.
 - Without `KALLIGRAPHIE_RASTER_DUMPS=true`, the task runs but writes nothing.
 - The output directory receives, per run:
-  - `liberation-a-64.pgm` and `emoji-two-64.ppm` — raw single-glyph reference dumps in source orientation;
-  - `sheet-liberation-latin-32.pgm`, `sheet-liberation-greek-32.pgm`, `sheet-liberation-cyrillic-32.pgm`, `sheet-amiri-arabic-32.pgm`, `sheet-noto-devanagari-32.pgm` — alphabet sheets, 16 columns, white ink on black;
-  - `sheet-bungee-latin-48.ppm` and `sheet-emoji-two-64.ppm` — color sheets over white;
+  - `liberation-a-64.pgm` and `emoji-two-64.ppm` — raw single-glyph reference
+    dumps in source orientation;
+  - `sheet-liberation-latin-32.pgm`, `sheet-liberation-greek-32.pgm`,
+    `sheet-liberation-cyrillic-32.pgm`, `sheet-amiri-arabic-32.pgm`,
+    `sheet-noto-devanagari-32.pgm` — alphabet sheets, 16 columns, white ink on
+    black;
+  - `sheet-bungee-latin-48.ppm` and `sheet-emoji-two-64.ppm` — color sheets
+    over white;
   - `glyph-ebdt-format1-16.ppm` — normalized bitmap strike over white;
-  - `line-latin-48.pgm`, `line-greek-48.pgm`, `line-cyrillic-48.pgm`, `line-arabic-48.pgm`, `line-devanagari-48.pgm`, `line-mixed-48.pgm` — real text composed by the paragraph facade (shaping, BiDi, three-font fallback), white ink on black;
-  - `manifest.md` — git commit, fixtures, image count, orientation note, and the SHA-256 digest and byte size of every image.
-- Composed sheets and lines are flipped vertically for readability; the raw single-glyph dumps keep the rasterizer's source orientation, and the EBDT strike is image-oriented by construction.
+  - `line-latin-48.pgm`, `line-greek-48.pgm`, `line-cyrillic-48.pgm`,
+    `line-arabic-48.pgm`, `line-devanagari-48.pgm`, `line-mixed-48.pgm` — real
+    text composed by the paragraph facade (shaping, BiDi, three-font fallback),
+    white ink on black;
+  - `manifest.md` — git commit, fixtures, pixels per em, image count,
+    orientation note, and the SHA-256 digest and byte size of every image.
+- Composed sheets and lines are flipped vertically for readability; the raw
+  single-glyph dumps keep the rasterizer's source orientation, and the EBDT
+  strike is image-oriented by construction.
 - Two runs at the same commit produce byte-identical outputs.
 
 See the user guides in `docs/docs/raster-cpu.md` (English) and
