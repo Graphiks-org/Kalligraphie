@@ -1,5 +1,7 @@
 package org.graphiks.kalligraphie.raster
 
+import java.nio.file.Files
+import java.nio.file.Path
 import java.security.MessageDigest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BitmapLimits
@@ -133,10 +135,10 @@ internal fun sha256(bytes: ByteArray): String =
     }
 
 /** Locates the repository root by walking up from the test working directory. */
-internal fun rasterRepositoryRoot(): java.nio.file.Path {
-    var candidate: java.nio.file.Path? = java.nio.file.Path.of("").toAbsolutePath().normalize()
+internal fun rasterRepositoryRoot(): Path {
+    var candidate: Path? = Path.of("").toAbsolutePath().normalize()
     while (candidate != null) {
-        if (java.nio.file.Files.exists(candidate.resolve(".git"))) return candidate
+        if (Files.exists(candidate.resolve(".git"))) return candidate
         candidate = candidate.parent
     }
     error("Could not locate the repository root from the test working directory.")

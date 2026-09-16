@@ -1,6 +1,6 @@
 # Kalligraphie logo manifest
 
-- git commit: `cd07b23d8df967f5a4868393710ef3bc492ab2c2`
+- dump-time HEAD: `4bdb023dd19ac943d2af35448452f9fe61842937`
 - wordmark: `Kalligraphie`
 - fonts: /fonts/amiri/Amiri-Regular.ttf, /fonts/great-vibes/GreatVibes-Regular.ttf
 - layout size: 1000.0

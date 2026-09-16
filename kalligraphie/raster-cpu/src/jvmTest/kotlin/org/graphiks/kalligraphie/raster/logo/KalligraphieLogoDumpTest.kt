@@ -49,7 +49,7 @@ class KalligraphieLogoDumpTest {
         val manifest = buildString {
             appendLine("# Kalligraphie logo manifest")
             appendLine()
-            appendLine("- git commit: `$commit`")
+            appendLine("- dump-time HEAD: `$commit`")
             appendLine("- wordmark: `${KalligraphieLogo.Wordmark}`")
             appendLine("- fonts: ${KalligraphieLogoFonts.BadgeFontResource}, ${KalligraphieLogoFonts.WordmarkFontResource}")
             appendLine("- layout size: ${KalligraphieLogoFonts.LogoLayoutSize}")

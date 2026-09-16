@@ -64,7 +64,9 @@ internal object PngEncoder {
 
     private fun deflate(raw: ByteArray): ByteArray {
         val output = ByteArrayOutputStream()
-        DeflaterOutputStream(output, Deflater(Deflater.BEST_COMPRESSION)).use { stream -> stream.write(raw) }
+        Deflater(Deflater.BEST_COMPRESSION).use { deflater ->
+            DeflaterOutputStream(output, deflater).use { stream -> stream.write(raw) }
+        }
         return output.toByteArray()
     }
 }

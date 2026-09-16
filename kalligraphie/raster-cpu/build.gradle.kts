@@ -50,5 +50,6 @@ tasks.register<Test>("renderLogo") {
     testClassesDirs = rasterJvmTestTask.get().testClassesDirs
     classpath = rasterJvmTestTask.get().classpath
     filter.includeTestsMatching("$logoDumpClass.writesTheLogoAssetsOnlyWhenExplicitlyEnabled")
+    environment("KALLIGRAPHIE_LOGO", "true")
     outputs.upToDateWhen { false }
 }

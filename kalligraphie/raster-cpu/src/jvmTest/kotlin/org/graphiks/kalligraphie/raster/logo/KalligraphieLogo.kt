@@ -10,6 +10,7 @@ import org.graphiks.kalligraphie.raster.PaintRasterRequest
 import org.graphiks.kalligraphie.raster.RasterLimits
 import org.graphiks.kalligraphie.raster.RasterResult
 import org.graphiks.kalligraphie.raster.Rgba8Image
+import org.graphiks.kalligraphie.raster.sha256
 
 /** One rendered variant: the padded, transparent-background image. */
 internal class LogoRender(
@@ -208,4 +209,4 @@ internal fun LogoRender.toPng(): ByteArray =
 
 /** Returns the SHA-256 digest of [image]'s pixel buffer. */
 internal fun LogoRender.pixelDigest(): String =
-    org.graphiks.kalligraphie.raster.sha256(image.copyPixels())
+    sha256(image.copyPixels())
