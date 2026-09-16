@@ -1,8 +1,8 @@
 # Kalligraphie
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kalligraphie-logo-dark.png">
-  <img alt="Kalligraphie" src="docs/assets/kalligraphie-logo-light.png" width="600">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kalligraphie-wordmark-dark.png">
+  <img alt="Kalligraphie" src="docs/assets/kalligraphie-wordmark-light.png" width="600">
 </picture>
 
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.4.10-purple?logo=kotlin)](https://kotlinlang.org)

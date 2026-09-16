@@ -20,8 +20,10 @@ class KalligraphieLogoDumpTest {
         val commit = gitCommit()
         val outputs = linkedMapOf<String, LogoOutput>()
         KalligraphieLogoFonts.open().use { fonts ->
-            outputs["kalligraphie-logo-light.png"] = render(fonts, KalligraphieLogo.Ink)
-            outputs["kalligraphie-logo-dark.png"] = render(fonts, KalligraphieLogo.Paper)
+            outputs["kalligraphie-logo-light.png"] = render(fonts, KalligraphieLogo.Ink, KalligraphieLogo::renderBadge)
+            outputs["kalligraphie-logo-dark.png"] = render(fonts, KalligraphieLogo.Paper, KalligraphieLogo::renderBadge)
+            outputs["kalligraphie-wordmark-light.png"] = render(fonts, KalligraphieLogo.Ink, KalligraphieLogo::renderWordmark)
+            outputs["kalligraphie-wordmark-dark.png"] = render(fonts, KalligraphieLogo.Paper, KalligraphieLogo::renderWordmark)
             write(assets, outputs, commit)
         }
 
@@ -30,9 +32,13 @@ class KalligraphieLogoDumpTest {
         }
     }
 
-    private fun render(fonts: KalligraphieLogoFonts, ink: GlyphColor): LogoOutput {
-        val first = KalligraphieLogo.render(fonts, ink)
-        val second = KalligraphieLogo.render(fonts, ink)
+    private fun render(
+        fonts: KalligraphieLogoFonts,
+        ink: GlyphColor,
+        part: (KalligraphieLogoFonts, GlyphColor) -> LogoRender,
+    ): LogoOutput {
+        val first = part(fonts, ink)
+        val second = part(fonts, ink)
         assertEquals(
             sha256(first.image.copyPixels()),
             sha256(second.image.copyPixels()),

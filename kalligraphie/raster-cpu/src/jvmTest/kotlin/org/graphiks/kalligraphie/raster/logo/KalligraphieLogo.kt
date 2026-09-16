@@ -11,6 +11,7 @@ import org.graphiks.kalligraphie.raster.RasterLimits
 import org.graphiks.kalligraphie.raster.RasterResult
 import org.graphiks.kalligraphie.raster.Rgba8Image
 import org.graphiks.kalligraphie.raster.sha256
+import kotlin.math.roundToInt
 
 /** One rendered variant: the padded, transparent-background image. */
 internal class LogoRender(
@@ -18,7 +19,8 @@ internal class LogoRender(
 )
 
 /**
- * Composes and renders the Kalligraphie lockup with the deterministic CPU rasterizer.
+ * Renders the Kalligraphie badge and wordmark artefacts with the deterministic
+ * CPU rasterizer.
  *
  * The rasterizer preserves the source axes, so its raw output is vertically
  * mirrored; every rendered variant is flipped once into image orientation before
@@ -30,25 +32,23 @@ internal object KalligraphieLogo {
     /** Ink of the light variant: pure black. */
     val Ink: GlyphColor = GlyphColor(0, 0, 0)
 
-    /**
-     * Ink of the dark variant: pure white.
-     *
-     * In the light variant it is also the paper colour the badge letter is
-     * knocked out to, which is where the name comes from.
-     */
+    /** Ink of the dark variant: pure white. */
     val Paper: GlyphColor = GlyphColor(255, 255, 255)
 
-    /** Ink width target before the margin is added, so the final width is close to 1200 px. */
-    private const val InkTargetWidthPx = 1_152
+    /** Square canvas edge of the badge image, so the mark drops into avatars and favicons uncropped. */
+    private const val BadgeCanvasPx = 512
 
-    /** Uniform transparent margin added around the tight ink canvas. */
-    private const val MarginPx = 24
+    /** Badge margin as a share of the canvas edge. */
+    private const val BadgeMarginRatio = 0.05
+
+    /** Ink width target of the wordmark image, before its margin. */
+    private const val WordmarkTargetWidthPx = 1_152
+
+    /** Uniform transparent margin around the wordmark. */
+    private const val WordmarkMarginPx = 24
 
     /** Share of the badge square occupied by the letter's ink height. */
     private const val BadgeHeightRatio = 0.52
-
-    /** Gap after the badge, as a share of the badge side. */
-    private const val BadgeGapRatio = 0.5
 
     /** Corner radius, as a share of the badge side. */
     private const val CornerRadiusRatio = 0.22
@@ -66,70 +66,79 @@ internal object KalligraphieLogo {
         maxPaintDepth = 8,
     )
 
-    /** Renders the lockup with [ink] as the front colour and its complement as the knockout. */
-    fun render(fonts: KalligraphieLogoFonts, ink: GlyphColor): LogoRender {
-        val paper = GlyphColor(
-            red = 255 - ink.red,
-            green = 255 - ink.green,
-            blue = 255 - ink.blue,
-        )
-        val layout = layout(fonts, ink, paper)
-        val request = PaintRasterRequest(
-            pixelsPerEm = layout.pixelsPerEm,
-            unitsPerEm = layout.badgeUnitsPerEm,
-            limits = Limits,
-        )
-        val rasterized = when (val result = GlyphRasterizer.rasterizePaint(layout.graph, request)) {
-            is RasterResult.Success -> result.value
-            is RasterResult.Failure -> error("logo rasterization failed: ${result.diagnostics}")
-        }
-        require(rasterized.width > 0 && rasterized.height > 0) { "the logo rendered no ink" }
-        return LogoRender(image = pad(flipVertically(rasterized), MarginPx))
-    }
-
-    /** Composes the paint graph and the scale that maps its ink to the target width. */
-    private fun layout(fonts: KalligraphieLogoFonts, ink: GlyphColor, paper: GlyphColor): LogoLayout {
+    /** Renders the badge with [ink] as the square and its complement as the knockout. */
+    fun renderBadge(fonts: KalligraphieLogoFonts, ink: GlyphColor): LogoRender {
         val badgeGlyph = fonts.badgeGlyph()
         val badgeUpem = badgeGlyph.unitsPerEm
-        val wordmark = fonts.wordmark(Wordmark)
-
         val badgeInkHeight = (badgeGlyph.bounds.maxY - badgeGlyph.bounds.minY).toDouble()
         val side = badgeInkHeight / BadgeHeightRatio
         val centreX = (badgeGlyph.bounds.minX + badgeGlyph.bounds.maxX) / 2.0
         val centreY = (badgeGlyph.bounds.minY + badgeGlyph.bounds.maxY) / 2.0
         val left = centreX - side / 2.0
         val bottom = centreY - side / 2.0
-        val right = left + side
 
-        val wordInk = inkBoundsOf(wordmark.glyphs)
-        val badgePerWordUnit = badgeUpem.toDouble() / wordmark.unitsPerEm.toDouble()
-        val wordUnitPerBadge = 1.0 / badgePerWordUnit
-        val wordLeft = right + side * BadgeGapRatio
-        val wordCentreY = (wordInk.minY + wordInk.maxY) / 2.0
-        val wordDx = wordLeft * wordUnitPerBadge - wordInk.minX
-        val wordDy = centreY * wordUnitPerBadge - wordCentreY
-
-        val placedWordLeft = (wordInk.minX + wordDx) * badgePerWordUnit
-        val placedWordRight = (wordInk.maxX + wordDx) * badgePerWordUnit
-        val unionWidth = maxOf(right, placedWordRight) - minOf(left, placedWordLeft)
-        val pixelsPerEm = InkTargetWidthPx.toDouble() * badgeUpem / unionWidth
+        val margin = (BadgeCanvasPx * BadgeMarginRatio).roundToInt()
+        val inkTargetPx = BadgeCanvasPx - margin * 2
+        val pixelsPerEm = inkTargetPx * badgeUpem / side
 
         val nodes = mutableListOf<GlyphPaintNode>()
         nodes += GlyphPaintNode.Path(roundedSquarePath(left, bottom, side), ink)
-        nodes += GlyphPaintNode.SolidOutline(badgeGlyph, paper)
+        nodes += GlyphPaintNode.SolidOutline(badgeGlyph, complement(ink))
+        val rasterized = rasterize(groupedGraph(nodes), pixelsPerEm, badgeUpem)
+        return LogoRender(image = padToSize(flipVertically(rasterized), BadgeCanvasPx, BadgeCanvasPx))
+    }
+
+    /**
+     * Renders the wordmark with [ink].
+     *
+     * Every placed outline already carries its pen position, so the glyphs are
+     * painted without any further translation.
+     */
+    fun renderWordmark(fonts: KalligraphieLogoFonts, ink: GlyphColor): LogoRender {
+        val wordmark = fonts.wordmark(Wordmark)
+        val wordmarkUpem = wordmark.unitsPerEm
+        val inkBounds = inkBoundsOf(wordmark.glyphs)
+        val inkWidth = (inkBounds.maxX - inkBounds.minX).toDouble()
+        val pixelsPerEm = WordmarkTargetWidthPx * wordmarkUpem / inkWidth
+
+        val nodes = mutableListOf<GlyphPaintNode>()
         wordmark.glyphs.forEach { glyph ->
-            nodes += GlyphPaintNode.SolidOutline(
-                glyph.outline.translated(wordDx, wordDy),
-                ink,
-            )
+            nodes += GlyphPaintNode.SolidOutline(glyph.outline, ink)
         }
+        val rasterized = rasterize(groupedGraph(nodes), pixelsPerEm, wordmarkUpem)
+        return LogoRender(image = pad(flipVertically(rasterized), WordmarkMarginPx))
+    }
+
+    /** Returns the colour opposite [ink] on every channel. */
+    private fun complement(ink: GlyphColor): GlyphColor = GlyphColor(
+        red = 255 - ink.red,
+        green = 255 - ink.green,
+        blue = 255 - ink.blue,
+    )
+
+    /** Wraps [nodes] in a trailing root group composited `SOURCE_OVER`. */
+    private fun groupedGraph(nodes: List<GlyphPaintNode>): GlyphPaintIR {
         val root = nodes.size
-        nodes += GlyphPaintNode.Group(children = (0 until root).toList())
-        return LogoLayout(
-            pixelsPerEm = pixelsPerEm,
-            badgeUnitsPerEm = badgeUpem,
-            graph = GlyphPaintIR(schemaVersion = 1, rootNode = root, nodes = nodes),
+        return GlyphPaintIR(
+            schemaVersion = 1,
+            rootNode = root,
+            nodes = nodes + GlyphPaintNode.Group(children = (0 until root).toList()),
         )
+    }
+
+    /** Rasterizes [graph], refusing a typed failure or an empty image. */
+    private fun rasterize(graph: GlyphPaintIR, pixelsPerEm: Double, unitsPerEm: Int): Rgba8Image {
+        val request = PaintRasterRequest(
+            pixelsPerEm = pixelsPerEm,
+            unitsPerEm = unitsPerEm,
+            limits = Limits,
+        )
+        val rasterized = when (val result = GlyphRasterizer.rasterizePaint(graph, request)) {
+            is RasterResult.Success -> result.value
+            is RasterResult.Failure -> error("logo rasterization failed: ${result.diagnostics}")
+        }
+        require(rasterized.width > 0 && rasterized.height > 0) { "the logo rendered no ink" }
+        return rasterized
     }
 
     private fun roundedSquarePath(left: Double, bottom: Double, side: Double): GlyphPaintPath {
@@ -159,7 +168,7 @@ internal object KalligraphieLogo {
      * The rasterizer preserves the source axes, so y-up design space maps to
      * image rows without negation and its raw output reads upside down. The
      * upstream demonstration sheets flip for the same reason; this is the single
-     * flip that puts the composed logo into image orientation. The reflected
+     * flip that puts the composed artefacts into image orientation. The reflected
      * vertical bearing is `-(top + height)`.
      */
     private fun flipVertically(image: Rgba8Image): Rgba8Image {
@@ -194,14 +203,27 @@ internal object KalligraphieLogo {
         }
         return Rgba8Image(width, height, image.left - margin, image.top - margin, target)
     }
-}
 
-/** One composed logo: the paint graph and the scale that maps its ink to pixels. */
-internal class LogoLayout(
-    val pixelsPerEm: Double,
-    val badgeUnitsPerEm: Int,
-    val graph: GlyphPaintIR,
-)
+    /** Returns a [width]×[height] transparent canvas with [image] centred. */
+    private fun padToSize(image: Rgba8Image, width: Int, height: Int): Rgba8Image {
+        require(width >= image.width && height >= image.height) {
+            "the ${width}x$height canvas must fit the ${image.width}x${image.height} image"
+        }
+        val left = (width - image.width) / 2
+        val top = (height - image.height) / 2
+        val source = image.copyPixels()
+        val target = ByteArray(width * height * 4)
+        for (y in 0 until image.height) {
+            source.copyInto(
+                target,
+                destinationOffset = ((y + top) * width + left) * 4,
+                startIndex = y * image.width * 4,
+                endIndex = (y + 1) * image.width * 4,
+            )
+        }
+        return Rgba8Image(width, height, image.left - left, image.top - top, target)
+    }
+}
 
 /** Encodes [image] as PNG bytes. */
 internal fun LogoRender.toPng(): ByteArray =

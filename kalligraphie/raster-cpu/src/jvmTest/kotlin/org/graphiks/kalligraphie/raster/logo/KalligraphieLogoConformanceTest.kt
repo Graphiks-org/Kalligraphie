@@ -11,23 +11,41 @@ class KalligraphieLogoConformanceTest {
     private val assets = rasterRepositoryRoot().resolve("docs/assets")
 
     @Test
-    fun theLightVariantStillMatchesItsSealedFingerprint() {
+    fun theBadgeLightVariantStillMatchesItsSealedFingerprint() {
         KalligraphieLogoFonts.open().use { fonts ->
-            val render = KalligraphieLogo.render(fonts, KalligraphieLogo.Ink)
             assertEquals(
-                "84ca6d2856cd6218bba046e9d02c49676e074b198a0c0e9b72f7170506d33fad",
-                render.pixelDigest(),
+                "d6abacb7e942d7f487679b1b94f08b567c8168b9a3930888d27b695909912ef7",
+                KalligraphieLogo.renderBadge(fonts, KalligraphieLogo.Ink).pixelDigest(),
             )
         }
     }
 
     @Test
-    fun theDarkVariantStillMatchesItsSealedFingerprint() {
+    fun theBadgeDarkVariantStillMatchesItsSealedFingerprint() {
         KalligraphieLogoFonts.open().use { fonts ->
-            val render = KalligraphieLogo.render(fonts, KalligraphieLogo.Paper)
             assertEquals(
-                "253dea65ea43c4e7fa72ac811f80d497eaf67e7a77a95d9704089e4bc54ee2ed",
-                render.pixelDigest(),
+                "554cb2751a85f96f8c0be0510d14f85d3998e778db19066c5b2cdd4273adaa62",
+                KalligraphieLogo.renderBadge(fonts, KalligraphieLogo.Paper).pixelDigest(),
+            )
+        }
+    }
+
+    @Test
+    fun theWordmarkLightVariantStillMatchesItsSealedFingerprint() {
+        KalligraphieLogoFonts.open().use { fonts ->
+            assertEquals(
+                "debc6ee75877e81e00fba06a8b8b2d891f5c227fd04b3000827ace690399823f",
+                KalligraphieLogo.renderWordmark(fonts, KalligraphieLogo.Ink).pixelDigest(),
+            )
+        }
+    }
+
+    @Test
+    fun theWordmarkDarkVariantStillMatchesItsSealedFingerprint() {
+        KalligraphieLogoFonts.open().use { fonts ->
+            assertEquals(
+                "c7fd5505dd5477541e12383db5f411e34450b9e9a9cc636ebcb5b39f0744e717",
+                KalligraphieLogo.renderWordmark(fonts, KalligraphieLogo.Paper).pixelDigest(),
             )
         }
     }
@@ -41,8 +59,16 @@ class KalligraphieLogoConformanceTest {
             }
         }.toMap()
 
-        assertEquals(2, recorded.size, "the manifest must list exactly the two logo variants")
-        assertEquals(setOf("kalligraphie-logo-light.png", "kalligraphie-logo-dark.png"), recorded.keys)
+        assertEquals(4, recorded.size, "the manifest must list exactly the four logo variants")
+        assertEquals(
+            setOf(
+                "kalligraphie-logo-light.png",
+                "kalligraphie-logo-dark.png",
+                "kalligraphie-wordmark-light.png",
+                "kalligraphie-wordmark-dark.png",
+            ),
+            recorded.keys,
+        )
         recorded.forEach { (name, digests) ->
             val bytes = Files.readAllBytes(assets.resolve(name))
             assertEquals(digests.first, sha256(bytes), "$name must match its manifest file digest")
@@ -74,17 +100,21 @@ class KalligraphieLogoConformanceTest {
     }
 
     private fun renderedPixelDigest(name: String): String {
-        val ink = when (name) {
-            "kalligraphie-logo-light.png" -> KalligraphieLogo.Ink
-            "kalligraphie-logo-dark.png" -> KalligraphieLogo.Paper
+        val (part, ink) = when (name) {
+            "kalligraphie-logo-light.png" -> KalligraphieLogo::renderBadge to KalligraphieLogo.Ink
+            "kalligraphie-logo-dark.png" -> KalligraphieLogo::renderBadge to KalligraphieLogo.Paper
+            "kalligraphie-wordmark-light.png" -> KalligraphieLogo::renderWordmark to KalligraphieLogo.Ink
+            "kalligraphie-wordmark-dark.png" -> KalligraphieLogo::renderWordmark to KalligraphieLogo.Paper
             else -> error("unmapped logo variant $name")
         }
         KalligraphieLogoFonts.open().use { fonts ->
-            return KalligraphieLogo.render(fonts, ink).pixelDigest()
+            return part(fonts, ink).pixelDigest()
         }
     }
 
     private companion object {
-        val ENTRY = Regex("""^- (kalligraphie-logo-(?:light|dark)\.png): sha256=([0-9a-f]{64}) bytes=\d+ rgba-sha256=([0-9a-f]{64})$""")
+        val ENTRY = Regex(
+            """^- (kalligraphie-(?:logo|wordmark)-(?:light|dark)\.png): sha256=([0-9a-f]{64}) bytes=\d+ rgba-sha256=([0-9a-f]{64})$""",
+        )
     }
 }
