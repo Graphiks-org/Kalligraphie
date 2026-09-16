@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.raster
 
 import java.nio.file.Files
 import java.nio.file.Path
+import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -32,6 +33,7 @@ class RasterDumpRunnerTest {
         val dumps = LinkedHashMap<String, Dump>()
 
         fun add(name: String, render: () -> Dump) {
+            check(name !in dumps) { "duplicate dump name: $name" }
             val first = render()
             val second = render()
             assertTrue(
@@ -109,7 +111,7 @@ class RasterDumpRunnerTest {
             ComposedLineDumps.line(
                 text = "الخط العربي",
                 language = "ar",
-                baseDirection = org.graphiks.kalligraphie.api.BaseDirection.RIGHT_TO_LEFT,
+                baseDirection = BaseDirection.RIGHT_TO_LEFT,
             )
         }
         add("line-devanagari-48.pgm") { ComposedLineDumps.line(text = "देवनागरी", language = "hi") }
@@ -120,6 +122,8 @@ class RasterDumpRunnerTest {
                 requiredFaces = 3,
             )
         }
+
+        check(dumps.size == 16) { "expected 16 dumps, composed ${dumps.size}" }
 
         val manifest = buildString {
             appendLine("# Raster dump manifest")
@@ -132,9 +136,9 @@ class RasterDumpRunnerTest {
             appendLine("- images: ${dumps.size}")
             appendLine(
                 "- orientation: composed sheets and lines are flipped vertically; " +
-                    "raw glyph dumps keep source orientation",
+                    "raw glyph dumps keep source orientation; the EBDT strike is image-oriented and drawn unflipped",
             )
-            appendLine("- pixels per em: 32 (outline sheets), 48 (lines, Bungee), 64 (raw glyphs, EmojiTwo), 16 (EBDT strike)")
+            appendLine("- pixels per em: 32 (outline sheets), 48 (lines, Bungee sheet), 64 (raw glyph dumps, EmojiTwo sheet), 16 (EBDT strike)")
             dumps.entries.sortedBy { entry -> entry.key }.forEach { entry ->
                 val note = entry.value.note
                     .takeIf { note -> note.isNotEmpty() }
@@ -226,10 +230,13 @@ class RasterDumpRunnerTest {
     private companion object {
         val LATIN_LETTERS: List<Int> = (0x41..0x5A).toList()
         val LATIN: List<Int> = LATIN_LETTERS + (0x61..0x7A) + (0x30..0x39)
+        // U+03A2 is unassigned.
         val GREEK: List<Int> = (0x391..0x3A9).filter { codepoint -> codepoint != 0x3A2 } + (0x3B1..0x3C9)
         val CYRILLIC: List<Int> = (0x410..0x42F).toList() + (0x430..0x44F).toList()
+        // U+063B–U+063F are unassigned.
         val ARABIC: List<Int> = (0x621..0x63A).toList() + (0x641..0x64A).toList()
-        val DEVANAGARI: List<Int> = (0x905..0x914).toList() + (0x915..0x939).toList() + (0x966..0x96F).toList()
+        val DEVANAGARI: List<Int> = (0x905..0x939).toList() + (0x966..0x96F).toList()
+        // U+1F602 (7 layers) and U+1F604 (10 layers) exceed the shared paint profile maxPaths=6; omitted deliberately.
         val EMOJI: List<Int> = (0x1F600..0x1F607).filter { codepoint ->
             codepoint != 0x1F602 && codepoint != 0x1F604
         }
