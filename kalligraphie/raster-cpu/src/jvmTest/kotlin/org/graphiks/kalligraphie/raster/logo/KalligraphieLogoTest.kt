@@ -50,4 +50,25 @@ class KalligraphieLogoTest {
             )
         }
     }
+
+    @Test
+    fun paintsTheFilledSquareAndKnocksTheLetterOut() {
+        KalligraphieLogoFonts.open().use { fonts ->
+            val pixels = KalligraphieLogo.render(fonts, KalligraphieLogo.Ink).image.copyPixels()
+
+            var ink = 0
+            var paper = 0
+            for (index in pixels.indices step 4) {
+                if ((pixels[index + 3].toInt() and 0xFF) < 250) continue
+                val red = pixels[index].toInt() and 0xFF
+                val green = pixels[index + 1].toInt() and 0xFF
+                val blue = pixels[index + 2].toInt() and 0xFF
+                if (red == 0 && green == 0 && blue == 0) ink += 1
+                if (red == 255 && green == 255 && blue == 255) paper += 1
+            }
+
+            assertTrue(ink > 0, "the square and the wordmark must paint ink")
+            assertTrue(paper > 0, "the badge letter must be knocked out in the paper colour")
+        }
+    }
 }
