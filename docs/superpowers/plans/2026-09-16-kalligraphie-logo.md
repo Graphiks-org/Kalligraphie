@@ -941,7 +941,6 @@ Create `kalligraphie/raster-cpu/src/jvmTest/kotlin/org/graphiks/kalligraphie/ras
 ```kotlin
 package org.graphiks.kalligraphie.raster.logo
 
-import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.GlyphColor
 import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
@@ -953,7 +952,6 @@ import org.graphiks.kalligraphie.raster.PaintRasterRequest
 import org.graphiks.kalligraphie.raster.RasterLimits
 import org.graphiks.kalligraphie.raster.RasterResult
 import org.graphiks.kalligraphie.raster.Rgba8Image
-import kotlin.math.roundToInt
 
 /** One rendered variant: the padded image and the layout that produced it. */
 internal class LogoRender(
@@ -1126,7 +1124,7 @@ internal fun LogoRender.pixelDigest(): String =
     org.graphiks.kalligraphie.raster.sha256(image.copyPixels())
 ```
 
-The file must compile with no unused imports: remove the `kotlin.math.roundToInt` and `DesignBounds` imports if nothing else in the file uses them.
+The import list above is already the final one: `DesignBounds` and `kotlin.math.roundToInt` are not needed. Do not add imports that nothing uses.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
