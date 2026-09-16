@@ -1,9 +1,11 @@
 package org.graphiks.kalligraphie.raster.logo
 
+import java.awt.Color
 import java.io.ByteArrayInputStream
 import java.nio.ByteBuffer
 import java.util.zip.CRC32
 import java.util.zip.InflaterInputStream
+import javax.imageio.ImageIO
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -35,6 +37,32 @@ class PngEncoderTest {
 
         assertEquals(0, chunkData(png, "IEND").size)
         assertTrue(ByteBuffer.wrap(header, 12, 1).get().toInt() == 0)
+    }
+
+    @Test
+    fun encodesMultipleRowsWithTheRightStride() {
+        val width = 3
+        val height = 2
+        val pixels = ByteArray(width * height * 4) { index ->
+            if (index % 4 == 3) 255.toByte() else (index * 7).toByte()
+        }
+
+        val png = PngEncoder.encodeRgba8(width, height, pixels)
+
+        val decoded = ImageIO.read(ByteArrayInputStream(png))
+        assertEquals(width, decoded.width)
+        assertEquals(height, decoded.height)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                val base = (y * width + x) * 4
+                val expected = Color(
+                    pixels[base].toInt() and 0xFF,
+                    pixels[base + 1].toInt() and 0xFF,
+                    pixels[base + 2].toInt() and 0xFF,
+                )
+                assertEquals(expected.rgb, decoded.getRGB(x, y), "pixel ($x, $y)")
+            }
+        }
     }
 
     private fun chunkTypes(png: ByteArray): List<String> {
