@@ -946,7 +946,6 @@ import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphPaintPath
 import org.graphiks.kalligraphie.api.GlyphPaintPathCommand
-import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import org.graphiks.kalligraphie.raster.GlyphRasterizer
 import org.graphiks.kalligraphie.raster.PaintRasterRequest
 import org.graphiks.kalligraphie.raster.RasterLimits
