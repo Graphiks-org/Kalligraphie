@@ -20,8 +20,15 @@ l'arithmétique entière : des entrées identiques produisent des octets identiq
 sur toutes les plateformes.
 
 La démonstration opt-in (à activation explicite) écrit des images PGM et PPM
-accompagnées d'un manifeste (fichier d'inventaire). La tâche dédiée s'exécute
-toujours lorsqu'elle est invoquée explicitement :
+accompagnées d'un manifeste (fichier d'inventaire). Chaque exécution publie les
+dumps (images de référence brutes) de glyphes isolés, des planches (sheets)
+d'alphabets latin, grec, cyrillique, arabe et devanagari, des planches couleur
+(Bungee Color et EmojiTwo), un strike bitmap EBDT normalisé, et de vraies
+lignes de texte composées par la façade de paragraphe — dont une ligne mixte
+multi-scripts résolue par repli (fallback) entre trois polices. Les planches et
+lignes composées sont retournées verticalement pour la lisibilité ; les dumps
+de référence conservent l'orientation source du rastériseur. La tâche dédiée
+s'exécute toujours lorsqu'elle est invoquée explicitement :
 
 ```bash
 env KALLIGRAPHIE_RASTER_DUMPS=true \
