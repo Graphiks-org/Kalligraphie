@@ -105,3 +105,13 @@ internal fun sha256(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { byte ->
         (byte.toInt() and 0xFF).toString(16).padStart(2, '0')
     }
+
+/** Locates the repository root by walking up from the test working directory. */
+internal fun rasterRepositoryRoot(): java.nio.file.Path {
+    var candidate: java.nio.file.Path? = java.nio.file.Path.of("").toAbsolutePath().normalize()
+    while (candidate != null) {
+        if (java.nio.file.Files.exists(candidate.resolve(".git"))) return candidate
+        candidate = candidate.parent
+    }
+    error("Could not locate the repository root from the test working directory.")
+}
