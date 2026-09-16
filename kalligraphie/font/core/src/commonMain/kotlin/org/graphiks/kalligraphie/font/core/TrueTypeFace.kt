@@ -363,10 +363,10 @@ internal data class TrueTypeFontInstance(
                 }
 
                 is BitmapProfile -> {
-                    if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 1) {
+                    if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 2) {
                         failure(
                             FontError.UnsupportedRepresentationProfile(
-                                "Schema version 1 EBDT bitmap assets accept only the default render variant.",
+                                "EBDT bitmap assets require schema version 2 and the default render variant.",
                                 FontDiagnosticLocation.FaceId(faceId),
                             ),
                         )
@@ -427,7 +427,7 @@ internal data class TrueTypeFontInstance(
             is PaintGraphProfile -> (profile.schemaVersion == 1 && (paintGraphSupported || svgRouteSupported)) ||
                 (profile.schemaVersion in 2..3 && (colrV1Supported || svgRouteSupported))
             is BitmapProfile ->
-                profile.schemaVersion == 1 && bitmapRouteSupported
+                profile.schemaVersion == 2 && bitmapRouteSupported
             else -> false
         }
 

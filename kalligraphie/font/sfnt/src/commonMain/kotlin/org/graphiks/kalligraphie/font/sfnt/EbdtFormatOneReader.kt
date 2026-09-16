@@ -139,6 +139,7 @@ public object EbdtFormatOneReader {
                     maxDecodedBytes = MAX_CAPABILITY_PIXELS,
                     maxTotalDecodedBytes = MAX_CAPABILITY_DECODED_BYTES,
                 ),
+                schemaVersion = 2,
             )
             if (read(eblcTable, ebdtTable, glyphCount, profile) !is FontOperationResult.Success) return false
         }
@@ -164,8 +165,8 @@ public object EbdtFormatOneReader {
         profile: BitmapProfile,
     ): FontOperationResult<EbdtFormatOneData> {
         if (glyphCount <= 0) return invalid("font.ebdt.invalid-glyph-count", "EBDT requires a positive face glyph count.", "EBLC")
-        if (profile.schemaVersion != 1 || BitmapPixelFormat.ALPHA_8 !in profile.acceptedPixelFormats || GlyphColorSpace.SRGB !in profile.acceptedColorSpaces) {
-            return unsupported("The selected bitmap profile does not accept EBDT format 1 alpha pixels.")
+        if (profile.schemaVersion != 2 || BitmapPixelFormat.ALPHA_8 !in profile.acceptedPixelFormats || GlyphColorSpace.SRGB !in profile.acceptedColorSpaces) {
+            return unsupported("Only schema version 2 EBDT format 1 alpha pixels are supported.")
         }
         if (eblcTable.size > profile.limits.maxIndexTableBytes) {
             return limit("EBLC source-byte limit exceeded.", "EBLC")

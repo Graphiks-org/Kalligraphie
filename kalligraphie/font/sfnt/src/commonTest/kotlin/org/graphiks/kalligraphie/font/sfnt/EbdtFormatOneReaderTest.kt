@@ -12,6 +12,7 @@ import org.graphiks.kalligraphie.api.GlyphColorSpace
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class EbdtFormatOneReaderTest {
     @Test
@@ -25,6 +26,23 @@ class EbdtFormatOneReaderTest {
         assertIs<FontError.UnsupportedRepresentationProfile>(
             error(EbdtFormatOneReader.read(unsupportedImage.first, unsupportedImage.second, glyphCount = 1, profile = profile())),
         )
+    }
+
+    @Test
+    fun rejectsBitmapProfilesThatDoNotUseSchemaVersionTwo() {
+        val tables = formatOneTables()
+
+        val unsupported = assertIs<FontError.UnsupportedRepresentationProfile>(
+            error(
+                EbdtFormatOneReader.read(
+                    eblcTable = tables.first,
+                    ebdtTable = tables.second,
+                    glyphCount = 1,
+                    profile = profile(schemaVersion = 1),
+                ),
+            ),
+        )
+        assertTrue(unsupported.message.contains("schema version 2"), unsupported.message)
     }
 
     @Test
@@ -133,6 +151,7 @@ class EbdtFormatOneReaderTest {
     private fun profile(
         maxRecordCount: Int = 1,
         maxTotalCompressedBytes: Int = 64,
+        schemaVersion: Int = 2,
     ): BitmapProfile = BitmapProfile(
         strike = BitmapStrike(16, 16, 1),
         acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
@@ -151,6 +170,7 @@ class EbdtFormatOneReaderTest {
             maxDecodedBytes = 256,
             maxTotalDecodedBytes = 256,
         ),
+        schemaVersion = schemaVersion,
     )
 
     private fun eblcHeader(strikeCount: Int): ByteArray = ByteArray(8).also { bytes ->

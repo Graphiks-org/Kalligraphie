@@ -103,7 +103,7 @@ public class BitmapProfile(
     /** Resource bounds applied to selected bitmap records. */
     public val limits: BitmapLimits,
     /** Version of the bitmap representation schema accepted by the consumer. */
-    override val schemaVersion: Int = 1,
+    override val schemaVersion: Int = 2,
 ) : GlyphRepresentationProfile {
     /** Immutable pixel formats accepted by the consumer. */
     public val acceptedPixelFormats: List<BitmapPixelFormat> = acceptedPixelFormats.immutableListSnapshot()

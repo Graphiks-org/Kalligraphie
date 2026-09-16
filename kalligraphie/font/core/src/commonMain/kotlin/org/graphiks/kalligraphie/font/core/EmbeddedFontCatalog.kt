@@ -196,7 +196,7 @@ public class EmbeddedFontCatalog(
                         code = "font.unsupported-representation-profile",
                         severity = FontDiagnosticSeverity.ERROR,
                         location = FontDiagnosticLocation.Source,
-                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and EBDT format 1 bitmap profiles are supported.",
+                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and bitmap schemaVersion=2 EBDT format 1 profiles are supported.",
                     ),
                 ),
             )
@@ -220,7 +220,7 @@ public class EmbeddedFontCatalog(
                 (schemaVersion == 1 && (faceId in paintGraphSupportedFaces || faceId in svgRouteSupportedFaces)) ||
                     (schemaVersion in 2..3 && (faceId in colrV1SupportedFaces || faceId in svgRouteSupportedFaces))
             is org.graphiks.kalligraphie.api.BitmapProfile ->
-                schemaVersion == 1 && faceId in bitmapRouteSupportedFaces
+                schemaVersion == 2 && faceId in bitmapRouteSupportedFaces
             else -> false
         }
 
@@ -445,7 +445,7 @@ internal class EmbeddedFontAssetResolver(
                 } == true
             is org.graphiks.kalligraphie.api.BitmapProfile ->
                 key.variant == FontRenderVariantKey.default &&
-                profile.schemaVersion == 1 &&
+                profile.schemaVersion == 2 &&
                     resources[instance.face]?.let { resource ->
                         supportsEbdtFormatOneRoute(resource, parsedFont)
                     } == true

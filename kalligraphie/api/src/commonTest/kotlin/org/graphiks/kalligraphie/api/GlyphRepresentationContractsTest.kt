@@ -187,6 +187,11 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
+    fun theDefaultBitmapProfileUsesSchemaVersionTwo() {
+        assertEquals(2, bitmapProfile().schemaVersion)
+    }
+
+    @Test
     fun bitmapProfileKeysDistinguishTheStrikeBitDepth() {
         assertNotEquals(
             GlyphRepresentationProfileKey.bitmap(bitmapProfile(bitDepth = 1)),
