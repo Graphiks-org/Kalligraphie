@@ -415,8 +415,8 @@ class PngEncoderTest {
     @Test
     fun encodesAValidPngWithUnfilteredScanlines() {
         val pixels = byteArrayOf(
-            10, 20, 30, 255,
-            40, 50, 60, 128,
+            10, 20, 30, 255.toByte(),
+            40, 50, 60, 128.toByte(),
         )
 
         val png = PngEncoder.encodeRgba8(width = 2, height = 1, pixels = pixels)
@@ -504,7 +504,7 @@ internal object PngEncoder {
 
     fun encodeRgba8(width: Int, height: Int, pixels: ByteArray): ByteArray {
         require(width > 0 && height > 0) { "PNG dimensions must be positive." }
-        require(pixels.size == width.toLong() * height.toLong() * 4L) {
+        require(pixels.size.toLong() == width.toLong() * height.toLong() * 4L) {
             "Pixel buffer does not match the declared dimensions."
         }
         val raw = ByteArray(height * (1 + width * 4))
