@@ -17,9 +17,9 @@ public enum class BitmapPixelFormat(
     /**
      * Straight (non-premultiplied) red, green, blue, and alpha samples, one byte per channel.
      *
-     * Bytes are ordered R, G, B, A; rows run from top to bottom with no padding; channels are
-     * encoded in [GlyphColorSpace.SRGB]. Consumers that need premultiplied alpha convert it
-     * themselves so no decoded value is lost in the portable representation.
+     * Bytes are ordered R, G, B, A; rows run from top to bottom with no padding; channels use
+     * the color space declared by the representation itself. Consumers that need premultiplied
+     * alpha convert it themselves so no decoded value is lost in the portable representation.
      */
     RGBA_8888(4),
 }
@@ -35,10 +35,13 @@ public data class BitmapStrike(
     public val pixelsPerEmX: Int,
     /** Vertical pixels per em. */
     public val pixelsPerEmY: Int,
+    /** Bits per source pixel in the exact strike; must be between 1 and 32: 1 for monochrome, 32 for color bitmaps. */
+    public val bitDepth: Int,
 ) {
     init {
         require(pixelsPerEmX > 0) { "pixelsPerEmX must be positive." }
         require(pixelsPerEmY > 0) { "pixelsPerEmY must be positive." }
+        require(bitDepth in 1..32) { "bitDepth must be between 1 and 32." }
     }
 }
 

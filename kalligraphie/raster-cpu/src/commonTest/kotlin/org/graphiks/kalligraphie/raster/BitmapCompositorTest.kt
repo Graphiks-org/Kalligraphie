@@ -15,7 +15,7 @@ class BitmapCompositorTest {
     fun tintsSamplesWithTheInkAlpha() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 2,
             height = 2,
             originX = -1,
@@ -40,7 +40,7 @@ class BitmapCompositorTest {
     fun roundsHalfUpInsteadOfTruncating() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 1,
             height = 1,
             originX = 0,
@@ -58,7 +58,7 @@ class BitmapCompositorTest {
     fun keepsInkChannelsUnderATransparentAlpha() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 1,
             height = 1,
             originX = 0,

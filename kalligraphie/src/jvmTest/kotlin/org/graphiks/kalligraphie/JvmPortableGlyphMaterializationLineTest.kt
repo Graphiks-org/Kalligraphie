@@ -481,7 +481,7 @@ class JvmPortableGlyphMaterializationLineTest {
     }
 
     private fun assertDecodedBitmap(bitmap: BitmapGlyphIR) {
-        assertEquals(BitmapStrike(16, 16), bitmap.strike)
+        assertEquals(BitmapStrike(16, 16, 1), bitmap.strike)
         assertEquals(13, bitmap.width)
         assertEquals(13, bitmap.height)
         assertEquals(0, bitmap.originX)
@@ -532,7 +532,7 @@ class JvmPortableGlyphMaterializationLineTest {
     )
 
     private fun bitmapProfile(): BitmapProfile = BitmapProfile(
-        strike = BitmapStrike(16, 16),
+        strike = BitmapStrike(16, 16, 1),
         acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
         acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
         limits = BitmapLimits(

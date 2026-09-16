@@ -25,7 +25,7 @@ internal object SharedFontCacheMeasurement {
     private val small = "gdef-kern/GdefKerningFixture.ttf"
     private val large = "dejavu/DejaVuSans.ttf"
     private val outline = portableOutlineProfile
-    private val bitmap = BitmapProfile(BitmapStrike(16, 16), listOf(BitmapPixelFormat.ALPHA_8), listOf(GlyphColorSpace.SRGB),
+    private val bitmap = BitmapProfile(BitmapStrike(16, 16, 1), listOf(BitmapPixelFormat.ALPHA_8), listOf(GlyphColorSpace.SRGB),
         BitmapLimits(3, 16, 16, 16_384, 16_384, 16, 16, 256, 64, 1_024, 256, 1_024))
     private val paint = PaintGraphProfile(listOf(GlyphPaintNodeKind.SOLID_OUTLINE, GlyphPaintNodeKind.GROUP),
         listOf(GlyphPaintCompositionMode.SOURCE_OVER), PaintGraphLimits(maxNodes = 3, maxReferences = 2, maxDepth = 2,

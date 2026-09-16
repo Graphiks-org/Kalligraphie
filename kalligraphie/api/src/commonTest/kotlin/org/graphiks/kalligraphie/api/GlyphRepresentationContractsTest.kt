@@ -125,7 +125,7 @@ class GlyphRepresentationContractsTest {
         val decodedPixels = byteArrayOf(0, 127, -1, 64)
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 2,
             height = 2,
             originX = 0,
@@ -151,7 +151,7 @@ class GlyphRepresentationContractsTest {
         val decodedPixels = byteArrayOf(10, 20, 30, 40)
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(4),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 32),
             width = 1,
             height = 1,
             originX = 0,
@@ -173,7 +173,7 @@ class GlyphRepresentationContractsTest {
         assertFailsWith<IllegalArgumentException> {
             BitmapGlyphIR(
                 glyphId = GlyphId(4),
-                strike = BitmapStrike(16, 16),
+                strike = BitmapStrike(16, 16, 32),
                 width = 1,
                 height = 1,
                 originX = 0,
@@ -184,6 +184,20 @@ class GlyphRepresentationContractsTest {
                 decodedPixels = byteArrayOf(10, 20, 30),
             )
         }
+    }
+
+    @Test
+    fun bitmapProfileKeysDistinguishTheStrikeBitDepth() {
+        assertNotEquals(
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(bitDepth = 1)),
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(bitDepth = 32)),
+        )
+    }
+
+    @Test
+    fun strikeRejectsABitDepthOutsideTheSupportedRange() {
+        assertFailsWith<IllegalArgumentException> { BitmapStrike(16, 16, 0) }
+        assertFailsWith<IllegalArgumentException> { BitmapStrike(16, 16, 33) }
     }
 
     @Test
@@ -343,4 +357,27 @@ class GlyphRepresentationContractsTest {
             maxCompositeDepth = 8,
             maxCompositeComponents = 32,
         )
+
+    private fun bitmapProfile(
+        bitDepth: Int = 1,
+        maxSourceTableBytes: Int = 1_024,
+    ): BitmapProfile = BitmapProfile(
+        strike = BitmapStrike(16, 16, bitDepth),
+        acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+        acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+        limits = BitmapLimits(
+            maxStrikes = 3,
+            maxIndexSubtables = 16,
+            maxRecordCount = 16,
+            maxIndexTableBytes = 16_384,
+            maxBitmapTableBytes = maxSourceTableBytes,
+            maxWidth = 16,
+            maxHeight = 16,
+            maxPixels = 256,
+            maxCompressedBytes = 64,
+            maxTotalCompressedBytes = 1_024,
+            maxDecodedBytes = 256,
+            maxTotalDecodedBytes = 1_024,
+        ),
+    )
 }

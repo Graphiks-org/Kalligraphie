@@ -254,7 +254,7 @@ class EbdtFormatOneGlyphRepresentationTest {
     }
 
     private fun assertBitmap(bitmap: BitmapGlyphIR) {
-        assertEquals(BitmapStrike(16, 16), bitmap.strike)
+        assertEquals(BitmapStrike(16, 16, 1), bitmap.strike)
         assertEquals(13, bitmap.width)
         assertEquals(13, bitmap.height)
         assertEquals(0, bitmap.originX)
@@ -271,7 +271,7 @@ class EbdtFormatOneGlyphRepresentationTest {
         maxBitmapTableBytes: Int = 16_384,
         maxRecordCount: Int = 16,
     ): BitmapProfile = BitmapProfile(
-        strike = BitmapStrike(16, 16),
+        strike = BitmapStrike(16, 16, 1),
         acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
         acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
         limits = BitmapLimits(

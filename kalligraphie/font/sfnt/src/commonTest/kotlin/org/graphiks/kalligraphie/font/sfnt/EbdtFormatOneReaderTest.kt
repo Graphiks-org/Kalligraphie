@@ -108,11 +108,33 @@ class EbdtFormatOneReaderTest {
         assertEquals("font.eblc.invalid-strike", failure(result).error.code)
     }
 
+    @Test
+    fun reportsAnOutOfRangeStrikeBitDepthAsInvalidFontDataInsteadOfThrowing() {
+        val eblc = ByteArray(56).also { bytes ->
+            bytes.writeUInt32(0, VERSION_TWO)
+            bytes.writeUInt32(4, 1u)
+            bytes.writeUInt16(8 + 40, 0)
+            bytes.writeUInt16(8 + 42, 0)
+            bytes[8 + 44] = 16
+            bytes[8 + 45] = 16
+            bytes[8 + 46] = 33
+        }
+
+        val result = EbdtFormatOneReader.read(
+            eblcTable = eblc,
+            ebdtTable = ebdtHeader(),
+            glyphCount = 1,
+            profile = profile(),
+        )
+
+        assertEquals("font.eblc.invalid-strike", failure(result).error.code)
+    }
+
     private fun profile(
         maxRecordCount: Int = 1,
         maxTotalCompressedBytes: Int = 64,
     ): BitmapProfile = BitmapProfile(
-        strike = BitmapStrike(16, 16),
+        strike = BitmapStrike(16, 16, 1),
         acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
         acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
         limits = BitmapLimits(

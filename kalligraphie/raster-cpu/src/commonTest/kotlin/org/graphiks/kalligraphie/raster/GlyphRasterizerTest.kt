@@ -96,7 +96,7 @@ class GlyphRasterizerTest {
     fun bitmapRouteChecksTheCanvasBudget() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 4,
             height = 4,
             originX = 0,

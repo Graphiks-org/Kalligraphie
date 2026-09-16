@@ -359,14 +359,18 @@ public object EbdtFormatOneReader {
         if (ppemX == 0 || ppemY == 0) {
             return invalid("font.eblc.invalid-strike", "EBLC strike ppem values must be positive.", "EBLC")
         }
+        val bitDepth = bytes[offset + 46].toInt() and 0xFF
+        if (bitDepth !in 1..32) {
+            return invalid("font.eblc.invalid-strike", "EBLC strike bit depth must be between 1 and 32.", "EBLC")
+        }
         return FontOperationResult.Success(BitmapSizeTable(
             indexSubTableArrayOffset = indexSubTableArrayOffset,
             indexTablesSize = indexTablesSize,
             numberOfIndexSubTables = numberOfIndexSubTables.toInt(),
             startGlyphId = startGlyphId,
             endGlyphId = endGlyphId,
-            strike = BitmapStrike(ppemX, ppemY),
-            bitDepth = bytes[offset + 46].toInt() and 0xFF,
+            strike = BitmapStrike(ppemX, ppemY, bitDepth),
+            bitDepth = bitDepth,
         ))
     }
 

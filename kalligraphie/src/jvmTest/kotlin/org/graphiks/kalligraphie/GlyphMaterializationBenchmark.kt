@@ -1564,7 +1564,7 @@ internal object GlyphMaterializationBenchmark {
 
     private fun bitmapRequirements(): FontAccessRequirementsSnapshot = FontAccessRequirementsSnapshot.renderable(listOf(
         BitmapProfile(
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
             acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
             limits = BitmapLimits(3, 16, 16, 16_384, 16_384, 16, 16, 256, 64, 1_024, 256, 1_024),

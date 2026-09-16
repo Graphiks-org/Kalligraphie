@@ -103,7 +103,7 @@ internal fun paintProfile(): PaintGraphProfile = PaintGraphProfile(
 
 /** The bitmap conformance and demonstration routes share this default profile. */
 internal fun bitmapProfile(): BitmapProfile = BitmapProfile(
-    strike = BitmapStrike(16, 16),
+    strike = BitmapStrike(16, 16, 1),
     acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
     acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
     limits = BitmapLimits(
