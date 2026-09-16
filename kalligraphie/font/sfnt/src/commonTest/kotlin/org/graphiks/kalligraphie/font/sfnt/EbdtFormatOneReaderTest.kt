@@ -5,6 +5,7 @@ package org.graphiks.kalligraphie.font.sfnt
 import org.graphiks.kalligraphie.api.BitmapLimits
 import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapProfile
+import org.graphiks.kalligraphie.api.BitmapResourceLimit
 import org.graphiks.kalligraphie.api.BitmapStrike
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -49,16 +50,54 @@ class EbdtFormatOneReaderTest {
     fun rejectsAggregateCompressedBytesBeforeReturningAnyBitmapRouteData() {
         val tables = formatOneTables(recordCount = 2)
 
-        assertIs<FontError.ResourceLimitExceeded>(
-            error(
-                EbdtFormatOneReader.read(
-                    eblcTable = tables.first,
-                    ebdtTable = tables.second,
-                    glyphCount = 2,
-                    profile = profile(maxRecordCount = 2, maxTotalCompressedBytes = 11),
-                ),
+        val failure = assertIs<FontOperationResult.Failure>(
+            EbdtFormatOneReader.read(
+                eblcTable = tables.first,
+                ebdtTable = tables.second,
+                glyphCount = 2,
+                profile = profile(maxRecordCount = 2, maxTotalCompressedBytes = 11),
             ),
         )
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(failure.error)
+        assertEquals(BitmapResourceLimit.TOTAL_COMPRESSED_BYTES, error.limit)
+        assertEquals(12, error.observed)
+        assertEquals(11, error.maximum)
+    }
+
+    @Test
+    fun reportsTheExactSourceTableBoundThatRejectedTheRoute() {
+        val tables = formatOneTables()
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            EbdtFormatOneReader.read(
+                eblcTable = tables.first,
+                ebdtTable = tables.second,
+                glyphCount = 1,
+                profile = profile(maxSourceTableBytes = 4),
+            ),
+        )
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(failure.error)
+        assertEquals(BitmapResourceLimit.SOURCE_TABLE_BYTES, error.limit)
+        assertEquals(10, error.observed)
+        assertEquals(4, error.maximum)
+    }
+
+    @Test
+    fun reportsWidthBeforeHeightWhenBothExceedTheirBounds() {
+        val tables = formatOneTables(imageWidth = 2, imageHeight = 2)
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            EbdtFormatOneReader.read(
+                eblcTable = tables.first,
+                ebdtTable = tables.second,
+                glyphCount = 1,
+                profile = profile(maxWidth = 1, maxHeight = 1),
+            ),
+        )
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(failure.error)
+        assertEquals(BitmapResourceLimit.WIDTH, error.limit)
+        assertEquals(2, error.observed)
+        assertEquals(1, error.maximum)
     }
 
     @Test
@@ -152,6 +191,10 @@ class EbdtFormatOneReaderTest {
         maxRecordCount: Int = 1,
         maxTotalCompressedBytes: Int = 64,
         schemaVersion: Int = 2,
+        maxSourceTableBytes: Int = 1_024,
+        maxWidth: Int = 16,
+        maxHeight: Int = 16,
+        maxPixels: Int = 256,
     ): BitmapProfile = BitmapProfile(
         strike = BitmapStrike(16, 16, 1),
         acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
@@ -161,10 +204,10 @@ class EbdtFormatOneReaderTest {
             maxIndexSubtables = 1,
             maxRecordCount = maxRecordCount,
             maxIndexTableBytes = 1_024,
-            maxSourceTableBytes = 1_024,
-            maxWidth = 16,
-            maxHeight = 16,
-            maxPixels = 256,
+            maxSourceTableBytes = maxSourceTableBytes,
+            maxWidth = maxWidth,
+            maxHeight = maxHeight,
+            maxPixels = maxPixels,
             maxCompressedBytes = 64,
             maxTotalCompressedBytes = maxTotalCompressedBytes,
             maxDecodedBytes = 256,
@@ -187,6 +230,8 @@ class EbdtFormatOneReaderTest {
         strikeEndGlyph: Int = recordCount - 1,
         subtableFirstGlyph: Int = 0,
         subtableLastGlyph: Int = recordCount - 1,
+        imageWidth: Int = 1,
+        imageHeight: Int = 1,
     ): Pair<ByteArray, ByteArray> {
         val recordLength = 6
         val eblc = ByteArray(72 + (recordCount + 1) * 4).also { bytes ->
@@ -214,8 +259,8 @@ class EbdtFormatOneReaderTest {
             bytes.writeUInt32(0, VERSION_TWO)
             repeat(recordCount) { record ->
                 val offset = 4 + record * recordLength
-                bytes[offset] = 1
-                bytes[offset + 1] = 1
+                bytes[offset] = imageHeight.toByte()
+                bytes[offset + 1] = imageWidth.toByte()
                 bytes[offset + 4] = 1
                 bytes[offset + 5] = 0x80.toByte()
             }

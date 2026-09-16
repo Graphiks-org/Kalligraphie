@@ -814,7 +814,8 @@ internal object FontFallbackResolver {
     }
 
     private fun FontError.isTerminal(): Boolean = this is FontError.ResourceClosed ||
-        this is FontError.ResourceLimitExceeded || this is FontError.ShapingResourceLimitExceeded ||
+        this is FontError.ResourceLimitExceeded || this is FontError.BitmapResourceLimitExceeded ||
+        this is FontError.ShapingResourceLimitExceeded ||
         this is FontError.EditorOperationLimitExceeded || this is FontError.Cancelled
 
     private fun requirementsFor(materialization: EditableLineMaterialization): FontAccessRequirementsSnapshot = when (materialization) {

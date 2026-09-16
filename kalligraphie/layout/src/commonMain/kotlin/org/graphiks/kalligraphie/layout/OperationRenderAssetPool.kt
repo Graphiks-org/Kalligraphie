@@ -201,10 +201,12 @@ internal class OperationRenderAssetPool(
     }
 }
 
-// A representation-resource rejection remains local to that profile. Failures of the owning
-// operation, its shared shaping budget, lifecycle, or mandatory byte estimate are terminal.
+// A representation-resource rejection remains local to that profile. A bitmap route bound is
+// terminal, as are failures of the owning operation, its shared shaping budget, lifecycle, or
+// mandatory byte estimate.
 internal fun FontError.isTerminalMaterializationFailure(): Boolean =
     this is FontError.ResourceClosed ||
+        this is FontError.BitmapResourceLimitExceeded ||
         this is FontError.IncompatibleCatalogGeneration ||
         this is PlatformFontAccessLimitExceeded ||
         this is FontError.ShapingResourceLimitExceeded ||

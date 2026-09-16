@@ -1,21 +1,47 @@
 package org.graphiks.kalligraphie
 
+import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BitmapGlyphIR
 import org.graphiks.kalligraphie.api.BitmapLimits
 import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapProfile
+import org.graphiks.kalligraphie.api.BitmapResourceLimit
 import org.graphiks.kalligraphie.api.BitmapStrike
+import org.graphiks.kalligraphie.api.EditableLineError
+import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
+import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
+import org.graphiks.kalligraphie.api.FontResolutionCandidate
+import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
+import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphColorSpace
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
+import org.graphiks.kalligraphie.api.GlyphRepresentationProfile
 import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
+import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.ShapingBackend
+import org.graphiks.kalligraphie.api.TextSnapshot
+import org.graphiks.kalligraphie.api.TextSlice
+import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.UnicodeAnalysis
+import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
+import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
+import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
+import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -188,7 +214,10 @@ class EbdtFormatOneGlyphRepresentationTest {
                 instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements),
             )
 
-            assertIs<FontError.ResourceLimitExceeded>(failure.error)
+            val error = assertIs<FontError.BitmapResourceLimitExceeded>(failure.error)
+            assertEquals(BitmapResourceLimit.WIDTH, error.limit)
+            assertEquals(13, error.observed)
+            assertEquals(12, error.maximum)
         } finally {
             resolver.close()
         }
@@ -231,7 +260,10 @@ class EbdtFormatOneGlyphRepresentationTest {
 
         try {
             val result = instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements)
-            assertIs<FontError.ResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(result).error)
+            val error = assertIs<FontError.BitmapResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(result).error)
+            assertEquals(BitmapResourceLimit.SOURCE_TABLE_BYTES, error.limit)
+            assertEquals(4_410, error.observed)
+            assertEquals(1, error.maximum)
         } finally {
             resolver.close()
         }
@@ -247,11 +279,99 @@ class EbdtFormatOneGlyphRepresentationTest {
 
         try {
             val result = instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements)
-            assertIs<FontError.ResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(result).error)
+            val error = assertIs<FontError.BitmapResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(result).error)
+            assertEquals(BitmapResourceLimit.RECORD_COUNT, error.limit)
+            assertEquals(4, error.observed)
+            assertEquals(0, error.maximum)
         } finally {
             resolver.close()
         }
     }
+
+    @Test
+    fun aBitmapSourceBoundBreachDoesNotFallBackToAnotherFaceOrProfile() {
+        val bitmapSource = FontSource(fixtureBytes(), FontSourceProvenance("Skia EBDT format 1"))
+        val fallbackSource = FontSource(
+            checkNotNull(javaClass.getResourceAsStream("/fonts/emoji-two-colr-v0/EmojiTwoCOLRv0.ttf"))
+                .use { it.readBytes() },
+            FontSourceProvenance("Emoji Two COLR v0"),
+        )
+        val catalog = success(Kalligraphie.embedded(listOf(bitmapSource, fallbackSource)))
+        val bitmapFace = FontFaceId(bitmapSource.id, 0)
+        val fallbackFace = FontFaceId(fallbackSource.id, 0)
+        val policy = FontResolutionPolicySnapshot(
+            generation = catalog.generation,
+            policyId = "bitmap-breach-no-fallback",
+            version = "1",
+            candidates = listOf(FontResolutionCandidate(bitmapFace), FontResolutionCandidate(fallbackFace)),
+            lastResortFace = fallbackFace,
+        )
+        val snapshot = TextSnapshots.decodeUtf16(
+            version = TextVersion.create(),
+            slices = listOf(TextSlice.Utf16("\uD83D\uDE00".toCharArray())),
+        ).snapshot
+        val analysis = JvmUnicodeAnalyzer.create().analyze(
+            snapshot,
+            UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, "en"),
+        )
+        val resolver = success(catalog.openAssetResolver())
+        val backend = success(JvmHarfBuzzShapingBackend.open())
+        try {
+            val fallbackCapable = layout(
+                snapshot, analysis, catalog, policy, backend, resolver, listOf(outlineProfile()),
+            )
+            val fallbackLine = assertIs<EditableLineResult.Success>(fallbackCapable).line
+            assertEquals(listOf(fallbackFace), fallbackLine.positionedGlyphRuns.map { it.fontInstanceKey.face })
+
+            val breached = layout(
+                snapshot, analysis, catalog, policy, backend, resolver,
+                listOf(bitmapProfile(maxSourceTableBytes = 1), outlineProfile()),
+            )
+            val failure = assertIs<EditableLineResult.Failure>(breached)
+            val fontError = assertIs<EditableLineError.FontResolutionFailure>(failure.error).fontError
+            val error = assertIs<FontError.BitmapResourceLimitExceeded>(fontError)
+            assertEquals(BitmapResourceLimit.SOURCE_TABLE_BYTES, error.limit)
+            assertEquals(4_410, error.observed)
+            assertEquals(1, error.maximum)
+        } finally {
+            backend.close()
+            resolver.close()
+        }
+    }
+
+    private fun layout(
+        snapshot: TextSnapshot,
+        analysis: UnicodeAnalysis,
+        catalog: FontCatalogSnapshot,
+        policy: FontResolutionPolicySnapshot,
+        backend: ShapingBackend,
+        resolver: FontAssetResolverHandle,
+        profiles: List<GlyphRepresentationProfile>,
+    ): EditableLineResult = ExactEditableLineLayouter.layout(
+        MultiFontEditableLineRequest(
+            snapshot = snapshot,
+            unicodeAnalysis = analysis,
+            fontCatalog = catalog,
+            resolutionPolicy = policy,
+            fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(16f)),
+            shapingBackend = backend,
+            baseDirection = BaseDirection.LEFT_TO_RIGHT,
+            verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+            materialization = EditableLineMaterialization.Renderable(
+                resolver = resolver,
+                renderVariant = FontRenderVariantSnapshot.default,
+                requirements = FontAccessRequirementsSnapshot.renderable(profiles),
+            ),
+        ),
+    )
+
+    private fun outlineProfile(): OutlineProfile = OutlineProfile(
+        maxBytes = 1_000_000,
+        maxContours = 1_024,
+        maxPoints = 65_536,
+        maxCompositeDepth = 16,
+        maxCompositeComponents = 256,
+    )
 
     private fun assertBitmap(bitmap: BitmapGlyphIR) {
         assertEquals(BitmapStrike(16, 16, 1), bitmap.strike)
