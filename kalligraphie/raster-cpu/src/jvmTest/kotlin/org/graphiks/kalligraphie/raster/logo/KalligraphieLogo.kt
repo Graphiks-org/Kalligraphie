@@ -16,7 +16,13 @@ internal class LogoRender(
     val image: Rgba8Image,
 )
 
-/** Composes and renders the Kalligraphie lockup with the deterministic CPU rasterizer. */
+/**
+ * Composes and renders the Kalligraphie lockup with the deterministic CPU rasterizer.
+ *
+ * The rasterizer preserves the source axes, so its raw output is vertically
+ * mirrored; every rendered variant is flipped once into image orientation before
+ * padding.
+ */
 internal object KalligraphieLogo {
     const val Wordmark: String = "Kalligraphie"
 
@@ -77,7 +83,7 @@ internal object KalligraphieLogo {
             is RasterResult.Failure -> error("logo rasterization failed: ${result.diagnostics}")
         }
         require(rasterized.width > 0 && rasterized.height > 0) { "the logo rendered no ink" }
-        return LogoRender(image = pad(rasterized, MarginPx))
+        return LogoRender(image = pad(flipVertically(rasterized), MarginPx))
     }
 
     /** Composes the paint graph and the scale that maps its ink to the target width. */
@@ -144,6 +150,30 @@ internal object KalligraphieLogo {
                 GlyphPaintPathCommand.Close,
             ),
         )
+    }
+
+    /**
+     * Returns [image] mirrored about its horizontal axis.
+     *
+     * The rasterizer preserves the source axes, so y-up design space maps to
+     * image rows without negation and its raw output reads upside down. The
+     * upstream demonstration sheets flip for the same reason; this is the single
+     * flip that puts the composed logo into image orientation. The reflected
+     * vertical bearing is `-(top + height)`.
+     */
+    private fun flipVertically(image: Rgba8Image): Rgba8Image {
+        val source = image.copyPixels()
+        val target = ByteArray(source.size)
+        val stride = image.width * 4
+        for (y in 0 until image.height) {
+            source.copyInto(
+                target,
+                destinationOffset = (image.height - 1 - y) * stride,
+                startIndex = y * stride,
+                endIndex = (y + 1) * stride,
+            )
+        }
+        return Rgba8Image(image.width, image.height, image.left, -(image.top + image.height), target)
     }
 
     /** Returns a new image with [margin] transparent pixels on every side. */
