@@ -70,3 +70,25 @@ env KALLIGRAPHIE_RASTER_DUMPS=true \
 
 See the user guides in `docs/docs/raster-cpu.md` (English) and
 `docs/docs/raster-cpu.fr.md` (French).
+
+## README logo
+
+The logo at the top of the repository README is rasterized by this module. One
+paint graph composes a filled rounded square, the Amiri `K` knocked out of it,
+and the Great Vibes wordmark shaped through the pinned HarfBuzz backend; the
+composed image is then flipped vertically into image orientation and padded with
+a transparent margin, once per theme ink:
+
+```bash
+./gradlew :kalligraphie:raster-cpu:renderLogo
+```
+
+- The task writes `docs/assets/kalligraphie-logo-light.png`,
+  `docs/assets/kalligraphie-logo-dark.png` and a manifest beside them, inside the
+  repository. No environment variable is required.
+- It always executes when invoked explicitly and is excluded from `check`.
+- `KalligraphieLogoConformanceTest` seals the rendered pixels and the committed
+  files: a code change without regeneration, or an edited asset, fails `check`.
+- The bundled Great Vibes fixture and its licence are recorded with pinned
+  digests in `src/jvmTest/resources/fonts/great-vibes/PROVENANCE.md`.
+
