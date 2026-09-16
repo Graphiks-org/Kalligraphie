@@ -111,8 +111,8 @@ class KalligraphieLogoTest {
             val centroid = weighted / (ink * height)
 
             // The rasterizer keeps the source orientation, so the composed image must be
-            // flipped exactly once. The upright script sits at about 0.555; a vertically
-            // mirrored render, which is what an unflipped composite produces, lands at 0.444.
+            // flipped exactly once. The upright script sits at about 0.542; a vertically
+            // mirrored render, which is what an unflipped composite produces, lands at 0.458.
             assertTrue(centroid > 0.52, "the wordmark must not be mirrored vertically (centroid $centroid)")
         }
     }

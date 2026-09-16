@@ -253,7 +253,7 @@ no module outside `raster-cpu`'s test sources is touched.
 Verification: an independent FreeType render of the same text (via Pillow) was
 compared against both orientations. The correct orientation correlates at 0.99
 with the rendered wordmark's glyph shapes; the mirrored one at 0.09. The
-wordmark's vertical ink centroid is 0.555 upright and 0.444 mirrored, which the
+wordmark's vertical ink centroid is 0.542 upright and 0.458 mirrored, which the
 orientation regression test pins.
 
 ## Out of scope
