@@ -88,6 +88,45 @@ public data class BitmapLimits(
     }
 }
 
+/** Resource dimension bounded for one portable bitmap route. */
+public enum class BitmapResourceLimit {
+    /** Strikes inspected while selecting the exact requested strike. */
+    STRIKES,
+
+    /** Index subtables inspected in the selected strike. */
+    INDEX_SUBTABLES,
+
+    /** Bitmap record slots inspected in the selected strike. */
+    RECORD_COUNT,
+
+    /** Source bytes of the complete index table. */
+    INDEX_TABLE_BYTES,
+
+    /** Source bytes of the complete bitmap data table. */
+    SOURCE_TABLE_BYTES,
+
+    /** Compressed source bytes read for one bitmap glyph. */
+    COMPRESSED_BYTES,
+
+    /** Compressed source bytes read across the selected records. */
+    TOTAL_COMPRESSED_BYTES,
+
+    /** Declared bitmap width. */
+    WIDTH,
+
+    /** Declared bitmap height. */
+    HEIGHT,
+
+    /** Declared pixels in one bitmap. */
+    PIXELS,
+
+    /** Decoded pixel bytes retained for one bitmap glyph. */
+    DECODED_BYTES,
+
+    /** Decoded pixel bytes retained across the selected records. */
+    TOTAL_DECODED_BYTES,
+}
+
 /**
  * Exact bitmap-strike and pixel capabilities accepted by a portable consumer.
  *

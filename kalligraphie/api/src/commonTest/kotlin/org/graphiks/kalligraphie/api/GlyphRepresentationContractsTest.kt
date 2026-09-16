@@ -214,6 +214,54 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
+    fun bitmapLimitFailurePublishesItsExactDimensionAndBounds() {
+        val error = FontError.BitmapResourceLimitExceeded(
+            limit = BitmapResourceLimit.DECODED_BYTES,
+            observed = 4_096,
+            maximum = 256,
+            location = FontDiagnosticLocation.Table("CBDT"),
+        )
+
+        assertEquals("font.bitmap-resource-limit-exceeded", error.code)
+        assertEquals(BitmapResourceLimit.DECODED_BYTES, error.limit)
+        assertEquals(4_096, error.observed)
+        assertEquals(256, error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBDT"), error.location)
+        assertEquals(
+            "Bitmap route exceeded DECODED_BYTES at 4096 (maximum 256).",
+            error.message,
+        )
+        assertFailsWith<IllegalArgumentException> {
+            FontError.BitmapResourceLimitExceeded(
+                limit = BitmapResourceLimit.DECODED_BYTES,
+                observed = 256,
+                maximum = 256,
+                location = FontDiagnosticLocation.Table("CBDT"),
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FontError.BitmapResourceLimitExceeded(
+                limit = BitmapResourceLimit.WIDTH,
+                observed = 16,
+                maximum = -1,
+                location = FontDiagnosticLocation.Table("CBDT"),
+            )
+        }
+    }
+
+    @Test
+    fun bitmapLimitFailureAcceptsObservationsBeyondTheIntegerRange() {
+        val error = FontError.BitmapResourceLimitExceeded(
+            limit = BitmapResourceLimit.TOTAL_DECODED_BYTES,
+            observed = 3_000_000_000L,
+            maximum = 2_147_483_647L,
+            location = FontDiagnosticLocation.Source,
+        )
+
+        assertEquals(3_000_000_000L, error.observed)
+    }
+
+    @Test
     fun certificateCannotBeReusedForAnotherGlyph() {
         val profile = outlineProfile()
         val assetKey = FontRenderAssetKey(
