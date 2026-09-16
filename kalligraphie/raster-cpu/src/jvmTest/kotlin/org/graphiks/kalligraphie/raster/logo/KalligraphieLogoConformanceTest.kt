@@ -41,6 +41,7 @@ class KalligraphieLogoConformanceTest {
             }
         }.toMap()
 
+        assertEquals(2, recorded.size, "the manifest must list exactly the two logo variants")
         assertEquals(setOf("kalligraphie-logo-light.png", "kalligraphie-logo-dark.png"), recorded.keys)
         recorded.forEach { (name, digests) ->
             val bytes = Files.readAllBytes(assets.resolve(name))
@@ -55,24 +56,30 @@ class KalligraphieLogoConformanceTest {
 
     @Test
     fun theGreatVibesFixtureMatchesItsProvenance() {
-        val provenance = Files.readString(
-            rasterRepositoryRoot().resolve(
-                "kalligraphie/raster-cpu/src/jvmTest/resources/fonts/great-vibes/PROVENANCE.md",
-            ),
+        val directory = rasterRepositoryRoot().resolve(
+            "kalligraphie/raster-cpu/src/jvmTest/resources/fonts/great-vibes",
+        )
+        val provenance = Files.readString(directory.resolve("PROVENANCE.md"))
+        val fontDigest = sha256(Files.readAllBytes(directory.resolve("GreatVibes-Regular.ttf")))
+        val licenceDigest = sha256(Files.readAllBytes(directory.resolve("OFL.txt")))
+
+        assertTrue(
+            Regex("""`GreatVibes-Regular\.ttf`: `$fontDigest`""").containsMatchIn(provenance),
+            "the provenance record must attribute the bundled font digest to the font file",
         )
         assertTrue(
-            provenance.contains("8d509802186f1b51572531ecf313e8098f9a5bfdfaca93f0c9b34467f9982d15"),
-            "the provenance record must pin the bundled font digest",
-        )
-        assertTrue(
-            provenance.contains("61093a21f5e63dedf54222b3c09997e54c0fe43e3851d21386e02ddcbc246d49"),
-            "the provenance record must pin the bundled licence digest",
+            Regex("""\[[^\]]*\]\(OFL\.txt\).*`$licenceDigest`""").containsMatchIn(provenance),
+            "the provenance record must attribute the bundled licence digest to the licence file",
         )
     }
 
     private fun renderedPixelDigest(name: String): String {
+        val ink = when (name) {
+            "kalligraphie-logo-light.png" -> KalligraphieLogo.Ink
+            "kalligraphie-logo-dark.png" -> KalligraphieLogo.Paper
+            else -> error("unmapped logo variant $name")
+        }
         KalligraphieLogoFonts.open().use { fonts ->
-            val ink = if (name.endsWith("light.png")) KalligraphieLogo.Ink else KalligraphieLogo.Paper
             return KalligraphieLogo.render(fonts, ink).pixelDigest()
         }
     }

@@ -32,6 +32,7 @@ val rasterJvmTestTask = tasks.named<Test>("jvmTest")
 rasterJvmTestTask.configure {
     filter.excludeTestsMatching(rasterDumpClass)
     filter.excludeTestsMatching(logoDumpClass)
+    inputs.dir(rootProject.layout.projectDirectory.dir("docs/assets")).withPropertyName("logoAssets")
 }
 
 tasks.register<Test>("rasterDumps") {
