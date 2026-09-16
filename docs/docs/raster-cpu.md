@@ -39,17 +39,18 @@ Without `KALLIGRAPHIE_RASTER_DUMPS=true`, the task still runs but writes nothing
 repository. The runner is excluded from `check`; it contains no performance
 threshold.
 
-The repository README logo is produced by the same module. A single paint graph
-composes a filled rounded square, the Amiri `K` knocked out of it, and the Great
-Vibes wordmark shaped through the pinned HarfBuzz backend; the composed image is
-flipped vertically into image orientation, padded with a transparent margin, and
-rendered once per theme ink:
+The repository logo assets are produced by the same module as two separate
+artefacts. The badge composes a filled rounded square with the Amiri `K` knocked
+out of it on a 512 × 512 transparent canvas for avatars and other uses; the
+wordmark composes the Great Vibes wordmark shaped through the pinned HarfBuzz
+backend on a transparent strip used by the repository README. Both are flipped
+vertically into image orientation and padded before rendering once per theme ink:
 
 ```bash
 ./gradlew :kalligraphie:raster-cpu:renderLogo
 ```
 
-The task writes the two transparent PNGs and a manifest under `docs/assets/`
+The task writes the four transparent PNGs and a manifest under `docs/assets/`
 inside the repository, runs without any environment variable, and is excluded
 from `check`. `KalligraphieLogoConformanceTest` seals the rendered pixels and the
 committed files, so a code change without regeneration, or an edited asset, fails

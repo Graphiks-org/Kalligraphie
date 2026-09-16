@@ -42,17 +42,20 @@ Sans `KALLIGRAPHIE_RASTER_DUMPS=true`, la tâche s'exécute mais n'écrit rien.
 runner (programme d'exécution) est exclu de `check` ; il ne contient aucun
 seuil de performance.
 
-Le logo en tête du README du dépôt est produit par le même module. Un unique
-graphe de peinture compose un carré arrondi plein, le `K` Amiri évidé par-dessus,
-et le mot « Kalligraphie » en Great Vibes mis en forme par le backend HarfBuzz
-épinglé ; l'image composée est retournée verticalement vers l'orientation image,
-entourée d'une marge transparente, puis rendue une fois par encre de thème :
+Les ressources du logo du dépôt sont produites par le même module sous forme de
+deux artefacts distincts. Le badge compose un carré arrondi plein avec le `K`
+Amiri évidé par-dessus, cadré sur un canevas transparent de 512 × 512 pour que la
+marque s'insère sans recadrage dans les avatars et les favicons. Le mot-symbole
+compose le mot « Kalligraphie » en Great Vibes mis en forme par le backend
+HarfBuzz épinglé, sur une bande transparente. Les deux sont retournés
+verticalement vers l'orientation image, entourés d'une marge, puis rendus une
+fois par encre de thème :
 
 ```bash
 ./gradlew :kalligraphie:raster-cpu:renderLogo
 ```
 
-La tâche écrit les deux PNG transparents et un manifeste sous `docs/assets/`, à
+La tâche écrit les quatre PNG transparents et un manifeste sous `docs/assets/`, à
 l'intérieur du dépôt, sans variable d'environnement, et elle est exclue de
 `check`. `KalligraphieLogoConformanceTest` scelle les pixels rendus et les
 fichiers commités : une modification du code sans régénération, ou un fichier

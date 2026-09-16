@@ -73,19 +73,23 @@ See the user guides in `docs/docs/raster-cpu.md` (English) and
 
 ## README logo
 
-The logo at the top of the repository README is rasterized by this module. One
-paint graph composes a filled rounded square, the Amiri `K` knocked out of it,
-and the Great Vibes wordmark shaped through the pinned HarfBuzz backend; the
-composed image is then flipped vertically into image orientation and padded with
-a transparent margin, once per theme ink:
+The repository logo assets are rasterized by this module as two separate
+artefacts. The badge composes a filled rounded square with the Amiri `K` knocked
+out of it and frames it on a 512 × 512 transparent canvas, so the mark drops into
+avatars and favicons uncropped. The wordmark composes the Great Vibes wordmark
+shaped through the pinned HarfBuzz backend on a transparent strip. Both are
+flipped vertically into image orientation and rendered once per theme ink:
 
 ```bash
 ./gradlew :kalligraphie:raster-cpu:renderLogo
 ```
 
-- The task writes `docs/assets/kalligraphie-logo-light.png`,
-  `docs/assets/kalligraphie-logo-dark.png` and a manifest beside them, inside the
-  repository. No environment variable is required.
+- The task writes four transparent PNGs — the badge as
+  `docs/assets/kalligraphie-logo-light.png` and
+  `docs/assets/kalligraphie-logo-dark.png`, the wordmark as
+  `docs/assets/kalligraphie-wordmark-light.png` and
+  `docs/assets/kalligraphie-wordmark-dark.png` — and a manifest beside them,
+  inside the repository. No environment variable is required.
 - It always executes when invoked explicitly and is excluded from `check`.
 - `KalligraphieLogoConformanceTest` seals the rendered pixels and the committed
   files: a code change without regeneration, or an edited asset, fails `check`.
