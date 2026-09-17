@@ -40,10 +40,13 @@ The supported functional scope is intentionally narrow:
 - bitmap schema version 2 strikes identified by their exact pixels-per-em pair
   and bit depth, never by a neighbouring size: EBLC version 2 / EBDT version 2
   using index subtable format 1 and image format 1 only, decoded to
-  byte-aligned one-bit `ALPHA_8` monochrome pixels in sRGB. The schema also
-  admits straight non-premultiplied `RGBA_8888` colour pixels in sRGB, and the
-  deterministic CPU raster route composites both formats; PNG is never exposed
-  to the consumer;
+  byte-aligned one-bit `ALPHA_8` monochrome pixels in sRGB; CBLC and CBDT each
+  version 2.0 or 3.0 using index subtable format 1 and CBDT image formats 17
+  or 18 only, with horizontal metrics, decoded through a bounded PNG subset to
+  straight non-premultiplied `RGBA_8888` colour pixels in sRGB, where the
+  glyph metrics must match the embedded image dimensions. PNG is never exposed
+  to the consumer, and uncompressed 32-bit BGRA data, image format 19, and
+  vertical strikes stay outside this matrix;
 - bitmap resource bounds reported per dimension through `BitmapResourceLimit`
   and `FontError.BitmapResourceLimitExceeded`, with declared dimensions checked
   before any pixel allocation and, for compressed images, before inflation, and
@@ -73,6 +76,11 @@ record in the selected strike is rejected with
 substituted. A breach of any declared bound fails with
 `font.bitmap-resource-limit-exceeded`, and that failure is terminal: the
 calling resolution stops.
+
+A colour strike uses the same profile shape with
+`BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 32)` and
+`BitmapPixelFormat.RGBA_8888`; only the CBDT/CBLC route certifies it, still
+with no neighbouring-size substitution.
 
 ## Capture font directories on the JVM
 

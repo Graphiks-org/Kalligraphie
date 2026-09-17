@@ -49,11 +49,15 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   couple exact de pixels par em et leur profondeur de bits, jamais par une
   taille voisine : EBLC version 2 / EBDT version 2 avec sous-table d’index
   format 1 et image format 1 uniquement, décodés en `ALPHA_8` monochrome
-  (alpha un bit aligné sur les octets) en sRGB. Le schéma admet aussi des
-  pixels couleur `RGBA_8888` droits (alpha non prémultiplié) en sRGB, et la
-  route de rastérisation CPU déterministe compose les deux formats ; PNG
-  (Portable Network Graphics, format d’image sans perte) n’est jamais exposé au
-  consommateur ;
+  (alpha un bit aligné sur les octets) en sRGB ; CBLC et CBDT chacun en
+  version 2.0 ou 3.0 avec sous-table d’index format 1 et formats d’image CBDT
+  17 ou 18 uniquement, avec métriques horizontales, décodés via un
+  sous-ensemble PNG borné en pixels couleur `RGBA_8888` droits (alpha non
+  prémultiplié) en sRGB, où les métriques du glyphe doivent correspondre aux
+  dimensions de l’image embarquée. PNG (Portable Network Graphics, format
+  d’image sans perte) n’est jamais exposé au consommateur, et les données BGRA
+  32 bits non compressées, le format d’image 19 ainsi que les strikes verticaux
+  restent hors de cette matrice ;
 - bornes de ressources bitmap rapportées par dimension via
   `BitmapResourceLimit` et `FontError.BitmapResourceLimitExceeded`, avec
   dimensions déclarées vérifiées avant toute allocation de pixels et, pour les
@@ -83,6 +87,11 @@ enregistrement source dans le strike sélectionné est refusé avec
 substituée. Tout dépassement d’une borne déclarée échoue avec
 `font.bitmap-resource-limit-exceeded`, et cet échec est terminal : la résolution
 appelante s’arrête.
+
+Un strike couleur utilise la même forme de profil avec
+`BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 32)` et
+`BitmapPixelFormat.RGBA_8888` ; seule la route CBDT/CBLC le certifie, toujours
+sans substitution par une taille voisine.
 
 ## Capturer des répertoires de fontes sur la JVM
 
