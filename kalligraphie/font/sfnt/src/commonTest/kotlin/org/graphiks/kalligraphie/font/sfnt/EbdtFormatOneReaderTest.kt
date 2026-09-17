@@ -47,6 +47,38 @@ class EbdtFormatOneReaderTest {
     }
 
     @Test
+    fun rejectsAProfileWhoseStrikeBitDepthDoesNotMatchTheFixture() {
+        val tables = formatOneTables()
+
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            error(
+                EbdtFormatOneReader.read(
+                    eblcTable = tables.first,
+                    ebdtTable = tables.second,
+                    glyphCount = 1,
+                    profile = profile(bitDepth = 8),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsAProfileWhoseStrikePixelsPerEmDoNotMatchTheFixture() {
+        val tables = formatOneTables()
+
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            error(
+                EbdtFormatOneReader.read(
+                    eblcTable = tables.first,
+                    ebdtTable = tables.second,
+                    glyphCount = 1,
+                    profile = profile(pixelsPerEmX = 8),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun rejectsAggregateCompressedBytesBeforeReturningAnyBitmapRouteData() {
         val tables = formatOneTables(recordCount = 2)
 
@@ -195,8 +227,11 @@ class EbdtFormatOneReaderTest {
         maxWidth: Int = 16,
         maxHeight: Int = 16,
         maxPixels: Int = 256,
+        pixelsPerEmX: Int = 16,
+        pixelsPerEmY: Int = 16,
+        bitDepth: Int = 1,
     ): BitmapProfile = BitmapProfile(
-        strike = BitmapStrike(16, 16, 1),
+        strike = BitmapStrike(pixelsPerEmX, pixelsPerEmY, bitDepth),
         acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
         acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
         limits = BitmapLimits(
