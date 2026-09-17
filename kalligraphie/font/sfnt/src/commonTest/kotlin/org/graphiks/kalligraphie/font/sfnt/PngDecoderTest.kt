@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.font.sfnt
 
 import kotlin.io.encoding.Base64
 import org.graphiks.kalligraphie.api.BitmapLimits
+import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapResourceLimit
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -34,6 +35,57 @@ class PngDecoderTest {
 
         assertEquals(1, decoded.width)
         assertContentEquals(byteArrayOf(10, 20, 30, 255.toByte()), decoded.copyPixels())
+    }
+
+    @Test
+    fun inspectsTheDeclaredHeaderWithoutInflatingPixels() {
+        val header = header(PngDecoder.inspectHeader(fixture(RGBA_2X2), limits(), "CBDT"))
+
+        assertEquals(2, header.width)
+        assertEquals(2, header.height)
+        assertEquals(BitmapPixelFormat.RGBA_8888, header.pixelFormat)
+    }
+
+    @Test
+    fun inspectsAHeaderWithoutRequiringOrReadingLaterChunks() {
+        val headerOnly = fixture(RGBA_2X2).copyOfRange(0, IHDR_CHUNK_END)
+
+        val header = header(PngDecoder.inspectHeader(headerOnly, limits(), "CBDT"))
+        assertEquals(2, header.width)
+        assertEquals(2, header.height)
+
+        assertEquals(
+            "font.png.truncated",
+            code(assertIs<FontOperationResult.Failure>(PngDecoder.decode(headerOnly, limits(), "CBDT"))),
+        )
+    }
+
+    @Test
+    fun refusesAHostileDeclaredHeaderWhenInspecting() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            PngDecoder.inspectHeader(fixture(HOSTILE_DIMENSIONS), limits(), "CBDT"),
+        )
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(failure.error)
+
+        assertEquals(BitmapResourceLimit.WIDTH, error.limit)
+        assertEquals(5_000, error.observed)
+        assertEquals(16, error.maximum)
+    }
+
+    @Test
+    fun toleratesASuggestedPlteChunkInATruecolorImage() {
+        val decoded = value(PngDecoder.decode(fixture(RGBA_WITH_PLTE), limits(), "CBDT"))
+
+        assertEquals(1, decoded.width)
+        assertContentEquals(byteArrayOf(10, 20, 30, 255.toByte()), decoded.copyPixels())
+    }
+
+    @Test
+    fun refusesASuggestedPaletteThatPrecedesTheHeader() {
+        assertEquals(
+            "font.png.invalid-chunk-order",
+            code(assertIs<FontOperationResult.Failure>(PngDecoder.decode(fixture(PLTE_FIRST), limits(), "CBDT"))),
+        )
     }
 
     @Test
@@ -181,12 +233,18 @@ class PngDecoderTest {
     private fun value(result: FontOperationResult<DecodedPng>): DecodedPng =
         assertIs<FontOperationResult.Success<DecodedPng>>(result).value
 
+    private fun header(result: FontOperationResult<PngHeader>): PngHeader =
+        assertIs<FontOperationResult.Success<PngHeader>>(result).value
+
     private fun code(result: FontOperationResult.Failure): String =
         assertIs<FontError.FontDataFailure>(result.error).code
 }
 
 private const val RGBA_2X2 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAF0lEQVR42mP4z8DwHwgbGIC0w////xkAQBgHul5CkSMAAAAASUVORK5CYII="
 private const val RGB_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR42mPgEpEDAABoAD1q9XBbAAAAAElFTkSuQmCC"
+private const val RGBA_WITH_PLTE = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACVBMVEX/AAAA/wAAAP8tSs2KAAAADUlEQVR42mPgEpH7DwABpAE8TNUcpwAAAABJRU5ErkJggg=="
+private const val PLTE_FIRST = "iVBORw0KGgoAAAADUExURf8AABniCTcAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mPgEpH7DwABpAE8TNUcpwAAAABJRU5ErkJggg=="
+private const val IHDR_CHUNK_END = 33
 private const val BOMB = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAHElEQVR42u3BAQ0AAADCoGzvX8oeDigAAADg3QD/rRA9bckhIQAAAABJRU5ErkJggg=="
 private const val HOSTILE_DIMENSIONS = "iVBORw0KGgoAAAANSUhEUgAAE4gAABOICAYAAABdmIfLAAAAC0lEQVR42mNggAIAAAkAAWj2z04AAAAASUVORK5CYII="
 private const val PALETTE_INDEXED = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAACklEQVR42mNgAAAAAgAB5Sfe/AAAAABJRU5ErkJggg=="

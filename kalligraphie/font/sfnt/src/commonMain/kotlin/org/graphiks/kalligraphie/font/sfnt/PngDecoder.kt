@@ -5,6 +5,7 @@ import okio.IOException
 import okio.Inflater
 import okio.InflaterSource
 import org.graphiks.kalligraphie.api.BitmapLimits
+import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapResourceLimit
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -27,29 +28,46 @@ internal class DecodedPng(
     fun copyPixels(): ByteArray = captured.copyOf()
 }
 
+/** Declared header of one bounded PNG image, validated without reading image data. */
+internal class PngHeader(
+    val width: Int,
+    val height: Int,
+    val pixelFormat: BitmapPixelFormat,
+)
+
 /**
  * Decodes one embedded PNG image into bounded straight RGBA_8888 pixels.
  *
  * Accepted subset: eight-bit truecolor (color type 2) and eight-bit truecolor with alpha (color
- * type 6), non-interlaced, every chunk CRC-verified. Every critical chunk other than IHDR, IDAT,
- * and IEND is refused, including a suggested PLTE in a truecolor image. Declared dimensions are
- * validated against the profile bounds before any inflation and the inflate stream is capped at
- * the exact declared scanline total, so a decompression bomb is refused before any pixels are
- * allocated.
+ * type 6), non-interlaced, every chunk CRC-verified. The accepted critical chunk set is IHDR,
+ * PLTE (the suggested palette, ignored in truecolor), IDAT, and IEND; ancillary chunks are
+ * skipped and every other critical chunk is refused. PLTE placement is not enforced once the
+ * header is accepted, so a later PLTE remains ignored. Declared dimensions are validated against
+ * the profile bounds before any inflation and the inflate stream is capped at the exact declared
+ * scanline total, so a decompression bomb is refused before any pixels are allocated.
  */
 internal object PngDecoder {
+    /** Validates only the declared IHDR, with no chunk walk, no CRC checks beyond the header, and no inflation. */
+    fun inspectHeader(
+        encoded: ByteArray,
+        limits: BitmapLimits,
+        table: String,
+    ): FontOperationResult<PngHeader> = parseHeader(encoded, limits, table)
+
     fun decode(
         encoded: ByteArray,
         limits: BitmapLimits,
         table: String,
     ): FontOperationResult<DecodedPng> {
-        if (!hasSignature(encoded)) {
-            return invalid("font.png.invalid-signature", "PNG signature is missing.", table)
+        val header = when (val parsed = parseHeader(encoded, limits, table)) {
+            is FontOperationResult.Success -> parsed.value
+            is FontOperationResult.Failure -> return parsed
+            is FontOperationResult.Cancelled -> return parsed
         }
+        val width = header.width
+        val height = header.height
         val compressed = Buffer()
         var offset = PNG_SIGNATURE_LENGTH
-        var width = 0
-        var height = 0
         var colorType = 0
         var sawHeader = false
         var sawData = false
@@ -72,56 +90,16 @@ internal object PngDecoder {
             }
             when (val type = encoded.decodeToString(offset + 4, offset + 8)) {
                 "IHDR" -> {
-                    if (sawHeader || offset != PNG_SIGNATURE_LENGTH) {
+                    if (sawHeader) {
                         return invalid("font.png.invalid-chunk-order", "PNG IHDR must be the first chunk.", table)
                     }
-                    if (length != IHDR_LENGTH) {
-                        return invalid("font.png.invalid-header", "PNG IHDR is not thirteen bytes.", table)
-                    }
-                    val declaredWidth = readUInt32(encoded, dataStart)
-                        ?: return invalid("font.png.truncated", "PNG IHDR is truncated.", table)
-                    val declaredHeight = readUInt32(encoded, dataStart + 4)
-                        ?: return invalid("font.png.truncated", "PNG IHDR is truncated.", table)
-                    val bitDepth = encoded[dataStart + 8].toInt() and 0xFF
-                    colorType = encoded[dataStart + 9].toInt() and 0xFF
-                    val compression = encoded[dataStart + 10].toInt() and 0xFF
-                    val filterMethod = encoded[dataStart + 11].toInt() and 0xFF
-                    val interlace = encoded[dataStart + 12].toInt() and 0xFF
-                    if (declaredWidth == 0L || declaredHeight == 0L ||
-                        declaredWidth > Int.MAX_VALUE.toLong() || declaredHeight > Int.MAX_VALUE.toLong()
-                    ) {
-                        return invalid("font.png.invalid-dimensions", "PNG dimensions are invalid.", table)
-                    }
-                    if (bitDepth != 8 ||
-                        (colorType != PNG_COLOR_TYPE_TRUECOLOR && colorType != PNG_COLOR_TYPE_TRUECOLOR_ALPHA) ||
-                        interlace != 0
-                    ) {
-                        return invalid("font.png.unsupported-format", "PNG image is not eight-bit non-interlaced truecolor.", table)
-                    }
-                    if (compression != 0 || filterMethod != 0) {
-                        return invalid("font.png.invalid-header", "PNG compression or filter method is invalid.", table)
-                    }
-                    width = declaredWidth.toInt()
-                    height = declaredHeight.toInt()
-                    if (width > limits.maxWidth) {
-                        return limit(BitmapResourceLimit.WIDTH, width.toLong(), limits.maxWidth, table)
-                    }
-                    if (height > limits.maxHeight) {
-                        return limit(BitmapResourceLimit.HEIGHT, height.toLong(), limits.maxHeight, table)
-                    }
-                    val declaredPixels = width.toLong() * height.toLong()
-                    if (declaredPixels > limits.maxPixels.toLong()) {
-                        return limit(BitmapResourceLimit.PIXELS, declaredPixels, limits.maxPixels, table)
-                    }
-                    val decodedBytes = declaredPixels * RGBA_BYTES_PER_PIXEL.toLong()
-                    if (decodedBytes > limits.maxDecodedBytes.toLong()) {
-                        return limit(BitmapResourceLimit.DECODED_BYTES, decodedBytes, limits.maxDecodedBytes, table)
-                    }
+                    colorType = encoded[dataStart + IHDR_COLOR_TYPE_INDEX].toInt() and 0xFF
                     sawHeader = true
                 }
 
+                "PLTE" -> Unit
+
                 "IDAT" -> {
-                    if (!sawHeader) return invalid("font.png.invalid-chunk-order", "PNG IDAT precedes IHDR.", table)
                     compressedBytes += length
                     if (compressedBytes > limits.maxCompressedBytes.toLong()) {
                         return limit(BitmapResourceLimit.COMPRESSED_BYTES, compressedBytes, limits.maxCompressedBytes, table)
@@ -131,7 +109,6 @@ internal object PngDecoder {
                 }
 
                 "IEND" -> {
-                    if (!sawHeader) return invalid("font.png.invalid-chunk-order", "PNG IEND precedes IHDR.", table)
                     sawEnd = true
                 }
 
@@ -141,7 +118,6 @@ internal object PngDecoder {
             }
             offset = dataEnd.toInt() + CHUNK_CRC_BYTES
         }
-        if (!sawHeader) return invalid("font.png.truncated", "PNG IHDR chunk is missing.", table)
         if (!sawData) return invalid("font.png.truncated", "PNG has no image data.", table)
         if (!sawEnd) return invalid("font.png.truncated", "PNG IEND chunk is missing.", table)
 
@@ -173,6 +149,85 @@ internal object PngDecoder {
             return invalid("font.png.truncated", "PNG image data is truncated.", table)
         }
         return unfilter(raw, width, height, bytesPerPixel, colorType, table)
+    }
+
+    private fun parseHeader(
+        encoded: ByteArray,
+        limits: BitmapLimits,
+        table: String,
+    ): FontOperationResult<PngHeader> {
+        if (!hasSignature(encoded)) {
+            return invalid("font.png.invalid-signature", "PNG signature is missing.", table)
+        }
+        if (encoded.size - PNG_SIGNATURE_LENGTH < CHUNK_HEADER_BYTES) {
+            return invalid("font.png.truncated", "PNG chunk header is truncated.", table)
+        }
+        val length = readUInt32(encoded, PNG_SIGNATURE_LENGTH)
+            ?: return invalid("font.png.truncated", "PNG chunk length is truncated.", table)
+        val dataStart = PNG_SIGNATURE_LENGTH + CHUNK_HEADER_BYTES
+        val dataEnd = dataStart + length
+        if (length > Int.MAX_VALUE.toLong() || dataEnd > encoded.size.toLong() - CHUNK_CRC_BYTES) {
+            return invalid("font.png.truncated", "PNG chunk data is truncated.", table)
+        }
+        if (readUInt32(encoded, dataEnd.toInt()) != (crc32(encoded, PNG_SIGNATURE_LENGTH + 4, dataEnd.toInt()).toLong() and UINT_MASK)) {
+            return invalid("font.png.invalid-crc", "PNG chunk CRC is invalid.", table)
+        }
+        val type = encoded.decodeToString(PNG_SIGNATURE_LENGTH + 4, PNG_SIGNATURE_LENGTH + 8)
+        if (type != "IHDR") {
+            return firstChunkFailure(type, table)
+        }
+        if (length != IHDR_LENGTH) {
+            return invalid("font.png.invalid-header", "PNG IHDR is not thirteen bytes.", table)
+        }
+        val declaredWidth = readUInt32(encoded, dataStart)
+            ?: return invalid("font.png.truncated", "PNG IHDR is truncated.", table)
+        val declaredHeight = readUInt32(encoded, dataStart + 4)
+            ?: return invalid("font.png.truncated", "PNG IHDR is truncated.", table)
+        val bitDepth = encoded[dataStart + 8].toInt() and 0xFF
+        val colorType = encoded[dataStart + IHDR_COLOR_TYPE_INDEX].toInt() and 0xFF
+        val compression = encoded[dataStart + 10].toInt() and 0xFF
+        val filterMethod = encoded[dataStart + 11].toInt() and 0xFF
+        val interlace = encoded[dataStart + 12].toInt() and 0xFF
+        if (declaredWidth == 0L || declaredHeight == 0L ||
+            declaredWidth > Int.MAX_VALUE.toLong() || declaredHeight > Int.MAX_VALUE.toLong()
+        ) {
+            return invalid("font.png.invalid-dimensions", "PNG dimensions are invalid.", table)
+        }
+        if (bitDepth != 8 ||
+            (colorType != PNG_COLOR_TYPE_TRUECOLOR && colorType != PNG_COLOR_TYPE_TRUECOLOR_ALPHA) ||
+            interlace != 0
+        ) {
+            return invalid("font.png.unsupported-format", "PNG image is not eight-bit non-interlaced truecolor.", table)
+        }
+        if (compression != 0 || filterMethod != 0) {
+            return invalid("font.png.invalid-header", "PNG compression or filter method is invalid.", table)
+        }
+        val width = declaredWidth.toInt()
+        val height = declaredHeight.toInt()
+        if (width > limits.maxWidth) {
+            return limit(BitmapResourceLimit.WIDTH, width.toLong(), limits.maxWidth, table)
+        }
+        if (height > limits.maxHeight) {
+            return limit(BitmapResourceLimit.HEIGHT, height.toLong(), limits.maxHeight, table)
+        }
+        val declaredPixels = width.toLong() * height.toLong()
+        if (declaredPixels > limits.maxPixels.toLong()) {
+            return limit(BitmapResourceLimit.PIXELS, declaredPixels, limits.maxPixels, table)
+        }
+        val decodedBytes = declaredPixels * RGBA_BYTES_PER_PIXEL.toLong()
+        if (decodedBytes > limits.maxDecodedBytes.toLong()) {
+            return limit(BitmapResourceLimit.DECODED_BYTES, decodedBytes, limits.maxDecodedBytes, table)
+        }
+        return FontOperationResult.Success(PngHeader(width, height, BitmapPixelFormat.RGBA_8888))
+    }
+
+    private fun firstChunkFailure(type: String, table: String): FontOperationResult.Failure = when {
+        type == "IDAT" -> invalid("font.png.invalid-chunk-order", "PNG IDAT precedes IHDR.", table)
+        type == "IEND" -> invalid("font.png.invalid-chunk-order", "PNG IEND precedes IHDR.", table)
+        type == "PLTE" -> invalid("font.png.invalid-chunk-order", "PNG PLTE precedes IHDR.", table)
+        type.isNotEmpty() && type[0] in 'A'..'Z' ->
+            invalid("font.png.unsupported-format", "PNG critical chunk $type is not supported.", table)
+        else -> invalid("font.png.invalid-chunk-order", "PNG IHDR must be the first chunk.", table)
     }
 
     private fun unfilter(
@@ -305,6 +360,7 @@ private const val PNG_SIGNATURE_LENGTH: Int = 8
 private const val CHUNK_HEADER_BYTES: Int = 8
 private const val CHUNK_CRC_BYTES: Int = 4
 private const val IHDR_LENGTH: Long = 13
+private const val IHDR_COLOR_TYPE_INDEX: Int = 9
 private const val RGBA_BYTES_PER_PIXEL: Int = 4
 private const val PNG_COLOR_TYPE_TRUECOLOR: Int = 2
 private const val PNG_COLOR_TYPE_TRUECOLOR_ALPHA: Int = 6
