@@ -163,7 +163,13 @@ public sealed interface FontError {
         override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source
     }
 
-    /** One bitmap route exceeded an explicit resource bound. */
+    /**
+     * One bitmap route exceeded an explicit resource bound.
+     *
+     * A breach is terminal: the calling resolution stops and no other profile or font is
+     * attempted for the affected unit. Consumers that accept several representation profiles
+     * must therefore size their bitmap bounds for the worst admitted font.
+     */
     public data class BitmapResourceLimitExceeded(
         /** Resource dimension that rejected the bitmap route or glyph. */
         public val limit: BitmapResourceLimit,

@@ -45,12 +45,44 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   `translate`, `scale`, `rotate`, `skewX`, `skewY` et `matrix` (matrice affine
   à six coefficients) sont prises en charge. Le sous-ensemble exact des
   gradients et les exclusions restantes sont décrits ci-dessous ;
-- strikes bitmap (images matricielles, tailles bitmap exactes) EBLC version 2 / EBDT version 2,
-  avec sous-table d’index format 1 et image format 1 uniquement : alpha un bit
-  aligné sur les octets, décodé en `ALPHA_8` sRGB, pour un strike demandé à
-  l’identique ;
+- strikes (tailles matricielles) bitmap schéma version 2, identifiés par leur
+  couple exact de pixels par em et leur profondeur de bits, jamais par une
+  taille voisine : EBLC version 2 / EBDT version 2 avec sous-table d’index
+  format 1 et image format 1 uniquement, décodés en `ALPHA_8` monochrome
+  (alpha un bit aligné sur les octets) en sRGB. Le schéma admet aussi des
+  pixels couleur `RGBA_8888` droits (alpha non prémultiplié) en sRGB, et la
+  route de rastérisation CPU déterministe compose les deux formats ; PNG
+  (Portable Network Graphics, format d’image sans perte) n’est jamais exposé au
+  consommateur ;
+- bornes de ressources bitmap rapportées par dimension via
+  `BitmapResourceLimit` et `FontError.BitmapResourceLimitExceeded`, avec
+  dimensions déclarées vérifiées avant toute allocation de pixels et, pour les
+  images compressées, avant inflation, et aucun pixel partiel publié ;
 - ressources de rendu détachées qui restent utilisables après la fermeture du
   gestionnaire propriétaire ou de la ressource attachée.
+
+## Exemple : un strike bitmap exact
+
+À partir d’une valeur `BitmapLimits` fournie par l’application, un consommateur
+déclare un strike monochrome exact et obtient les exigences de rendu avec
+`FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile))` :
+
+```kotlin
+val bitmapProfile = BitmapProfile(
+    strike = BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 1),
+    acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+    acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+    limits = bitmapLimits,
+)
+```
+
+Seul le strike exact déclaré est certifié : une face dépourvue de ce strike est
+refusée avec `font.unsupported-representation-profile`, et un glyphe sans
+enregistrement source dans le strike sélectionné est refusé avec
+`font.glyph-representation-unavailable` ; aucune taille voisine n’est jamais
+substituée. Tout dépassement d’une borne déclarée échoue avec
+`font.bitmap-resource-limit-exceeded`, et cet échec est terminal : la résolution
+appelante s’arrête.
 
 ## Capturer des répertoires de fontes sur la JVM
 
@@ -765,6 +797,14 @@ empreintes différentes. Régénérez ou invalidez les empreintes persistées et
 les entrées de cache dérivées, puis rouvrez et certifiez avec des clés fraîches
 d’un fournisseur vivant ; les empreintes stockées ne sont pas des
 localisateurs de ressources.
+
+#### Ajouts du schéma bitmap 2
+
+Les empreintes (fingerprints) de profil bitmap incluent désormais la profondeur
+de bits exacte du strike. Les consommateurs qui persistent des valeurs
+`GlyphRepresentationProfileKey` (clé d’identité de représentation) doivent les
+régénérer une fois ; une empreinte périmée ne provoque qu’un défaut de cache,
+jamais un changement de glyphe matérialisé.
 
 #### Changements antérieurs du schéma 2
 

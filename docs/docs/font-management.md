@@ -37,11 +37,42 @@ The supported functional scope is intentionally narrow:
   `translate`, `scale`, `rotate`, `skewX`, `skewY`, and
   six-coefficient affine `matrix` transforms are supported. The exact gradient
   subset and remaining exclusions are described below;
-- EBLC version 2 / EBDT version 2 bitmap strikes using index subtable format 1
-  and image format 1 only: byte-aligned one-bit alpha decoded to `ALPHA_8` in
-  sRGB, with an exact requested strike;
+- bitmap schema version 2 strikes identified by their exact pixels-per-em pair
+  and bit depth, never by a neighbouring size: EBLC version 2 / EBDT version 2
+  using index subtable format 1 and image format 1 only, decoded to
+  byte-aligned one-bit `ALPHA_8` monochrome pixels in sRGB. The schema also
+  admits straight non-premultiplied `RGBA_8888` colour pixels in sRGB, and the
+  deterministic CPU raster route composites both formats; PNG is never exposed
+  to the consumer;
+- bitmap resource bounds reported per dimension through `BitmapResourceLimit`
+  and `FontError.BitmapResourceLimitExceeded`, with declared dimensions checked
+  before any pixel allocation and, for compressed images, before inflation, and
+  no partial pixels published;
 - detached render assets that keep resolving after the owning resolver or
   attached handle is closed.
+
+## Example: an exact bitmap strike
+
+Given an application-supplied `BitmapLimits` value, a consumer declares one
+exact monochrome strike and obtains renderable requirements with
+`FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile))`:
+
+```kotlin
+val bitmapProfile = BitmapProfile(
+    strike = BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 1),
+    acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+    acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+    limits = bitmapLimits,
+)
+```
+
+Only the exact declared strike is certified: a face without that strike is
+rejected with `font.unsupported-representation-profile`, and a glyph with no
+record in the selected strike is rejected with
+`font.glyph-representation-unavailable`; no neighbouring size is ever
+substituted. A breach of any declared bound fails with
+`font.bitmap-resource-limit-exceeded`, and that failure is terminal: the
+calling resolution stops.
 
 ## Capture font directories on the JVM
 
@@ -657,6 +688,13 @@ Even otherwise unchanged schema-1 or schema-2 profiles get different
 fingerprints. Regenerate/invalidate persisted fingerprints and derived cache
 entries, then reopen/certify with fresh live provider keys; stored fingerprints
 are not resource locators.
+
+#### Bitmap schema-2 additions
+
+Bitmap profile fingerprints now include the exact strike bit depth. Consumers
+that persist `GlyphRepresentationProfileKey` values must regenerate them once;
+a stale fingerprint only causes a cache miss and never changes a materialized
+glyph.
 
 #### Earlier schema-2 changes
 
