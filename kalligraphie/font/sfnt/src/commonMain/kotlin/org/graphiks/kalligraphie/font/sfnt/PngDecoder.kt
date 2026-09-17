@@ -31,9 +31,11 @@ internal class DecodedPng(
  * Decodes one embedded PNG image into bounded straight RGBA_8888 pixels.
  *
  * Accepted subset: eight-bit truecolor (color type 2) and eight-bit truecolor with alpha (color
- * type 6), non-interlaced, every chunk CRC-verified. Declared dimensions are validated against
- * the profile bounds before any inflation and the inflate stream is capped at the exact declared
- * scanline total, so a decompression bomb is refused before any pixels are allocated.
+ * type 6), non-interlaced, every chunk CRC-verified. Every critical chunk other than IHDR, IDAT,
+ * and IEND is refused, including a suggested PLTE in a truecolor image. Declared dimensions are
+ * validated against the profile bounds before any inflation and the inflate stream is capped at
+ * the exact declared scanline total, so a decompression bomb is refused before any pixels are
+ * allocated.
  */
 internal object PngDecoder {
     fun decode(
