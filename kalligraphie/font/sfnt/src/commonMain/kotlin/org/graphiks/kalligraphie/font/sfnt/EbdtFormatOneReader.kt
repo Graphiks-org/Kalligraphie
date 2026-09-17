@@ -119,7 +119,7 @@ public object EbdtFormatOneReader {
                 is FontOperationResult.Success -> parsed.value
                 else -> return false
             }
-            if (size.bitDepth != 1 || size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
+            if (size.strike.bitDepth != 1 || size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
                 return false
             }
             val profile = BitmapProfile(
@@ -200,7 +200,7 @@ public object EbdtFormatOneReader {
             }
         }
         val size = selected ?: return unsupported("The exact requested bitmap strike is unavailable.")
-        if (size.bitDepth != 1) return unsupported("Only one-bit EBDT image data is supported.")
+        if (size.strike.bitDepth != 1) return unsupported("Only one-bit EBDT image data is supported.")
         if (size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
             return invalid("font.eblc.invalid-glyph-range", "EBLC strike glyph range is outside the face.", "EBLC")
         }
@@ -382,7 +382,6 @@ public object EbdtFormatOneReader {
             startGlyphId = startGlyphId,
             endGlyphId = endGlyphId,
             strike = BitmapStrike(ppemX, ppemY, bitDepth),
-            bitDepth = bitDepth,
         ))
     }
 
@@ -418,7 +417,6 @@ private data class BitmapSizeTable(
     val startGlyphId: Int,
     val endGlyphId: Int,
     val strike: BitmapStrike,
-    val bitDepth: Int,
 )
 
 internal data class EbdtFormatOneRecord(
