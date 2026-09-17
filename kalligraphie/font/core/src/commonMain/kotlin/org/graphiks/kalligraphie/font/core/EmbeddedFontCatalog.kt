@@ -46,6 +46,7 @@ import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.ColrV1Reader
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
+import org.graphiks.kalligraphie.font.sfnt.CbdtCblcReader
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
@@ -83,6 +84,7 @@ public class EmbeddedFontCatalog(
     private val colrV1SupportedFaces: Set<FontFaceId>
     private val svgRouteSupportedFaces: Set<FontFaceId>
     private val bitmapRouteSupportedFaces: Set<FontFaceId>
+    private val cbdtCblcRouteSupportedFaces: Set<FontFaceId>
     private val resolvedFaces: Map<FontFaceId, TrueTypeFace>
 
     /** Stable records for every captured embedded face, in supplied order. */
@@ -128,6 +130,9 @@ public class EmbeddedFontCatalog(
         bitmapRouteSupportedFaces = ids.filter { id ->
             supportsEbdtFormatOneRoute(resources.getValue(id), parsedFonts.getValue(id))
         }.toSet()
+        cbdtCblcRouteSupportedFaces = ids.filter { id ->
+            supportsCbdtCblcRoute(resources.getValue(id), parsedFonts.getValue(id))
+        }.toSet()
         resolvedFaces = ids.associateWith { id ->
             TrueTypeFace(
                 faceId = id,
@@ -139,6 +144,7 @@ public class EmbeddedFontCatalog(
                 colrV1Supported = id in colrV1SupportedFaces,
                 svgRouteSupported = id in svgRouteSupportedFaces,
                 bitmapRouteSupported = id in bitmapRouteSupportedFaces,
+                cbdtCblcRouteSupported = id in cbdtCblcRouteSupportedFaces,
             )
         }
         faces = ids.map { id ->
@@ -150,7 +156,7 @@ public class EmbeddedFontCatalog(
                     shaping = true,
                     outline = id in outlineRouteSupportedFaces,
                     paintGraph = id in paintGraphSupportedFaces || id in colrV1SupportedFaces || id in svgRouteSupportedFaces,
-                    bitmap = id in bitmapRouteSupportedFaces,
+                    bitmap = id in bitmapRouteSupportedFaces || id in cbdtCblcRouteSupportedFaces,
                 ),
             )
         }.immutableListSnapshot()
@@ -196,7 +202,7 @@ public class EmbeddedFontCatalog(
                         code = "font.unsupported-representation-profile",
                         severity = FontDiagnosticSeverity.ERROR,
                         location = FontDiagnosticLocation.Source,
-                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and bitmap schemaVersion=2 EBDT format 1 profiles are supported.",
+                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and bitmap schemaVersion=2 EBLC/EBDT format 1 or CBLC/CBDT formats 17 and 18 profiles are supported.",
                     ),
                 ),
             )
@@ -220,7 +226,11 @@ public class EmbeddedFontCatalog(
                 (schemaVersion == 1 && (faceId in paintGraphSupportedFaces || faceId in svgRouteSupportedFaces)) ||
                     (schemaVersion in 2..3 && (faceId in colrV1SupportedFaces || faceId in svgRouteSupportedFaces))
             is org.graphiks.kalligraphie.api.BitmapProfile ->
-                schemaVersion == 2 && faceId in bitmapRouteSupportedFaces
+                schemaVersion == 2 && when (strike.bitDepth) {
+                    1 -> faceId in bitmapRouteSupportedFaces
+                    32 -> faceId in cbdtCblcRouteSupportedFaces
+                    else -> false
+                }
             else -> false
         }
 
@@ -290,6 +300,18 @@ private fun supportsEbdtFormatOneRoute(
     val eblc = slice(sourceBytes, eblcRecord) ?: return false
     val ebdt = slice(sourceBytes, ebdtRecord) ?: return false
     return EbdtFormatOneReader.hasStructurallyValidFormatOneTables(eblc, ebdt, parsedFont.metadata.glyphCount)
+}
+
+private fun supportsCbdtCblcRoute(
+    resource: PreparedFontResource,
+    parsedFont: ParsedTrueTypeFont,
+): Boolean {
+    val cblcRecord = parsedFont.tableRecords["CBLC"] ?: return false
+    val cbdtRecord = parsedFont.tableRecords["CBDT"] ?: return false
+    val sourceBytes = resource.preparedFont.copySourceBytes()
+    val cblc = slice(sourceBytes, cblcRecord) ?: return false
+    val cbdt = slice(sourceBytes, cbdtRecord) ?: return false
+    return CbdtCblcReader.hasStructurallyValidTables(cblc, cbdt, parsedFont.metadata.glyphCount)
 }
 
 /**
@@ -411,6 +433,7 @@ internal class EmbeddedFontAssetResolver(
             colrV1Supported = supportsColrV1(resource, parsedFont),
             svgRouteSupported = supportsSvgOpenTypeRoute(resource, parsedFont),
             bitmapRouteSupported = supportsEbdtFormatOneRoute(resource, parsedFont),
+            cbdtCblcRouteSupported = supportsCbdtCblcRoute(resource, parsedFont),
         ).acquireRenderAsset(
             resolver = this,
             renderVariant = variant,
@@ -447,7 +470,11 @@ internal class EmbeddedFontAssetResolver(
                 key.variant == FontRenderVariantKey.default &&
                 profile.schemaVersion == 2 &&
                     resources[instance.face]?.let { resource ->
-                        supportsEbdtFormatOneRoute(resource, parsedFont)
+                        when (profile.strike.bitDepth) {
+                            1 -> supportsEbdtFormatOneRoute(resource, parsedFont)
+                            32 -> supportsCbdtCblcRoute(resource, parsedFont)
+                            else -> false
+                        }
                     } == true
             else -> false
         }
