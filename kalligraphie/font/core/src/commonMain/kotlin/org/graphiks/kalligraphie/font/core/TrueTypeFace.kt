@@ -59,7 +59,7 @@ private const val COLR_CPAL_V0_ROUTE_PARAMETERS: String = "colr-v0;cpal-v0"
 private const val SVG_OPEN_TYPE_V0_ROUTE_PARAMETERS: String = "svg-opentype-v0"
 private const val SVG_COLR_CPAL_V0_FALLBACK_ROUTE_PARAMETERS: String = "svg-opentype-v0;colr-v0;cpal-v0-fallback"
 private const val SVG_GLYF_OUTLINE_FALLBACK_ROUTE_PARAMETERS: String = "svg-opentype-v0;glyf-outline-fallback-v1"
-private const val EBDT_FORMAT_ONE_ROUTE_PARAMETERS: String = "eblc-v2;ebdt-v2;index-format-1;image-format-1"
+internal const val EBDT_FORMAT_ONE_ROUTE_PARAMETERS: String = "eblc-v2;ebdt-v2;index-format-1;image-format-1"
 
 internal class TrueTypeFace(
     private val faceId: FontFaceId,
@@ -373,7 +373,7 @@ internal data class TrueTypeFontInstance(
                     } else {
                         when (val bitmapData = readEbdtFormatOne(profile)) {
                             is FontOperationResult.Success -> FontOperationResult.Success(
-                                EbdtFormatOneRenderAssetHandle(
+                                BitmapRenderAssetHandle(
                                     faceId = faceId,
                                     resourceLease = lease,
                                     key = FontRenderAssetKey(
@@ -382,7 +382,7 @@ internal data class TrueTypeFontInstance(
                                         representationProfile = profile,
                                         generation = resolver.generation,
                                     ),
-                                    bitmapData = bitmapData.value,
+                                    route = EbdtMonoBitmapRoute(bitmapData.value),
                                 ),
                             )
 
@@ -893,12 +893,12 @@ private fun materializeColrV0Paint(
     return FontOperationResult.Success(GlyphRepresentation.Paint(paint))
 }
 
-/** Asset handle for the explicitly supported EBLC index-format 1 / EBDT image-format 1 route. */
-internal class EbdtFormatOneRenderAssetHandle(
+/** Asset handle for one validated bitmap route held by the embedded face. */
+internal class BitmapRenderAssetHandle(
     override val faceId: FontFaceId,
     private var resourceLease: PreparedFontResourceLease?,
     override val key: FontRenderAssetKey,
-    private val bitmapData: EbdtFormatOneData,
+    private val route: BitmapRouteData,
 ) : FontRenderAssetHandle {
     private val lifecycle = FontHandleLifecycle(::releaseResourceLease)
 
@@ -909,11 +909,11 @@ internal class EbdtFormatOneRenderAssetHandle(
             val detachedResourceLease = resourceLease?.resource?.acquireLease()
                 ?: return failure(FontError.ResourceClosed("Render asset is closed."))
             FontOperationResult.Success(
-                EbdtFormatOneRenderAssetHandle(
+                BitmapRenderAssetHandle(
                     faceId = faceId,
                     resourceLease = detachedResourceLease,
                     key = key,
-                    bitmapData = bitmapData,
+                    route = route,
                 ),
             )
         } finally {
@@ -936,17 +936,17 @@ internal class EbdtFormatOneRenderAssetHandle(
                 ?: return failure(FontError.ResourceClosed("Render asset is closed."))
             val glyphId = GlyphId(request.glyphId)
             val profile = requireNotNull(key.representationProfile as? BitmapProfile) {
-                "EBDT format 1 render asset requires a bitmap asset key."
+                "Bitmap render asset requires a bitmap asset key."
             }
             val representationKey = GlyphRepresentationKey(
                 assetKey = key,
                 glyphId = glyphId,
                 variant = key.variant,
                 profile = GlyphRepresentationProfileKey.bitmap(profile),
-                routeParameters = EBDT_FORMAT_ONE_ROUTE_PARAMETERS,
+                routeParameters = route.routeParameters,
             )
             resource.cachedRepresentation(representationKey)?.let { cached -> return cached }
-            when (val decoded = bitmapData.decode(glyphId, cancellationToken)) {
+            when (val decoded = route.decode(glyphId, cancellationToken)) {
                 is FontOperationResult.Success -> {
                     if (cancellationToken.isCancellationRequested()) FontOperationResult.Cancelled()
                     else {
