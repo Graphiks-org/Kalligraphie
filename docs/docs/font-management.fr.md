@@ -47,35 +47,66 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   gradients et les exclusions restantes sont décrits ci-dessous ;
 - strikes (tailles matricielles) bitmap schéma version 2, identifiés par leur
   couple exact de pixels par em (ppem) et leur profondeur de bits, jamais par
-  une taille voisine, via trois routes :
-
-    | Route / tables | Versions et enregistrements acceptés | Sélection | Pixels décodés | Exclusions |
-    | --- | --- | --- | --- | --- |
-    | `EBLC` / `EBDT` | version 2.0 ; sous-table d’index format 1 ; format d’image 1 | `(ppemX, ppemY, 1)` exact | `ALPHA_8` monochrome un bit aligné sur les octets en sRGB | formats d’index autres que 1 ; formats d’image autres que 1 |
-    | `CBLC` / `CBDT` | versions 2.0 ou 3.0, vérifiées indépendamment pour chaque table (un couple mixte est accepté délibérément) ; sous-table d’index format 1 ; formats d’image 17 ou 18 ; métriques horizontales | `(ppemX, ppemY, 32)` exact | sous-ensemble borné de PNG (Portable Network Graphics, format d’image sans perte) décodé en `RGBA_8888` droit non prémultiplié en sRGB ; les métriques doivent correspondre aux dimensions de l’image embarquée | données BGRA 32 bits non compressées ; format d’image 19 ; strikes verticaux |
-    | `sbix` (« table bitmap d’Apple ») | version 1 uniquement (bit 0 de `flags` défini, bits réservés à zéro) ; graphiques `'png '` uniquement ; les enregistrements `'dupe'` se résolvent vers l’image du glyphe référencé dans le même strike (chaque enregistrement `'dupe'` conserve sa propre origine) | `ppem` exact (le champ `resolution` est ignoré pour la sélection) | sous-ensemble PNG borné décodé en `RGBA_8888` droit non prémultiplié en sRGB ; origines et avances normalisées des unités de conception vers les pixels du strike, avec un arrondi des demi-valeurs en s’éloignant de zéro ; les avances viennent de `hhea`/`hmtx` (aucune exigence de `glyf`) | `'jpg '` ; `'tiff'` ; `'pdf '` ; `'mask'` |
-
-    PNG reste interne au décodage et n’est jamais exposé au consommateur.
-
-    La priorité des routes couleur est déterministe et s’applique à toute la
-    face : lorsqu’une face certifie les deux routes couleur, CBDT/CBLC est
-    choisie de façon déterministe et son échec est définitif. Il n’existe aucun
-    repli entre routes, car une autre route constitue une autre image, pas une
-    autre taille.
-
-    La découverte des capacités bitmap est conservatrice et porte sur toute la
-    face : une face ne déclare une route que si chaque strike déclaré de cette
-    route est structurellement valide ; un seul strike malformé, même non
-    sélectionné, retire la route. Les budgets de balayage des capacités pour
-    les octets compressés et décodés s’accumulent sur tous les strikes
-    déclarés, tandis que la matérialisation applique des budgets par strike.
-
+  une taille voisine : voir la
+  [matrice des formats bitmap](#matrice-des-formats-bitmap) ;
 - bornes de ressources bitmap rapportées par dimension via
   `BitmapResourceLimit` et `FontError.BitmapResourceLimitExceeded`, avec
   dimensions déclarées vérifiées avant toute allocation de pixels et, pour les
   images compressées, avant inflation, et aucun pixel partiel publié ;
 - ressources de rendu détachées qui restent utilisables après la fermeture du
   gestionnaire propriétaire ou de la ressource attachée.
+
+## Matrice des formats bitmap
+
+Les strikes (tailles matricielles) bitmap de schéma version 2 sont identifiés
+par leur couple exact de pixels par em (ppem) et leur profondeur de bits, jamais
+par une taille voisine, via trois routes :
+
+| Route / tables | Versions et enregistrements acceptés | Sélection | Pixels décodés | Exclusions |
+| --- | --- | --- | --- | --- |
+| `EBLC` / `EBDT` | version 2.0 ; sous-table d’index format 1 ; format d’image 1 | `(ppemX, ppemY, 1)` exact | `ALPHA_8` monochrome un bit aligné sur les octets en sRGB | formats d’index autres que 1 ; formats d’image autres que 1 |
+| `CBLC` / `CBDT` | versions 2.0 ou 3.0, vérifiées indépendamment pour chaque table (un couple mixte est accepté délibérément) ; sous-table d’index format 1 ; formats d’image 17 ou 18 ; métriques horizontales | `(ppemX, ppemY, 32)` exact | sous-ensemble borné de PNG (Portable Network Graphics, format d’image sans perte) décodé en `RGBA_8888` droit non prémultiplié en sRGB ; les métriques doivent correspondre aux dimensions de l’image embarquée | données BGRA 32 bits non compressées ; format d’image 19 ; strikes verticaux |
+| `sbix` (« table bitmap d’Apple ») | version 1 uniquement (bit 0 de `flags` défini, bits réservés à zéro) ; graphiques `'png '` uniquement ; les enregistrements `'dupe'` se résolvent vers l’image du glyphe référencé dans le même strike (chaque enregistrement `'dupe'` conserve sa propre origine) | `ppem` exact (le champ `resolution` (`ppi`) est ignoré pour la sélection) | sous-ensemble PNG borné décodé en `RGBA_8888` droit non prémultiplié en sRGB ; origines et avances normalisées des unités de conception vers les pixels du strike, avec un arrondi des demi-valeurs en s’éloignant de zéro ; les avances viennent de `hhea`/`hmtx` (aucune exigence de `glyf`) | `'jpg '` ; `'tiff'` ; `'pdf '` ; `'mask'` |
+
+Les pixels décodés sont des RGBA droits (non prémultipliés) en sRGB, avec les
+octets ordonnés R, G, B, A, les lignes du haut vers le bas, sans remplissage
+(padding), et exactement `width × height × 4` octets. `ALPHA_8` est un canal
+alpha d’un octet par pixel. Le décodeur n’effectue aucune prémultiplication.
+
+Le décodage PNG accepte les images truecolor (couleur directe) 8 bits (type de
+couleur 2) et truecolor avec alpha 8 bits (type 6), non entrelacées, avec des
+méthodes de compression et de filtre nulles, et vérifie la somme de contrôle
+CRC de chaque chunk. Un chunk `PLTE` suggéré est toléré et les chunks
+auxiliaires sont ignorés ; les images à palette, en niveaux de gris, 16 bits et
+entrelacées sont refusées. Les dimensions déclarées sont validées par rapport
+au profil avant toute inflation, et le flux d’inflation est plafonné au total
+exact de lignes déclaré, de sorte qu’une bombe de décompression est refusée
+avant toute allocation de pixels. PNG n’est jamais exposé au consommateur.
+
+La priorité des routes couleur est déterministe et s’applique à toute la face :
+lorsqu’une face certifie les deux routes couleur, CBDT/CBLC est choisie de
+façon déterministe et son échec est définitif. Il n’existe aucun repli entre
+routes, car une autre route constitue une autre image, pas une autre taille.
+
+La découverte des capacités bitmap est conservatrice et porte sur toute la
+face : une face ne déclare une route que si chaque strike déclaré de cette
+route est structurellement valide ; un seul strike malformé, même non
+sélectionné, retire la route. Les budgets de balayage des capacités pour les
+octets compressés et décodés s’accumulent sur tous les strikes déclarés, tandis
+que la matérialisation applique des budgets par strike. Les déclarations en
+double ne fournissent jamais de départage implicite : le prédicat de capacité
+retire la route lorsqu’un strike déclaré se répète, et la lecture d’un strike
+demandé déclaré deux fois échoue comme donnée invalide avec
+`font.eblc.duplicate-strike`, `font.cblc.duplicate-strike` ou
+`font.sbix.duplicate-strike`.
+
+Un glyphe sans enregistrement dans le strike sélectionné échoue avec
+`font.glyph-representation-unavailable`. Un enregistrement validé dont les
+pixels décodés sont tous nuls constitue un résultat vide légitime
+(`GlyphRepresentation.Empty`), jamais une erreur ; l’absence d’enregistrement
+n’est jamais traitée comme une absence d’encre.
+
+Aucune autre table ni aucun autre format d’enregistrement bitmap n’est reconnu.
 
 ## Exemple : un strike bitmap exact
 
@@ -103,7 +134,7 @@ appelante s’arrête.
 Un strike couleur utilise la même forme de profil avec
 `BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 32)` et
 `BitmapPixelFormat.RGBA_8888` ; un strike 32 bits est certifié par la route
-CBDT/CBLC ou sbix, sélectionnée selon la priorité documentée, toujours sans
+CBDT/CBLC ou sbix, sélectionnée selon la [priorité documentée](#matrice-des-formats-bitmap), toujours sans
 substitution par une taille voisine.
 
 ## Capturer des répertoires de fontes sur la JVM
