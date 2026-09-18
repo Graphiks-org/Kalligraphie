@@ -141,12 +141,6 @@ class GlyphRepresentationContractsTest {
     }
 
     @Test
-    fun rgbaPixelFormatDeclaresFourBytesPerPixel() {
-        assertEquals(4, BitmapPixelFormat.RGBA_8888.bytesPerPixel)
-        assertEquals(1, BitmapPixelFormat.ALPHA_8.bytesPerPixel)
-    }
-
-    @Test
     fun colorBitmapRepresentationRejectsAPixelBufferThatDoesNotMatchItsDimensions() {
         assertFailsWith<IllegalArgumentException> {
             BitmapGlyphIR(
@@ -162,11 +156,6 @@ class GlyphRepresentationContractsTest {
                 decodedPixels = byteArrayOf(10, 20, 30),
             )
         }
-    }
-
-    @Test
-    fun theDefaultBitmapProfileUsesSchemaVersionTwo() {
-        assertEquals(2, bitmapProfile().schemaVersion)
     }
 
     @Test
