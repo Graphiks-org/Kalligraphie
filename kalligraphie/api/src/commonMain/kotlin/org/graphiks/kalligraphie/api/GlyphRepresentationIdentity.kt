@@ -66,7 +66,7 @@ public data class GlyphRepresentationProfileKey(
                 kind = GlyphRepresentationProfileKind.BITMAP,
                 schemaVersion = profile.schemaVersion,
                 parameters = listOf(
-                    "strike=${profile.strike.pixelsPerEmX},${profile.strike.pixelsPerEmY}",
+                    "strike=${profile.strike.pixelsPerEmX},${profile.strike.pixelsPerEmY},${profile.strike.bitDepth}",
                     "pixels=${profile.acceptedPixelFormats.joinToString(",")}",
                     "colors=${profile.acceptedColorSpaces.joinToString(",")}",
                     "limits=${profile.limits.canonicalBitmapLimits()}",
@@ -126,7 +126,7 @@ private fun BitmapLimits.canonicalBitmapLimits(): String =
         maxIndexSubtables,
         maxRecordCount,
         maxIndexTableBytes,
-        maxBitmapTableBytes,
+        maxSourceTableBytes,
         maxWidth,
         maxHeight,
         maxPixels,

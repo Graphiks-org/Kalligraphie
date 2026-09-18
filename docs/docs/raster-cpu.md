@@ -9,7 +9,9 @@ The module rasterizes the three certified portable representation routes:
 - outlines (`GlyphOutlineIR`) into eight-bit coverage images;
 - paint graphs (`GlyphPaintIR`) into non-premultiplied RGBA images with
   `SOURCE_OVER` composition;
-- bitmap strikes (`BitmapGlyphIR`, `ALPHA_8`) with an explicit ink color.
+- bitmap strikes (`BitmapGlyphIR`) as `ALPHA_8` pixels tinted by the explicit
+  ink color, or as straight non-premultiplied `RGBA_8888` pixels copied
+  unchanged with the ink ignored.
 
 Every operation enforces declared bounds before allocation and returns either an
 immutable image or a typed failure (`InvalidRequest`, `LimitExceeded`). Curves

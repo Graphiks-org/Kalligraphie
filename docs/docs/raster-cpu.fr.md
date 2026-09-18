@@ -9,8 +9,9 @@ Le module rastérise les trois routes de représentation portables certifiées :
 - les contours (`GlyphOutlineIR`) en images de couverture (coverage) sur huit bits ;
 - les graphes de peinture (`GlyphPaintIR`) en images RGBA non prémultipliées avec
   composition `SOURCE_OVER` ;
-- les bitmaps (images matricielles) embarqués (`BitmapGlyphIR`, `ALPHA_8`) avec
-  une encre explicite.
+- les bitmaps (images matricielles) embarqués (`BitmapGlyphIR`) en pixels
+  `ALPHA_8` teintés par l'encre explicite, ou en pixels `RGBA_8888` droits
+  (alpha non prémultiplié) copiés tels quels, l'encre étant ignorée.
 
 Chaque opération applique des limites déclarées avant toute allocation et
 retourne soit une image immuable, soit un refus typé (`InvalidRequest`,

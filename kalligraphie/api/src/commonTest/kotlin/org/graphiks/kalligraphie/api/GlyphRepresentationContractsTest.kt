@@ -125,7 +125,7 @@ class GlyphRepresentationContractsTest {
         val decodedPixels = byteArrayOf(0, 127, -1, 64)
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 2,
             height = 2,
             originX = 0,
@@ -138,6 +138,127 @@ class GlyphRepresentationContractsTest {
         decodedPixels[0] = 42
 
         assertContentEquals(byteArrayOf(0, 127, -1, 64), bitmap.copyDecodedPixels())
+    }
+
+    @Test
+    fun rgbaPixelFormatDeclaresFourBytesPerPixel() {
+        assertEquals(4, BitmapPixelFormat.RGBA_8888.bytesPerPixel)
+        assertEquals(1, BitmapPixelFormat.ALPHA_8.bytesPerPixel)
+    }
+
+    @Test
+    fun colorBitmapRepresentationOwnsItsStraightRgbaPixels() {
+        val decodedPixels = byteArrayOf(10, 20, 30, 40)
+        val bitmap = BitmapGlyphIR(
+            glyphId = GlyphId(4),
+            strike = BitmapStrike(16, 16, 32),
+            width = 1,
+            height = 1,
+            originX = 0,
+            originY = 0,
+            metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+            pixelFormat = BitmapPixelFormat.RGBA_8888,
+            colorSpace = GlyphColorSpace.SRGB,
+            decodedPixels = decodedPixels,
+        )
+        decodedPixels[0] = 99
+
+        assertEquals(4, bitmap.decodedByteCount)
+        assertEquals(BitmapPixelFormat.RGBA_8888, bitmap.pixelFormat)
+        assertContentEquals(byteArrayOf(10, 20, 30, 40), bitmap.copyDecodedPixels())
+    }
+
+    @Test
+    fun colorBitmapRepresentationRejectsAPixelBufferThatDoesNotMatchItsDimensions() {
+        assertFailsWith<IllegalArgumentException> {
+            BitmapGlyphIR(
+                glyphId = GlyphId(4),
+                strike = BitmapStrike(16, 16, 32),
+                width = 1,
+                height = 1,
+                originX = 0,
+                originY = 0,
+                metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+                pixelFormat = BitmapPixelFormat.RGBA_8888,
+                colorSpace = GlyphColorSpace.SRGB,
+                decodedPixels = byteArrayOf(10, 20, 30),
+            )
+        }
+    }
+
+    @Test
+    fun theDefaultBitmapProfileUsesSchemaVersionTwo() {
+        assertEquals(2, bitmapProfile().schemaVersion)
+    }
+
+    @Test
+    fun bitmapProfileKeysDistinguishTheStrikeBitDepth() {
+        assertNotEquals(
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(bitDepth = 1)),
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(bitDepth = 32)),
+        )
+    }
+
+    @Test
+    fun bitmapProfileKeysEncodeTheSourceTableBound() {
+        assertNotEquals(
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(maxSourceTableBytes = 1_024)),
+            GlyphRepresentationProfileKey.bitmap(bitmapProfile(maxSourceTableBytes = 2_048)),
+        )
+    }
+
+    @Test
+    fun strikeRejectsABitDepthOutsideTheSupportedRange() {
+        assertFailsWith<IllegalArgumentException> { BitmapStrike(16, 16, 0) }
+        assertFailsWith<IllegalArgumentException> { BitmapStrike(16, 16, 33) }
+    }
+
+    @Test
+    fun bitmapLimitFailurePublishesItsExactDimensionAndBounds() {
+        val error = FontError.BitmapResourceLimitExceeded(
+            limit = BitmapResourceLimit.DECODED_BYTES,
+            observed = 4_096,
+            maximum = 256,
+            location = FontDiagnosticLocation.Table("CBDT"),
+        )
+
+        assertEquals("font.bitmap-resource-limit-exceeded", error.code)
+        assertEquals(BitmapResourceLimit.DECODED_BYTES, error.limit)
+        assertEquals(4_096, error.observed)
+        assertEquals(256, error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBDT"), error.location)
+        assertEquals(
+            "Bitmap route exceeded DECODED_BYTES at 4096 (maximum 256).",
+            error.message,
+        )
+        assertFailsWith<IllegalArgumentException> {
+            FontError.BitmapResourceLimitExceeded(
+                limit = BitmapResourceLimit.DECODED_BYTES,
+                observed = 256,
+                maximum = 256,
+                location = FontDiagnosticLocation.Table("CBDT"),
+            )
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FontError.BitmapResourceLimitExceeded(
+                limit = BitmapResourceLimit.WIDTH,
+                observed = 16,
+                maximum = -1,
+                location = FontDiagnosticLocation.Table("CBDT"),
+            )
+        }
+    }
+
+    @Test
+    fun bitmapLimitFailureAcceptsObservationsBeyondTheIntegerRange() {
+        val error = FontError.BitmapResourceLimitExceeded(
+            limit = BitmapResourceLimit.TOTAL_DECODED_BYTES,
+            observed = 3_000_000_000L,
+            maximum = 2_147_483_647L,
+            location = FontDiagnosticLocation.Source,
+        )
+
+        assertEquals(3_000_000_000L, error.observed)
     }
 
     @Test
@@ -297,4 +418,27 @@ class GlyphRepresentationContractsTest {
             maxCompositeDepth = 8,
             maxCompositeComponents = 32,
         )
+
+    private fun bitmapProfile(
+        bitDepth: Int = 1,
+        maxSourceTableBytes: Int = 1_024,
+    ): BitmapProfile = BitmapProfile(
+        strike = BitmapStrike(16, 16, bitDepth),
+        acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+        acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+        limits = BitmapLimits(
+            maxStrikes = 3,
+            maxIndexSubtables = 16,
+            maxRecordCount = 16,
+            maxIndexTableBytes = 16_384,
+            maxSourceTableBytes = maxSourceTableBytes,
+            maxWidth = 16,
+            maxHeight = 16,
+            maxPixels = 256,
+            maxCompressedBytes = 64,
+            maxTotalCompressedBytes = 1_024,
+            maxDecodedBytes = 256,
+            maxTotalDecodedBytes = 1_024,
+        ),
+    )
 }

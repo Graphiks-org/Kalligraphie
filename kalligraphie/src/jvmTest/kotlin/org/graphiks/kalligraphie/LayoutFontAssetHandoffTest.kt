@@ -778,12 +778,12 @@ class LayoutFontAssetHandoffTest {
             .use { it.readBytes() }
         val catalog = success(Kalligraphie.embedded(bytes, FontSourceProvenance("Skia EBDT format 1")))
         val requirements = FontAccessRequirementsSnapshot.renderable(listOf(BitmapProfile(
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
             acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
             limits = BitmapLimits(
                 maxStrikes = 3, maxIndexSubtables = 16, maxRecordCount = 16,
-                maxIndexTableBytes = 16_384, maxBitmapTableBytes = 16_384,
+                maxIndexTableBytes = 16_384, maxSourceTableBytes = 16_384,
                 maxWidth = 16, maxHeight = 16, maxPixels = 256,
                 maxCompressedBytes = 64, maxTotalCompressedBytes = 1_024,
                 maxDecodedBytes = 256, maxTotalDecodedBytes = 1_024,
@@ -845,7 +845,7 @@ class LayoutFontAssetHandoffTest {
             success(renderer.resolveGlyph(FontGlyphRequest(GlyphId(3)))),
         ).bitmap
         assertEquals(GlyphId(3), bitmap.glyphId)
-        assertEquals(BitmapStrike(16, 16), bitmap.strike)
+        assertEquals(BitmapStrike(16, 16, 1), bitmap.strike)
         assertEquals(13, bitmap.width)
         assertEquals(13, bitmap.height)
         assertEquals(0, bitmap.originX)

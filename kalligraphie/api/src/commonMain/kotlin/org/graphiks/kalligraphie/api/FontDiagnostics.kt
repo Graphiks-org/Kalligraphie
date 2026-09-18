@@ -163,6 +163,32 @@ public sealed interface FontError {
         override val location: FontDiagnosticLocation = FontDiagnosticLocation.Source
     }
 
+    /**
+     * One bitmap route exceeded an explicit resource bound.
+     *
+     * A breach is terminal: the calling resolution stops and no other profile or font is
+     * attempted for the affected unit. Consumers that accept several representation profiles
+     * must therefore size their bitmap bounds for the worst admitted font.
+     */
+    public data class BitmapResourceLimitExceeded(
+        /** Resource dimension that rejected the bitmap route or glyph. */
+        public val limit: BitmapResourceLimit,
+        /** Observed value that exceeded the configured maximum. */
+        public val observed: Long,
+        /** Configured maximum for the exceeded dimension. */
+        public val maximum: Long,
+        /** Location at which the limit was exceeded. */
+        override val location: FontDiagnosticLocation,
+    ) : FontError {
+        override val code: String = "font.bitmap-resource-limit-exceeded"
+        override val message: String = "Bitmap route exceeded $limit at $observed (maximum $maximum)."
+
+        init {
+            require(maximum >= 0L) { "maximum must be non-negative." }
+            require(observed > maximum) { "An exceeded bitmap resource limit must exceed its maximum." }
+        }
+    }
+
     /** A complete high-level editor operation exceeded its shared resource policy. */
     public data class EditorOperationLimitExceeded(
         /** Exact resource dimension, configured maximum, and observed count. */

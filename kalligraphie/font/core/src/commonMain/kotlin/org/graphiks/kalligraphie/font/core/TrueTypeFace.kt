@@ -46,9 +46,13 @@ import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalV0Data
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalV0Limits
 import org.graphiks.kalligraphie.font.sfnt.ColrV0Layer
+import org.graphiks.kalligraphie.font.sfnt.CbdtCblcData
+import org.graphiks.kalligraphie.font.sfnt.CbdtCblcReader
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneData
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
+import org.graphiks.kalligraphie.font.sfnt.SbixData
+import org.graphiks.kalligraphie.font.sfnt.SbixReader
 import org.graphiks.kalligraphie.font.sfnt.SvgGlyphPaint
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeData
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeReader
@@ -59,7 +63,6 @@ private const val COLR_CPAL_V0_ROUTE_PARAMETERS: String = "colr-v0;cpal-v0"
 private const val SVG_OPEN_TYPE_V0_ROUTE_PARAMETERS: String = "svg-opentype-v0"
 private const val SVG_COLR_CPAL_V0_FALLBACK_ROUTE_PARAMETERS: String = "svg-opentype-v0;colr-v0;cpal-v0-fallback"
 private const val SVG_GLYF_OUTLINE_FALLBACK_ROUTE_PARAMETERS: String = "svg-opentype-v0;glyf-outline-fallback-v1"
-private const val EBDT_FORMAT_ONE_ROUTE_PARAMETERS: String = "eblc-v2;ebdt-v2;index-format-1;image-format-1"
 
 internal class TrueTypeFace(
     private val faceId: FontFaceId,
@@ -71,6 +74,8 @@ internal class TrueTypeFace(
     private val colrV1Supported: Boolean = false,
     private val svgRouteSupported: Boolean,
     private val bitmapRouteSupported: Boolean,
+    private val cbdtCblcRouteSupported: Boolean,
+    private val sbixRouteSupported: Boolean,
 ) : FontFace {
     override val metadata: FontFaceMetadata = parsedFont.metadata
     override val id: FontFaceId = faceId
@@ -109,6 +114,8 @@ internal class TrueTypeFace(
                 colrV1Supported = colrV1Supported,
                 svgRouteSupported = svgRouteSupported,
                 bitmapRouteSupported = bitmapRouteSupported,
+                cbdtCblcRouteSupported = cbdtCblcRouteSupported,
+                sbixRouteSupported = sbixRouteSupported,
             ),
         )
     }
@@ -137,6 +144,8 @@ internal data class TrueTypeFontInstance(
     private val colrV1Supported: Boolean = false,
     private val svgRouteSupported: Boolean,
     private val bitmapRouteSupported: Boolean,
+    private val cbdtCblcRouteSupported: Boolean,
+    private val sbixRouteSupported: Boolean,
 ) : FontInstance {
     override fun resolveGlyph(codePoint: Int): FontOperationResult<GlyphResolution> {
         return resource.preparedFont.resolveGlyph(codePoint)
@@ -363,38 +372,71 @@ internal data class TrueTypeFontInstance(
                 }
 
                 is BitmapProfile -> {
-                    if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 1) {
+                    if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 2) {
                         failure(
                             FontError.UnsupportedRepresentationProfile(
-                                "Schema version 1 EBDT bitmap assets accept only the default render variant.",
+                                "Bitmap assets require schema version 2 and the default render variant.",
                                 FontDiagnosticLocation.FaceId(faceId),
                             ),
                         )
                     } else {
-                        when (val bitmapData = readEbdtFormatOne(profile)) {
-                            is FontOperationResult.Success -> FontOperationResult.Success(
-                                EbdtFormatOneRenderAssetHandle(
-                                    faceId = faceId,
-                                    resourceLease = lease,
-                                    key = FontRenderAssetKey(
-                                        fontInstanceKey = key,
-                                        variant = renderVariant.key,
-                                        representationProfile = profile,
-                                        generation = resolver.generation,
-                                    ),
-                                    bitmapData = bitmapData.value,
+                        when (profile.strike.bitDepth) {
+                            1 -> when (val bitmapData = readEbdtFormatOne(profile)) {
+                                is FontOperationResult.Success -> FontOperationResult.Success(
+                                    bitmapHandle(profile, renderVariant, resolver, lease, EbdtMonoBitmapRoute(bitmapData.value)),
+                                )
+
+                                is FontOperationResult.Failure -> bitmapData
+                                is FontOperationResult.Cancelled -> bitmapData
+                            }
+
+                            32 -> {
+                                // Deterministic colour-strike priority with no cross-route
+                                // fallthrough: CBDT/CBLC is the standardized colour route, so a
+                                // face that carries both colour tables resolves through it and a
+                                // CBDT/CBLC failure is the final result rather than a silent retry
+                                // against sbix.
+                                when {
+                                    cbdtCblcRouteSupported -> when (val bitmapData = readCbdtCblc(profile)) {
+                                        is FontOperationResult.Success -> FontOperationResult.Success(
+                                            bitmapHandle(profile, renderVariant, resolver, lease, CbdtCblcBitmapRoute(bitmapData.value)),
+                                        )
+
+                                        is FontOperationResult.Failure -> bitmapData
+                                        is FontOperationResult.Cancelled -> bitmapData
+                                    }
+
+                                    sbixRouteSupported -> when (val bitmapData = readSbix(profile)) {
+                                        is FontOperationResult.Success -> FontOperationResult.Success(
+                                            bitmapHandle(profile, renderVariant, resolver, lease, SbixBitmapRoute(bitmapData.value)),
+                                        )
+
+                                        is FontOperationResult.Failure -> bitmapData
+                                        is FontOperationResult.Cancelled -> bitmapData
+                                    }
+
+                                    else -> failure(
+                                        FontError.UnsupportedRepresentationProfile(
+                                            "The font has no supported 32-bit colour bitmap route.",
+                                            FontDiagnosticLocation.FaceId(faceId),
+                                        ),
+                                    )
+                                }
+                            }
+
+                            else -> failure(
+                                FontError.UnsupportedRepresentationProfile(
+                                    "Only bitmap strikes with bit depth 1 or 32 are supported.",
+                                    FontDiagnosticLocation.FaceId(faceId),
                                 ),
                             )
-
-                            is FontOperationResult.Failure -> bitmapData
-                            is FontOperationResult.Cancelled -> bitmapData
                         }
                     }
                 }
 
                     else -> failure(
                         FontError.UnsupportedRepresentationProfile(
-                            "The embedded TrueType provider supports only outline, COLR version 0 or 1, SVG-in-OpenType paint, and EBDT format 1 bitmap profiles.",
+                            "The embedded TrueType provider supports only outline, COLR version 0 or 1, SVG-in-OpenType paint, EBLC/EBDT format 1, CBLC/CBDT formats 17 and 18, and sbix 'png ' bitmap profiles.",
                             FontDiagnosticLocation.FaceId(faceId),
                         ),
                     )
@@ -426,10 +468,31 @@ internal data class TrueTypeFontInstance(
                 profile.schemaVersion == 1 && outlineRouteSupported
             is PaintGraphProfile -> (profile.schemaVersion == 1 && (paintGraphSupported || svgRouteSupported)) ||
                 (profile.schemaVersion in 2..3 && (colrV1Supported || svgRouteSupported))
-            is BitmapProfile ->
-                profile.schemaVersion == 1 && bitmapRouteSupported
+            is BitmapProfile -> profile.schemaVersion == 2 && when (profile.strike.bitDepth) {
+                1 -> bitmapRouteSupported
+                32 -> cbdtCblcRouteSupported || sbixRouteSupported
+                else -> false
+            }
             else -> false
         }
+
+    private fun bitmapHandle(
+        profile: BitmapProfile,
+        renderVariant: FontRenderVariantSnapshot,
+        resolver: EmbeddedFontAssetResolver,
+        lease: PreparedFontResourceLease,
+        route: BitmapRouteData,
+    ): BitmapRenderAssetHandle = BitmapRenderAssetHandle(
+        faceId = faceId,
+        resourceLease = lease,
+        key = FontRenderAssetKey(
+            fontInstanceKey = key,
+            variant = renderVariant.key,
+            representationProfile = profile,
+            generation = resolver.generation,
+        ),
+        route = route,
+    )
 
     private fun readColrV1(profile: PaintGraphProfile, variant: FontRenderVariantSnapshot): FontOperationResult<ColrV1Data> {
         val colrRecord = parsedFont.tableRecords["COLR"]
@@ -487,6 +550,44 @@ internal data class TrueTypeFontInstance(
         val ebdt = slice(sourceBytes, ebdtRecord)
             ?: return failure(FontError.InvalidFontData("EBDT table exceeds embedded source bytes.", FontDiagnosticLocation.Table("EBDT")))
         return EbdtFormatOneReader.read(eblc, ebdt, parsedFont.metadata.glyphCount, profile)
+    }
+
+    private fun readCbdtCblc(profile: BitmapProfile): FontOperationResult<CbdtCblcData> {
+        val cblcRecord = parsedFont.tableRecords["CBLC"]
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no CBLC table.", FontDiagnosticLocation.FaceId(faceId)))
+        val cbdtRecord = parsedFont.tableRecords["CBDT"]
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no CBDT table.", FontDiagnosticLocation.FaceId(faceId)))
+        val sourceBytes = resource.preparedFont.copySourceBytes()
+        val cblc = slice(sourceBytes, cblcRecord)
+            ?: return failure(FontError.InvalidFontData("CBLC table exceeds embedded source bytes.", FontDiagnosticLocation.Table("CBLC")))
+        val cbdt = slice(sourceBytes, cbdtRecord)
+            ?: return failure(FontError.InvalidFontData("CBDT table exceeds embedded source bytes.", FontDiagnosticLocation.Table("CBDT")))
+        return CbdtCblcReader.read(cblc, cbdt, parsedFont.metadata.glyphCount, profile)
+    }
+
+    /**
+     * Reads the face's sbix version 1 colour strike into the normalized route data.
+     *
+     * Advances resolve directly from the face's `hhea`/`hmtx` tables, the dependency OpenType's
+     * sbix contract requires; `glyf` is not required for advance resolution. A face whose `hmtx`
+     * is missing or unusable does not advertise this route, so a usable advance provider is
+     * expected here; if it is absent this reports an unsupported profile instead of publishing
+     * partial data.
+     */
+    private fun readSbix(profile: BitmapProfile): FontOperationResult<SbixData> {
+        val sbixRecord = parsedFont.tableRecords["sbix"]
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no sbix table.", FontDiagnosticLocation.FaceId(faceId)))
+        val sbix = slice(resource.preparedFont.copySourceBytes(), sbixRecord)
+            ?: return failure(FontError.InvalidFontData("sbix table exceeds embedded source bytes.", FontDiagnosticLocation.Table("sbix")))
+        val advanceDesignUnits = hmtxAdvanceDesignUnitsProvider(resource, parsedFont)
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no usable hmtx advance table for sbix.", FontDiagnosticLocation.Table("hmtx")))
+        return SbixReader.read(
+            sbixTable = sbix,
+            glyphCount = parsedFont.metadata.glyphCount,
+            unitsPerEm = parsedFont.metadata.unitsPerEm,
+            advanceDesignUnits = advanceDesignUnits,
+            profile = profile,
+        )
     }
 
     private fun readSvgOpenType(profile: PaintGraphProfile): FontOperationResult<SvgOpenTypeData> {
@@ -893,12 +994,12 @@ private fun materializeColrV0Paint(
     return FontOperationResult.Success(GlyphRepresentation.Paint(paint))
 }
 
-/** Asset handle for the explicitly supported EBLC index-format 1 / EBDT image-format 1 route. */
-internal class EbdtFormatOneRenderAssetHandle(
+/** Asset handle for one validated bitmap route held by the embedded face. */
+internal class BitmapRenderAssetHandle(
     override val faceId: FontFaceId,
     private var resourceLease: PreparedFontResourceLease?,
     override val key: FontRenderAssetKey,
-    private val bitmapData: EbdtFormatOneData,
+    private val route: BitmapRouteData,
 ) : FontRenderAssetHandle {
     private val lifecycle = FontHandleLifecycle(::releaseResourceLease)
 
@@ -909,11 +1010,11 @@ internal class EbdtFormatOneRenderAssetHandle(
             val detachedResourceLease = resourceLease?.resource?.acquireLease()
                 ?: return failure(FontError.ResourceClosed("Render asset is closed."))
             FontOperationResult.Success(
-                EbdtFormatOneRenderAssetHandle(
+                BitmapRenderAssetHandle(
                     faceId = faceId,
                     resourceLease = detachedResourceLease,
                     key = key,
-                    bitmapData = bitmapData,
+                    route = route,
                 ),
             )
         } finally {
@@ -936,17 +1037,17 @@ internal class EbdtFormatOneRenderAssetHandle(
                 ?: return failure(FontError.ResourceClosed("Render asset is closed."))
             val glyphId = GlyphId(request.glyphId)
             val profile = requireNotNull(key.representationProfile as? BitmapProfile) {
-                "EBDT format 1 render asset requires a bitmap asset key."
+                "Bitmap render asset requires a bitmap asset key."
             }
             val representationKey = GlyphRepresentationKey(
                 assetKey = key,
                 glyphId = glyphId,
                 variant = key.variant,
                 profile = GlyphRepresentationProfileKey.bitmap(profile),
-                routeParameters = EBDT_FORMAT_ONE_ROUTE_PARAMETERS,
+                routeParameters = route.routeParameters,
             )
             resource.cachedRepresentation(representationKey)?.let { cached -> return cached }
-            when (val decoded = bitmapData.decode(glyphId, cancellationToken)) {
+            when (val decoded = route.decode(glyphId, cancellationToken)) {
                 is FontOperationResult.Success -> {
                     if (cancellationToken.isCancellationRequested()) FontOperationResult.Cancelled()
                     else {

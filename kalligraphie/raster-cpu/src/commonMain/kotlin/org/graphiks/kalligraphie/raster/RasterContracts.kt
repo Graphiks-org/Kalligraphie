@@ -153,11 +153,13 @@ public class PaintRasterRequest(
 /**
  * Inputs for [GlyphRasterizer.rasterizeBitmap].
  *
- * [ink] tints the normalized `ALPHA_8` samples; the bitmap strike is rasterized
- * one-to-one without scaling so the exact strike identity is preserved.
+ * [ink] tints `ALPHA_8` samples only; straight `RGBA_8888` pixels are copied
+ * unchanged, so the ink never recolours or re-alphas a colour bitmap. The bitmap
+ * strike is rasterized one-to-one without scaling so the exact strike identity is
+ * preserved.
  */
 public class BitmapRasterRequest(
-    /** Foreground color applied to decoded samples. */
+    /** Tint applied to `ALPHA_8` samples; ignored for `RGBA_8888` bitmaps. */
     public val ink: GlyphColor,
     /** Resource bounds enforced before allocation. */
     public val limits: RasterLimits = RasterLimits.Default,

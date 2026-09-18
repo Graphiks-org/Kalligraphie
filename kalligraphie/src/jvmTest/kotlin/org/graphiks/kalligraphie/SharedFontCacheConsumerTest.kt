@@ -124,7 +124,7 @@ class SharedFontCacheConsumerTest {
 
     private fun assertBitmap(asset: FontRenderAssetHandle) {
         val bitmap = assertIs<GlyphRepresentation.Bitmap>(success(asset.resolveGlyph(FontGlyphRequest(GlyphId(3))))).bitmap
-        assertEquals(BitmapStrike(16, 16), bitmap.strike)
+        assertEquals(BitmapStrike(16, 16, 1), bitmap.strike)
         assertEquals(13, bitmap.width)
         assertEquals(13, bitmap.height)
         assertEquals(0, bitmap.originX)
@@ -149,7 +149,7 @@ class SharedFontCacheConsumerTest {
         maxPoints = 16_384, maxCompositeDepth = 8, maxCompositeComponents = 256)
 
     private fun bitmapProfile() = BitmapProfile(
-        strike = BitmapStrike(16, 16), acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+        strike = BitmapStrike(16, 16, 1), acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
         acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
         limits = BitmapLimits(3, 16, 16, 16_384, 16_384, 16, 16, 256, 64, 1_024, 256, 1_024),
     )
