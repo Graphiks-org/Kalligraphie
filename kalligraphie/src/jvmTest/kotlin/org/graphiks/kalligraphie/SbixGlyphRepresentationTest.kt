@@ -2,12 +2,15 @@ package org.graphiks.kalligraphie
 
 import java.io.ByteArrayInputStream
 import javax.imageio.ImageIO
+import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BitmapGlyphIR
 import org.graphiks.kalligraphie.api.BitmapLimits
 import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapProfile
 import org.graphiks.kalligraphie.api.BitmapStrike
 import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -17,11 +20,17 @@ import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
+import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphColorSpace
 import org.graphiks.kalligraphie.api.GlyphId
+import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.LayoutUnit
+import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.TextSlice
+import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -58,6 +67,50 @@ class SbixGlyphRepresentationTest {
             } finally {
                 asset.close()
             }
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
+    fun certifiesTheColourBitmapRouteThroughALineLayout() {
+        val catalog = success(Kalligraphie.embedded(sbixFixtureBytes(), FontSourceProvenance("Skia sbix colour fixture")))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(colourProfile(16)))
+        val resolver = success(catalog.openAssetResolver())
+
+        try {
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val snapshot = Kalligraphie.decodeUtf8(
+                version = TextVersion.create(),
+                slices = listOf(TextSlice.Utf8("😀".encodeToByteArray())),
+            ).snapshot
+            val line = assertIs<EditableLineResult.Success>(
+                JvmEditableLineFacade.layout(
+                    JvmEditableLineFacadeRequest(
+                        snapshot = snapshot,
+                        font = instance,
+                        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                        language = "en",
+                        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                        features = emptyList(),
+                        verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                        materialization = EditableLineMaterialization.Renderable(
+                            resolver = resolver,
+                            renderVariant = FontRenderVariantSnapshot.default,
+                            requirements = requirements,
+                        ),
+                        cancellationToken = CancellationToken.none,
+                    ),
+                ),
+            ).line
+            val glyph = line.positionedGlyphRuns.single().glyphs.single()
+            val certificate = checkNotNull(glyph.materializationCertificate)
+
+            assertEquals(GlyphId(3), glyph.shapedGlyph.glyphId)
+            assertEquals(GlyphMaterializationRoute.BITMAP, certificate.route)
+            assertEquals(glyph.shapedGlyph.glyphId, certificate.glyphId)
+            assertEquals(BitmapStrike(16, 16, 32), assertIs<BitmapProfile>(certificate.assetKey.representationProfile).strike)
         } finally {
             resolver.close()
         }
@@ -257,6 +310,50 @@ class SbixGlyphRepresentationTest {
             } finally {
                 reopened.close()
             }
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
+    fun detachesTheColourAssetAndStillResolvesTheSamePixels() {
+        val catalog = success(Kalligraphie.embedded(sbixFixtureBytes(), FontSourceProvenance("Skia sbix colour fixture")))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(colourProfile(16)))
+        val resolver = success(catalog.openAssetResolver())
+
+        try {
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+            val original = bitmap(asset, GlyphId(0))
+            val originalPixels = original.copyDecodedPixels()
+            val detached = success(asset.detach())
+            try {
+                asset.close()
+                resolver.close()
+
+                val deferred = bitmap(detached, GlyphId(0))
+
+                assertEquals(original.glyphId, deferred.glyphId)
+                assertEquals(original.strike, deferred.strike)
+                assertEquals(original.width, deferred.width)
+                assertEquals(original.height, deferred.height)
+                assertEquals(original.originX, deferred.originX)
+                assertEquals(original.originY, deferred.originY)
+                assertEquals(original.metrics.advanceX, deferred.metrics.advanceX)
+                assertEquals(original.metrics.advanceY, deferred.metrics.advanceY)
+                assertEquals(original.pixelFormat, deferred.pixelFormat)
+                assertEquals(original.colorSpace, deferred.colorSpace)
+                assertContentEquals(originalPixels, deferred.copyDecodedPixels())
+            } finally {
+                detached.close()
+            }
+
+            assertIs<FontError.ResourceClosed>(
+                assertIs<FontOperationResult.Failure>(
+                    detached.resolveGlyph(FontGlyphRequest(GlyphId(0))),
+                ).error,
+            )
         } finally {
             resolver.close()
         }
