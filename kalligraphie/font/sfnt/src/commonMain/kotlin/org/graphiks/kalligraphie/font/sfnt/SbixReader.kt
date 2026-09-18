@@ -170,9 +170,11 @@ public object SbixReader {
      * The operation validates every covered glyph record in the selected strike, resolves `'dupe'`
      * chains, and applies [BitmapProfile.limits] before it returns. A different strike, an
      * unsupported graphic type, a truncated table, a cycle, or a limit breach is returned as a
-     * typed failure rather than deferred to a renderer. Duplicate `ppem` strikes are rejected
-     * (`font.sbix.duplicate-strike`) and any strike with `ppem == 0` invalidates the table, because
-     * this route does not model `resolution` and selection must be exact and deterministic.
+     * typed failure rather than deferred to a renderer. Duplicate declarations of the requested
+     * strike are rejected (`font.sbix.duplicate-strike`); the capability predicate additionally
+     * rejects any duplicate declared strike. Any strike with `ppem == 0` invalidates the table,
+     * because this route does not model the `resolution`/`ppi` field and selection must be exact
+     * and deterministic.
      *
      * @param sbixTable exact bytes of the OpenType `sbix` table.
      * @param glyphCount number of glyph identifiers declared by the face.
