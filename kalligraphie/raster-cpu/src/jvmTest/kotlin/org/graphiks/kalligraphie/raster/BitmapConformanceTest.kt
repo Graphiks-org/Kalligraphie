@@ -28,7 +28,7 @@ class BitmapConformanceTest {
                 fixture.asset.resolveGlyph(FontGlyphRequest(glyph)),
             ).value
             val bitmap = assertIs<GlyphRepresentation.Bitmap>(representation).bitmap
-            assertEquals(BitmapStrike(16, 16), bitmap.strike)
+            assertEquals(BitmapStrike(16, 16, 1), bitmap.strike)
 
             val image = assertIs<RasterResult.Success<Rgba8Image>>(
                 GlyphRasterizer.rasterizeBitmap(bitmap, BitmapRasterRequest(GlyphColor(0, 0, 0, 255))),

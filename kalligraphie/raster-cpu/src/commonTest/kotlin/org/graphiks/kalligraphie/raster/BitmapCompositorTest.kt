@@ -15,7 +15,7 @@ class BitmapCompositorTest {
     fun tintsSamplesWithTheInkAlpha() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 2,
             height = 2,
             originX = -1,
@@ -40,7 +40,7 @@ class BitmapCompositorTest {
     fun roundsHalfUpInsteadOfTruncating() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 1,
             height = 1,
             originX = 0,
@@ -58,7 +58,7 @@ class BitmapCompositorTest {
     fun keepsInkChannelsUnderATransparentAlpha() {
         val bitmap = BitmapGlyphIR(
             glyphId = GlyphId(3),
-            strike = BitmapStrike(16, 16),
+            strike = BitmapStrike(16, 16, 1),
             width = 1,
             height = 1,
             originX = 0,
@@ -70,5 +70,28 @@ class BitmapCompositorTest {
         )
         val image = BitmapCompositor.rasterize(bitmap, GlyphColor(10, 20, 30, 0))
         assertEquals(0x000A141E, image[0, 0])
+    }
+
+    @Test
+    fun copiesStraightColorPixelsWithoutAnInk() {
+        val bitmap = BitmapGlyphIR(
+            glyphId = GlyphId(4),
+            strike = BitmapStrike(16, 16, 32),
+            width = 2,
+            height = 1,
+            originX = -2,
+            originY = 5,
+            metrics = BitmapGlyphMetrics(advanceX = 16, advanceY = 0),
+            pixelFormat = BitmapPixelFormat.RGBA_8888,
+            colorSpace = GlyphColorSpace.SRGB,
+            decodedPixels = byteArrayOf(10, 20, 30, 40, 255.toByte(), 0, 128.toByte(), 255.toByte()),
+        )
+
+        val image = BitmapCompositor.rasterize(bitmap, GlyphColor(200, 100, 50, 128))
+
+        assertEquals(-2, image.left)
+        assertEquals(5, image.top)
+        assertEquals(0x280A141E, image[0, 0])
+        assertEquals(0xFFFF0080.toInt(), image[1, 0])
     }
 }

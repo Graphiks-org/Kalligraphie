@@ -74,11 +74,13 @@ public object GlyphRasterizer {
     }
 
     /**
-     * Renders [bitmap] one-to-one into RGBA using [BitmapRasterRequest.ink].
+     * Renders [bitmap] one-to-one into non-premultiplied RGBA.
      *
-     * The exact strike is preserved: no scaling, hinting, or subpixel placement
-     * participates; output bearings are the bitmap's own `originX` and `originY`.
-     * Canvas limits are enforced before the compositor allocates.
+     * [BitmapRasterRequest.ink] tints `ALPHA_8` samples and is ignored for
+     * `RGBA_8888` bitmaps, whose straight pixels are copied unchanged. The exact
+     * strike is preserved: no scaling, hinting, or subpixel placement participates;
+     * output bearings are the bitmap's own `originX` and `originY`. Canvas limits
+     * are enforced before the compositor allocates.
      */
     public fun rasterizeBitmap(
         bitmap: BitmapGlyphIR,

@@ -13,6 +13,15 @@ public enum class BitmapPixelFormat(
 ) {
     /** One eight-bit alpha sample per pixel. */
     ALPHA_8(1),
+
+    /**
+     * Straight (non-premultiplied) red, green, blue, and alpha samples, one byte per channel.
+     *
+     * Bytes are ordered R, G, B, A; rows run from top to bottom with no padding; channels use
+     * the color space declared by the representation itself. Consumers that need premultiplied
+     * alpha convert it themselves so no decoded value is lost in the portable representation.
+     */
+    RGBA_8888(4),
 }
 
 /**
@@ -26,10 +35,13 @@ public data class BitmapStrike(
     public val pixelsPerEmX: Int,
     /** Vertical pixels per em. */
     public val pixelsPerEmY: Int,
+    /** Bits per source pixel in the exact strike; must be between 1 and 32: 1 for monochrome, 32 for color bitmaps. */
+    public val bitDepth: Int,
 ) {
     init {
         require(pixelsPerEmX > 0) { "pixelsPerEmX must be positive." }
         require(pixelsPerEmY > 0) { "pixelsPerEmY must be positive." }
+        require(bitDepth in 1..32) { "bitDepth must be between 1 and 32." }
     }
 }
 
@@ -43,8 +55,8 @@ public data class BitmapLimits(
     public val maxRecordCount: Int,
     /** Maximum source bytes retained from the complete EBLC index table. */
     public val maxIndexTableBytes: Int,
-    /** Maximum source bytes retained from the complete EBDT bitmap table. */
-    public val maxBitmapTableBytes: Int,
+    /** Maximum source bytes retained from the complete bitmap data table. */
+    public val maxSourceTableBytes: Int,
     /** Maximum decoded bitmap width in pixels. */
     public val maxWidth: Int,
     /** Maximum decoded bitmap height in pixels. */
@@ -65,7 +77,7 @@ public data class BitmapLimits(
         require(maxIndexSubtables > 0) { "maxIndexSubtables must be positive." }
         require(maxRecordCount >= 0) { "maxRecordCount must be non-negative." }
         require(maxIndexTableBytes > 0) { "maxIndexTableBytes must be positive." }
-        require(maxBitmapTableBytes > 0) { "maxBitmapTableBytes must be positive." }
+        require(maxSourceTableBytes > 0) { "maxSourceTableBytes must be positive." }
         require(maxWidth > 0) { "maxWidth must be positive." }
         require(maxHeight > 0) { "maxHeight must be positive." }
         require(maxPixels > 0) { "maxPixels must be positive." }
@@ -74,6 +86,45 @@ public data class BitmapLimits(
         require(maxDecodedBytes > 0) { "maxDecodedBytes must be positive." }
         require(maxTotalDecodedBytes > 0) { "maxTotalDecodedBytes must be positive." }
     }
+}
+
+/** Resource dimension bounded for one portable bitmap route. */
+public enum class BitmapResourceLimit {
+    /** Strikes inspected while selecting the exact requested strike. */
+    STRIKES,
+
+    /** Index subtables inspected in the selected strike. */
+    INDEX_SUBTABLES,
+
+    /** Bitmap record slots inspected in the selected strike. */
+    RECORD_COUNT,
+
+    /** Source bytes of the complete index table. */
+    INDEX_TABLE_BYTES,
+
+    /** Source bytes of the complete bitmap data table. */
+    SOURCE_TABLE_BYTES,
+
+    /** Compressed source bytes read for one bitmap glyph. */
+    COMPRESSED_BYTES,
+
+    /** Compressed source bytes read across the selected records. */
+    TOTAL_COMPRESSED_BYTES,
+
+    /** Declared bitmap width. */
+    WIDTH,
+
+    /** Declared bitmap height. */
+    HEIGHT,
+
+    /** Declared pixels in one bitmap. */
+    PIXELS,
+
+    /** Decoded pixel bytes retained for one bitmap glyph. */
+    DECODED_BYTES,
+
+    /** Decoded pixel bytes retained across the selected records. */
+    TOTAL_DECODED_BYTES,
 }
 
 /**
@@ -91,7 +142,7 @@ public class BitmapProfile(
     /** Resource bounds applied to selected bitmap records. */
     public val limits: BitmapLimits,
     /** Version of the bitmap representation schema accepted by the consumer. */
-    override val schemaVersion: Int = 1,
+    override val schemaVersion: Int = 2,
 ) : GlyphRepresentationProfile {
     /** Immutable pixel formats accepted by the consumer. */
     public val acceptedPixelFormats: List<BitmapPixelFormat> = acceptedPixelFormats.immutableListSnapshot()

@@ -37,11 +37,91 @@ The supported functional scope is intentionally narrow:
   `translate`, `scale`, `rotate`, `skewX`, `skewY`, and
   six-coefficient affine `matrix` transforms are supported. The exact gradient
   subset and remaining exclusions are described below;
-- EBLC version 2 / EBDT version 2 bitmap strikes using index subtable format 1
-  and image format 1 only: byte-aligned one-bit alpha decoded to `ALPHA_8` in
-  sRGB, with an exact requested strike;
+- bitmap schema version 2 strikes identified by their exact pixels-per-em
+  (ppem) pair and bit depth, never by a neighbouring size: see the
+  [bitmap format matrix](#bitmap-format-matrix);
+- bitmap resource bounds reported per dimension through `BitmapResourceLimit`
+  and `FontError.BitmapResourceLimitExceeded`, with declared dimensions checked
+  before any pixel allocation and, for compressed images, before inflation, and
+  no partial pixels published;
 - detached render assets that keep resolving after the owning resolver or
   attached handle is closed.
+
+## Bitmap format matrix
+
+Bitmap schema version 2 strikes are identified by their exact pixels-per-em
+(ppem) pair and bit depth, never by a neighbouring size, through three routes:
+
+| Route / tables | Accepted versions and records | Selection | Decoded pixels | Exclusions |
+| --- | --- | --- | --- | --- |
+| `EBLC` / `EBDT` | version 2.0; index subtable format 1; image format 1 | exact `(ppemX, ppemY, 1)` | byte-aligned one-bit `ALPHA_8` monochrome in sRGB | index formats other than 1; image formats other than 1 |
+| `CBLC` / `CBDT` | versions 2.0 or 3.0, each table checked independently (a mixed pair is accepted deliberately); index subtable format 1; image formats 17 or 18; horizontal metrics | exact `(ppemX, ppemY, 32)` | bounded PNG subset → straight non-premultiplied `RGBA_8888` in sRGB; metrics must equal the embedded image dimensions | uncompressed 32-bit BGRA; image format 19; vertical strikes |
+| `sbix` | version 1 only (`flags` bit 0 set, reserved bits zero); `'png '` graphics only; `'dupe'` records resolve to the referenced glyph's image within the same strike (each dupe record keeps its own origin) | exact `ppem` (the `resolution` (`ppi`) field is ignored for selection) | bounded PNG subset → straight non-premultiplied `RGBA_8888` in sRGB; origins and advances normalized from design units to strike pixels with round-half-away-from-zero; advances come from `hhea`/`hmtx` (no `glyf` requirement) | `'jpg '`; `'tiff'`; `'pdf '`; `'mask'` |
+
+Decoded pixels are straight (non-premultiplied) RGBA in sRGB, with bytes
+ordered R, G, B, A, rows from top to bottom, no padding, and exactly
+`width × height × 4` bytes. `ALPHA_8` is one-byte-per-pixel alpha. The
+decoder performs no premultiplication.
+
+PNG decoding accepts 8-bit truecolor (colour type 2) and 8-bit truecolor with
+alpha (type 6), non-interlaced, compression and filter method zero, with every
+chunk CRC verified. A suggested `PLTE` chunk is tolerated and ancillary chunks
+are ignored; palette, greyscale, 16-bit and interlaced images are refused.
+Declared dimensions are validated against the profile before any inflation, and
+the inflate stream is capped at the exact declared scanline total, so a
+decompression bomb is refused before pixels are allocated. PNG is never exposed
+to the consumer.
+
+Colour route priority is deterministic and face-wide: when one face certifies
+both colour routes, CBDT/CBLC is chosen deterministically and its failure is
+final. There is no cross-route fallback, because a different route is different
+artwork, not a different size.
+
+Bitmap capability discovery is conservative and face-wide: a face advertises a
+route only when every declared strike of that route is structurally valid, so
+one malformed unselected strike withdraws the route. Capability scan budgets
+for compressed and decoded bytes accumulate across all declared strikes, while
+materialization applies per-strike budgets. Duplicate declarations never provide
+an implicit tie-break: the capability predicate withdraws a route when any
+declared strike repeats, and reading a requested strike that is declared twice
+fails as invalid data with `font.eblc.duplicate-strike`,
+`font.cblc.duplicate-strike`, or `font.sbix.duplicate-strike`.
+
+A glyph with no record in the selected strike fails with
+`font.glyph-representation-unavailable`. A validated record whose decoded
+pixels are all zero is a legitimate empty result (`GlyphRepresentation.Empty`),
+never an error; absence of a record is never treated as "no ink".
+
+No other bitmap table or record format is recognized.
+
+## Example: an exact bitmap strike
+
+Given an application-supplied `BitmapLimits` value, a consumer declares one
+exact monochrome strike and obtains renderable requirements with
+`FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile))`:
+
+```kotlin
+val bitmapProfile = BitmapProfile(
+    strike = BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 1),
+    acceptedPixelFormats = listOf(BitmapPixelFormat.ALPHA_8),
+    acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+    limits = bitmapLimits,
+)
+```
+
+Only the exact declared strike is certified: a face without that strike is
+rejected with `font.unsupported-representation-profile`, and a glyph with no
+record in the selected strike is rejected with
+`font.glyph-representation-unavailable`; no neighbouring size is ever
+substituted. A breach of any declared bound fails with
+`font.bitmap-resource-limit-exceeded`, and that failure is terminal: the
+calling resolution stops.
+
+A colour strike uses the same profile shape with
+`BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 32)` and
+`BitmapPixelFormat.RGBA_8888`; a 32-bit strike is certified by the CBDT/CBLC
+or sbix route, selected by the [documented priority](#bitmap-format-matrix), still with no
+neighbouring-size substitution.
 
 ## Capture font directories on the JVM
 
@@ -657,6 +737,13 @@ Even otherwise unchanged schema-1 or schema-2 profiles get different
 fingerprints. Regenerate/invalidate persisted fingerprints and derived cache
 entries, then reopen/certify with fresh live provider keys; stored fingerprints
 are not resource locators.
+
+#### Bitmap schema-2 additions
+
+Bitmap profile fingerprints now include the exact strike bit depth. Consumers
+that persist `GlyphRepresentationProfileKey` values must regenerate them once;
+a stale fingerprint only causes a cache miss and never changes a materialized
+glyph.
 
 #### Earlier schema-2 changes
 
