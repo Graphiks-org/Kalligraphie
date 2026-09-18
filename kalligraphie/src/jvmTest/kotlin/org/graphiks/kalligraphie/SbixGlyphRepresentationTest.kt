@@ -263,6 +263,50 @@ class SbixGlyphRepresentationTest {
     }
 
     @Test
+    fun detachesTheColourAssetAndStillResolvesTheSamePixels() {
+        val catalog = success(Kalligraphie.embedded(sbixFixtureBytes(), FontSourceProvenance("Skia sbix colour fixture")))
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(colourProfile(16)))
+        val resolver = success(catalog.openAssetResolver())
+
+        try {
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+            val original = bitmap(asset, GlyphId(0))
+            val originalPixels = original.copyDecodedPixels()
+            val detached = success(asset.detach())
+            try {
+                asset.close()
+                resolver.close()
+
+                val deferred = bitmap(detached, GlyphId(0))
+
+                assertEquals(original.glyphId, deferred.glyphId)
+                assertEquals(original.strike, deferred.strike)
+                assertEquals(original.width, deferred.width)
+                assertEquals(original.height, deferred.height)
+                assertEquals(original.originX, deferred.originX)
+                assertEquals(original.originY, deferred.originY)
+                assertEquals(original.metrics.advanceX, deferred.metrics.advanceX)
+                assertEquals(original.metrics.advanceY, deferred.metrics.advanceY)
+                assertEquals(original.pixelFormat, deferred.pixelFormat)
+                assertEquals(original.colorSpace, deferred.colorSpace)
+                assertContentEquals(originalPixels, deferred.copyDecodedPixels())
+            } finally {
+                detached.close()
+            }
+
+            assertIs<FontError.ResourceClosed>(
+                assertIs<FontOperationResult.Failure>(
+                    detached.resolveGlyph(FontGlyphRequest(GlyphId(0))),
+                ).error,
+            )
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
     fun doesNotAdvertiseBitmapsWhenAnUnselectedStrikeIsMalformed() {
         // Regression pin: the conservative all-strikes rule predates the one-pass scan; this
         // proves the rule end to end rather than a red-at-base behaviour change.
