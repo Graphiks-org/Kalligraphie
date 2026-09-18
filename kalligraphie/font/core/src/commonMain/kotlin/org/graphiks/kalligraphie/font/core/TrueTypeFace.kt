@@ -383,17 +383,7 @@ internal data class TrueTypeFontInstance(
                         when (profile.strike.bitDepth) {
                             1 -> when (val bitmapData = readEbdtFormatOne(profile)) {
                                 is FontOperationResult.Success -> FontOperationResult.Success(
-                                    BitmapRenderAssetHandle(
-                                        faceId = faceId,
-                                        resourceLease = lease,
-                                        key = FontRenderAssetKey(
-                                            fontInstanceKey = key,
-                                            variant = renderVariant.key,
-                                            representationProfile = profile,
-                                            generation = resolver.generation,
-                                        ),
-                                        route = EbdtMonoBitmapRoute(bitmapData.value),
-                                    ),
+                                    bitmapHandle(profile, renderVariant, resolver, lease, EbdtMonoBitmapRoute(bitmapData.value)),
                                 )
 
                                 is FontOperationResult.Failure -> bitmapData
@@ -409,17 +399,7 @@ internal data class TrueTypeFontInstance(
                                 when {
                                     cbdtCblcRouteSupported -> when (val bitmapData = readCbdtCblc(profile)) {
                                         is FontOperationResult.Success -> FontOperationResult.Success(
-                                            BitmapRenderAssetHandle(
-                                                faceId = faceId,
-                                                resourceLease = lease,
-                                                key = FontRenderAssetKey(
-                                                    fontInstanceKey = key,
-                                                    variant = renderVariant.key,
-                                                    representationProfile = profile,
-                                                    generation = resolver.generation,
-                                                ),
-                                                route = CbdtCblcBitmapRoute(bitmapData.value),
-                                            ),
+                                            bitmapHandle(profile, renderVariant, resolver, lease, CbdtCblcBitmapRoute(bitmapData.value)),
                                         )
 
                                         is FontOperationResult.Failure -> bitmapData
@@ -428,17 +408,7 @@ internal data class TrueTypeFontInstance(
 
                                     sbixRouteSupported -> when (val bitmapData = readSbix(profile)) {
                                         is FontOperationResult.Success -> FontOperationResult.Success(
-                                            BitmapRenderAssetHandle(
-                                                faceId = faceId,
-                                                resourceLease = lease,
-                                                key = FontRenderAssetKey(
-                                                    fontInstanceKey = key,
-                                                    variant = renderVariant.key,
-                                                    representationProfile = profile,
-                                                    generation = resolver.generation,
-                                                ),
-                                                route = SbixBitmapRoute(bitmapData.value),
-                                            ),
+                                            bitmapHandle(profile, renderVariant, resolver, lease, SbixBitmapRoute(bitmapData.value)),
                                         )
 
                                         is FontOperationResult.Failure -> bitmapData
@@ -505,6 +475,24 @@ internal data class TrueTypeFontInstance(
             }
             else -> false
         }
+
+    private fun bitmapHandle(
+        profile: BitmapProfile,
+        renderVariant: FontRenderVariantSnapshot,
+        resolver: EmbeddedFontAssetResolver,
+        lease: PreparedFontResourceLease,
+        route: BitmapRouteData,
+    ): BitmapRenderAssetHandle = BitmapRenderAssetHandle(
+        faceId = faceId,
+        resourceLease = lease,
+        key = FontRenderAssetKey(
+            fontInstanceKey = key,
+            variant = renderVariant.key,
+            representationProfile = profile,
+            generation = resolver.generation,
+        ),
+        route = route,
+    )
 
     private fun readColrV1(profile: PaintGraphProfile, variant: FontRenderVariantSnapshot): FontOperationResult<ColrV1Data> {
         val colrRecord = parsedFont.tableRecords["COLR"]
