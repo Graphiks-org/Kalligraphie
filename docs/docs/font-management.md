@@ -37,16 +37,30 @@ The supported functional scope is intentionally narrow:
   `translate`, `scale`, `rotate`, `skewX`, `skewY`, and
   six-coefficient affine `matrix` transforms are supported. The exact gradient
   subset and remaining exclusions are described below;
-- bitmap schema version 2 strikes identified by their exact pixels-per-em pair
-  and bit depth, never by a neighbouring size: EBLC version 2 / EBDT version 2
-  using index subtable format 1 and image format 1 only, decoded to
-  byte-aligned one-bit `ALPHA_8` monochrome pixels in sRGB; CBLC and CBDT each
-  version 2.0 or 3.0 using index subtable format 1 and CBDT image formats 17
-  or 18 only, with horizontal metrics, decoded through a bounded PNG subset to
-  straight non-premultiplied `RGBA_8888` colour pixels in sRGB, where the
-  glyph metrics must match the embedded image dimensions. PNG is never exposed
-  to the consumer, and uncompressed 32-bit BGRA data, image format 19, and
-  vertical strikes stay outside this matrix;
+- bitmap schema version 2 strikes are identified by their exact
+  pixels-per-em (ppem) pair and bit depth, never by a neighbouring size,
+  through three routes:
+
+    | Route / tables | Accepted versions and records | Selection | Decoded pixels | Exclusions |
+    | --- | --- | --- | --- | --- |
+    | `EBLC` / `EBDT` | version 2.0; index subtable format 1; image format 1 | exact `(ppemX, ppemY, 1)` | byte-aligned one-bit `ALPHA_8` monochrome in sRGB | index formats other than 1; image formats other than 1 |
+    | `CBLC` / `CBDT` | versions 2.0 or 3.0, each table checked independently (a mixed pair is accepted deliberately); index subtable format 1; image formats 17 or 18; horizontal metrics | exact `(ppemX, ppemY, 32)` | bounded PNG subset → straight non-premultiplied `RGBA_8888` in sRGB; metrics must equal the embedded image dimensions | uncompressed 32-bit BGRA; image format 19; vertical strikes |
+    | `sbix` | version 1 only (`flags` bit 0 set, reserved bits zero); `'png '` graphics only; `'dupe'` records resolve to the referenced glyph's image within the same strike (each dupe record keeps its own origin) | exact `ppem` (the `resolution` field is ignored for selection) | bounded PNG subset → straight non-premultiplied `RGBA_8888` in sRGB; origins and advances normalized from design units to strike pixels with round-half-away-from-zero; advances come from `hhea`/`hmtx` (no `glyf` requirement) | `'jpg '`; `'tiff'`; `'pdf '`; `'mask'` |
+
+    PNG stays internal to decoding and is never exposed to the consumer.
+
+    Colour route priority is deterministic and face-wide: when one face
+    certifies both colour routes, CBDT/CBLC is chosen deterministically and
+    its failure is final. There is no cross-route fallback, because a
+    different route is different artwork, not a different size.
+
+    Bitmap capability discovery is conservative and face-wide: a face
+    advertises a route only when every declared strike of that route is
+    structurally valid, so one malformed unselected strike withdraws the
+    route. Capability scan budgets for compressed and decoded bytes accumulate
+    across all declared strikes, while materialization applies per-strike
+    budgets.
+
 - bitmap resource bounds reported per dimension through `BitmapResourceLimit`
   and `FontError.BitmapResourceLimitExceeded`, with declared dimensions checked
   before any pixel allocation and, for compressed images, before inflation, and
@@ -79,8 +93,9 @@ calling resolution stops.
 
 A colour strike uses the same profile shape with
 `BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 32)` and
-`BitmapPixelFormat.RGBA_8888`; only the CBDT/CBLC route certifies it, still
-with no neighbouring-size substitution.
+`BitmapPixelFormat.RGBA_8888`; a 32-bit strike is certified by the CBDT/CBLC
+or sbix route, selected by the documented priority, still with no
+neighbouring-size substitution.
 
 ## Capture font directories on the JVM
 

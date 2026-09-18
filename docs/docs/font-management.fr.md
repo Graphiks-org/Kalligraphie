@@ -46,18 +46,30 @@ Le périmètre fonctionnel supporté est volontairement étroit :
   à six coefficients) sont prises en charge. Le sous-ensemble exact des
   gradients et les exclusions restantes sont décrits ci-dessous ;
 - strikes (tailles matricielles) bitmap schéma version 2, identifiés par leur
-  couple exact de pixels par em et leur profondeur de bits, jamais par une
-  taille voisine : EBLC version 2 / EBDT version 2 avec sous-table d’index
-  format 1 et image format 1 uniquement, décodés en `ALPHA_8` monochrome
-  (alpha un bit aligné sur les octets) en sRGB ; CBLC et CBDT chacun en
-  version 2.0 ou 3.0 avec sous-table d’index format 1 et formats d’image CBDT
-  17 ou 18 uniquement, avec métriques horizontales, décodés via un
-  sous-ensemble PNG borné en pixels couleur `RGBA_8888` droits (alpha non
-  prémultiplié) en sRGB, où les métriques du glyphe doivent correspondre aux
-  dimensions de l’image embarquée. PNG (Portable Network Graphics, format
-  d’image sans perte) n’est jamais exposé au consommateur, et les données BGRA
-  32 bits non compressées, le format d’image 19 ainsi que les strikes verticaux
-  restent hors de cette matrice ;
+  couple exact de pixels par em (ppem) et leur profondeur de bits, jamais par
+  une taille voisine, via trois routes :
+
+    | Route / tables | Versions et enregistrements acceptés | Sélection | Pixels décodés | Exclusions |
+    | --- | --- | --- | --- | --- |
+    | `EBLC` / `EBDT` | version 2.0 ; sous-table d’index format 1 ; format d’image 1 | `(ppemX, ppemY, 1)` exact | `ALPHA_8` monochrome un bit aligné sur les octets en sRGB | formats d’index autres que 1 ; formats d’image autres que 1 |
+    | `CBLC` / `CBDT` | versions 2.0 ou 3.0, vérifiées indépendamment pour chaque table (un couple mixte est accepté délibérément) ; sous-table d’index format 1 ; formats d’image 17 ou 18 ; métriques horizontales | `(ppemX, ppemY, 32)` exact | sous-ensemble borné de PNG (Portable Network Graphics, format d’image sans perte) décodé en `RGBA_8888` droit non prémultiplié en sRGB ; les métriques doivent correspondre aux dimensions de l’image embarquée | données BGRA 32 bits non compressées ; format d’image 19 ; strikes verticaux |
+    | `sbix` (« table bitmap d’Apple ») | version 1 uniquement (bit 0 de `flags` défini, bits réservés à zéro) ; graphiques `'png '` uniquement ; les enregistrements `'dupe'` se résolvent vers l’image du glyphe référencé dans le même strike (chaque enregistrement `'dupe'` conserve sa propre origine) | `ppem` exact (le champ `resolution` est ignoré pour la sélection) | sous-ensemble PNG borné décodé en `RGBA_8888` droit non prémultiplié en sRGB ; origines et avances normalisées des unités de conception vers les pixels du strike, avec un arrondi des demi-valeurs en s’éloignant de zéro ; les avances viennent de `hhea`/`hmtx` (aucune exigence de `glyf`) | `'jpg '` ; `'tiff'` ; `'pdf '` ; `'mask'` |
+
+    PNG reste interne au décodage et n’est jamais exposé au consommateur.
+
+    La priorité des routes couleur est déterministe et s’applique à toute la
+    face : lorsqu’une face certifie les deux routes couleur, CBDT/CBLC est
+    choisie de façon déterministe et son échec est définitif. Il n’existe aucun
+    repli entre routes, car une autre route constitue une autre image, pas une
+    autre taille.
+
+    La découverte des capacités bitmap est conservatrice et porte sur toute la
+    face : une face ne déclare une route que si chaque strike déclaré de cette
+    route est structurellement valide ; un seul strike malformé, même non
+    sélectionné, retire la route. Les budgets de balayage des capacités pour
+    les octets compressés et décodés s’accumulent sur tous les strikes
+    déclarés, tandis que la matérialisation applique des budgets par strike.
+
 - bornes de ressources bitmap rapportées par dimension via
   `BitmapResourceLimit` et `FontError.BitmapResourceLimitExceeded`, avec
   dimensions déclarées vérifiées avant toute allocation de pixels et, pour les
@@ -90,8 +102,9 @@ appelante s’arrête.
 
 Un strike couleur utilise la même forme de profil avec
 `BitmapStrike(pixelsPerEmX = 16, pixelsPerEmY = 16, bitDepth = 32)` et
-`BitmapPixelFormat.RGBA_8888` ; seule la route CBDT/CBLC le certifie, toujours
-sans substitution par une taille voisine.
+`BitmapPixelFormat.RGBA_8888` ; un strike 32 bits est certifié par la route
+CBDT/CBLC ou sbix, sélectionnée selon la priorité documentée, toujours sans
+substitution par une taille voisine.
 
 ## Capturer des répertoires de fontes sur la JVM
 
