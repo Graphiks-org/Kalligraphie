@@ -580,30 +580,24 @@ internal data class TrueTypeFontInstance(
     /**
      * Reads the face's sbix version 1 colour strike into the normalized route data.
      *
-     * Advances resolve through the shared TrueType metrics path, so a face needs usable `hmtx`
-     * plus `glyf`-backed metric resolution to certify this route; a face that lacks either does
-     * not advertise the sbix route.
+     * Advances resolve directly from the face's `hhea`/`hmtx` tables, the dependency OpenType's
+     * sbix contract requires; `glyf` is not required for advance resolution. A face whose `hmtx`
+     * is missing or unusable does not advertise this route, so a usable advance provider is
+     * expected here; if it is absent this reports an unsupported profile instead of publishing
+     * partial data.
      */
     private fun readSbix(profile: BitmapProfile): FontOperationResult<SbixData> {
         val sbixRecord = parsedFont.tableRecords["sbix"]
             ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no sbix table.", FontDiagnosticLocation.FaceId(faceId)))
         val sbix = slice(resource.preparedFont.copySourceBytes(), sbixRecord)
             ?: return failure(FontError.InvalidFontData("sbix table exceeds embedded source bytes.", FontDiagnosticLocation.Table("sbix")))
+        val advanceDesignUnits = hmtxAdvanceDesignUnitsProvider(resource, parsedFont)
+            ?: return failure(FontError.UnsupportedRepresentationProfile("The font has no usable hmtx advance table for sbix.", FontDiagnosticLocation.Table("hmtx")))
         return SbixReader.read(
             sbixTable = sbix,
             glyphCount = parsedFont.metadata.glyphCount,
             unitsPerEm = parsedFont.metadata.unitsPerEm,
-            advanceDesignUnits = { glyphId ->
-                when (
-                    val metrics = resource.preparedFont.readGlyphMetrics(
-                        GlyphId(glyphId),
-                        descriptor.layoutSize.value,
-                    )
-                ) {
-                    is FontOperationResult.Success -> metrics.value.advanceWidthDesignUnits
-                    else -> null
-                }
-            },
+            advanceDesignUnits = advanceDesignUnits,
             profile = profile,
         )
     }

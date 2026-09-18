@@ -30,7 +30,6 @@ import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontOperationResult.Success
 import org.graphiks.kalligraphie.api.BitmapGlyphIR
 import org.graphiks.kalligraphie.api.BitmapProfile
-import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import org.graphiks.kalligraphie.api.GlyphPaintIR
@@ -328,21 +327,13 @@ private fun supportsSbixRoute(
     parsedFont: ParsedTrueTypeFont,
 ): Boolean {
     val sbixRecord = parsedFont.tableRecords["sbix"] ?: return false
-    val hmtxRecord = parsedFont.tableRecords["hmtx"] ?: return false
-    val sourceBytes = resource.preparedFont.copySourceBytes()
-    val sbix = slice(sourceBytes, sbixRecord) ?: return false
-    if (slice(sourceBytes, hmtxRecord) == null) return false
+    val sbix = slice(resource.preparedFont.copySourceBytes(), sbixRecord) ?: return false
+    val advanceDesignUnits = hmtxAdvanceDesignUnitsProvider(resource, parsedFont) ?: return false
     return SbixReader.hasStructurallyValidTable(
         sbixTable = sbix,
         glyphCount = parsedFont.metadata.glyphCount,
         unitsPerEm = parsedFont.metadata.unitsPerEm,
-        advanceDesignUnits = { glyphId ->
-            // Design-unit advances are layout-independent, so the prefilter uses a nominal size.
-            when (val metrics = resource.preparedFont.readGlyphMetrics(GlyphId(glyphId), 1f)) {
-                is FontOperationResult.Success -> metrics.value.advanceWidthDesignUnits
-                else -> null
-            }
-        },
+        advanceDesignUnits = advanceDesignUnits,
     )
 }
 
