@@ -61,7 +61,12 @@ internal object PngDecoder {
         end: Int,
         limits: BitmapLimits,
         table: String,
-    ): FontOperationResult<PngHeader> = parseHeader(encoded, start, end, limits, table)
+    ): FontOperationResult<PngHeader> {
+        if (start < 0 || end < start || end > encoded.size) {
+            return invalid("font.png.truncated", "PNG slice range is invalid.", table)
+        }
+        return parseHeader(encoded, start, end, limits, table)
+    }
 
     fun decode(
         encoded: ByteArray,

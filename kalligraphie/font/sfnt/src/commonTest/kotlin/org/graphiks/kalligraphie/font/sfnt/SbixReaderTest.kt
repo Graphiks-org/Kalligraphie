@@ -300,6 +300,7 @@ class SbixReaderTest {
 
     @Test
     fun capabilityPredicateRejectsDuplicateStrikes() {
+        // Regression pin: read always rejected duplicated strikes; the bounded scan must too.
         val table = sbixTable(
             1,
             SbixStrikeSpec(16, listOf(pngGlyph())),
@@ -311,6 +312,7 @@ class SbixReaderTest {
 
     @Test
     fun capabilityPredicateRejectsCumulativeDecodedBytesAcrossStrikes() {
+        // Red at the reviewed base: per-strike totals passed before the scan shared one budget.
         val table = sbixTable(
             1,
             SbixStrikeSpec(16, listOf(SbixGlyphSpec(0, 0, "png ", BUDGET_PNG_3000))),

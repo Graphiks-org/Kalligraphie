@@ -110,14 +110,19 @@ public object CbdtCblcReader {
      * Reports whether every declared strike can use this reader's exact colour route.
      *
      * The predicate is conservative: a table is accepted only when *every* declared strike is
-     * route-valid, so one malformed unselected strike removes the route from the face. It walks
-     * all strikes in one bounded pass that validates headers, strike envelopes, reserved and
-     * horizontal strike flags, 32-bit depth, subtable boundaries, glyph ranges, image formats,
-     * offsets, and image records with conservative implementation limits while retaining no
-     * records and no pixels. Compressed and decoded byte budgets accumulate across all strikes; a
-     * breach exits early with `false`. The predicate publishes no data and is intended only for a
-     * face capability prefilter. Call [read] again with the consumer's exact [BitmapProfile]
-     * before issuing a certificate.
+     * route-valid, so a single malformed or over-budget strike withdraws the route from the face.
+     * It walks all strikes in one bounded pass that validates headers, strike envelopes, reserved
+     * and horizontal strike flags, 32-bit depth, subtable boundaries, glyph ranges, image
+     * formats, offsets, and image records with conservative implementation limits while retaining
+     * no records and no pixels. Compressed and decoded byte budgets accumulate across every
+     * declared strike, and a breach exits early with `false`.
+     *
+     * These cumulative totals are deliberately stricter than [read], which resets both totals for
+     * the one strike its [BitmapProfile] selects. The two entry points are asymmetric: a `false`
+     * here does not imply that any individual strike's [read] would fail, and a successful [read]
+     * does not imply the table passes this predicate. The predicate publishes no data and is
+     * intended only for a face capability prefilter. Call [read] again with the consumer's exact
+     * [BitmapProfile] before issuing a certificate.
      */
     public fun hasStructurallyValidTables(
         cblcTable: ByteArray,
@@ -136,11 +141,11 @@ public object CbdtCblcReader {
                 is FontOperationResult.Success -> parsed.value
                 else -> return false
             }
+            // Mode-dependent by design: the scan checks every declared strike's depth while read
+            // validates the requested profile's depth before selection.
             if (size.bitDepth != 32) return false
-            if (size.flags and RESERVED_FLAGS_MASK != 0 || size.flags and HORIZONTAL_METRICS_FLAG == 0) return false
-            if (size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
-                return false
-            }
+            if (!hasNoReservedStrikeFlags(size) || !isHorizontallyMetricStrike(size)) return false
+            if (!isStrikeGlyphRangeWithinFace(size, glyphCount)) return false
             if (!seenStrikes.add(size.strike)) return false
             val walked = visitStrike(
                 cblc = cblcTable,
@@ -222,13 +227,13 @@ public object CbdtCblcReader {
             }
         }
         val size = selected ?: return unsupported("The exact requested bitmap strike is unavailable.")
-        if (size.flags and RESERVED_FLAGS_MASK != 0) {
+        if (!hasNoReservedStrikeFlags(size)) {
             return invalid("font.cblc.invalid-flags", "CBLC strike flags use reserved bits.", "CBLC")
         }
-        if (size.flags and HORIZONTAL_METRICS_FLAG == 0) {
+        if (!isHorizontallyMetricStrike(size)) {
             return unsupported("Only horizontally-metric CBDT strikes are supported.")
         }
-        if (size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
+        if (!isStrikeGlyphRangeWithinFace(size, glyphCount)) {
             return invalid("font.cblc.invalid-glyph-range", "CBLC strike glyph range is outside the face.", "CBLC")
         }
         return readStrike(cblcTable, cbdtTable, glyphCount, size, profile)
@@ -279,6 +284,15 @@ public object CbdtCblcReader {
         ),
         schemaVersion = 2,
     )
+
+    private fun hasNoReservedStrikeFlags(size: CbdtBitmapSizeTable): Boolean =
+        size.flags and RESERVED_FLAGS_MASK == 0
+
+    private fun isHorizontallyMetricStrike(size: CbdtBitmapSizeTable): Boolean =
+        size.flags and HORIZONTAL_METRICS_FLAG != 0
+
+    private fun isStrikeGlyphRangeWithinFace(size: CbdtBitmapSizeTable, glyphCount: Int): Boolean =
+        size.startGlyphId in 0 until glyphCount && size.endGlyphId in size.startGlyphId until glyphCount
 
     private fun visitStrike(
         cblc: ByteArray,
@@ -379,35 +393,6 @@ public object CbdtCblcReader {
             }
         }
         return FontOperationResult.Success(Unit)
-    }
-
-    private fun readImageRecord(
-        data: ByteArray,
-        start: Int,
-        end: Int,
-        imageFormat: Int,
-        profile: BitmapProfile,
-    ): FontOperationResult<ParsedCbdtRecord> {
-        val inspected = when (val parsed = inspectImageRecord(data, start, end, imageFormat, profile)) {
-            is FontOperationResult.Success -> parsed.value
-            is FontOperationResult.Failure -> return parsed
-            is FontOperationResult.Cancelled -> return parsed
-        }
-        return FontOperationResult.Success(
-            ParsedCbdtRecord(
-                record = CbdtCblcRecord(
-                    width = inspected.width,
-                    height = inspected.height,
-                    originX = inspected.originX,
-                    originY = inspected.originY,
-                    metrics = inspected.metrics,
-                    pixelFormat = inspected.pixelFormat,
-                    pngBytes = data.copyOfRange(inspected.payloadStart, inspected.payloadEnd),
-                ),
-                compressedByteCount = inspected.compressedByteCount,
-                decodedByteCount = inspected.decodedByteCount,
-            ),
-        )
     }
 
     private fun inspectImageRecord(
@@ -562,12 +547,6 @@ internal data class CbdtCblcRecord(
     val metrics: BitmapGlyphMetrics,
     val pixelFormat: BitmapPixelFormat,
     val pngBytes: ByteArray,
-)
-
-private data class ParsedCbdtRecord(
-    val record: CbdtCblcRecord,
-    val compressedByteCount: Long,
-    val decodedByteCount: Long,
 )
 
 private class CbdtImageRecordFacts(

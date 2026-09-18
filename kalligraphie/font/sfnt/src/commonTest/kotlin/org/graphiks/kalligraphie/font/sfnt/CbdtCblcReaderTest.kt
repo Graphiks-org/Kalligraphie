@@ -414,6 +414,7 @@ class CbdtCblcReaderTest {
 
     @Test
     fun capabilityPredicateRejectsDuplicateStrikes() {
+        // Regression pin: read always rejected duplicated strikes; the bounded scan must too.
         val tables = tables(strike(), strike())
 
         assertFalse(CbdtCblcReader.hasStructurallyValidTables(tables.first, tables.second, glyphCount = 1))
@@ -421,6 +422,7 @@ class CbdtCblcReaderTest {
 
     @Test
     fun capabilityPredicateRejectsCumulativeDecodedBytesAcrossStrikes() {
+        // Red at the reviewed base: per-strike totals passed before the scan shared one budget.
         val recordsPerStrike = 130
         val tables = tables(
             strike(

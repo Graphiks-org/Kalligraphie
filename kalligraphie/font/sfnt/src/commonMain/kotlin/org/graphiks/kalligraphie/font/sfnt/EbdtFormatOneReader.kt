@@ -100,13 +100,18 @@ public object EbdtFormatOneReader {
      * Reports whether every declared strike can use this reader's exact format-1 route.
      *
      * The predicate is conservative: a table is accepted only when *every* declared strike is
-     * route-valid, so one malformed unselected strike removes the route from the face. It walks
-     * all strikes in one bounded pass that validates headers, strike envelopes, subtable
+     * route-valid, so a single malformed or over-budget strike withdraws the route from the face.
+     * It walks all strikes in one bounded pass that validates headers, strike envelopes, subtable
      * boundaries, glyph ranges, image formats, offsets, and image records with conservative
      * implementation limits while retaining no records and no pixels. Compressed and decoded byte
-     * budgets accumulate across all strikes; a breach exits early with `false`. The predicate
-     * publishes no data and is intended only for a face capability prefilter. Call [read] again
-     * with the consumer's exact [BitmapProfile] before issuing a certificate.
+     * budgets accumulate across every declared strike, and a breach exits early with `false`.
+     *
+     * These cumulative totals are deliberately stricter than [read], which resets both totals for
+     * the one strike its [BitmapProfile] selects. The two entry points are asymmetric: a `false`
+     * here does not imply that any individual strike's [read] would fail, and a successful [read]
+     * does not imply the table passes this predicate. The predicate publishes no data and is
+     * intended only for a face capability prefilter. Call [read] again with the consumer's exact
+     * [BitmapProfile] before issuing a certificate.
      */
     public fun hasStructurallyValidFormatOneTables(
         eblcTable: ByteArray,
@@ -125,7 +130,7 @@ public object EbdtFormatOneReader {
                 is FontOperationResult.Success -> parsed.value
                 else -> return false
             }
-            if (size.strike.bitDepth != 1 || size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
+            if (!hasSupportedStrikeBitDepth(size) || !isStrikeGlyphRangeWithinFace(size, glyphCount)) {
                 return false
             }
             if (!seenStrikes.add(size.strike)) return false
@@ -196,8 +201,8 @@ public object EbdtFormatOneReader {
             }
         }
         val size = selected ?: return unsupported("The exact requested bitmap strike is unavailable.")
-        if (size.strike.bitDepth != 1) return unsupported("Only one-bit EBDT image data is supported.")
-        if (size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
+        if (!hasSupportedStrikeBitDepth(size)) return unsupported("Only one-bit EBDT image data is supported.")
+        if (!isStrikeGlyphRangeWithinFace(size, glyphCount)) {
             return invalid("font.eblc.invalid-glyph-range", "EBLC strike glyph range is outside the face.", "EBLC")
         }
         return readStrike(eblcTable, ebdtTable, glyphCount, size, profile)
@@ -248,6 +253,12 @@ public object EbdtFormatOneReader {
         ),
         schemaVersion = 2,
     )
+
+    private fun hasSupportedStrikeBitDepth(size: BitmapSizeTable): Boolean =
+        size.strike.bitDepth == SUPPORTED_BIT_DEPTH
+
+    private fun isStrikeGlyphRangeWithinFace(size: BitmapSizeTable, glyphCount: Int): Boolean =
+        size.startGlyphId in 0 until glyphCount && size.endGlyphId in size.startGlyphId until glyphCount
 
     private fun visitStrike(
         eblc: ByteArray,
@@ -499,6 +510,7 @@ private const val INDEX_SUBTABLE_HEADER_LENGTH = 8L
 private const val SMALL_GLYPH_METRICS_LENGTH = 5
 private const val EBLC_VERSION_2: UInt = 0x00020000u
 private const val EBDT_VERSION_2: UInt = 0x00020000u
+private const val SUPPORTED_BIT_DEPTH = 1
 private const val MAX_CAPABILITY_TABLE_BYTES = 16 * 1024 * 1024
 private const val MAX_CAPABILITY_STRIKES = 64
 private const val MAX_CAPABILITY_INDEX_SUBTABLES = 4_096

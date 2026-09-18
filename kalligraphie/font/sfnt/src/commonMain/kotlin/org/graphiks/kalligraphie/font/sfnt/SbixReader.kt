@@ -108,13 +108,18 @@ public object SbixReader {
      * route.
      *
      * The predicate is conservative: a table is accepted only when *every* declared strike is
-     * route-valid, so one malformed unselected strike removes the route from the face. It walks
-     * all strikes in one bounded pass that validates version, flags, strike offsets, glyph offset
-     * arrays, record payloads, dupe chains, and resource limits with conservative implementation
-     * limits while retaining no records and no pixels. Compressed and decoded byte budgets
-     * accumulate across all strikes; a breach exits early with `false`. It publishes no data and
-     * is intended only for a face capability prefilter. Call [read] again with the consumer's
-     * exact [BitmapProfile] before issuing a certificate.
+     * route-valid, so a single malformed or over-budget strike withdraws the route from the face.
+     * It walks all strikes in one bounded pass that validates version, flags, strike offsets,
+     * glyph offset arrays, record payloads, dupe chains, and resource limits with conservative
+     * implementation limits while retaining no records and no pixels. Compressed and decoded byte
+     * budgets accumulate across every declared strike, and a breach exits early with `false`.
+     *
+     * These cumulative totals are deliberately stricter than [read], which resets both totals for
+     * the one strike its [BitmapProfile] selects. The two entry points are asymmetric: a `false`
+     * here does not imply that any individual strike's [read] would fail, and a successful [read]
+     * does not imply the table passes this predicate. The predicate publishes no data and is
+     * intended only for a face capability prefilter. Call [read] again with the consumer's exact
+     * [BitmapProfile] before issuing a certificate.
      */
     public fun hasStructurallyValidTable(
         sbixTable: ByteArray,
@@ -126,8 +131,7 @@ public object SbixReader {
             return false
         }
         if (sbixTable.size > MAX_CAPABILITY_TABLE_BYTES) return false
-        val flags = readUInt16(sbixTable, 2)?.toInt() ?: return false
-        if (flags and REQUIRED_FLAG == 0 || flags and RESERVED_FLAGS_MASK != 0) return false
+        if (!hasSupportedHeaderFlags(sbixTable)) return false
         val strikeCount = readUInt32(sbixTable, 4)?.toLong() ?: return false
         if (strikeCount !in 1L..MAX_CAPABILITY_STRIKES.toLong()) return false
         if (checkedRangeEnd(SBIT_HEADER_BASE_LENGTH.toLong(), strikeCount * STRIKE_OFFSET_LENGTH, sbixTable.size) == null) {
@@ -208,9 +212,7 @@ public object SbixReader {
         if (readUInt16(sbixTable, 0)?.toInt() != SBIT_VERSION_ONE) {
             return unsupported("Only sbix version 1 is supported.")
         }
-        val flags = readUInt16(sbixTable, 2)?.toInt()
-            ?: return invalid("font.sbix.truncated", "sbix header flags are truncated.", SBIT_TABLE)
-        if (flags and REQUIRED_FLAG == 0 || flags and RESERVED_FLAGS_MASK != 0) {
+        if (!hasSupportedHeaderFlags(sbixTable)) {
             return invalid("font.sbix.invalid-flags", "sbix header flags are invalid.", SBIT_TABLE)
         }
         val strikeCount = readUInt32(sbixTable, 4)?.toLong()
@@ -501,6 +503,11 @@ public object SbixReader {
         ),
         schemaVersion = 2,
     )
+
+    private fun hasSupportedHeaderFlags(sbixTable: ByteArray): Boolean {
+        val flags = readUInt16(sbixTable, 2)?.toInt() ?: return false
+        return flags and REQUIRED_FLAG != 0 && flags and RESERVED_FLAGS_MASK == 0
+    }
 
     private fun invalid(code: String, message: String, table: String): FontOperationResult.Failure =
         FontOperationResult.Failure(FontError.FontDataFailure(code, message, FontDiagnosticLocation.Table(table)))

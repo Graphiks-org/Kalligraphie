@@ -61,6 +61,24 @@ class PngDecoderTest {
     }
 
     @Test
+    fun rejectsAnInvalidSliceRangeInsteadOfThrowing() {
+        val encoded = fixture(RGBA_2X2)
+
+        assertEquals(
+            "font.png.truncated",
+            code(assertIs<FontOperationResult.Failure>(PngDecoder.inspectHeader(encoded, -1, encoded.size, limits(), "CBDT"))),
+        )
+        assertEquals(
+            "font.png.truncated",
+            code(assertIs<FontOperationResult.Failure>(PngDecoder.inspectHeader(encoded, 4, 2, limits(), "CBDT"))),
+        )
+        assertEquals(
+            "font.png.truncated",
+            code(assertIs<FontOperationResult.Failure>(PngDecoder.inspectHeader(encoded, 0, encoded.size + 1, limits(), "CBDT"))),
+        )
+    }
+
+    @Test
     fun refusesAHostileDeclaredHeaderWhenInspecting() {
         val failure = assertIs<FontOperationResult.Failure>(
             PngDecoder.inspectHeader(fixture(HOSTILE_DIMENSIONS), limits(), "CBDT"),

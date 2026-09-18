@@ -264,6 +264,8 @@ class SbixGlyphRepresentationTest {
 
     @Test
     fun doesNotAdvertiseBitmapsWhenAnUnselectedStrikeIsMalformed() {
+        // Regression pin: the conservative all-strikes rule predates the one-pass scan; this
+        // proves the rule end to end rather than a red-at-base behaviour change.
         val clean = success(
             Kalligraphie.embedded(sbixFixtureBytes(), FontSourceProvenance("Skia sbix colour fixture")),
         )
@@ -275,6 +277,69 @@ class SbixGlyphRepresentationTest {
         )
 
         assertFalse(catalog.faces.single().capabilities.bitmap)
+    }
+
+    @Test
+    fun certifiesSbixWithoutAUsableGlyfOrLocaTable() {
+        // Red at the reviewed base: the advance provider used the glyf-backed metrics path, so
+        // removing outline tables withdrew the sbix route. Advances now come from hmtx alone.
+        val patched = withoutTables(sbixFixtureBytes(), "glyf", "loca")
+        val catalog = success(
+            Kalligraphie.embedded(patched, FontSourceProvenance("Skia sbix fixture without outline tables")),
+        )
+
+        assertFalse(catalog.faces.single().capabilities.outline)
+        assertTrue(catalog.faces.single().capabilities.bitmap)
+
+        val requirements = FontAccessRequirementsSnapshot.renderable(listOf(colourProfile(16)))
+        val resolver = success(catalog.openAssetResolver())
+        try {
+            val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
+            val instance = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
+            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, requirements))
+            try {
+                val bitmap = bitmap(asset, GlyphId(0))
+
+                assertEquals(11, bitmap.width)
+                assertEquals(13, bitmap.height)
+                assertEquals(13, bitmap.metrics.advanceX)
+            } finally {
+                asset.close()
+            }
+        } finally {
+            resolver.close()
+        }
+    }
+
+    @Test
+    fun withdrawsTheSbixRouteWhenHmtxIsTooShortToResolveAdvances() {
+        val tables = readSfntTables(sbixFixtureBytes())
+        val patched = assembleSfnt(tables + ("hmtx" to tables.getValue("hmtx").copyOf(2)))
+        val catalog = success(
+            Kalligraphie.embedded(patched, FontSourceProvenance("Skia sbix fixture with a truncated hmtx")),
+        )
+
+        assertFalse(catalog.faces.single().capabilities.bitmap)
+    }
+
+    @Test
+    fun withdrawsTheSbixRouteWhenNumberOfHMetricsIsZero() {
+        val patched = withHheaNumberOfHMetrics(sbixFixtureBytes(), 0)
+        val catalog = success(
+            Kalligraphie.embedded(patched, FontSourceProvenance("Skia sbix fixture with zero horizontal metrics")),
+        )
+
+        assertFalse(catalog.faces.single().capabilities.bitmap)
+    }
+
+    @Test
+    fun rejectsAFontWhoseRequiredHmtxTableIsMissingBeforeCapabilityDiscovery() {
+        val result = Kalligraphie.embedded(
+            withoutTables(sbixFixtureBytes(), "hmtx"),
+            FontSourceProvenance("Skia sbix fixture without hmtx"),
+        )
+
+        assertIs<FontOperationResult.Failure>(result)
     }
 
     @Test
@@ -526,7 +591,10 @@ class SbixGlyphRepresentationTest {
         readSfntTables(cbdtFont).forEach { (tag, table) ->
             if (tag == "CBLC" || tag == "CBDT") tables[tag] = table
         }
+        return assembleSfnt(tables)
+    }
 
+    private fun assembleSfnt(tables: Map<String, ByteArray>): ByteArray {
         val tags = tables.keys.sorted()
         val headerLength = 12 + tags.size * 16
         val offsets = LinkedHashMap<String, Int>()
@@ -567,6 +635,19 @@ class SbixGlyphRepresentationTest {
             tables[tag] = font.copyOfRange(offset, offset + length)
         }
         return tables
+    }
+
+    private fun withoutTables(font: ByteArray, vararg tags: String): ByteArray {
+        val tables = LinkedHashMap(readSfntTables(font))
+        tags.forEach { tables.remove(it) }
+        return assembleSfnt(tables)
+    }
+
+    private fun withHheaNumberOfHMetrics(font: ByteArray, numberOfHMetrics: Int): ByteArray {
+        val patched = font.copyOf()
+        val hhea = tableOffset(patched, "hhea")
+        patched.writeUInt16(hhea + 34, numberOfHMetrics)
+        return patched
     }
 
     private fun withMalformedSbixStrikeGraphicType(font: ByteArray, ppem: Int): ByteArray {

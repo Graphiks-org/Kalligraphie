@@ -236,6 +236,7 @@ class EbdtFormatOneReaderTest {
 
     @Test
     fun capabilityPredicateRejectsDuplicateStrikes() {
+        // Regression pin: read always rejected duplicated strikes; the bounded scan must too.
         val tables = formatOneBudgetTables(1, 1).also { (eblc, _) ->
             eblc[8 + 48 + 44] = 16
             eblc[8 + 48 + 45] = 16
@@ -246,6 +247,7 @@ class EbdtFormatOneReaderTest {
 
     @Test
     fun capabilityPredicateRejectsCumulativeDecodedBytesAcrossStrikes() {
+        // Red at the reviewed base: per-strike totals passed before the scan shared one budget.
         val recordsPerStrike = 520
         val tables = formatOneBudgetTables(recordsPerStrike, recordsPerStrike)
 
