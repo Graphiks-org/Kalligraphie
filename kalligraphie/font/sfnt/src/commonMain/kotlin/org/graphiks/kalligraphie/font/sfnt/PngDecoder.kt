@@ -52,14 +52,23 @@ internal object PngDecoder {
         encoded: ByteArray,
         limits: BitmapLimits,
         table: String,
-    ): FontOperationResult<PngHeader> = parseHeader(encoded, limits, table)
+    ): FontOperationResult<PngHeader> = parseHeader(encoded, 0, encoded.size, limits, table)
+
+    /** Validates the declared IHDR of one bounded slice without copying its payload bytes. */
+    fun inspectHeader(
+        encoded: ByteArray,
+        start: Int,
+        end: Int,
+        limits: BitmapLimits,
+        table: String,
+    ): FontOperationResult<PngHeader> = parseHeader(encoded, start, end, limits, table)
 
     fun decode(
         encoded: ByteArray,
         limits: BitmapLimits,
         table: String,
     ): FontOperationResult<DecodedPng> {
-        val header = when (val parsed = parseHeader(encoded, limits, table)) {
+        val header = when (val parsed = parseHeader(encoded, 0, encoded.size, limits, table)) {
             is FontOperationResult.Success -> parsed.value
             is FontOperationResult.Failure -> return parsed
             is FontOperationResult.Cancelled -> return parsed
@@ -153,26 +162,28 @@ internal object PngDecoder {
 
     private fun parseHeader(
         encoded: ByteArray,
+        start: Int,
+        end: Int,
         limits: BitmapLimits,
         table: String,
     ): FontOperationResult<PngHeader> {
-        if (!hasSignature(encoded)) {
+        if (!hasSignature(encoded, start, end)) {
             return invalid("font.png.invalid-signature", "PNG signature is missing.", table)
         }
-        if (encoded.size - PNG_SIGNATURE_LENGTH < CHUNK_HEADER_BYTES) {
+        if (end - start - PNG_SIGNATURE_LENGTH < CHUNK_HEADER_BYTES) {
             return invalid("font.png.truncated", "PNG chunk header is truncated.", table)
         }
-        val length = readUInt32(encoded, PNG_SIGNATURE_LENGTH)
+        val length = readUInt32(encoded, start + PNG_SIGNATURE_LENGTH)
             ?: return invalid("font.png.truncated", "PNG chunk length is truncated.", table)
-        val dataStart = PNG_SIGNATURE_LENGTH + CHUNK_HEADER_BYTES
+        val dataStart = start + PNG_SIGNATURE_LENGTH + CHUNK_HEADER_BYTES
         val dataEnd = dataStart + length
-        if (length > Int.MAX_VALUE.toLong() || dataEnd > encoded.size.toLong() - CHUNK_CRC_BYTES) {
+        if (length > Int.MAX_VALUE.toLong() || dataEnd > end.toLong() - CHUNK_CRC_BYTES) {
             return invalid("font.png.truncated", "PNG chunk data is truncated.", table)
         }
-        if (readUInt32(encoded, dataEnd.toInt()) != (crc32(encoded, PNG_SIGNATURE_LENGTH + 4, dataEnd.toInt()).toLong() and UINT_MASK)) {
+        if (readUInt32(encoded, dataEnd.toInt()) != (crc32(encoded, start + PNG_SIGNATURE_LENGTH + 4, dataEnd.toInt()).toLong() and UINT_MASK)) {
             return invalid("font.png.invalid-crc", "PNG chunk CRC is invalid.", table)
         }
-        val type = encoded.decodeToString(PNG_SIGNATURE_LENGTH + 4, PNG_SIGNATURE_LENGTH + 8)
+        val type = encoded.decodeToString(start + PNG_SIGNATURE_LENGTH + 4, start + PNG_SIGNATURE_LENGTH + 8)
         if (type != "IHDR") {
             return firstChunkFailure(type, table)
         }
@@ -322,8 +333,8 @@ internal object PngDecoder {
             ),
         )
 
-    private fun hasSignature(encoded: ByteArray): Boolean =
-        encoded.size >= PNG_SIGNATURE.size && PNG_SIGNATURE.indices.all { index -> encoded[index] == PNG_SIGNATURE[index] }
+    private fun hasSignature(encoded: ByteArray, start: Int, end: Int): Boolean =
+        end - start >= PNG_SIGNATURE.size && PNG_SIGNATURE.indices.all { index -> encoded[start + index] == PNG_SIGNATURE[index] }
 
     private fun readUInt32(bytes: ByteArray, offset: Int): Long? {
         if (offset < 0 || offset > bytes.size - 4) return null

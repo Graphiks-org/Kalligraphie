@@ -299,6 +299,28 @@ class SbixReaderTest {
     }
 
     @Test
+    fun capabilityPredicateRejectsDuplicateStrikes() {
+        val table = sbixTable(
+            1,
+            SbixStrikeSpec(16, listOf(pngGlyph())),
+            SbixStrikeSpec(16, listOf(pngGlyph())),
+        )
+
+        assertFalse(SbixReader.hasStructurallyValidTable(table, 1, 1_000, { 192 }))
+    }
+
+    @Test
+    fun capabilityPredicateRejectsCumulativeDecodedBytesAcrossStrikes() {
+        val table = sbixTable(
+            1,
+            SbixStrikeSpec(16, listOf(SbixGlyphSpec(0, 0, "png ", BUDGET_PNG_3000))),
+            SbixStrikeSpec(32, listOf(SbixGlyphSpec(0, 0, "png ", BUDGET_PNG_3000))),
+        )
+
+        assertFalse(SbixReader.hasStructurallyValidTable(table, 1, 1_000, { 192 }))
+    }
+
+    @Test
     fun rejectsUnsupportedProfilesWithDistinctSchemaAndCapabilityFailures() {
         val table = sbixTable(1, SbixStrikeSpec(16, listOf(pngGlyph())))
 
@@ -591,6 +613,13 @@ private const val RGBA_2X2 =
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAF0lEQVR42mP4z8DwHwgbGIC0w////xkAQBgHul5CkSMAAAAASUVORK5CYII="
 
 private val RGBA_2X2_BYTES: ByteArray = Base64.decode(RGBA_2X2)
+
+private val BUDGET_PNG_3000: ByteArray = byteArrayOf(
+    0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x0B.toByte(), 0xB8.toByte(), 0x00, 0x00, 0x0B.toByte(), 0xB8.toByte(),
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x71, 0x15, 0xF5.toByte(), 0x79,
+)
 
 private const val SBIT_HEADER_BASE_LENGTH = 8
 private const val STRIKE_HEADER_BASE_LENGTH = 4

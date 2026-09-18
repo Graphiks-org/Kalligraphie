@@ -109,9 +109,13 @@ public object CbdtCblcReader {
     /**
      * Reports whether every declared strike can use this reader's exact colour route.
      *
-     * The predicate validates headers, strike envelopes, reserved and horizontal strike flags,
-     * 32-bit depth, subtable boundaries, glyph ranges, image formats, offsets, and image records
-     * with conservative implementation limits. It publishes no data and is intended only for a
+     * The predicate is conservative: a table is accepted only when *every* declared strike is
+     * route-valid, so one malformed unselected strike removes the route from the face. It walks
+     * all strikes in one bounded pass that validates headers, strike envelopes, reserved and
+     * horizontal strike flags, 32-bit depth, subtable boundaries, glyph ranges, image formats,
+     * offsets, and image records with conservative implementation limits while retaining no
+     * records and no pixels. Compressed and decoded byte budgets accumulate across all strikes; a
+     * breach exits early with `false`. The predicate publishes no data and is intended only for a
      * face capability prefilter. Call [read] again with the consumer's exact [BitmapProfile]
      * before issuing a certificate.
      */
@@ -125,6 +129,8 @@ public object CbdtCblcReader {
         val strikeCount = readUInt32(cblcTable, 4)?.toLong() ?: return false
         if (strikeCount !in 1L..MAX_CAPABILITY_STRIKES.toLong()) return false
         if (checkedRangeEnd(CBLC_HEADER_LENGTH.toLong(), strikeCount * BITMAP_SIZE_TABLE_LENGTH, cblcTable.size) == null) return false
+        val budget = CbdtCumulativeBudget()
+        val seenStrikes = HashSet<BitmapStrike>()
         repeat(strikeCount.toInt()) { index ->
             val size = when (val parsed = readCbdtBitmapSizeTable(cblcTable, CBLC_HEADER_LENGTH + index * BITMAP_SIZE_TABLE_LENGTH)) {
                 is FontOperationResult.Success -> parsed.value
@@ -135,27 +141,17 @@ public object CbdtCblcReader {
             if (size.startGlyphId !in 0 until glyphCount || size.endGlyphId !in size.startGlyphId until glyphCount) {
                 return false
             }
-            val profile = BitmapProfile(
-                strike = size.strike,
-                acceptedPixelFormats = listOf(BitmapPixelFormat.RGBA_8888),
-                acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
-                limits = BitmapLimits(
-                    maxStrikes = MAX_CAPABILITY_STRIKES,
-                    maxIndexSubtables = MAX_CAPABILITY_INDEX_SUBTABLES,
-                    maxRecordCount = MAX_CAPABILITY_RECORDS,
-                    maxIndexTableBytes = MAX_CAPABILITY_TABLE_BYTES,
-                    maxSourceTableBytes = MAX_CAPABILITY_TABLE_BYTES,
-                    maxWidth = MAX_CAPABILITY_DIMENSION,
-                    maxHeight = MAX_CAPABILITY_DIMENSION,
-                    maxPixels = MAX_CAPABILITY_PIXELS,
-                    maxCompressedBytes = MAX_CAPABILITY_TABLE_BYTES,
-                    maxTotalCompressedBytes = MAX_CAPABILITY_TABLE_BYTES,
-                    maxDecodedBytes = MAX_CAPABILITY_DECODED_BYTES,
-                    maxTotalDecodedBytes = MAX_CAPABILITY_DECODED_BYTES,
-                ),
-                schemaVersion = 2,
+            if (!seenStrikes.add(size.strike)) return false
+            val walked = visitStrike(
+                cblc = cblcTable,
+                cbdt = cbdtTable,
+                size = size,
+                profile = capabilityProfile(size.strike),
+                retain = false,
+                records = null,
+                budget = budget,
             )
-            if (read(cblcTable, cbdtTable, glyphCount, profile) !is FontOperationResult.Success) return false
+            if (walked !is FontOperationResult.Success) return false
         }
         return true
     }
@@ -245,6 +241,54 @@ public object CbdtCblcReader {
         size: CbdtBitmapSizeTable,
         profile: BitmapProfile,
     ): FontOperationResult<CbdtCblcData> {
+        val records = LinkedHashMap<GlyphId, CbdtCblcRecord>()
+        return when (
+            val walked = visitStrike(
+                cblc = cblc,
+                cbdt = cbdt,
+                size = size,
+                profile = profile,
+                retain = true,
+                records = records,
+                budget = CbdtCumulativeBudget(),
+            )
+        ) {
+            is FontOperationResult.Success -> FontOperationResult.Success(CbdtCblcData(size.strike, glyphCount, profile.limits, records))
+            is FontOperationResult.Failure -> walked
+            is FontOperationResult.Cancelled -> walked
+        }
+    }
+
+    private fun capabilityProfile(strike: BitmapStrike): BitmapProfile = BitmapProfile(
+        strike = strike,
+        acceptedPixelFormats = listOf(BitmapPixelFormat.RGBA_8888),
+        acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+        limits = BitmapLimits(
+            maxStrikes = MAX_CAPABILITY_STRIKES,
+            maxIndexSubtables = MAX_CAPABILITY_INDEX_SUBTABLES,
+            maxRecordCount = MAX_CAPABILITY_RECORDS,
+            maxIndexTableBytes = MAX_CAPABILITY_TABLE_BYTES,
+            maxSourceTableBytes = MAX_CAPABILITY_TABLE_BYTES,
+            maxWidth = MAX_CAPABILITY_DIMENSION,
+            maxHeight = MAX_CAPABILITY_DIMENSION,
+            maxPixels = MAX_CAPABILITY_PIXELS,
+            maxCompressedBytes = MAX_CAPABILITY_TABLE_BYTES,
+            maxTotalCompressedBytes = MAX_CAPABILITY_TABLE_BYTES,
+            maxDecodedBytes = MAX_CAPABILITY_DECODED_BYTES,
+            maxTotalDecodedBytes = MAX_CAPABILITY_DECODED_BYTES,
+        ),
+        schemaVersion = 2,
+    )
+
+    private fun visitStrike(
+        cblc: ByteArray,
+        cbdt: ByteArray,
+        size: CbdtBitmapSizeTable,
+        profile: BitmapProfile,
+        retain: Boolean,
+        records: MutableMap<GlyphId, CbdtCblcRecord>?,
+        budget: CbdtCumulativeBudget,
+    ): FontOperationResult<Unit> {
         if (size.numberOfIndexSubTables > profile.limits.maxIndexSubtables) {
             return limit(BitmapResourceLimit.INDEX_SUBTABLES, size.numberOfIndexSubTables.toLong(), profile.limits.maxIndexSubtables, "CBLC")
         }
@@ -256,10 +300,8 @@ public object CbdtCblcReader {
             indexTablesEnd,
         )
             ?: return invalid("font.cblc.invalid-index-tables-range", "CBLC index-subtable array exceeds its declared strike region.", "CBLC")
-        val records = LinkedHashMap<GlyphId, CbdtCblcRecord>()
+        val seen = BooleanArray(size.endGlyphId - size.startGlyphId + 1)
         var recordCount = 0
-        var totalCompressedBytes = 0L
-        var totalDecodedBytes = 0L
         repeat(size.numberOfIndexSubTables) { index ->
             val entryOffset = size.indexSubTableArrayOffset.toInt() + index * INDEX_SUBTABLE_ARRAY_ENTRY_LENGTH
             val firstGlyph = readUInt16(cblc, entryOffset)?.toInt()
@@ -306,24 +348,37 @@ public object CbdtCblcReader {
                 val dataOffset = imageDataOffset + offsets[glyphOffset]
                 val dataEnd = checkedRangeEnd(dataOffset, length, cbdt.size)
                     ?: return invalid("font.cbdt.truncated", "CBDT image data is truncated.", "CBDT")
-                val parsed = when (val parsed = readImageRecord(cbdt, dataOffset.toInt(), dataEnd, imageFormat, profile)) {
+                val inspected = when (val parsed = inspectImageRecord(cbdt, dataOffset.toInt(), dataEnd, imageFormat, profile)) {
                     is FontOperationResult.Success -> parsed.value
                     is FontOperationResult.Failure -> return parsed
                     is FontOperationResult.Cancelled -> return parsed
                 }
-                if (exceedsCumulativeLimit(totalCompressedBytes, parsed.compressedByteCount, profile.limits.maxTotalCompressedBytes)) {
-                    return limit(BitmapResourceLimit.TOTAL_COMPRESSED_BYTES, totalCompressedBytes + parsed.compressedByteCount, profile.limits.maxTotalCompressedBytes, "CBDT")
+                if (exceedsCumulativeLimit(budget.compressed, inspected.compressedByteCount, profile.limits.maxTotalCompressedBytes)) {
+                    return limit(BitmapResourceLimit.TOTAL_COMPRESSED_BYTES, budget.compressed + inspected.compressedByteCount, profile.limits.maxTotalCompressedBytes, "CBDT")
                 }
-                if (exceedsCumulativeLimit(totalDecodedBytes, parsed.decodedByteCount, profile.limits.maxTotalDecodedBytes)) {
-                    return limit(BitmapResourceLimit.TOTAL_DECODED_BYTES, totalDecodedBytes + parsed.decodedByteCount, profile.limits.maxTotalDecodedBytes, "CBDT")
+                if (exceedsCumulativeLimit(budget.decoded, inspected.decodedByteCount, profile.limits.maxTotalDecodedBytes)) {
+                    return limit(BitmapResourceLimit.TOTAL_DECODED_BYTES, budget.decoded + inspected.decodedByteCount, profile.limits.maxTotalDecodedBytes, "CBDT")
                 }
                 val glyphId = GlyphId(firstGlyph + glyphOffset)
-                if (records.put(glyphId, parsed.record) != null) return invalid("font.cblc.duplicate-glyph", "CBLC strike has overlapping glyph records.", "CBLC")
-                totalCompressedBytes += parsed.compressedByteCount
-                totalDecodedBytes += parsed.decodedByteCount
+                val seenIndex = glyphId.value - size.startGlyphId
+                if (seen[seenIndex]) return invalid("font.cblc.duplicate-glyph", "CBLC strike has overlapping glyph records.", "CBLC")
+                seen[seenIndex] = true
+                if (retain) {
+                    records!![glyphId] = CbdtCblcRecord(
+                        width = inspected.width,
+                        height = inspected.height,
+                        originX = inspected.originX,
+                        originY = inspected.originY,
+                        metrics = inspected.metrics,
+                        pixelFormat = inspected.pixelFormat,
+                        pngBytes = cbdt.copyOfRange(inspected.payloadStart, inspected.payloadEnd),
+                    )
+                }
+                budget.compressed += inspected.compressedByteCount
+                budget.decoded += inspected.decodedByteCount
             }
         }
-        return FontOperationResult.Success(CbdtCblcData(size.strike, glyphCount, profile.limits, records))
+        return FontOperationResult.Success(Unit)
     }
 
     private fun readImageRecord(
@@ -333,6 +388,35 @@ public object CbdtCblcReader {
         imageFormat: Int,
         profile: BitmapProfile,
     ): FontOperationResult<ParsedCbdtRecord> {
+        val inspected = when (val parsed = inspectImageRecord(data, start, end, imageFormat, profile)) {
+            is FontOperationResult.Success -> parsed.value
+            is FontOperationResult.Failure -> return parsed
+            is FontOperationResult.Cancelled -> return parsed
+        }
+        return FontOperationResult.Success(
+            ParsedCbdtRecord(
+                record = CbdtCblcRecord(
+                    width = inspected.width,
+                    height = inspected.height,
+                    originX = inspected.originX,
+                    originY = inspected.originY,
+                    metrics = inspected.metrics,
+                    pixelFormat = inspected.pixelFormat,
+                    pngBytes = data.copyOfRange(inspected.payloadStart, inspected.payloadEnd),
+                ),
+                compressedByteCount = inspected.compressedByteCount,
+                decodedByteCount = inspected.decodedByteCount,
+            ),
+        )
+    }
+
+    private fun inspectImageRecord(
+        data: ByteArray,
+        start: Int,
+        end: Int,
+        imageFormat: Int,
+        profile: BitmapProfile,
+    ): FontOperationResult<CbdtImageRecordFacts> {
         val metricsLength = if (imageFormat == IMAGE_FORMAT_BIG_METRICS) BIG_GLYPH_METRICS_LENGTH else SMALL_GLYPH_METRICS_LENGTH
         val headerLength = metricsLength + DATA_LENGTH_FIELD_LENGTH
         if (end - start < headerLength) {
@@ -348,31 +432,29 @@ public object CbdtCblcReader {
         if (dataLength > profile.limits.maxCompressedBytes.toLong()) {
             return limit(BitmapResourceLimit.COMPRESSED_BYTES, dataLength, profile.limits.maxCompressedBytes, "CBDT")
         }
-        val encoded = data.copyOfRange(start + headerLength, end)
-        val header = when (val inspected = PngDecoder.inspectHeader(encoded, profile.limits, "CBDT")) {
+        val header = when (val inspected = PngDecoder.inspectHeader(data, start + headerLength, end, profile.limits, "CBDT")) {
             is FontOperationResult.Success -> inspected.value
             is FontOperationResult.Failure -> return inspected
             is FontOperationResult.Cancelled -> return inspected
         }
         if (header.width != width || header.height != height) return dimensionMismatch()
         return FontOperationResult.Success(
-            ParsedCbdtRecord(
-                record = CbdtCblcRecord(
-                    width = width,
-                    height = height,
-                    originX = data[start + 2].toInt(),
-                    originY = data[start + 3].toInt(),
-                    metrics = if (imageFormat == IMAGE_FORMAT_BIG_METRICS) {
-                        BitmapGlyphMetrics(
-                            advanceX = data[start + 4].toInt() and 0xFF,
-                            advanceY = data[start + 7].toInt() and 0xFF,
-                        )
-                    } else {
-                        BitmapGlyphMetrics(advanceX = data[start + 4].toInt() and 0xFF, advanceY = 0)
-                    },
-                    pixelFormat = header.pixelFormat,
-                    pngBytes = encoded,
-                ),
+            CbdtImageRecordFacts(
+                width = width,
+                height = height,
+                originX = data[start + 2].toInt(),
+                originY = data[start + 3].toInt(),
+                metrics = if (imageFormat == IMAGE_FORMAT_BIG_METRICS) {
+                    BitmapGlyphMetrics(
+                        advanceX = data[start + 4].toInt() and 0xFF,
+                        advanceY = data[start + 7].toInt() and 0xFF,
+                    )
+                } else {
+                    BitmapGlyphMetrics(advanceX = data[start + 4].toInt() and 0xFF, advanceY = 0)
+                },
+                pixelFormat = header.pixelFormat,
+                payloadStart = start + headerLength,
+                payloadEnd = end,
                 compressedByteCount = dataLength,
                 decodedByteCount = width.toLong() * height.toLong() * RGBA_BYTES_PER_PIXEL.toLong(),
             ),
@@ -444,6 +526,11 @@ public object CbdtCblcReader {
 private fun exceedsCumulativeLimit(total: Long, increment: Long, maximum: Int): Boolean =
     increment > maximum.toLong() || total > maximum.toLong() - increment
 
+private class CbdtCumulativeBudget {
+    var compressed: Long = 0L
+    var decoded: Long = 0L
+}
+
 private fun isSupportedVersion(version: UInt): Boolean =
     version == VERSION_2 || version == VERSION_3
 
@@ -479,6 +566,19 @@ internal data class CbdtCblcRecord(
 
 private data class ParsedCbdtRecord(
     val record: CbdtCblcRecord,
+    val compressedByteCount: Long,
+    val decodedByteCount: Long,
+)
+
+private class CbdtImageRecordFacts(
+    val width: Int,
+    val height: Int,
+    val originX: Int,
+    val originY: Int,
+    val metrics: BitmapGlyphMetrics,
+    val pixelFormat: BitmapPixelFormat,
+    val payloadStart: Int,
+    val payloadEnd: Int,
     val compressedByteCount: Long,
     val decodedByteCount: Long,
 )

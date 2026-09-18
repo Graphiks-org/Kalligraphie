@@ -107,9 +107,13 @@ public object SbixReader {
      * Reports whether every declared strike can use this reader's exact `'png '` and `'dupe'`
      * route.
      *
-     * The predicate validates version, flags, strike offsets, glyph offset arrays, record
-     * payloads, and resource limits with conservative implementation limits. It publishes no data
-     * and is intended only for a face capability prefilter. Call [read] again with the consumer's
+     * The predicate is conservative: a table is accepted only when *every* declared strike is
+     * route-valid, so one malformed unselected strike removes the route from the face. It walks
+     * all strikes in one bounded pass that validates version, flags, strike offsets, glyph offset
+     * arrays, record payloads, dupe chains, and resource limits with conservative implementation
+     * limits while retaining no records and no pixels. Compressed and decoded byte budgets
+     * accumulate across all strikes; a breach exits early with `false`. It publishes no data and
+     * is intended only for a face capability prefilter. Call [read] again with the consumer's
      * exact [BitmapProfile] before issuing a certificate.
      */
     public fun hasStructurallyValidTable(
@@ -122,11 +126,15 @@ public object SbixReader {
             return false
         }
         if (sbixTable.size > MAX_CAPABILITY_TABLE_BYTES) return false
+        val flags = readUInt16(sbixTable, 2)?.toInt() ?: return false
+        if (flags and REQUIRED_FLAG == 0 || flags and RESERVED_FLAGS_MASK != 0) return false
         val strikeCount = readUInt32(sbixTable, 4)?.toLong() ?: return false
         if (strikeCount !in 1L..MAX_CAPABILITY_STRIKES.toLong()) return false
         if (checkedRangeEnd(SBIT_HEADER_BASE_LENGTH.toLong(), strikeCount * STRIKE_OFFSET_LENGTH, sbixTable.size) == null) {
             return false
         }
+        val budget = SbixCumulativeBudget()
+        val seenStrikes = HashSet<BitmapStrike>()
         repeat(strikeCount.toInt()) { index ->
             val strikeOffset = readUInt32(sbixTable, SBIT_HEADER_BASE_LENGTH + index * STRIKE_OFFSET_LENGTH)?.toLong()
                 ?: return false
@@ -134,9 +142,20 @@ public object SbixReader {
             if (checkedRangeEnd(strikeOffset, strikeHeaderLength, sbixTable.size) == null) return false
             val ppem = readUInt16(sbixTable, strikeOffset.toInt())?.toInt() ?: return false
             if (ppem == 0) return false
-            if (read(sbixTable, glyphCount, unitsPerEm, advanceDesignUnits, capabilityProfile(ppem)) !is FontOperationResult.Success) {
-                return false
-            }
+            if (!seenStrikes.add(BitmapStrike(ppem, ppem, SBIT_BIT_DEPTH))) return false
+            val walked = visitStrike(
+                table = sbixTable,
+                glyphCount = glyphCount,
+                unitsPerEm = unitsPerEm,
+                advanceDesignUnits = advanceDesignUnits,
+                profile = capabilityProfile(ppem),
+                strikeOffset = strikeOffset,
+                ppem = ppem,
+                retain = false,
+                resolved = null,
+                budget = budget,
+            )
+            if (walked !is FontOperationResult.Success) return false
         }
         return true
     }
@@ -235,6 +254,42 @@ public object SbixReader {
         strikeOffset: Long,
         ppem: Int,
     ): FontOperationResult<SbixData> {
+        val resolved = LinkedHashMap<GlyphId, SbixRecord>()
+        return when (
+            val walked = visitStrike(
+                table = table,
+                glyphCount = glyphCount,
+                unitsPerEm = unitsPerEm,
+                advanceDesignUnits = advanceDesignUnits,
+                profile = profile,
+                strikeOffset = strikeOffset,
+                ppem = ppem,
+                retain = true,
+                resolved = resolved,
+                budget = SbixCumulativeBudget(),
+            )
+        ) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                SbixData(BitmapStrike(ppem, ppem, SBIT_BIT_DEPTH), glyphCount, profile.limits, resolved),
+            )
+
+            is FontOperationResult.Failure -> walked
+            is FontOperationResult.Cancelled -> walked
+        }
+    }
+
+    private fun visitStrike(
+        table: ByteArray,
+        glyphCount: Int,
+        unitsPerEm: Int,
+        advanceDesignUnits: (Int) -> Int?,
+        profile: BitmapProfile,
+        strikeOffset: Long,
+        ppem: Int,
+        retain: Boolean,
+        resolved: MutableMap<GlyphId, SbixRecord>?,
+        budget: SbixCumulativeBudget,
+    ): FontOperationResult<Unit> {
         val offsets = LongArray(glyphCount + 1)
         var previousOffset = -1L
         repeat(glyphCount + 1) { index ->
@@ -246,10 +301,10 @@ public object SbixReader {
             offsets[index] = value
             previousOffset = value
         }
-        val rawRecords = LinkedHashMap<Int, RawSbixRecord>()
+        val kinds = ByteArray(glyphCount)
+        val duplicateTargets = IntArray(glyphCount)
+        val retained = if (retain) LinkedHashMap<Int, RawSbixRecord>() else null
         var recordCount = 0
-        var totalCompressedBytes = 0L
-        var totalDecodedBytes = 0L
         repeat(glyphCount) { glyph ->
             val length = offsets[glyph + 1] - offsets[glyph]
             if (length == 0L) return@repeat
@@ -264,8 +319,8 @@ public object SbixReader {
             if (dataLength > profile.limits.maxCompressedBytes.toLong()) {
                 return limit(BitmapResourceLimit.COMPRESSED_BYTES, dataLength, profile.limits.maxCompressedBytes, SBIT_TABLE)
             }
-            if (exceedsCumulativeLimit(totalCompressedBytes, dataLength, profile.limits.maxTotalCompressedBytes)) {
-                return limit(BitmapResourceLimit.TOTAL_COMPRESSED_BYTES, totalCompressedBytes + dataLength, profile.limits.maxTotalCompressedBytes, SBIT_TABLE)
+            if (exceedsCumulativeLimit(budget.compressed, dataLength, profile.limits.maxTotalCompressedBytes)) {
+                return limit(BitmapResourceLimit.TOTAL_COMPRESSED_BYTES, budget.compressed + dataLength, profile.limits.maxTotalCompressedBytes, SBIT_TABLE)
             }
             val dataOffset = strikeOffset + offsets[glyph]
             val dataEnd = checkedRangeEnd(dataOffset, length, table.size)
@@ -293,33 +348,36 @@ public object SbixReader {
                 advanceX = convert(maxOf(0, advanceDesignUnit), ppem, unitsPerEm),
                 advanceY = 0,
             )
-            val rawRecord = when (graphicType) {
+            when (graphicType) {
                 PNG_GRAPHIC_TYPE -> {
-                    val encoded = table.copyOfRange(dataOffset.toInt() + GLYPH_RECORD_HEADER_LENGTH, dataEnd)
-                    val header = when (val inspected = PngDecoder.inspectHeader(encoded, profile.limits, SBIT_TABLE)) {
+                    val payloadStart = dataOffset.toInt() + GLYPH_RECORD_HEADER_LENGTH
+                    val header = when (val inspected = PngDecoder.inspectHeader(table, payloadStart, dataEnd, profile.limits, SBIT_TABLE)) {
                         is FontOperationResult.Success -> inspected.value
                         is FontOperationResult.Failure -> return inspected
                         is FontOperationResult.Cancelled -> return inspected
                     }
                     val decodedByteCount = header.width.toLong() * header.height.toLong() * RGBA_BYTES_PER_PIXEL.toLong()
-                    if (exceedsCumulativeLimit(totalDecodedBytes, decodedByteCount, profile.limits.maxTotalDecodedBytes)) {
+                    if (exceedsCumulativeLimit(budget.decoded, decodedByteCount, profile.limits.maxTotalDecodedBytes)) {
                         return limit(
                             BitmapResourceLimit.TOTAL_DECODED_BYTES,
-                            totalDecodedBytes + decodedByteCount,
+                            budget.decoded + decodedByteCount,
                             profile.limits.maxTotalDecodedBytes,
                             SBIT_TABLE,
                         )
                     }
-                    totalDecodedBytes += decodedByteCount
-                    RawSbixRecord.Image(
-                        originX = convert(originXDesignUnits, ppem, unitsPerEm),
-                        originY = convert(originYDesignUnits, ppem, unitsPerEm),
-                        metrics = metrics,
-                        width = header.width,
-                        height = header.height,
-                        pixelFormat = header.pixelFormat,
-                        pngBytes = encoded,
-                    )
+                    budget.decoded += decodedByteCount
+                    kinds[glyph] = RECORD_IMAGE.toByte()
+                    if (retain) {
+                        retained!![glyph] = RawSbixRecord.Image(
+                            originX = convert(originXDesignUnits, ppem, unitsPerEm),
+                            originY = convert(originYDesignUnits, ppem, unitsPerEm),
+                            metrics = metrics,
+                            width = header.width,
+                            height = header.height,
+                            pixelFormat = header.pixelFormat,
+                            pngBytes = table.copyOfRange(payloadStart, dataEnd),
+                        )
+                    }
                 }
 
                 DUPE_GRAPHIC_TYPE -> {
@@ -331,29 +389,31 @@ public object SbixReader {
                     if (target !in 0 until glyphCount) {
                         return invalid("font.sbix.invalid-dupe", "sbix dupe target $target is outside the face.", SBIT_TABLE)
                     }
-                    RawSbixRecord.Duplicate(
-                        originX = convert(originXDesignUnits, ppem, unitsPerEm),
-                        originY = convert(originYDesignUnits, ppem, unitsPerEm),
-                        metrics = metrics,
-                        target = target,
-                    )
+                    kinds[glyph] = RECORD_DUPE.toByte()
+                    duplicateTargets[glyph] = target
+                    if (retain) {
+                        retained!![glyph] = RawSbixRecord.Duplicate(
+                            originX = convert(originXDesignUnits, ppem, unitsPerEm),
+                            originY = convert(originYDesignUnits, ppem, unitsPerEm),
+                            metrics = metrics,
+                            target = target,
+                        )
+                    }
                 }
 
                 else -> return unsupported("Only sbix PNG and dupe glyph records are supported.")
             }
-            rawRecords[glyphId.value] = rawRecord
-            totalCompressedBytes += dataLength
+            budget.compressed += dataLength
         }
 
-        val resolved = LinkedHashMap<GlyphId, SbixRecord>()
-        val state = HashMap<Int, Int>()
+        val state = ByteArray(glyphCount)
         val path = ArrayList<Int>()
-        for (start in rawRecords.keys) {
-            if (state[start] == RESOLVED_RECORD) continue
+        for (start in 0 until glyphCount) {
+            if (kinds[start].toInt() == RECORD_NONE || state[start].toInt() == RESOLVED_RECORD) continue
             path.clear()
             var current = start
             while (true) {
-                when (state[current]) {
+                when (state[current].toInt()) {
                     VISITING_RECORD -> return invalid(
                         "font.sbix.duplicate-cycle",
                         "sbix dupe records form a cycle through glyph $current.",
@@ -362,52 +422,63 @@ public object SbixReader {
 
                     RESOLVED_RECORD -> break
                 }
-                val raw = rawRecords[current]
-                    ?: return invalid(
+                when (kinds[current].toInt()) {
+                    RECORD_NONE -> return invalid(
                         "font.sbix.invalid-dupe",
                         "sbix dupe record references glyph $current without bitmap data.",
                         SBIT_TABLE,
                     )
-                if (raw is RawSbixRecord.Image) {
-                    resolved[GlyphId(current)] = SbixRecord(
-                        width = raw.width,
-                        height = raw.height,
+
+                    RECORD_IMAGE -> {
+                        if (retain) {
+                            val image = retained!![current] as RawSbixRecord.Image
+                            resolved!![GlyphId(current)] = SbixRecord(
+                                width = image.width,
+                                height = image.height,
+                                originX = image.originX,
+                                originY = image.originY,
+                                metrics = image.metrics,
+                                pixelFormat = image.pixelFormat,
+                                pngBytes = image.pngBytes,
+                            )
+                        }
+                        state[current] = RESOLVED_RECORD.toByte()
+                        break
+                    }
+
+                    else -> {
+                        state[current] = VISITING_RECORD.toByte()
+                        path.add(current)
+                        current = duplicateTargets[current]
+                    }
+                }
+            }
+            if (retain) {
+                var source = resolved!![GlyphId(current)]
+                    ?: return invalid("font.sbix.invalid-dupe", "sbix dupe record references glyph $current without bitmap data.", SBIT_TABLE)
+                for (index in path.indices.reversed()) {
+                    val id = path[index]
+                    val raw = retained!![id] as RawSbixRecord.Duplicate
+                    val duplicate = SbixRecord(
+                        width = source.width,
+                        height = source.height,
                         originX = raw.originX,
                         originY = raw.originY,
                         metrics = raw.metrics,
-                        pixelFormat = raw.pixelFormat,
-                        pngBytes = raw.pngBytes,
+                        pixelFormat = source.pixelFormat,
+                        pngBytes = source.pngBytes,
                     )
-                    state[current] = RESOLVED_RECORD
-                    break
+                    resolved[GlyphId(id)] = duplicate
+                    state[id] = RESOLVED_RECORD.toByte()
+                    source = duplicate
                 }
-                raw as RawSbixRecord.Duplicate
-                state[current] = VISITING_RECORD
-                path.add(current)
-                current = raw.target
-            }
-            var source = resolved[GlyphId(current)]
-                ?: return invalid("font.sbix.invalid-dupe", "sbix dupe record references glyph $current without bitmap data.", SBIT_TABLE)
-            for (index in path.indices.reversed()) {
-                val id = path[index]
-                val raw = rawRecords[id] as RawSbixRecord.Duplicate
-                val duplicate = SbixRecord(
-                    width = source.width,
-                    height = source.height,
-                    originX = raw.originX,
-                    originY = raw.originY,
-                    metrics = raw.metrics,
-                    pixelFormat = source.pixelFormat,
-                    pngBytes = source.pngBytes,
-                )
-                resolved[GlyphId(id)] = duplicate
-                state[id] = RESOLVED_RECORD
-                source = duplicate
+            } else {
+                for (id in path) {
+                    state[id] = RESOLVED_RECORD.toByte()
+                }
             }
         }
-        return FontOperationResult.Success(
-            SbixData(BitmapStrike(ppem, ppem, SBIT_BIT_DEPTH), glyphCount, profile.limits, resolved),
-        )
+        return FontOperationResult.Success(Unit)
     }
 
     private fun capabilityProfile(ppem: Int): BitmapProfile = BitmapProfile(
@@ -455,6 +526,11 @@ public object SbixReader {
 
 private fun exceedsCumulativeLimit(total: Long, increment: Long, maximum: Int): Boolean =
     increment > maximum.toLong() || total > maximum.toLong() - increment
+
+private class SbixCumulativeBudget {
+    var compressed: Long = 0L
+    var decoded: Long = 0L
+}
 
 private fun dimensionMismatch(): FontOperationResult.Failure =
     FontOperationResult.Failure(
@@ -527,6 +603,9 @@ private const val REQUIRED_FLAG = 0x0001
 private const val RESERVED_FLAGS_MASK = 0xFFFC
 private const val VISITING_RECORD = 1
 private const val RESOLVED_RECORD = 2
+private const val RECORD_NONE = 0
+private const val RECORD_IMAGE = 1
+private const val RECORD_DUPE = 2
 private const val MAX_CAPABILITY_TABLE_BYTES = 16 * 1024 * 1024
 private const val MAX_CAPABILITY_STRIKES = 64
 private const val MAX_CAPABILITY_INDEX_SUBTABLES = 4_096

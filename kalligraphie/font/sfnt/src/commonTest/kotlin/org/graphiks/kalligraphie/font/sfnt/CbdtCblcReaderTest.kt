@@ -413,6 +413,44 @@ class CbdtCblcReaderTest {
     }
 
     @Test
+    fun capabilityPredicateRejectsDuplicateStrikes() {
+        val tables = tables(strike(), strike())
+
+        assertFalse(CbdtCblcReader.hasStructurallyValidTables(tables.first, tables.second, glyphCount = 1))
+    }
+
+    @Test
+    fun capabilityPredicateRejectsCumulativeDecodedBytesAcrossStrikes() {
+        val recordsPerStrike = 130
+        val tables = tables(
+            strike(
+                ppemX = 16,
+                ppemY = 16,
+                glyphs = recordsPerStrike,
+                imageWidth = 255,
+                imageHeight = 255,
+                pngBytes = BUDGET_PNG_255,
+            ),
+            strike(
+                ppemX = 32,
+                ppemY = 32,
+                glyphs = recordsPerStrike,
+                imageWidth = 255,
+                imageHeight = 255,
+                pngBytes = BUDGET_PNG_255,
+            ),
+        )
+
+        assertFalse(
+            CbdtCblcReader.hasStructurallyValidTables(
+                tables.first,
+                tables.second,
+                glyphCount = recordsPerStrike,
+            ),
+        )
+    }
+
+    @Test
     fun reportsTruncatedTableHeadersAsInvalidData() {
         assertEquals(
             "font.cblc.truncated",
@@ -547,6 +585,7 @@ class CbdtCblcReaderTest {
         advance: Int = 3,
         horiAdvance: Int = 3,
         vertAdvance: Int = 4,
+        pngBytes: ByteArray = RGBA_2X2_BYTES,
     ): StrikeSpec = StrikeSpec(
         ppemX = ppemX,
         ppemY = ppemY,
@@ -562,6 +601,7 @@ class CbdtCblcReaderTest {
         advance = advance,
         horiAdvance = horiAdvance,
         vertAdvance = vertAdvance,
+        pngBytes = pngBytes,
     )
 
     private fun tables(
@@ -571,7 +611,7 @@ class CbdtCblcReaderTest {
     ): Pair<ByteArray, ByteArray> {
         val recordLengths = specs.map { spec ->
             val metricsLength = if (spec.imageFormat == 18) BIG_GLYPH_METRICS_LENGTH else SMALL_GLYPH_METRICS_LENGTH
-            metricsLength + DATA_LENGTH_FIELD_LENGTH + RGBA_2X2_BYTES.size
+            metricsLength + DATA_LENGTH_FIELD_LENGTH + spec.pngBytes.size
         }
         val ranges = specs.map { spec -> spec.subtableRanges ?: listOf(0 until spec.glyphs) }
         val assetLengths = ranges.map { strikeRanges ->
@@ -621,12 +661,12 @@ class CbdtCblcReaderTest {
                 if (spec.imageFormat == 18) {
                     cbdt[recordOffset + 4] = spec.horiAdvance.toByte()
                     cbdt[recordOffset + 7] = spec.vertAdvance.toByte()
-                    cbdt.writeUInt32(recordOffset + 8, RGBA_2X2_BYTES.size.toUInt())
-                    RGBA_2X2_BYTES.copyInto(cbdt, recordOffset + 12)
+                    cbdt.writeUInt32(recordOffset + 8, spec.pngBytes.size.toUInt())
+                    spec.pngBytes.copyInto(cbdt, recordOffset + 12)
                 } else {
                     cbdt[recordOffset + 4] = spec.advance.toByte()
-                    cbdt.writeUInt32(recordOffset + 5, RGBA_2X2_BYTES.size.toUInt())
-                    RGBA_2X2_BYTES.copyInto(cbdt, recordOffset + 9)
+                    cbdt.writeUInt32(recordOffset + 5, spec.pngBytes.size.toUInt())
+                    spec.pngBytes.copyInto(cbdt, recordOffset + 9)
                 }
             }
             indexTablesOffset += assetLengths[index]
@@ -660,6 +700,7 @@ private class StrikeSpec(
     val advance: Int,
     val horiAdvance: Int,
     val vertAdvance: Int,
+    val pngBytes: ByteArray,
 )
 
 private fun rgba2x2Pixels(): ByteArray = byteArrayOf(
@@ -673,6 +714,13 @@ private const val RGBA_2X2 =
     "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAF0lEQVR42mP4z8DwHwgbGIC0w////xkAQBgHul5CkSMAAAAASUVORK5CYII="
 
 private val RGBA_2X2_BYTES: ByteArray = Base64.decode(RGBA_2X2)
+
+private val BUDGET_PNG_255: ByteArray = byteArrayOf(
+    0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+    0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0xFF.toByte(), 0x00, 0x00, 0x00, 0xFF.toByte(),
+    0x08, 0x06, 0x00, 0x00, 0x00, 0x3E, 0x08, 0x00, 0xCA.toByte(),
+)
 
 private fun cblcHeader(strikeCount: Int): ByteArray = ByteArray(8).also { bytes ->
     bytes.writeUInt32(0, VERSION_TWO)

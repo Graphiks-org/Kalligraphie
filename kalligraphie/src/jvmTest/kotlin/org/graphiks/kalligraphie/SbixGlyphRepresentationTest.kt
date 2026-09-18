@@ -25,6 +25,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -259,6 +260,21 @@ class SbixGlyphRepresentationTest {
         } finally {
             resolver.close()
         }
+    }
+
+    @Test
+    fun doesNotAdvertiseBitmapsWhenAnUnselectedStrikeIsMalformed() {
+        val clean = success(
+            Kalligraphie.embedded(sbixFixtureBytes(), FontSourceProvenance("Skia sbix colour fixture")),
+        )
+        assertTrue(clean.faces.single().capabilities.bitmap)
+
+        val patched = withMalformedSbixStrikeGraphicType(sbixFixtureBytes(), ppem = 128)
+        val catalog = success(
+            Kalligraphie.embedded(patched, FontSourceProvenance("Skia sbix fixture with a malformed unselected strike")),
+        )
+
+        assertFalse(catalog.faces.single().capabilities.bitmap)
     }
 
     @Test
@@ -551,6 +567,22 @@ class SbixGlyphRepresentationTest {
             tables[tag] = font.copyOfRange(offset, offset + length)
         }
         return tables
+    }
+
+    private fun withMalformedSbixStrikeGraphicType(font: ByteArray, ppem: Int): ByteArray {
+        val patched = font.copyOf()
+        val sbix = tableOffset(patched, "sbix")
+        val strikeCount = readUInt32(patched, sbix + 4)
+        repeat(strikeCount) { index ->
+            val strikeOffset = sbix + readUInt32(patched, sbix + 8 + index * 4)
+            if (readUInt16(patched, strikeOffset) != ppem) return@repeat
+            val recordOffset = strikeOffset + readUInt32(patched, strikeOffset + 4)
+            "jpg ".forEachIndexed { position, character ->
+                patched[recordOffset + 4 + position] = character.code.toByte()
+            }
+            return patched
+        }
+        error("The fixture has no $ppem ppem strike.")
     }
 
     private fun withFirstCblcStrikePpem(font: ByteArray, ppem: Int): ByteArray {
