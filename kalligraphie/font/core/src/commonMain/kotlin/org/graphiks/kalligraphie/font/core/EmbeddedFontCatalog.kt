@@ -30,6 +30,7 @@ import org.graphiks.kalligraphie.api.FontSourceId
 import org.graphiks.kalligraphie.api.FontOperationResult.Success
 import org.graphiks.kalligraphie.api.BitmapGlyphIR
 import org.graphiks.kalligraphie.api.BitmapProfile
+import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import org.graphiks.kalligraphie.api.GlyphPaintIR
@@ -49,6 +50,7 @@ import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
 import org.graphiks.kalligraphie.font.sfnt.CbdtCblcReader
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
+import org.graphiks.kalligraphie.font.sfnt.SbixReader
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeReader
 import org.graphiks.kalligraphie.font.sfnt.slice
@@ -85,6 +87,7 @@ public class EmbeddedFontCatalog(
     private val svgRouteSupportedFaces: Set<FontFaceId>
     private val bitmapRouteSupportedFaces: Set<FontFaceId>
     private val cbdtCblcRouteSupportedFaces: Set<FontFaceId>
+    private val sbixRouteSupportedFaces: Set<FontFaceId>
     private val resolvedFaces: Map<FontFaceId, TrueTypeFace>
 
     /** Stable records for every captured embedded face, in supplied order. */
@@ -133,6 +136,9 @@ public class EmbeddedFontCatalog(
         cbdtCblcRouteSupportedFaces = ids.filter { id ->
             supportsCbdtCblcRoute(resources.getValue(id), parsedFonts.getValue(id))
         }.toSet()
+        sbixRouteSupportedFaces = ids.filter { id ->
+            supportsSbixRoute(resources.getValue(id), parsedFonts.getValue(id))
+        }.toSet()
         resolvedFaces = ids.associateWith { id ->
             TrueTypeFace(
                 faceId = id,
@@ -145,6 +151,7 @@ public class EmbeddedFontCatalog(
                 svgRouteSupported = id in svgRouteSupportedFaces,
                 bitmapRouteSupported = id in bitmapRouteSupportedFaces,
                 cbdtCblcRouteSupported = id in cbdtCblcRouteSupportedFaces,
+                sbixRouteSupported = id in sbixRouteSupportedFaces,
             )
         }
         faces = ids.map { id ->
@@ -156,7 +163,9 @@ public class EmbeddedFontCatalog(
                     shaping = true,
                     outline = id in outlineRouteSupportedFaces,
                     paintGraph = id in paintGraphSupportedFaces || id in colrV1SupportedFaces || id in svgRouteSupportedFaces,
-                    bitmap = id in bitmapRouteSupportedFaces || id in cbdtCblcRouteSupportedFaces,
+                    bitmap = id in bitmapRouteSupportedFaces ||
+                        id in cbdtCblcRouteSupportedFaces ||
+                        id in sbixRouteSupportedFaces,
                 ),
             )
         }.immutableListSnapshot()
@@ -202,7 +211,7 @@ public class EmbeddedFontCatalog(
                         code = "font.unsupported-representation-profile",
                         severity = FontDiagnosticSeverity.ERROR,
                         location = FontDiagnosticLocation.Source,
-                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and bitmap schemaVersion=2 EBLC/EBDT format 1 or CBLC/CBDT formats 17 and 18 profiles are supported.",
+                        message = "Only LAYOUT_ONLY, schemaVersion=1 outlines, paint-graph schemaVersion=1 for COLR/CPAL version 0 or SVG-in-OpenType, paint-graph schemaVersion=2 or 3 for COLR version 1 or SVG-in-OpenType, and bitmap schemaVersion=2 EBLC/EBDT format 1, CBLC/CBDT formats 17 and 18, or sbix 'png ' profiles are supported.",
                     ),
                 ),
             )
@@ -228,7 +237,7 @@ public class EmbeddedFontCatalog(
             is org.graphiks.kalligraphie.api.BitmapProfile ->
                 schemaVersion == 2 && when (strike.bitDepth) {
                     1 -> faceId in bitmapRouteSupportedFaces
-                    32 -> faceId in cbdtCblcRouteSupportedFaces
+                    32 -> faceId in cbdtCblcRouteSupportedFaces || faceId in sbixRouteSupportedFaces
                     else -> false
                 }
             else -> false
@@ -312,6 +321,29 @@ private fun supportsCbdtCblcRoute(
     val cblc = slice(sourceBytes, cblcRecord) ?: return false
     val cbdt = slice(sourceBytes, cbdtRecord) ?: return false
     return CbdtCblcReader.hasStructurallyValidTables(cblc, cbdt, parsedFont.metadata.glyphCount)
+}
+
+private fun supportsSbixRoute(
+    resource: PreparedFontResource,
+    parsedFont: ParsedTrueTypeFont,
+): Boolean {
+    val sbixRecord = parsedFont.tableRecords["sbix"] ?: return false
+    val hmtxRecord = parsedFont.tableRecords["hmtx"] ?: return false
+    val sourceBytes = resource.preparedFont.copySourceBytes()
+    val sbix = slice(sourceBytes, sbixRecord) ?: return false
+    if (slice(sourceBytes, hmtxRecord) == null) return false
+    return SbixReader.hasStructurallyValidTable(
+        sbixTable = sbix,
+        glyphCount = parsedFont.metadata.glyphCount,
+        unitsPerEm = parsedFont.metadata.unitsPerEm,
+        advanceDesignUnits = { glyphId ->
+            // Design-unit advances are layout-independent, so the prefilter uses a nominal size.
+            when (val metrics = resource.preparedFont.readGlyphMetrics(GlyphId(glyphId), 1f)) {
+                is FontOperationResult.Success -> metrics.value.advanceWidthDesignUnits
+                else -> null
+            }
+        },
+    )
 }
 
 /**
@@ -434,6 +466,7 @@ internal class EmbeddedFontAssetResolver(
             svgRouteSupported = supportsSvgOpenTypeRoute(resource, parsedFont),
             bitmapRouteSupported = supportsEbdtFormatOneRoute(resource, parsedFont),
             cbdtCblcRouteSupported = supportsCbdtCblcRoute(resource, parsedFont),
+            sbixRouteSupported = supportsSbixRoute(resource, parsedFont),
         ).acquireRenderAsset(
             resolver = this,
             renderVariant = variant,
@@ -472,7 +505,7 @@ internal class EmbeddedFontAssetResolver(
                     resources[instance.face]?.let { resource ->
                         when (profile.strike.bitDepth) {
                             1 -> supportsEbdtFormatOneRoute(resource, parsedFont)
-                            32 -> supportsCbdtCblcRoute(resource, parsedFont)
+                            32 -> supportsCbdtCblcRoute(resource, parsedFont) || supportsSbixRoute(resource, parsedFont)
                             else -> false
                         }
                     } == true
