@@ -9,6 +9,7 @@ import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapProfile
 import org.graphiks.kalligraphie.api.BitmapResourceLimit
 import org.graphiks.kalligraphie.api.BitmapStrike
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphColorSpace
@@ -107,6 +108,89 @@ class CbdtCblcReaderTest {
     }
 
     @Test
+    fun decodesAFormatSeventeenRecordFromVersionThreeTables() {
+        val tables = tables(strike(), cblcVersion = VERSION_THREE, cbdtVersion = VERSION_THREE)
+
+        val glyph = decoded(
+            value(CbdtCblcReader.read(tables.first, tables.second, glyphCount = 1, profile = profile())).decode(GlyphId(0)),
+        )
+
+        assertContentEquals(rgba2x2Pixels(), glyph.copyDecodedPixels())
+        assertEquals(2, glyph.width)
+        assertEquals(2, glyph.height)
+        assertEquals(1, glyph.originX)
+        assertEquals(2, glyph.originY)
+        assertEquals(3, glyph.metrics.advanceX)
+        assertEquals(0, glyph.metrics.advanceY)
+        assertEquals(BitmapPixelFormat.RGBA_8888, glyph.pixelFormat)
+        assertEquals(BitmapStrike(16, 16, 32), glyph.strike)
+    }
+
+    @Test
+    fun acceptsAMixedVersionPairDeliberately() {
+        val cblcTwoCbdtThree = tables(strike(), cbdtVersion = VERSION_THREE)
+        val cblcThreeCbdtTwo = tables(strike(), cblcVersion = VERSION_THREE)
+
+        val forward = decoded(
+            value(
+                CbdtCblcReader.read(
+                    cblcTwoCbdtThree.first,
+                    cblcTwoCbdtThree.second,
+                    glyphCount = 1,
+                    profile = profile(),
+                ),
+            ).decode(GlyphId(0)),
+        )
+        val reverse = decoded(
+            value(
+                CbdtCblcReader.read(
+                    cblcThreeCbdtTwo.first,
+                    cblcThreeCbdtTwo.second,
+                    glyphCount = 1,
+                    profile = profile(),
+                ),
+            ).decode(GlyphId(0)),
+        )
+
+        assertContentEquals(rgba2x2Pixels(), forward.copyDecodedPixels())
+        assertContentEquals(rgba2x2Pixels(), reverse.copyDecodedPixels())
+    }
+
+    @Test
+    fun rejectsUnsupportedCbdtCblcVersions() {
+        val versionOne = tables(strike(), cblcVersion = VERSION_ONE, cbdtVersion = VERSION_ONE)
+        val versionFour = tables(strike(), cblcVersion = VERSION_FOUR, cbdtVersion = VERSION_FOUR)
+        val unsupportedCbdt = tables(strike(), cbdtVersion = VERSION_FOUR)
+
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            error(CbdtCblcReader.read(versionOne.first, versionOne.second, glyphCount = 1, profile = profile())),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            error(CbdtCblcReader.read(versionFour.first, versionFour.second, glyphCount = 1, profile = profile())),
+        )
+        assertIs<FontError.UnsupportedRepresentationProfile>(
+            error(CbdtCblcReader.read(unsupportedCbdt.first, unsupportedCbdt.second, glyphCount = 1, profile = profile())),
+        )
+    }
+
+    @Test
+    fun hasSupportedVersionsAcceptsEachSupportedPairAndRejectsOthers() {
+        val versionTwo = tables(strike())
+        val versionThree = tables(strike(), cblcVersion = VERSION_THREE, cbdtVersion = VERSION_THREE)
+        val cblcTwoCbdtThree = tables(strike(), cbdtVersion = VERSION_THREE)
+        val cblcThreeCbdtTwo = tables(strike(), cblcVersion = VERSION_THREE)
+        val versionOne = tables(strike(), cblcVersion = VERSION_ONE, cbdtVersion = VERSION_ONE)
+        val versionFour = tables(strike(), cblcVersion = VERSION_FOUR, cbdtVersion = VERSION_FOUR)
+
+        assertTrue(CbdtCblcReader.hasSupportedVersions(versionTwo.first, versionTwo.second))
+        assertTrue(CbdtCblcReader.hasSupportedVersions(versionThree.first, versionThree.second))
+        assertTrue(CbdtCblcReader.hasSupportedVersions(cblcTwoCbdtThree.first, cblcTwoCbdtThree.second))
+        assertTrue(CbdtCblcReader.hasSupportedVersions(cblcThreeCbdtTwo.first, cblcThreeCbdtTwo.second))
+        assertFalse(CbdtCblcReader.hasSupportedVersions(versionOne.first, versionOne.second))
+        assertFalse(CbdtCblcReader.hasSupportedVersions(versionFour.first, versionFour.second))
+    }
+
+    @Test
     fun rejectsAStrikeWhoseBitDepthIsNotThirtyTwo() {
         val tables = tables(strike(bitDepth = 1))
 
@@ -180,6 +264,138 @@ class CbdtCblcReaderTest {
         assertEquals(BitmapResourceLimit.TOTAL_DECODED_BYTES, error.limit)
         assertEquals(32, error.observed)
         assertEquals(31, error.maximum)
+    }
+
+    @Test
+    fun reportsTypedBoundsForTheIndexTable() {
+        val tables = tables(strike())
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(
+                CbdtCblcReader.read(
+                    tables.first,
+                    tables.second,
+                    glyphCount = 1,
+                    profile = profile(maxIndexTableBytes = tables.first.size - 1),
+                ),
+            ),
+        )
+
+        assertEquals(BitmapResourceLimit.INDEX_TABLE_BYTES, error.limit)
+        assertEquals(tables.first.size.toLong(), error.observed)
+        assertEquals((tables.first.size - 1).toLong(), error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBLC"), error.location)
+    }
+
+    @Test
+    fun reportsTypedBoundsForTheSourceTable() {
+        val tables = tables(strike())
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(
+                CbdtCblcReader.read(
+                    tables.first,
+                    tables.second,
+                    glyphCount = 1,
+                    profile = profile(maxSourceTableBytes = tables.second.size - 1),
+                ),
+            ),
+        )
+
+        assertEquals(BitmapResourceLimit.SOURCE_TABLE_BYTES, error.limit)
+        assertEquals(tables.second.size.toLong(), error.observed)
+        assertEquals((tables.second.size - 1).toLong(), error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBDT"), error.location)
+    }
+
+    @Test
+    fun reportsTypedBoundsForStrikeCount() {
+        val tables = tables(strike(), strike())
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(CbdtCblcReader.read(tables.first, tables.second, glyphCount = 1, profile = profile(maxStrikes = 1))),
+        )
+
+        assertEquals(BitmapResourceLimit.STRIKES, error.limit)
+        assertEquals(2, error.observed)
+        assertEquals(1, error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBLC"), error.location)
+    }
+
+    @Test
+    fun reportsTypedBoundsForIndexSubtableCount() {
+        val tables = tables(strike(glyphs = 2, subtableRanges = listOf(0..0, 1..1)))
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(
+                CbdtCblcReader.read(tables.first, tables.second, glyphCount = 2, profile = profile(maxIndexSubtables = 1)),
+            ),
+        )
+
+        assertEquals(BitmapResourceLimit.INDEX_SUBTABLES, error.limit)
+        assertEquals(2, error.observed)
+        assertEquals(1, error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBLC"), error.location)
+    }
+
+    @Test
+    fun reportsTypedBoundsForRecordCount() {
+        val tables = tables(strike(glyphs = 2))
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(
+                CbdtCblcReader.read(tables.first, tables.second, glyphCount = 2, profile = profile(maxRecordCount = 1)),
+            ),
+        )
+
+        assertEquals(BitmapResourceLimit.RECORD_COUNT, error.limit)
+        assertEquals(2, error.observed)
+        assertEquals(1, error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBLC"), error.location)
+    }
+
+    @Test
+    fun reportsTypedBoundsForOneCompressedRecord() {
+        val tables = tables(strike())
+        val recordBytes = RGBA_2X2_BYTES.size
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(
+                CbdtCblcReader.read(
+                    tables.first,
+                    tables.second,
+                    glyphCount = 1,
+                    profile = profile(maxCompressedBytes = recordBytes - 1),
+                ),
+            ),
+        )
+
+        assertEquals(BitmapResourceLimit.COMPRESSED_BYTES, error.limit)
+        assertEquals(recordBytes.toLong(), error.observed)
+        assertEquals((recordBytes - 1).toLong(), error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBDT"), error.location)
+    }
+
+    @Test
+    fun reportsTypedBoundsForCumulativeCompressedBytes() {
+        val tables = tables(strike(glyphs = 2))
+        val recordBytes = RGBA_2X2_BYTES.size
+
+        val error = assertIs<FontError.BitmapResourceLimitExceeded>(
+            error(
+                CbdtCblcReader.read(
+                    tables.first,
+                    tables.second,
+                    glyphCount = 2,
+                    profile = profile(maxTotalCompressedBytes = recordBytes * 2 - 1),
+                ),
+            ),
+        )
+
+        assertEquals(BitmapResourceLimit.TOTAL_COMPRESSED_BYTES, error.limit)
+        assertEquals(recordBytes.toLong() * 2, error.observed)
+        assertEquals((recordBytes * 2 - 1).toLong(), error.maximum)
+        assertEquals(FontDiagnosticLocation.Table("CBDT"), error.location)
     }
 
     @Test
@@ -287,22 +503,29 @@ class CbdtCblcReaderTest {
     private fun profile(
         strike: BitmapStrike = BitmapStrike(16, 16, 32),
         schemaVersion: Int = 2,
+        maxStrikes: Int = 8,
+        maxIndexSubtables: Int = 8,
+        maxRecordCount: Int = 8,
+        maxIndexTableBytes: Int = 4_096,
+        maxSourceTableBytes: Int = 4_096,
+        maxCompressedBytes: Int = 4_096,
+        maxTotalCompressedBytes: Int = 4_096,
         maxTotalDecodedBytes: Int = 1_024,
     ): BitmapProfile = BitmapProfile(
         strike = strike,
         acceptedPixelFormats = listOf(BitmapPixelFormat.RGBA_8888),
         acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
         limits = BitmapLimits(
-            maxStrikes = 8,
-            maxIndexSubtables = 8,
-            maxRecordCount = 8,
-            maxIndexTableBytes = 4_096,
-            maxSourceTableBytes = 4_096,
+            maxStrikes = maxStrikes,
+            maxIndexSubtables = maxIndexSubtables,
+            maxRecordCount = maxRecordCount,
+            maxIndexTableBytes = maxIndexTableBytes,
+            maxSourceTableBytes = maxSourceTableBytes,
             maxWidth = 16,
             maxHeight = 16,
             maxPixels = 256,
-            maxCompressedBytes = 4_096,
-            maxTotalCompressedBytes = 4_096,
+            maxCompressedBytes = maxCompressedBytes,
+            maxTotalCompressedBytes = maxTotalCompressedBytes,
             maxDecodedBytes = 1_024,
             maxTotalDecodedBytes = maxTotalDecodedBytes,
         ),
@@ -341,7 +564,11 @@ class CbdtCblcReaderTest {
         vertAdvance = vertAdvance,
     )
 
-    private fun tables(vararg specs: StrikeSpec): Pair<ByteArray, ByteArray> {
+    private fun tables(
+        vararg specs: StrikeSpec,
+        cblcVersion: UInt = VERSION_TWO,
+        cbdtVersion: UInt = VERSION_TWO,
+    ): Pair<ByteArray, ByteArray> {
         val recordLengths = specs.map { spec ->
             val metricsLength = if (spec.imageFormat == 18) BIG_GLYPH_METRICS_LENGTH else SMALL_GLYPH_METRICS_LENGTH
             metricsLength + DATA_LENGTH_FIELD_LENGTH + RGBA_2X2_BYTES.size
@@ -352,9 +579,9 @@ class CbdtCblcReaderTest {
         }
         val cblc = ByteArray(8 + specs.size * 48 + assetLengths.sum())
         val cbdt = ByteArray(4 + specs.indices.sumOf { recordLengths[it] * specs[it].glyphs })
-        cblc.writeUInt32(0, VERSION_TWO)
+        cblc.writeUInt32(0, cblcVersion)
         cblc.writeUInt32(4, specs.size.toUInt())
-        cbdt.writeUInt32(0, VERSION_TWO)
+        cbdt.writeUInt32(0, cbdtVersion)
         var indexTablesOffset = 8 + specs.size * 48
         var imageDataOffset = 4
         specs.forEachIndexed { index, spec ->
@@ -454,7 +681,10 @@ private fun cblcHeader(strikeCount: Int): ByteArray = ByteArray(8).also { bytes 
 
 private fun cbdtHeader(): ByteArray = ByteArray(4).also { bytes -> bytes.writeUInt32(0, VERSION_TWO) }
 
+private const val VERSION_ONE: UInt = 0x00010000u
 private const val VERSION_TWO: UInt = 0x00020000u
+private const val VERSION_THREE: UInt = 0x00030000u
+private const val VERSION_FOUR: UInt = 0x00040000u
 private const val SMALL_GLYPH_METRICS_LENGTH = 5
 private const val BIG_GLYPH_METRICS_LENGTH = 8
 private const val DATA_LENGTH_FIELD_LENGTH = 4

@@ -75,7 +75,7 @@ public class CbdtCblcData internal constructor(
                 originX = record.originX,
                 originY = record.originY,
                 metrics = record.metrics,
-                pixelFormat = BitmapPixelFormat.RGBA_8888,
+                pixelFormat = record.pixelFormat,
                 colorSpace = GlyphColorSpace.SRGB,
                 decodedPixels = decoded.copyPixels(),
             ),
@@ -163,8 +163,10 @@ public object CbdtCblcReader {
     /**
      * Parses the exact strike requested by [profile].
      *
-     * The operation validates every index subtable and every image record in the selected strike
-     * before it returns. A different strike, another bit depth, unsupported flags or codecs,
+     * Record envelopes, offsets, the declared PNG IHDR, and glyph metrics are validated eagerly
+     * before this returns. Compressed payload integrity (IDAT chunk CRCs and the deflate stream)
+     * is validated lazily in [CbdtCblcData.decode], which is where a malformed payload becomes
+     * a typed failure. A different strike, another bit depth, unsupported flags or codecs,
      * truncated data, a dimension mismatch, or a limit breach is returned as a typed failure
      * rather than deferred to a renderer.
      *
@@ -180,12 +182,14 @@ public object CbdtCblcReader {
         profile: BitmapProfile,
     ): FontOperationResult<CbdtCblcData> {
         if (glyphCount <= 0) return invalid("font.cbdt.invalid-glyph-count", "CBDT requires a positive face glyph count.", "CBLC")
-        if (profile.schemaVersion != 2 ||
-            profile.strike.bitDepth != 32 ||
+        if (profile.schemaVersion != 2) {
+            return unsupported("Only schema version 2 CBDT colour bitmap pixels are supported.")
+        }
+        if (profile.strike.bitDepth != 32 ||
             BitmapPixelFormat.RGBA_8888 !in profile.acceptedPixelFormats ||
             GlyphColorSpace.SRGB !in profile.acceptedColorSpaces
         ) {
-            return unsupported("Only schema version 2 CBDT colour bitmap pixels are supported.")
+            return unsupported("Only 32-bit RGBA_8888 sRGB CBDT colour bitmap pixels are supported.")
         }
         if (cblcTable.size > profile.limits.maxIndexTableBytes) {
             return limit(BitmapResourceLimit.INDEX_TABLE_BYTES, cblcTable.size.toLong(), profile.limits.maxIndexTableBytes, "CBLC")
@@ -366,6 +370,7 @@ public object CbdtCblcReader {
                     } else {
                         BitmapGlyphMetrics(advanceX = data[start + 4].toInt() and 0xFF, advanceY = 0)
                     },
+                    pixelFormat = header.pixelFormat,
                     pngBytes = encoded,
                 ),
                 compressedByteCount = dataLength,
@@ -468,6 +473,7 @@ internal data class CbdtCblcRecord(
     val originX: Int,
     val originY: Int,
     val metrics: BitmapGlyphMetrics,
+    val pixelFormat: BitmapPixelFormat,
     val pngBytes: ByteArray,
 )
 
