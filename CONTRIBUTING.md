@@ -141,6 +141,7 @@ Choose the narrowest applicable scope from the current project structure:
 | `conformance` | Portable conformance capability identities and public-interface conformance tests in `:kalligraphie:conformance` |
 | `platform` | Platform integration across the `kalligraphie/platform/` module family |
 | `apple` | Apple font integration in `:kalligraphie:platform:apple` |
+| `linux` | Linux font integration in `:kalligraphie:platform:linux` |
 | `buildSrc` | Gradle conventions in `buildSrc/` |
 | `ci` | Automated repository checks in `.github/workflows/` and `.github/scripts/` |
 | `docs` | Documentation in `docs/` and repository documentation files |

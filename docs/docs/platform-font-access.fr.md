@@ -22,14 +22,17 @@ voir [la capture et ses limites](font-management.md#capturer-des-repertoires-de-
 Les fournisseurs de répertoires JVM capturent des fichiers accessibles, sans
 reproduire exactement le registre des fontes activées ; le fournisseur macOS
 `CoreTextSystemFontCatalog` de `:kalligraphie:platform:apple` capture, lui, le
-registre CoreText activé. Un nouvel `open` rafraîchit explicitement le snapshot
-(instantané immuable) ; les ressources indépendantes de la génération précédente
-restent possédées par leurs consommateurs.
+registre CoreText activé, et le fournisseur Linux `FontconfigSystemFontCatalog`
+de `:kalligraphie:platform:linux` capture la configuration Fontconfig activée. Un
+nouvel `open` rafraîchit explicitement le snapshot (instantané immuable) ; les
+ressources indépendantes de la génération précédente restent possédées par leurs
+consommateurs.
 
 | Cible / fournisseur | Découverte et données sources | Shaping opérationnel | Accès aux glyphes et rafraîchissement |
 |---|---|---|---|
 | JVM `FontDirectoryCatalog` | Racines lisibles explicites ; TrueType statique à face unique et TTC 1/2, source/indice d’origine | HarfBuzz embarqué sur Linux/macOS x64 et arm64 | Profils portables de contour/peinture/bitmap déclarés ; nouvel `open` |
 | JVM Linux `LinuxSystemFontCatalog` | Racines système, utilisateur historique et XDG, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur Linux x64 et arm64 | Mêmes routes portables ; pas de matching (sélection) par registre Fontconfig ni rafraîchissement automatique |
+| JVM Linux `FontconfigSystemFontCatalog` (`:kalligraphie:platform:linux`) | Configuration Fontconfig activée via `kffi-fontconfig`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur Linux x64 et arm64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `fontconfig-registry` |
 | JVM macOS `MacosSystemFontCatalog` | Racines système/utilisateur standard, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; pas de sélection par registre CoreText ni rafraîchissement automatique |
 | JVM macOS `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Registre CoreText activé via `kffi-coretext`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `coretext-registry` |
 | Adaptateur CoreText facultatif sur JVM macOS | Octets exacts d’un catalogue portable ; TrueType statique monochrome à face unique éligible uniquement | Conserve le shaping portable ; aucune substitution par une mise en page CoreText | Handle de plateforme explicitement accepté, ou routes portables sous-jacentes ; collections exclues de la route de plateforme |

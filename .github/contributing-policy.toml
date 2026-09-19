@@ -13,6 +13,7 @@ allowed_scopes = [
     "conformance",
     "platform",
     "apple",
+    "linux",
     "buildSrc",
     "ci",
     "docs",
