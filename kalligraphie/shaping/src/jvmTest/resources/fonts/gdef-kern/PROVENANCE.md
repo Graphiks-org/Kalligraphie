@@ -75,15 +75,15 @@ rejected before the format-14-capable fixture is selected. The test stores only
 the reviewed glyph ID and face choice and never invokes HarfBuzz as its oracle.
 
 To reproduce the audit on macOS arm64, unpack the verified release archive as
-`$SOURCE_ROOT`, extract the binding's library with
-`./gradlew :kalligraphie:shaping:extractHarfBuzzResources`, then run from the
-repository root:
+`$SOURCE_ROOT`, set `KFFI_HARFBUZZ_RESOURCES` to the embedded-resource directory
+of the `kffi-harfbuzz` module (`kffi-harfbuzz/src/jvmMain/resources/kffi/harfbuzz`
+in the kffi repository), then run from the repository root:
 
 ```sh
 cc -std=c11 -I "$SOURCE_ROOT/src" AuditProbe.c \
-  -L kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/arm64 \
+  -L "$KFFI_HARFBUZZ_RESOURCES/macos/arm64" \
   -lharfbuzz \
-  -Wl,-rpath,"$PWD/kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/arm64" \
+  -Wl,-rpath,"$KFFI_HARFBUZZ_RESOURCES/macos/arm64" \
   -o audit-probe
 ./audit-probe GdefKerningFixture.ttf
 ```
