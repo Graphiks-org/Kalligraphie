@@ -23,7 +23,10 @@ Les fournisseurs de répertoires JVM capturent des fichiers accessibles, sans
 reproduire exactement le registre des fontes activées ; le fournisseur macOS
 `CoreTextSystemFontCatalog` de `:kalligraphie:platform:apple` capture, lui, le
 registre CoreText activé, et le fournisseur Linux `FontconfigSystemFontCatalog`
-de `:kalligraphie:platform:linux` capture la configuration Fontconfig activée. Un
+de `:kalligraphie:platform:linux` capture la configuration Fontconfig activée. Le
+fournisseur Windows `DirectWriteSystemFontCatalog` de
+`:kalligraphie:platform:windows` capture la collection de fontes système
+DirectWrite activée. Un
 nouvel `open` rafraîchit explicitement le snapshot (instantané immuable) ; les
 ressources indépendantes de la génération précédente restent possédées par leurs
 consommateurs.
@@ -36,7 +39,7 @@ consommateurs.
 | JVM macOS `MacosSystemFontCatalog` | Racines système/utilisateur standard, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; pas de sélection par registre CoreText ni rafraîchissement automatique |
 | JVM macOS `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Registre CoreText activé via `kffi-coretext`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `coretext-registry` |
 | Adaptateur CoreText facultatif sur JVM macOS | Octets exacts d’un catalogue portable ; TrueType statique monochrome à face unique éligible uniquement | Conserve le shaping portable ; aucune substitution par une mise en page CoreText | Handle de plateforme explicitement accepté, ou routes portables sous-jacentes ; collections exclues de la route de plateforme |
-| JVM Windows | Aucun fournisseur de fontes système Windows | Aucune cible HarfBuzz opérationnelle embarquée | Les contrats portables ne constituent pas un parcours complet de fontes Windows |
+| JVM Windows `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Collection de fontes système DirectWrite activée via `kffi-directwrite`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | Aucune cible HarfBuzz opérationnelle embarquée | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `directwrite-registry` |
 | Android / Kotlin Native / iOS | Aucun fournisseur de répertoires système sur ces cibles | Aucun parcours de shaping complet implémenté | Contrats communs portables ; ces parcours exécutables ne sont pas implémentés |
 | Données CFF/CFF2 sur toute cible | Les contours CFF1 `.otf` isolés et CFF2 sont lus ; les collections portant des faces CFF sont capturées | Shaping CFF1 par le shaper portable ; CFF2 matérialisé uniquement à l’instance par défaut | Route portable de contours cubiques pour CFF1 et CFF2 (instance par défaut) ; aucune instance de variation CFF2 non par défaut ni route CFF CoreText |
 
