@@ -59,9 +59,13 @@ générations, les diagnostics et la durée de vie des ressources de fonte.
 Le module Apple facultatif utilise les bindings (liaisons natives) CoreText
 spécialisés de kffi et son service Darwin d’information système ; le chargement
 des bibliothèques, les symboles, les signatures et la disposition mémoire de la
-matrice appartiennent à kffi. Les liaisons HarfBuzz historiques déclarent encore
-des détails natifs localement ; leur extraction reste à effectuer. La capture
-de répertoires n’ajoute aucune liaison native brute.
+matrice appartiennent à kffi. Le backend (moteur) de shaping HarfBuzz JVM utilise
+de même la liaison publiée `org.graphiks:kffi-harfbuzz-jvm` : le chargement de la
+bibliothèque, les signatures ABI, les dispositions mémoire et les propriétaires
+natifs appartiennent à kffi, tandis que Kalligraphie garde la politique de
+features (options OpenType), l’interprétation des clusters et des carets de
+ligature GDEF (coupures de ligature) et la conversion unités de design → unités
+de layout. La capture de répertoires n’ajoute aucune liaison native brute.
 
 ## Module Apple facultatif
 
@@ -84,16 +88,18 @@ quand la fabrique explicitement acceptée crée son adaptateur sur une plateform
 prise en charge. Les cibles portables conservent leurs exigences actuelles,
 dont Android API 24.
 
-La dépendance kffi interne utilise
-`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` et suit la dernière publication de la
-ligne de développement actuelle. Un snapshot est une version de développement
-dont le contenu peut changer. Sa résolution exige le dépôt de snapshots Central
-Portal, filtré pour les artefacts racines/JVM CoreText et du runtime (moteur
-d’exécution) générique requis par les métadonnées de publication. Le module Apple
-revérifie les artefacts modifiables à chaque résolution en ligne ; il n’épingle
-pas d’artefact horodaté et n’impose pas de politique globale de
-vérification des sommes de contrôle. Une publication plus récente peut changer
-entre deux constructions et nécessiter une adaptation du code source.
+Les dépendances kffi internes utilisent
+`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` (module Apple) et
+`org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT` (shaping JVM) et suivent la
+dernière publication de la ligne de développement actuelle. Un snapshot est une
+version de développement dont le contenu peut changer. Leur résolution exige le
+dépôt de snapshots Central Portal, filtré pour les artefacts racines/JVM
+CoreText, HarfBuzz et du runtime (moteur d’exécution) générique requis par les
+métadonnées de publication. Les modules consommateurs revérifient les artefacts
+modifiables à chaque résolution en ligne ; ils n’épinglent pas d’artefact
+horodaté et n’imposent pas de politique globale de vérification des sommes de
+contrôle. Une publication plus récente peut changer entre deux constructions et
+nécessiter une adaptation du code source.
 
 Ajouter ce dépôt au `settings.gradle.kts` du consommateur, à côté de ses
 dépôts Maven habituels :
@@ -107,6 +113,8 @@ dependencyResolutionManagement {
             content {
                 includeModule("org.graphiks", "kffi-coretext")
                 includeModule("org.graphiks", "kffi-coretext-jvm")
+                includeModule("org.graphiks", "kffi-harfbuzz")
+                includeModule("org.graphiks", "kffi-harfbuzz-jvm")
                 includeModule("org.graphiks", "kffi")
                 includeModule("org.graphiks", "kffi-jvm")
             }

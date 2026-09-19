@@ -11,6 +11,9 @@ kotlin {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))
         }
+        jvmMain.dependencies {
+            implementation(libs.kffi.harfbuzz.jvm)
+        }
         jvmTest.dependencies {
             implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:unicode"))
@@ -19,4 +22,8 @@ kotlin {
             implementation(kotlin("test"))
         }
     }
+}
+
+configurations.configureEach {
+    resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
