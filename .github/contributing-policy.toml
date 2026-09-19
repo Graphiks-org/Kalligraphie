@@ -10,6 +10,7 @@ allowed_scopes = [
     "glyph",
     "shaping",
     "layout",
+    "conformance",
     "platform",
     "apple",
     "buildSrc",
