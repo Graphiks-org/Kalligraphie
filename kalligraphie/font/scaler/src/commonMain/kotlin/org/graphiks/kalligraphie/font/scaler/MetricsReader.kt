@@ -105,6 +105,49 @@ internal object MetricsReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        val metrics = when (val result = readHorizontalMetrics(prepared, metricsGlyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+
+        val bounds = when (val result = readGlyphBounds(glyphData, glyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return finishMetrics(prepared, metrics, bounds, layoutSize)
+    }
+
+    /**
+     * Reads metrics for a face without a `glyf` table (CFF), where the metrics
+     * glyph index equals [glyphId] and the ink bounds come from the decoded
+     * outline rather than a glyph header.
+     */
+    internal fun readGlyphMetrics(
+        prepared: PreparedMetricsData,
+        bounds: DesignBounds,
+        glyphId: GlyphId,
+        layoutSize: Float,
+    ): FontOperationResult<GlyphMetrics> {
+        if (!layoutSize.isFinite()) {
+            return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
+        }
+        if (glyphId.value !in 0 until prepared.glyphCount) {
+            return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        val metrics = when (val result = readHorizontalMetrics(prepared, glyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return finishMetrics(prepared, metrics, bounds, layoutSize)
+    }
+
+    private fun readHorizontalMetrics(
+        prepared: PreparedMetricsData,
+        metricsGlyphId: GlyphId,
+    ): FontOperationResult<HorizontalMetrics> {
         val metrics = if (metricsGlyphId.value < prepared.numberOfHMetrics) {
             val offset = metricsGlyphId.value.toLong() * 4L
             if (checkedRangeEnd(offset, 4L, prepared.hmtx.size) == null) {
@@ -145,12 +188,15 @@ internal object MetricsReader {
             )
         }
 
-        val bounds = when (val result = readGlyphBounds(glyphData, glyphId)) {
-            is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return result
-            is FontOperationResult.Cancelled -> return result
-        }
+        return FontOperationResult.Success(metrics)
+    }
 
+    private fun finishMetrics(
+        prepared: PreparedMetricsData,
+        metrics: HorizontalMetrics,
+        bounds: DesignBounds,
+        layoutSize: Float,
+    ): FontOperationResult<GlyphMetrics> {
         val advanceWidth = scaleDesignUnit(metrics.advanceWidth, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceWidth could not be represented as a finite LayoutUnit."))
         val leftSideBearing = scaleDesignUnit(metrics.leftSideBearing, layoutSize, prepared.unitsPerEm)

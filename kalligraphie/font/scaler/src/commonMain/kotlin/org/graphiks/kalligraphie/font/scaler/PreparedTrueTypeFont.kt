@@ -3,6 +3,7 @@
 package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -12,6 +13,11 @@ import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.VerticalGlyphMetrics
+import org.graphiks.kalligraphie.font.scaler.cff.Cff2Reader
+import org.graphiks.kalligraphie.font.scaler.cff.Cff2Table
+import org.graphiks.kalligraphie.font.scaler.cff.CffReader
+import org.graphiks.kalligraphie.font.scaler.cff.CffTable
+import org.graphiks.kalligraphie.font.sfnt.FontFlavor
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.slice
 import kotlin.concurrent.atomics.AtomicReference
@@ -85,6 +91,70 @@ public class PreparedTrueTypeFont internal constructor(
     private val verticalMetricsResult: FontOperationResult<PreparedVerticalMetricsData> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         VerticalMetricsReader.prepare(sourceBytes, parsedFont)
     }
+
+    private val cffTableResult: FontOperationResult<CffTable> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val record = parsedFont.tableRecords["CFF "] ?: return@lazy failure(FontError.MissingRequiredTable("CFF "))
+        val table = slice(sourceBytes, record)
+            ?: return@lazy failure(
+                FontError.OutOfBounds("Table CFF exceeds source length.", FontDiagnosticLocation.Table("CFF ")),
+            )
+        CffTable.read(table, 0)
+    }
+
+    private val cff2TableResult: FontOperationResult<Cff2Table> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val record = parsedFont.tableRecords["CFF2"] ?: return@lazy failure(FontError.MissingRequiredTable("CFF2"))
+        val table = slice(sourceBytes, record)
+            ?: return@lazy failure(
+                FontError.OutOfBounds("Table CFF2 exceeds source length.", FontDiagnosticLocation.Table("CFF2")),
+            )
+        Cff2Table.read(table, 0)
+    }
+
+    private fun decodePortableOutline(
+        glyphId: GlyphId,
+        profile: OutlineProfile,
+        cancellationToken: CancellationToken,
+    ): FontOperationResult<ScalerGlyphOutline> = when (parsedFont.flavor) {
+        FontFlavor.CFF -> {
+            val record = parsedFont.tableRecords["CFF "] ?: return failure(FontError.MissingRequiredTable("CFF "))
+            val tableBytes = slice(sourceBytes, record)
+                ?: return failure(FontError.OutOfBounds("Table CFF exceeds source length.", FontDiagnosticLocation.Table("CFF ")))
+            val table = when (val result = cffTableResult) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            CffReader.readGlyphOutline(
+                tableBytes, table, glyphId.value, parsedFont.metadata.unitsPerEm, profile, cancellationToken,
+            )
+        }
+
+        FontFlavor.CFF2 -> {
+            val record = parsedFont.tableRecords["CFF2"] ?: return failure(FontError.MissingRequiredTable("CFF2"))
+            val tableBytes = slice(sourceBytes, record)
+                ?: return failure(FontError.OutOfBounds("Table CFF2 exceeds source length.", FontDiagnosticLocation.Table("CFF2")))
+            val table = when (val result = cff2TableResult) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            Cff2Reader.readGlyphOutline(
+                tableBytes, table, glyphId.value, parsedFont.metadata.unitsPerEm, profile, cancellationToken,
+            )
+        }
+
+        FontFlavor.TRUETYPE -> FontOperationResult.Failure(
+            FontError.UnsupportedRepresentationProfile("TrueType faces do not use the portable CFF outline route."),
+        )
+    }
+
+    private fun metricsOutlineProfile(): OutlineProfile = OutlineProfile(
+        maxBytes = 64 * 1024 * 1024,
+        maxContours = 1_000_000,
+        maxPoints = 10_000_000,
+        maxCompositeDepth = 32,
+        maxCompositeComponents = 1_000_000,
+    )
 
     private fun glyphData(cancellationToken: CancellationToken): FontOperationResult<PreparedGlyphData> {
         glyphDataCache.load()?.let { return it }
@@ -164,6 +234,16 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        if (parsedFont.flavor != FontFlavor.TRUETYPE) {
+            val outline = when (
+                val result = decodePortableOutline(glyphId, metricsOutlineProfile(), CancellationToken.none)
+            ) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            return MetricsReader.readGlyphMetrics(metrics, outline.bounds, glyphId, layoutSize)
+        }
         val glyphData = when (val result = glyphData(CancellationToken.none)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
@@ -219,6 +299,9 @@ public class PreparedTrueTypeFont internal constructor(
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        if (parsedFont.flavor != FontFlavor.TRUETYPE) {
+            return decodePortableOutline(glyphId, profile, cancellationToken)
         }
         val glyphData = when (val result = glyphData(cancellationToken)) {
             is FontOperationResult.Success -> result.value

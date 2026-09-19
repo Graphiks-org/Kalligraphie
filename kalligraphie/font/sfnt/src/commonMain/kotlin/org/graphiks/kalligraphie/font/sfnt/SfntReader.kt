@@ -50,9 +50,11 @@ public object SfntReader {
 
         val scalerType = readUInt32(bytes, directoryOffset) ?: return failure(FontError.OutOfBounds("Could not read scaler type.", FontDiagnosticLocation.Source))
         val containerTag = bytes.decodeAsciiTag(directoryOffset)
-        if (scalerType != 0x00010000u && containerTag != "true") {
+        val isTrueType = scalerType == 0x00010000u || containerTag == "true"
+        val isOpenTypeCff = containerTag == "OTTO"
+        if (!isTrueType && !isOpenTypeCff) {
             val message = when (containerTag) {
-                "ttcf", "OTTO", "typ1" -> "Unsupported SFNT container: $containerTag"
+                "ttcf", "typ1" -> "Unsupported SFNT container: $containerTag"
                 else -> "Unsupported SFNT container."
             }
             return failure(FontError.UnsupportedContainer(message))
@@ -119,6 +121,14 @@ public object SfntReader {
             }
         }
 
+        val flavor = when {
+            records.containsKey("CFF2") -> FontFlavor.CFF2
+            records.containsKey("CFF ") -> FontFlavor.CFF
+            else -> FontFlavor.TRUETYPE
+        }
+        if (isOpenTypeCff && flavor == FontFlavor.TRUETYPE) {
+            return failure(FontError.UnsupportedContainer("Unsupported SFNT container: OTTO"))
+        }
         val unitsPerEm = parseUnitsPerEm(bytes, records.getValue("head")) ?: return failure(
             FontError.InvalidFontData("head table is truncated.", FontDiagnosticLocation.Table("head")),
         )
@@ -131,38 +141,49 @@ public object SfntReader {
                 FontDiagnosticData(observedValue = unitsPerEm.toLong()),
             )
         }
-        val indexToLocFormat = parseIndexToLocFormat(bytes, records.getValue("head")) ?: return failure(
-            FontError.InvalidFontData("head table is truncated.", FontDiagnosticLocation.Table("head")),
-        )
-        if (indexToLocFormat !in 0..1) {
-            return failure(
-                FontError.InvalidFontData(
-                    "head.indexToLocFormat must be 0 or 1.",
-                    FontDiagnosticLocation.Table("head"),
-                ),
-                FontDiagnosticData(observedValue = indexToLocFormat.toLong()),
+        val indexToLocFormat = if (flavor == FontFlavor.TRUETYPE) {
+            val value = parseIndexToLocFormat(bytes, records.getValue("head")) ?: return failure(
+                FontError.InvalidFontData("head table is truncated.", FontDiagnosticLocation.Table("head")),
             )
+            if (value !in 0..1) {
+                return failure(
+                    FontError.InvalidFontData(
+                        "head.indexToLocFormat must be 0 or 1.",
+                        FontDiagnosticLocation.Table("head"),
+                    ),
+                    FontDiagnosticData(observedValue = value.toLong()),
+                )
+            }
+            value
+        } else {
+            0
         }
         val maxpTable = slice(bytes, records.getValue("maxp")) ?: return failure(
             FontError.InvalidFontData("maxp table is outside the source.", FontDiagnosticLocation.Table("maxp")),
         )
-        if (maxpTable.size < TRUE_TYPE_MAXP_LENGTH) {
+        val minimumMaxpLength = if (flavor == FontFlavor.TRUETYPE) TRUE_TYPE_MAXP_LENGTH else CFF_MAXP_LENGTH
+        if (maxpTable.size < minimumMaxpLength) {
             return failure(
-                FontError.InvalidFontData("TrueType maxp table is truncated.", FontDiagnosticLocation.Table("maxp")),
+                FontError.InvalidFontData("maxp table is truncated.", FontDiagnosticLocation.Table("maxp")),
                 FontDiagnosticData(
                     length = maxpTable.size.toLong(),
                     observedValue = maxpTable.size.toLong(),
-                    limit = TRUE_TYPE_MAXP_LENGTH.toLong(),
+                    limit = minimumMaxpLength.toLong(),
                 ),
             )
         }
         val maxpVersion = readUInt32(maxpTable, 0) ?: return failure(
             FontError.InvalidFontData("maxp version is truncated.", FontDiagnosticLocation.Table("maxp")),
         )
-        if (maxpVersion != TRUE_TYPE_MAXP_VERSION) {
+        val expectedMaxpVersion = if (flavor == FontFlavor.TRUETYPE) TRUE_TYPE_MAXP_VERSION else CFF_MAXP_VERSION
+        if (maxpVersion != expectedMaxpVersion) {
             return failure(
-                FontError.InvalidFontData("TrueType maxp version 1.0 is required.", FontDiagnosticLocation.Table("maxp")),
-                FontDiagnosticData(observedValue = maxpVersion.toLong(), limit = TRUE_TYPE_MAXP_VERSION.toLong()),
+                FontError.InvalidFontData(
+                    if (flavor == FontFlavor.TRUETYPE) "TrueType maxp version 1.0 is required."
+                    else "CFF maxp version 0.5 is required.",
+                    FontDiagnosticLocation.Table("maxp"),
+                ),
+                FontDiagnosticData(observedValue = maxpVersion.toLong(), limit = expectedMaxpVersion.toLong()),
             )
         }
         val glyphCount = readUInt16(maxpTable, 4)?.toInt() ?: return failure(
@@ -188,6 +209,7 @@ public object SfntReader {
                     glyphCount = glyphCount,
                 ),
                 indexToLocFormat = indexToLocFormat,
+                flavor = flavor,
             ),
         )
     }
@@ -302,8 +324,10 @@ public class ParsedTrueTypeFont(
     tableRecords: Map<String, TableRecord>,
     /** Face metadata read from the font tables. */
     public val metadata: FontFaceMetadata,
-    /** `head.indexToLocFormat` used to decode the `loca` table. */
+    /** `head.indexToLocFormat` used to decode the `loca` table; `0` for CFF flavours. */
     public val indexToLocFormat: Int,
+    /** Outline flavour that selects the decoder; defaults to TrueType. */
+    public val flavor: FontFlavor = FontFlavor.TRUETYPE,
 ) {
     /** Immutable map of SFNT table records keyed by tag. */
     public val tableRecords: Map<String, TableRecord> = ImmutableSnapshotMap(tableRecords)
@@ -317,31 +341,37 @@ public class ParsedTrueTypeFont(
     /** Returns the location format for destructuring. */
     public operator fun component3(): Int = indexToLocFormat
 
+    /** Returns the outline flavour for destructuring. */
+    public operator fun component4(): FontFlavor = flavor
+
     /** Copies this parsed font with selected fields changed. */
     public fun copy(
         tableRecords: Map<String, TableRecord> = this.tableRecords,
         metadata: FontFaceMetadata = this.metadata,
         indexToLocFormat: Int = this.indexToLocFormat,
-    ): ParsedTrueTypeFont = ParsedTrueTypeFont(tableRecords, metadata, indexToLocFormat)
+        flavor: FontFlavor = this.flavor,
+    ): ParsedTrueTypeFont = ParsedTrueTypeFont(tableRecords, metadata, indexToLocFormat, flavor)
 
-    /** Compares table records, metadata, and location format. */
+    /** Compares table records, metadata, location format, and flavour. */
     override fun equals(other: Any?): Boolean =
         this === other || other is ParsedTrueTypeFont &&
             tableRecords == other.tableRecords &&
             metadata == other.metadata &&
-            indexToLocFormat == other.indexToLocFormat
+            indexToLocFormat == other.indexToLocFormat &&
+            flavor == other.flavor
 
     /** Returns a hash derived from the parsed table structure. */
     override fun hashCode(): Int {
         var result = tableRecords.hashCode()
         result = 31 * result + metadata.hashCode()
         result = 31 * result + indexToLocFormat
+        result = 31 * result + flavor.hashCode()
         return result
     }
 
     /** Returns a diagnostic representation of the parsed font structure. */
     override fun toString(): String =
-        "ParsedTrueTypeFont(tableRecords=$tableRecords, metadata=$metadata, indexToLocFormat=$indexToLocFormat)"
+        "ParsedTrueTypeFont(tableRecords=$tableRecords, metadata=$metadata, indexToLocFormat=$indexToLocFormat, flavor=$flavor)"
 }
 
 /**
@@ -508,3 +538,25 @@ private class ImmutableEntrySet<Element>(source: List<Element>) : AbstractMutabl
 
 private const val TRUE_TYPE_MAXP_LENGTH = 32
 private const val TRUE_TYPE_MAXP_VERSION: UInt = 0x00010000u
+private const val CFF_MAXP_LENGTH = 6
+private const val CFF_MAXP_VERSION: UInt = 0x00005000u
+
+/**
+ * Outline flavour of a parsed SFNT face.
+ *
+ * A TrueType face carries `glyf`/`loca` quadratic outlines; a CFF face carries a
+ * `CFF ` Type 2 charstring table; a CFF2 face carries a `CFF2` table with
+ * variation data. The flavour selects the outline decoder, never the shared
+ * `cmap`/`hmtx`/`name`/`head` metadata.
+ */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
+public enum class FontFlavor {
+    /** TrueType `glyf`/`loca` quadratic outlines. */
+    TRUETYPE,
+
+    /** OpenType CFF1 (`CFF `) cubic charstring outlines. */
+    CFF,
+
+    /** OpenType CFF2 cubic charstring outlines with variation data. */
+    CFF2,
+}

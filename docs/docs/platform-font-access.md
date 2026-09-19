@@ -16,8 +16,10 @@ CoreText C interoperability implementation.
 Directory discovery and platform rendering are separate capabilities. The main
 JVM artifact offers `FontDirectoryCatalog`, `LinuxSystemFontCatalog` and
 `MacosSystemFontCatalog`; see [capture usage and bounds](font-management.md#capture-font-directories-on-the-jvm).
-The system providers capture accessible directory files, not an exact activated
-registry. They require explicit reopening to refresh and preserve independently
+The JVM directory providers capture accessible directory files rather than an
+exact activated registry; the macOS `CoreTextSystemFontCatalog` in
+`:kalligraphie:platform:apple` captures the activated CoreText registry instead.
+Every provider requires explicit reopening to refresh and preserves independently
 owned resources from the previous generation.
 
 | Target / provider | Discovery and source data | Operational shaping | Glyph access and refresh |
@@ -25,14 +27,16 @@ owned resources from the previous generation.
 | JVM `FontDirectoryCatalog` | Explicit readable roots; standalone static TrueType and TTC 1/2, original source/index | Bundled HarfBuzz on Linux/macOS x64 and arm64 | Portable advertised outline/paint/bitmap profiles; new `open` for refresh |
 | Linux JVM `LinuxSystemFontCatalog` | System, legacy user and XDG roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on Linux x64 and arm64 | Same portable routes; no Fontconfig registry matching or automatic refresh |
 | macOS JVM `MacosSystemFontCatalog` | Standard system/user roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; no CoreText registry matching or automatic refresh |
+| macOS JVM `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Activated CoreText registry through `kffi-coretext`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `coretext-registry` generation |
 | macOS JVM optional CoreText adapter | Exact bytes from a portable catalogue; eligible standalone static monochrome TrueType only | Preserves portable shaping; no CoreText layout substitution | Explicitly accepted platform handle, or underlying portable routes; collections excluded from the platform route |
 | Windows JVM | No Windows system-font provider | No bundled operational HarfBuzz target | Portable contracts do not establish a complete Windows font journey |
 | Android / Kotlin Native / iOS | No system-directory provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
-| CFF/CFF2 data on any target | Not supported by these capture providers | No delivered CFF shaping journey | No CFF portable or CoreText route in this scope |
+| CFF/CFF2 data on any target | Standalone CFF1 `.otf` and CFF2 outlines are read; collections carrying CFF faces are captured | CFF1 shaping through the portable shaper; CFF2 materialized at the default instance only | Portable cubic outline route for CFF1 and CFF2 (default instance); no CFF2 non-default variation instance and no CoreText CFF route |
 
 The standalone embedded route remains available on the JVM. File extensions do
-not establish outline support: `.otf` may contain supported TrueType or unsupported
-CFF. Directory admission is bounded: a TTC/OTC source whose complete face count
+not establish outline support: `.otf` may contain TrueType, CFF1 or CFF2
+outlines. CFF1 cubic outlines are delivered end to end; CFF2 is materialized at
+its default instance only, and a non-default variation instance is not supported. Directory admission is bounded: a TTC/OTC source whose complete face count
 exceeds the remaining examination budget is rejected whole, with a typed limit
 diagnostic, before examining any of its directories. No partially examined
 collection prefix is published. Separate completely examined sources can still

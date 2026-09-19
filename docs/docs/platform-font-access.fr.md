@@ -19,24 +19,29 @@ La découverte dans les répertoires et le rendu de plateforme sont des capacit�
 distinctes. L’artefact principal JVM (machine virtuelle Java) propose
 `FontDirectoryCatalog`, `LinuxSystemFontCatalog` et `MacosSystemFontCatalog` ;
 voir [la capture et ses limites](font-management.md#capturer-des-repertoires-de-fontes-sur-la-jvm).
-Les fournisseurs système capturent des fichiers accessibles, sans reproduire
-exactement le registre des fontes activées. Un nouvel `open` rafraîchit
-explicitement le snapshot (instantané immuable) ; les ressources indépendantes
-de la génération précédente restent possédées par leurs consommateurs.
+Les fournisseurs de répertoires JVM capturent des fichiers accessibles, sans
+reproduire exactement le registre des fontes activées ; le fournisseur macOS
+`CoreTextSystemFontCatalog` de `:kalligraphie:platform:apple` capture, lui, le
+registre CoreText activé. Un nouvel `open` rafraîchit explicitement le snapshot
+(instantané immuable) ; les ressources indépendantes de la génération précédente
+restent possédées par leurs consommateurs.
 
 | Cible / fournisseur | Découverte et données sources | Shaping opérationnel | Accès aux glyphes et rafraîchissement |
 |---|---|---|---|
 | JVM `FontDirectoryCatalog` | Racines lisibles explicites ; TrueType statique à face unique et TTC 1/2, source/indice d’origine | HarfBuzz embarqué sur Linux/macOS x64 et arm64 | Profils portables de contour/peinture/bitmap déclarés ; nouvel `open` |
 | JVM Linux `LinuxSystemFontCatalog` | Racines système, utilisateur historique et XDG, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur Linux x64 et arm64 | Mêmes routes portables ; pas de matching (sélection) par registre Fontconfig ni rafraîchissement automatique |
 | JVM macOS `MacosSystemFontCatalog` | Racines système/utilisateur standard, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; pas de sélection par registre CoreText ni rafraîchissement automatique |
+| JVM macOS `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Registre CoreText activé via `kffi-coretext`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `coretext-registry` |
 | Adaptateur CoreText facultatif sur JVM macOS | Octets exacts d’un catalogue portable ; TrueType statique monochrome à face unique éligible uniquement | Conserve le shaping portable ; aucune substitution par une mise en page CoreText | Handle de plateforme explicitement accepté, ou routes portables sous-jacentes ; collections exclues de la route de plateforme |
 | JVM Windows | Aucun fournisseur de fontes système Windows | Aucune cible HarfBuzz opérationnelle embarquée | Les contrats portables ne constituent pas un parcours complet de fontes Windows |
 | Android / Kotlin Native / iOS | Aucun fournisseur de répertoires système sur ces cibles | Aucun parcours de shaping complet implémenté | Contrats communs portables ; ces parcours exécutables ne sont pas implémentés |
-| Données CFF/CFF2 sur toute cible | Non prises en charge par ces fournisseurs de capture | Aucun parcours CFF livré | Aucune route CFF portable ou CoreText dans ce périmètre |
+| Données CFF/CFF2 sur toute cible | Les contours CFF1 `.otf` isolés et CFF2 sont lus ; les collections portant des faces CFF sont capturées | Shaping CFF1 par le shaper portable ; CFF2 matérialisé uniquement à l’instance par défaut | Route portable de contours cubiques pour CFF1 et CFF2 (instance par défaut) ; aucune instance de variation CFF2 non par défaut ni route CFF CoreText |
 
 La route embarquée à face unique reste disponible sur la JVM. Une extension ne
-garantit pas le type de contours : `.otf` peut contenir du TrueType supporté ou
-du CFF exclu. L’admission en répertoire est bornée : une source TTC/OTC dont le
+garantit pas le type de contours : `.otf` peut contenir du TrueType, du CFF1 ou
+du CFF2. Les contours cubiques CFF1 sont livrés de bout en bout ; le CFF2 n’est
+matérialisé qu’à son instance par défaut, et une instance de variation non par
+défaut n’est pas prise en charge. L’admission en répertoire est bornée : une source TTC/OTC dont le
 nombre total de faces dépasse le budget d’examen restant est refusée entièrement,
 avec un diagnostic de limite typé, avant tout examen de ses répertoires. Aucun
 préfixe de collection partiellement examinée n’est publié. Des sources distinctes

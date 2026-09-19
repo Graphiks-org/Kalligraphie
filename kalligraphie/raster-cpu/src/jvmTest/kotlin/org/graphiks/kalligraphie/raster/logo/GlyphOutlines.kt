@@ -55,6 +55,16 @@ internal fun GlyphOutlineIR.translated(dx: Double, dy: Double): GlyphOutlineIR =
                         command.endY + dy,
                     )
 
+                is GlyphOutlineIR.Command.CubicTo ->
+                    GlyphOutlineIR.Command.CubicTo(
+                        command.control1X + dx,
+                        command.control1Y + dy,
+                        command.control2X + dx,
+                        command.control2Y + dy,
+                        command.endX + dx,
+                        command.endY + dy,
+                    )
+
                 GlyphOutlineIR.Command.Close -> GlyphOutlineIR.Command.Close
             }
         },
