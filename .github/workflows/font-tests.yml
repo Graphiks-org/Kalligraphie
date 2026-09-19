@@ -59,24 +59,26 @@ jobs:
           java-version: '25'
           cache: gradle
       - run: chmod +x gradlew
+      - name: Extract the kffi-harfbuzz embedded resources
+        run: ./gradlew --no-daemon :kalligraphie:shaping:extractHarfBuzzResources
       - name: Audit embedded native dependencies and FFM exports
         shell: bash
         run: |
           set -euo pipefail
           case "${{ matrix.target }}" in
             linux-x64)
-              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/x64/libharfbuzz.so'
+              library='kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/linux/x64/libharfbuzz.so'
               expected_dependencies=$'libc.so.6\nlibm.so.6\nlibpthread.so.0'
               ;;
             linux-arm64)
-              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/arm64/libharfbuzz.so'
+              library='kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/linux/arm64/libharfbuzz.so'
               expected_dependencies=$'ld-linux-aarch64.so.1\nlibc.so.6\nlibm.so.6'
               ;;
             macos-x64)
-              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/x64/libharfbuzz.dylib'
+              library='kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/x64/libharfbuzz.dylib'
               ;;
             macos-arm64)
-              library='kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/arm64/libharfbuzz.dylib'
+              library='kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/arm64/libharfbuzz.dylib'
               ;;
             *)
               exit 1
@@ -138,15 +140,23 @@ jobs:
         include:
           - architecture: x86_64
             runner: macos-26-intel
-            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/x64/libharfbuzz.dylib
+            embedded_library: kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/x64/libharfbuzz.dylib
             embedded_sha256: 9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c
           - architecture: arm64
             runner: macos-26
-            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/macos/arm64/libharfbuzz.dylib
+            embedded_library: kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/arm64/libharfbuzz.dylib
             embedded_sha256: 504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+          cache: gradle
+      - run: chmod +x gradlew
+      - name: Extract the kffi-harfbuzz embedded resources
+        run: ./gradlew --no-daemon :kalligraphie:shaping:extractHarfBuzzResources
       - name: Rebuild the pinned source twice and audit it
         shell: bash
         run: |
@@ -207,18 +217,26 @@ jobs:
             artifact_url: https://repo1.maven.org/maven2/org/lwjgl/lwjgl-harfbuzz/3.4.3/lwjgl-harfbuzz-3.4.3-natives-linux.jar
             artifact_sha256: b9413ce2de710021d39eb08a51a4cfcac88bf84bbf3b90fd925b7bd5d7a6dba7
             artifact_entry: linux/x64/org/lwjgl/harfbuzz/libharfbuzz.so
-            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/x64/libharfbuzz.so
+            embedded_library: kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/linux/x64/libharfbuzz.so
             embedded_sha256: 9a5e3576912c2f8c8b2533d4a264fec1eac9667adfd64f7e71e80179ba118614
           - architecture: aarch64
             runner: ubuntu-24.04-arm
             artifact_url: https://repo1.maven.org/maven2/org/lwjgl/lwjgl-harfbuzz/3.4.3/lwjgl-harfbuzz-3.4.3-natives-linux-arm64.jar
             artifact_sha256: 47362b77683f5126946498ea7456c1a0b129791d585cc9f74b2c4d069ca099da
             artifact_entry: linux/arm64/org/lwjgl/harfbuzz/libharfbuzz.so
-            embedded_library: kalligraphie/shaping/src/jvmMain/resources/kalligraphie/harfbuzz/linux/arm64/libharfbuzz.so
+            embedded_library: kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/linux/arm64/libharfbuzz.so
             embedded_sha256: b1c7c67034297763e0ce46f3749c4da33a4bb4064929868446cb5a3d81dc26bc
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+          cache: gradle
+      - run: chmod +x gradlew
+      - name: Extract the kffi-harfbuzz embedded resources
+        run: ./gradlew --no-daemon :kalligraphie:shaping:extractHarfBuzzResources
       - name: Verify the pinned published artifact and embedded library
         shell: bash
         run: |
