@@ -77,6 +77,7 @@ public object OutlineMaterializer {
             for (command in contour.commands) {
                 val encodedBytes = when (command) {
                     is org.graphiks.kalligraphie.api.GlyphOutlineCommand.QuadraticTo -> BYTES_PER_QUADRATIC_COMMAND
+                    is org.graphiks.kalligraphie.api.GlyphOutlineCommand.CubicTo -> BYTES_PER_CUBIC_COMMAND
                     else -> BYTES_PER_COMMAND
                 }
                 commandBytes = checkedAdd(commandBytes, encodedBytes)
@@ -157,5 +158,6 @@ private fun checkedMultiply(left: Long, right: Long): Long? {
 
 private const val BYTES_PER_COMMAND = 16L
 private const val BYTES_PER_QUADRATIC_COMMAND = 32L
+private const val BYTES_PER_CUBIC_COMMAND = 48L
 private const val BYTES_PER_COMPONENT = 16L
 private const val OUTLINE_OVERHEAD_BYTES = 32L

@@ -44,6 +44,8 @@ import org.graphiks.kalligraphie.api.immutableListSnapshot
 import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
+import org.graphiks.kalligraphie.font.scaler.cff.supportsCffOutlineRoute
+import org.graphiks.kalligraphie.font.sfnt.FontFlavor
 import org.graphiks.kalligraphie.font.sfnt.ColrV1Reader
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
 import org.graphiks.kalligraphie.font.sfnt.CbdtCblcReader
@@ -250,6 +252,9 @@ private fun supportsGlyfOutlineRoute(
     resource: PreparedFontResource,
     parsedFont: ParsedTrueTypeFont,
 ): Boolean {
+    if (parsedFont.flavor != FontFlavor.TRUETYPE) {
+        return supportsCffOutlineRoute(resource.preparedFont.copySourceBytes(), parsedFont)
+    }
     val glyfRecord = parsedFont.tableRecords["glyf"] ?: return false
     val locaRecord = parsedFont.tableRecords["loca"] ?: return false
     val sourceBytes = resource.preparedFont.copySourceBytes()
@@ -796,6 +801,7 @@ private fun GlyphOutlineIR.estimatedRetainedBytes(): Long {
                     -> 32L
 
                     is GlyphOutlineCommand.QuadraticTo -> 48L
+                    is GlyphOutlineCommand.CubicTo -> 64L
                     GlyphOutlineCommand.Close -> 16L
                 },
             )

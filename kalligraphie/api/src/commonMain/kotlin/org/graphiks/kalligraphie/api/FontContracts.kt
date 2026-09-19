@@ -997,6 +997,94 @@ public class GlyphOutlineIR(
                 "QuadraticTo(controlX=$controlX, controlY=$controlY, endX=$endX, endY=$endY)"
         }
 
+        /** Adds a cubic Bézier segment. */
+        public class CubicTo(
+            /** First control-point horizontal coordinate, preserving fractions. */
+            control1X: Double,
+            /** First control-point vertical coordinate, preserving fractions. */
+            control1Y: Double,
+            /** Second control-point horizontal coordinate, preserving fractions. */
+            control2X: Double,
+            /** Second control-point vertical coordinate, preserving fractions. */
+            control2Y: Double,
+            /** End-point horizontal coordinate, preserving fractions. */
+            endX: Double,
+            /** End-point vertical coordinate, preserving fractions. */
+            endY: Double,
+        ) : Command {
+            /** Canonical finite first control-point horizontal coordinate. */
+            public val control1X: Double = canonicalGlyphCoordinate(control1X)
+            /** Canonical finite first control-point vertical coordinate. */
+            public val control1Y: Double = canonicalGlyphCoordinate(control1Y)
+            /** Canonical finite second control-point horizontal coordinate. */
+            public val control2X: Double = canonicalGlyphCoordinate(control2X)
+            /** Canonical finite second control-point vertical coordinate. */
+            public val control2Y: Double = canonicalGlyphCoordinate(control2Y)
+            /** Canonical finite end-point horizontal coordinate. */
+            public val endX: Double = canonicalGlyphCoordinate(endX)
+            /** Canonical finite end-point vertical coordinate. */
+            public val endY: Double = canonicalGlyphCoordinate(endY)
+
+            /** Creates a command from integral design-unit coordinates. */
+            public constructor(
+                control1X: Int,
+                control1Y: Int,
+                control2X: Int,
+                control2Y: Int,
+                endX: Int,
+                endY: Int,
+            ) : this(
+                control1X.toDouble(),
+                control1Y.toDouble(),
+                control2X.toDouble(),
+                control2Y.toDouble(),
+                endX.toDouble(),
+                endY.toDouble(),
+            )
+
+            /** Copies this command while revalidating and canonicalizing coordinates. */
+            public fun copy(
+                control1X: Double = this.control1X,
+                control1Y: Double = this.control1Y,
+                control2X: Double = this.control2X,
+                control2Y: Double = this.control2Y,
+                endX: Double = this.endX,
+                endY: Double = this.endY,
+            ): CubicTo = CubicTo(control1X, control1Y, control2X, control2Y, endX, endY)
+
+            /** Returns the first control-point horizontal coordinate for destructuring. */
+            public operator fun component1(): Double = control1X
+            /** Returns the first control-point vertical coordinate for destructuring. */
+            public operator fun component2(): Double = control1Y
+            /** Returns the second control-point horizontal coordinate for destructuring. */
+            public operator fun component3(): Double = control2X
+            /** Returns the second control-point vertical coordinate for destructuring. */
+            public operator fun component4(): Double = control2Y
+            /** Returns the end-point horizontal coordinate for destructuring. */
+            public operator fun component5(): Double = endX
+            /** Returns the end-point vertical coordinate for destructuring. */
+            public operator fun component6(): Double = endY
+
+            override fun equals(other: Any?): Boolean = other is CubicTo &&
+                control1X == other.control1X && control1Y == other.control1Y &&
+                control2X == other.control2X && control2Y == other.control2Y &&
+                endX == other.endX && endY == other.endY
+
+            override fun hashCode(): Int {
+                var result = control1X.hashCode()
+                result = 31 * result + control1Y.hashCode()
+                result = 31 * result + control2X.hashCode()
+                result = 31 * result + control2Y.hashCode()
+                result = 31 * result + endX.hashCode()
+                result = 31 * result + endY.hashCode()
+                return result
+            }
+
+            override fun toString(): String =
+                "CubicTo(control1X=$control1X, control1Y=$control1Y, control2X=$control2X, " +
+                    "control2Y=$control2Y, endX=$endX, endY=$endY)"
+        }
+
         /** Closes the current contour. */
         public data object Close : Command
     }
@@ -1236,6 +1324,94 @@ public sealed interface GlyphOutlineCommand {
             "QuadraticTo(controlX=$controlX, controlY=$controlY, endX=$endX, endY=$endY)"
     }
 
+    /** Adds a cubic Bézier segment. */
+    public class CubicTo(
+        /** First control-point horizontal coordinate, preserving fractions. */
+        control1X: Double,
+        /** First control-point vertical coordinate, preserving fractions. */
+        control1Y: Double,
+        /** Second control-point horizontal coordinate, preserving fractions. */
+        control2X: Double,
+        /** Second control-point vertical coordinate, preserving fractions. */
+        control2Y: Double,
+        /** End-point horizontal coordinate, preserving fractions. */
+        endX: Double,
+        /** End-point vertical coordinate, preserving fractions. */
+        endY: Double,
+    ) : GlyphOutlineCommand {
+        /** Canonical finite first control-point horizontal coordinate. */
+        public val control1X: Double = canonicalGlyphCoordinate(control1X)
+        /** Canonical finite first control-point vertical coordinate. */
+        public val control1Y: Double = canonicalGlyphCoordinate(control1Y)
+        /** Canonical finite second control-point horizontal coordinate. */
+        public val control2X: Double = canonicalGlyphCoordinate(control2X)
+        /** Canonical finite second control-point vertical coordinate. */
+        public val control2Y: Double = canonicalGlyphCoordinate(control2Y)
+        /** Canonical finite end-point horizontal coordinate. */
+        public val endX: Double = canonicalGlyphCoordinate(endX)
+        /** Canonical finite end-point vertical coordinate. */
+        public val endY: Double = canonicalGlyphCoordinate(endY)
+
+        /** Creates a command from integral design-unit coordinates. */
+        public constructor(
+            control1X: Int,
+            control1Y: Int,
+            control2X: Int,
+            control2Y: Int,
+            endX: Int,
+            endY: Int,
+        ) : this(
+            control1X.toDouble(),
+            control1Y.toDouble(),
+            control2X.toDouble(),
+            control2Y.toDouble(),
+            endX.toDouble(),
+            endY.toDouble(),
+        )
+
+        /** Copies this command while revalidating and canonicalizing coordinates. */
+        public fun copy(
+            control1X: Double = this.control1X,
+            control1Y: Double = this.control1Y,
+            control2X: Double = this.control2X,
+            control2Y: Double = this.control2Y,
+            endX: Double = this.endX,
+            endY: Double = this.endY,
+        ): CubicTo = CubicTo(control1X, control1Y, control2X, control2Y, endX, endY)
+
+        /** Returns the first control-point horizontal coordinate for destructuring. */
+        public operator fun component1(): Double = control1X
+        /** Returns the first control-point vertical coordinate for destructuring. */
+        public operator fun component2(): Double = control1Y
+        /** Returns the second control-point horizontal coordinate for destructuring. */
+        public operator fun component3(): Double = control2X
+        /** Returns the second control-point vertical coordinate for destructuring. */
+        public operator fun component4(): Double = control2Y
+        /** Returns the end-point horizontal coordinate for destructuring. */
+        public operator fun component5(): Double = endX
+        /** Returns the end-point vertical coordinate for destructuring. */
+        public operator fun component6(): Double = endY
+
+        override fun equals(other: Any?): Boolean = other is CubicTo &&
+            control1X == other.control1X && control1Y == other.control1Y &&
+            control2X == other.control2X && control2Y == other.control2Y &&
+            endX == other.endX && endY == other.endY
+
+        override fun hashCode(): Int {
+            var result = control1X.hashCode()
+            result = 31 * result + control1Y.hashCode()
+            result = 31 * result + control2X.hashCode()
+            result = 31 * result + control2Y.hashCode()
+            result = 31 * result + endX.hashCode()
+            result = 31 * result + endY.hashCode()
+            return result
+        }
+
+        override fun toString(): String =
+            "CubicTo(control1X=$control1X, control1Y=$control1Y, control2X=$control2X, " +
+                "control2Y=$control2Y, endX=$endX, endY=$endY)"
+    }
+
     /** Closes the current contour. */
     public data object Close : GlyphOutlineCommand
 }
@@ -1415,6 +1591,7 @@ private fun GlyphOutlineIR.Command.pointContribution(): Int =
         is GlyphOutlineIR.Command.MoveTo,
         is GlyphOutlineIR.Command.LineTo -> 1
         is GlyphOutlineIR.Command.QuadraticTo -> 2
+        is GlyphOutlineIR.Command.CubicTo -> 3
         GlyphOutlineIR.Command.Close -> 0
     }
 
@@ -1424,6 +1601,8 @@ private fun GlyphOutlineIR.Command.toContourCommand(): GlyphOutlineCommand =
         is GlyphOutlineIR.Command.LineTo -> GlyphOutlineCommand.LineTo(x, y)
         is GlyphOutlineIR.Command.QuadraticTo ->
             GlyphOutlineCommand.QuadraticTo(controlX, controlY, endX, endY)
+        is GlyphOutlineIR.Command.CubicTo ->
+            GlyphOutlineCommand.CubicTo(control1X, control1Y, control2X, control2Y, endX, endY)
         GlyphOutlineIR.Command.Close -> GlyphOutlineCommand.Close
     }
 
@@ -1433,6 +1612,8 @@ private fun GlyphOutlineCommand.toLegacyCommand(): GlyphOutlineIR.Command =
         is GlyphOutlineCommand.LineTo -> GlyphOutlineIR.Command.LineTo(x, y)
         is GlyphOutlineCommand.QuadraticTo ->
             GlyphOutlineIR.Command.QuadraticTo(controlX, controlY, endX, endY)
+        is GlyphOutlineCommand.CubicTo ->
+            GlyphOutlineIR.Command.CubicTo(control1X, control1Y, control2X, control2Y, endX, endY)
         GlyphOutlineCommand.Close -> GlyphOutlineIR.Command.Close
     }
 

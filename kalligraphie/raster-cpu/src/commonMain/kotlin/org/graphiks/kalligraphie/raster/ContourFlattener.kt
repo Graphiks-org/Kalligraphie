@@ -141,6 +141,14 @@ internal object ContourFlattener {
                 endX * scale + originX,
                 endY * scale + originY,
             )
+            is GlyphOutlineCommand.CubicTo -> Edge.Cubic(
+                control1X * scale + originX,
+                control1Y * scale + originY,
+                control2X * scale + originX,
+                control2Y * scale + originY,
+                endX * scale + originX,
+                endY * scale + originY,
+            )
             is GlyphOutlineCommand.Close -> Edge.Close
         }
 
