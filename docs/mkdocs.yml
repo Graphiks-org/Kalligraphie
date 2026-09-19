@@ -57,6 +57,7 @@ nav:
   - Editable Paragraphs: editable-paragraphs.md
   - Incremental Layout Measurement: incremental-layout-measurement.md
   - Advanced Typography: advanced-typography.md
+  - Conformance Matrix: conformance-matrix.md
   - Raster CPU: raster-cpu.md
 
 # !!! EMBEDDED DOKKA START, DO NOT COMMIT !!! #
