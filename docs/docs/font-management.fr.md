@@ -1181,8 +1181,9 @@ n’attribue pas ces ressources à une session de composition et n’introduit
 aucune politique de GPU, d’atlas, de rendu de plateforme ou de rendu.
 
 Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence JVM. Ses
-ressources Linux et macOS x64/arm64 sont épinglées, vérifiées par hash
-(empreinte cryptographique) et jamais recherchées dans les bibliothèques du
+ressources Linux et macOS x64/arm64 sont fournies par la liaison publiée
+`org.graphiks:kffi-harfbuzz-jvm`, vérifiées par hash (empreinte cryptographique)
+au chargement de la bibliothèque et jamais recherchées dans les bibliothèques du
 système. Les contrats publics ne contiennent ni type JNI ni type natif.
 Android et Apple ne possèdent pas encore d’adapter (adaptateur de plateforme)
 de composition exécutable : ce parcours ne doit donc pas être considéré comme

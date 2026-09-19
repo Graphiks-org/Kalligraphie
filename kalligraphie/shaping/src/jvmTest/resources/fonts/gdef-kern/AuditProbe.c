@@ -1,8 +1,9 @@
 /*
  * Independently audits GdefKerningFixture.ttf through HarfBuzz's C ABI.
  *
- * Build this against the pinned HarfBuzz 14.3.0 headers and the checked-in
- * macOS arm64 library. The command and expected output are in PROVENANCE.md.
+ * Build this against the pinned HarfBuzz 14.3.0 headers and the macOS arm64
+ * library delivered by the kffi-harfbuzz binding. The command and expected
+ * output are in PROVENANCE.md.
  */
 #include <hb.h>
 #include <hb-ot.h>

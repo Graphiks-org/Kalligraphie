@@ -36,7 +36,8 @@ publishes no raw caret position.
 
 The frozen expectation was audited with [AuditProbe.c](AuditProbe.c), a
 standalone C ABI probe linked against HarfBuzz `14.3.0` source headers and the
-checked-in macOS arm64 HarfBuzz library. The source archive SHA-256 is
+macOS arm64 HarfBuzz library delivered by the `kffi-harfbuzz` binding. The
+source archive SHA-256 is
 `16070d77cfc4ba1f1e7327e83bf9b3f55898081cabdb94e56a33e04fc8874eae`.
 
 The probe uses the explicit `ot` shaper, LTR, `Latn`, language `en`, BOT/EOT,
@@ -74,13 +75,15 @@ rejected before the format-14-capable fixture is selected. The test stores only
 the reviewed glyph ID and face choice and never invokes HarfBuzz as its oracle.
 
 To reproduce the audit on macOS arm64, unpack the verified release archive as
-`$SOURCE_ROOT`, then run:
+`$SOURCE_ROOT`, extract the binding's library with
+`./gradlew :kalligraphie:shaping:extractHarfBuzzResources`, then run from the
+repository root:
 
 ```sh
 cc -std=c11 -I "$SOURCE_ROOT/src" AuditProbe.c \
-  -L ../../../../jvmMain/resources/kalligraphie/harfbuzz/macos/arm64 \
+  -L kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/arm64 \
   -lharfbuzz \
-  -Wl,-rpath,"$PWD/../../../../jvmMain/resources/kalligraphie/harfbuzz/macos/arm64" \
+  -Wl,-rpath,"$PWD/kalligraphie/shaping/build/harfbuzz-resources/kffi/harfbuzz/macos/arm64" \
   -o audit-probe
 ./audit-probe GdefKerningFixture.ttf
 ```

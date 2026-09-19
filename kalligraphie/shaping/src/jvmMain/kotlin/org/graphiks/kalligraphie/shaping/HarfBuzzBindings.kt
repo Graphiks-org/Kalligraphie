@@ -252,6 +252,12 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
             FontOperationResult.Success(HarfBuzzBindings(HarfBuzz.open()))
         } catch (failure: HarfBuzzBindingException) {
             bindingFailureError(failure)
+        } catch (error: Throwable) {
+            shapingFailure(
+                code = "font.shaping-native-load-failed",
+                message = "The bundled HarfBuzz binding could not be loaded: " +
+                    (error.message ?: error::class.simpleName) + ".",
+            )
         }
     }
 }
