@@ -49,9 +49,12 @@ belong in kffi. Kalligraphie owns typographic adaptation, capture, provenance,
 identity, generations, diagnostics and font-resource lifetime. The optional Apple
 module uses kffi's dedicated CoreText bindings and Darwin system-information
 service; native framework loading, symbols, signatures and matrix layout belong
-to kffi. The legacy HarfBuzz bindings still declare native details locally;
-their extraction remains follow-up work. Directory capture adds no raw native
-bindings.
+to kffi. The JVM HarfBuzz shaping backend likewise uses the published
+`org.graphiks:kffi-harfbuzz-jvm` binding: native library loading, ABI
+signatures, memory layouts and native owners belong to kffi, while Kalligraphie
+keeps the OpenType feature policy, cluster and GDEF ligature-caret
+interpretation and design-to-layout conversion. Directory capture adds no raw
+native bindings.
 
 ## Optional Apple module
 
@@ -71,15 +74,16 @@ CoreText bindings internally and loads only the native surface needed for font
 access, when the opted-in factory creates its adapter on a supported platform.
 The portable targets retain their existing requirements, including Android API 24.
 
-The internal kffi dependency uses
-`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT`, following the latest publication of
-the current development line. Projects resolving it need the Central Portal
-snapshot repository, narrowly filtered to the CoreText and generic runtime
-root/JVM artifacts required by its publication metadata. The Apple module
-rechecks changing artifacts on every online dependency
-resolution; it does not pin a timestamped artifact or enforce a global
-dependency-checksum policy. A newer publication can change between builds
-and may require source adaptation.
+The internal kffi dependencies use
+`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` (Apple module) and
+`org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT` (JVM shaping), following the
+latest publication of the current development line. Projects resolving them
+need the Central Portal snapshot repository, narrowly filtered to the CoreText,
+HarfBuzz and generic runtime root/JVM artifacts required by their publication
+metadata. The consuming modules recheck changing artifacts on every online
+dependency resolution; they do not pin a timestamped artifact or enforce a
+global dependency-checksum policy. A newer publication can change between
+builds and may require source adaptation.
 
 Add this repository in the consuming project's `settings.gradle.kts`,
 alongside its normal Maven repositories:
@@ -93,6 +97,8 @@ dependencyResolutionManagement {
             content {
                 includeModule("org.graphiks", "kffi-coretext")
                 includeModule("org.graphiks", "kffi-coretext-jvm")
+                includeModule("org.graphiks", "kffi-harfbuzz")
+                includeModule("org.graphiks", "kffi-harfbuzz-jvm")
                 includeModule("org.graphiks", "kffi")
                 includeModule("org.graphiks", "kffi-jvm")
             }

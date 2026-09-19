@@ -27,6 +27,8 @@ import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.unicode.TextSnapshots
+import org.graphiks.kffi.harfbuzz.HarfBuzzBindingException
+import org.graphiks.kffi.harfbuzz.HarfBuzzBindingFailure
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -762,9 +764,13 @@ class HarfBuzzJvmBackendTest {
 
     @Test
     fun unsupportedPlatformReturnsATypedFailureWithoutNativeFallback() {
-        val result = HarfBuzzNativeLoader.load(HarfBuzzPlatform(osName = "Plan 9", architecture = "mips64"))
+        val failure = bindingFailureError(
+            HarfBuzzBindingException(
+                HarfBuzzBindingFailure.UNSUPPORTED_PLATFORM,
+                "The bundled HarfBuzz binding does not support Plan 9/mips64.",
+            ),
+        )
 
-        val failure = assertIs<FontOperationResult.Failure>(result)
         assertEquals("font.shaping-native-platform-unsupported", failure.error.code)
     }
 
@@ -859,10 +865,10 @@ class HarfBuzzJvmBackendTest {
         assertIs<FontOperationResult.Success<T>>(this).value
 
     private fun expectedNativeArtifactId(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
-        "Mac OS X" to "aarch64" -> "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-arm64/libharfbuzz.dylib"
-        "Mac OS X" to "x86_64" -> "harfbuzz-source:14.3.0:4c2aa804671d7276e8a0eb95da07202ead05c843:macos-x64/libharfbuzz.dylib"
-        "Linux" to "aarch64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux-arm64/libharfbuzz.so"
-        "Linux" to "amd64" -> "org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-linux/libharfbuzz.so"
+        "Mac OS X" to "aarch64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:macos-arm64/libharfbuzz.dylib"
+        "Mac OS X" to "x86_64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:macos-x64/libharfbuzz.dylib"
+        "Linux" to "aarch64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:linux-arm64/libharfbuzz.so"
+        "Linux" to "amd64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:linux-x64/libharfbuzz.so"
         else -> error("Unexpected shaping test platform.")
     }
 

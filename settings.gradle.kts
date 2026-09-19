@@ -23,6 +23,8 @@ dependencyResolutionManagement {
             content {
                 includeModule("org.graphiks", "kffi-coretext")
                 includeModule("org.graphiks", "kffi-coretext-jvm")
+                includeModule("org.graphiks", "kffi-harfbuzz")
+                includeModule("org.graphiks", "kffi-harfbuzz-jvm")
                 includeModule("org.graphiks", "kffi")
                 includeModule("org.graphiks", "kffi-jvm")
             }
