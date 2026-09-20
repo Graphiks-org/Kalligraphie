@@ -32,7 +32,7 @@ public sealed interface GoldenComparison {
         override val sceneId: String,
     ) : GoldenComparison
 
-    /** A manifest entry has no catalogued or rendered scene. */
+    /** A manifest entry has no catalogued scene. */
     public data class StaleManifestEntry(
         override val sceneId: String,
     ) : GoldenComparison
