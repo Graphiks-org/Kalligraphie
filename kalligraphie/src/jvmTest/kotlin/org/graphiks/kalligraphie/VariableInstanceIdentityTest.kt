@@ -16,29 +16,36 @@ import org.graphiks.kalligraphie.api.FontVariationCoordinate
 import org.graphiks.kalligraphie.api.FontVariationCoordinates
 
 class VariableInstanceIdentityTest {
+    // Shared OFL variable TrueType fixture (wght 100/100/900). See test-fixtures/fonts/noto-sans-jp.
     private val bytes: ByteArray = requireNotNull(
-        javaClass.getResourceAsStream("/fonts/variable-fvar/SyntheticVariable.ttf"),
+        javaClass.getResourceAsStream("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
     ).readBytes()
 
     @Test
     fun designSelectionIsRebuiltIntoNormalizedInstanceIdentity() {
         val instance = success(openFace().instantiate(
-            FontInstanceDescriptor(variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", 700f)))),
+            FontInstanceDescriptor(variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", 500f)))),
         ))
         val normalized = instance.key.geometry.normalizedAxes
         assertEquals(listOf("wght"), normalized.map { it.tag })
-        assertTrue(normalized.single().value > 0f)
+        assertTrue(normalized.single().value > 0f && normalized.single().value <= 1f)
     }
 
     @Test
     fun namedInstanceResolvesToItsNormalizedCoordinates() {
-        val named = openFace().namedInstances().single()
+        val named = openFace().namedInstances().first { it.coordinates.coordinates.single().value == 500f }
         val instance = success(openFace().instantiate(FontInstanceDescriptor(variation = named.coordinates)))
         val normalized = instance.key.geometry.normalizedAxes
-        assertEquals(listOf("opsz", "wght"), normalized.map { it.tag })
-        // opsz is at its default (14) => 0; wght 700 is (700-400)/(900-400) => 0.6.
-        assertEquals(0f, normalized.first { it.tag == "opsz" }.value)
-        assertEquals(0.6f, normalized.first { it.tag == "wght" }.value)
+        assertEquals(listOf("wght"), normalized.map { it.tag })
+        assertTrue(normalized.single().value > 0f && normalized.single().value <= 1f)
+    }
+
+    @Test
+    fun defaultValuedAxisNormalizesToZero() {
+        val instance = success(openFace().instantiate(
+            FontInstanceDescriptor(variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", 100f)))),
+        ))
+        assertEquals(0f, instance.key.geometry.normalizedAxes.single().value)
     }
 
     @Test
@@ -55,7 +62,7 @@ class VariableInstanceIdentityTest {
         val result = openFace().instantiate(
             FontInstanceDescriptor(
                 geometry = FontGeometryParameters(listOf(FontAxisCoordinate("wght", 0.5f))),
-                variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", 700f))),
+                variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", 500f))),
             ),
         )
         val failure = assertIs<FontOperationResult.Failure>(result)
@@ -71,10 +78,10 @@ class VariableInstanceIdentityTest {
     @Test
     fun variationAxesAreExposed() {
         val axes = openFace().variationAxes()
-        assertEquals(listOf("opsz", "wght"), axes.map { it.tag })
-        val wght = axes.single { it.tag == "wght" }
+        assertEquals(listOf("wght"), axes.map { it.tag })
+        val wght = axes.single()
         assertEquals(100f, wght.minValue)
-        assertEquals(400f, wght.defaultValue)
+        assertEquals(100f, wght.defaultValue)
         assertEquals(900f, wght.maxValue)
     }
 
@@ -85,11 +92,11 @@ class VariableInstanceIdentityTest {
         )
         val success = assertIs<FontOperationResult.Success<FontInstance>>(result)
         assertTrue(success.diagnostics.any { it.code == "font.variation.axis-clamped" })
-        assertEquals(1f, success.value.key.geometry.normalizedAxes.single { it.tag == "wght" }.value)
+        assertEquals(1f, success.value.key.geometry.normalizedAxes.single().value)
     }
 
     private fun openFace(): FontFace {
-        val catalog = success(Kalligraphie.embedded(bytes, FontSourceProvenance("SyntheticVariable")))
+        val catalog = success(Kalligraphie.embedded(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture")))
         val faceId = catalog.faces.single().id
         return success(catalog.resolveFace(faceId, FontAccessRequirementsSnapshot.layoutOnly()))
     }
