@@ -21,9 +21,12 @@ public class GoldenImage private constructor(
     init {
         require(width >= 0) { "A golden image width must be non-negative." }
         require(height >= 0) { "A golden image height must be non-negative." }
-        val expected = width.toLong() * height.toLong() * format.bytesPerPixel.toLong()
-        require(expected <= Int.MAX_VALUE.toLong()) { "Pixel count exceeds the maximum buffer size." }
-        require(captured.size == expected.toInt()) { "Pixel count does not match the image dimensions." }
+        val pixels = width.toLong() * height.toLong()
+        require(pixels <= (Int.MAX_VALUE / format.bytesPerPixel).toLong()) {
+            "Canonical byte count exceeds the maximum buffer size."
+        }
+        val expected = pixels * format.bytesPerPixel.toLong()
+        require(captured.size == expected.toInt()) { "Canonical byte count does not match the image dimensions." }
     }
 
     /** Returns a caller-owned copy of the canonical bytes. */

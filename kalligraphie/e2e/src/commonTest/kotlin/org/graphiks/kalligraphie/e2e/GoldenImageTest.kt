@@ -40,5 +40,38 @@ class GoldenImageTest {
         assertFailsWith<IllegalArgumentException> {
             GoldenScene(id = "scene", family = GoldenSceneFamily.GLYPH_OUTLINE, width = -1, height = 1)
         }
+        assertFailsWith<IllegalArgumentException> {
+            GoldenScene(id = "scene", family = GoldenSceneFamily.GLYPH_OUTLINE, width = 1, height = 0)
+        }
+    }
+
+    @Test
+    fun equalityIsBasedOnContent() {
+        val a = GoldenImage.alpha8(1, 1, byteArrayOf(7))
+        val b = GoldenImage.alpha8(1, 1, byteArrayOf(7))
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun theReturnedBytesAreIndependentOfTheImage() {
+        val image = GoldenImage.alpha8(2, 1, byteArrayOf(1, 2))
+        val returned = image.copyCanonicalBytes()
+        returned[0] = 99
+        assertEquals(listOf<Byte>(1, 2), image.copyCanonicalBytes().toList())
+    }
+
+    @Test
+    fun rgba8RejectsAnOverflowingPixelCount() {
+        assertFailsWith<IllegalArgumentException> {
+            GoldenImage.rgba8(width = Int.MAX_VALUE, height = Int.MAX_VALUE, pixels = byteArrayOf(1, 2, 3, 4))
+        }
+    }
+
+    @Test
+    fun alpha8RejectsTooManyPixels() {
+        assertFailsWith<IllegalArgumentException> {
+            GoldenImage.alpha8(width = 2, height = 2, pixels = byteArrayOf(1, 2, 3, 4, 5))
+        }
     }
 }
