@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.coroutines
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
 import org.graphiks.kalligraphie.FontDirectoryCatalog
 import org.graphiks.kalligraphie.FontDirectoryCatalogOptions
@@ -23,10 +24,27 @@ class OpenCatalogSuspendTest {
                 KalligraphieCoroutines.open(options),
             )
 
-            val synchronousFaces = synchronous.value.faces.map { it.metadata.familyName }
-            val suspendedFaces = suspended.value.faces.map { it.metadata.familyName }
+            val synchronousFaces = synchronous.value.faces.map { it.id to it.metadata.familyName }
+            val suspendedFaces = suspended.value.faces.map { it.id to it.metadata.familyName }
             assertEquals(synchronousFaces, suspendedFaces)
+            assertEquals(
+                synchronous.diagnostics.map { it.code }.sorted(),
+                suspended.diagnostics.map { it.code }.sorted(),
+            )
             assertTrue(synchronousFaces.isNotEmpty())
         }
+    }
+
+    @Test
+    fun jobCancelledBeforeStartThrowsCarryingTheTypedCancelledCatalog() {
+        val exception = captureCancellation { context ->
+            val job = context[Job]!!
+            job.cancel()
+            withFontRoot { root ->
+                KalligraphieCoroutines.open(FontDirectoryCatalogOptions(listOf(root)))
+            }
+        }
+
+        assertIs<FontOperationResult.Cancelled>(exception.result)
     }
 }
