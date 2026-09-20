@@ -62,6 +62,84 @@ class GvarReaderTest {
         assertEquals("font.variation.invalid-gvar", failure.error.code)
     }
 
+    @Test
+    fun rejectsGlyphCountMismatch() {
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
+        val failure = assertIs<FontOperationResult.Failure>(
+            GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 2),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsNonMonotonicGlyphOffsets() {
+        // Two two-byte records produce long offsets 0, 2, 4; swap the first two to descend.
+        val gvar = gvarTable(1, 2, true, emptyList(), listOf(ByteArray(2), ByteArray(2)))
+        gvar.writeUInt32(20, 4)
+        gvar.writeUInt32(24, 2)
+        val failure = assertIs<FontOperationResult.Failure>(
+            GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 2),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsGlyphDataOutOfRange() {
+        // The final short offset is stored halved at headerSize + glyphCount * 2; 100 decodes to 200,
+        // which overshoots the empty glyph-data region at the end of the table.
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
+        gvar.writeUInt16(22, 100)
+        val failure = assertIs<FontOperationResult.Failure>(
+            GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 1),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsSharedTupleCountAboveLimit() {
+        val gvar = gvarTable(
+            1,
+            1,
+            false,
+            listOf(doubleArrayOf(1.0), doubleArrayOf(0.5)),
+            listOf(ByteArray(0)),
+        )
+        val failure = assertIs<FontOperationResult.Failure>(
+            GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 1, limits = GvarLimits(maxSharedTuples = 1)),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun rejectsSourceBytesAboveLimit() {
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
+        val failure = assertIs<FontOperationResult.Failure>(
+            GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 1, limits = GvarLimits(maxSourceBytes = 1)),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun rejectsSharedTuplesOffsetInsideHeader() {
+        val gvar = gvarTable(1, 1, false, listOf(doubleArrayOf(1.0)), listOf(ByteArray(0)))
+        // Shared-tuples pointer (header field at byte 8) collides with the 20-byte header.
+        gvar.writeUInt32(8, 4)
+        val failure = assertIs<FontOperationResult.Failure>(
+            GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 1),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun readsDifferentlySizedShortOffsetRecordsWithMultipleGlyphs() {
+        // Records of 3 and 1 bytes pad to 4 and 2; short offsets are stored as 0, 2, 3. A wrong
+        // entry size (4 instead of 2) or over-scaled offset would overshoot and fail.
+        val gvar = gvarTable(1, 2, false, emptyList(), listOf(ByteArray(3), ByteArray(1)))
+        val data = success(GvarReader.read(gvar, expectedAxisCount = 1, expectedGlyphCount = 2))
+        assertEquals(1, data.axisCount)
+        assertEquals(2, data.glyphCount)
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T = when (result) {
         is FontOperationResult.Success -> result.value
         is FontOperationResult.Failure -> error("Unexpected failure: ${result.error}")
