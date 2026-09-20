@@ -84,4 +84,56 @@ class TupleVariationScalarsTest {
         assertEquals(10.0, resolved.xDeltas[0])
         assertEquals(0.0, resolved.xDeltas[1])
     }
+
+    @Test
+    fun iupWrapsAcrossContourSeamForTrailingUntouchedPoint() {
+        val resolved = GvarIup.resolvePointDeltas(
+            pointCount = 4,
+            contourEndPoints = listOf(3),
+            baseX = listOf(0.0, 0.0, 100.0, 50.0),
+            baseY = listOf(0.0, 0.0, 0.0, 0.0),
+            targetPoints = intArrayOf(0, 2),
+            tupleXDeltas = intArrayOf(0, 200),
+            tupleYDeltas = intArrayOf(0, 0),
+        )
+        // Point 3 has no following explicit point, so the seam wraps to point 0.
+        assertEquals(100.0, resolved.xDeltas[3])
+        assertEquals(0.0, resolved.yDeltas[3])
+    }
+
+    @Test
+    fun iupReservesZeroFilledPhantomSlots() {
+        val resolved = GvarIup.resolvePointDeltas(
+            pointCount = 3,
+            contourEndPoints = listOf(2),
+            baseX = listOf(0.0, 50.0, 100.0),
+            baseY = listOf(0.0, 0.0, 0.0),
+            targetPoints = intArrayOf(0, 2),
+            tupleXDeltas = intArrayOf(0, 100),
+            tupleYDeltas = intArrayOf(0, 0),
+        )
+        for (phantom in 3..6) {
+            assertEquals(0.0, resolved.xDeltas[phantom])
+            assertEquals(0.0, resolved.yDeltas[phantom])
+        }
+    }
+
+    @Test
+    fun iupKeepsContoursIsolatedFromEachOther() {
+        val resolved = GvarIup.resolvePointDeltas(
+            pointCount = 6,
+            contourEndPoints = listOf(2, 5),
+            baseX = listOf(0.0, 50.0, 100.0, 0.0, 50.0, 100.0),
+            baseY = listOf(0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+            targetPoints = intArrayOf(0, 2),
+            tupleXDeltas = intArrayOf(0, 100),
+            tupleYDeltas = intArrayOf(0, 0),
+        )
+        // First contour interpolates its untouched point.
+        assertEquals(50.0, resolved.xDeltas[1])
+        // Second contour has no explicit points, so the first contour's deltas must not leak in.
+        assertEquals(0.0, resolved.xDeltas[3])
+        assertEquals(0.0, resolved.xDeltas[4])
+        assertEquals(0.0, resolved.xDeltas[5])
+    }
 }

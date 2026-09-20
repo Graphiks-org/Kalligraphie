@@ -89,7 +89,13 @@ internal object TupleVariationScalars {
         (coordinate < 0.0 && peakValue < 0.0) || (coordinate > 0.0 && peakValue > 0.0)
 }
 
-/** Resolved per-point deltas for one simple glyph (outline points only). */
+/**
+ * Resolved per-point deltas for one simple glyph.
+ *
+ * `xDeltas` and `yDeltas` are both sized `pointCount + GVAR_PHANTOM_POINT_COUNT`: the four phantom
+ * slots after the outline points are reserved and zero-filled by IUP even though phantom-point
+ * handling is out of scope for this sub-plan.
+ */
 internal class GvarResolvedDeltas(
     val xDeltas: DoubleArray,
     val yDeltas: DoubleArray,
