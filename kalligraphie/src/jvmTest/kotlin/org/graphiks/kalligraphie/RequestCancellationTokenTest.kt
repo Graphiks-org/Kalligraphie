@@ -129,4 +129,71 @@ class RequestCancellationTokenTest {
         assertSame(replacement, derived.cancellationToken)
         assertEquals(0, derived.emptyLineBidiLevel)
     }
+
+    @Test
+    fun paragraphRequestWithCancellationTokenPreservesEveryInput() {
+        val source = org.graphiks.kalligraphie.api.FontSource(
+            sourceBytes = checkNotNull(
+                javaClass.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf"),
+            ) { "fixture font is missing" }.use { it.readBytes() },
+            provenance = FontSourceProvenance("Liberation Sans Regular"),
+        )
+        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+            Kalligraphie.embedded(listOf(source)),
+        ).value
+        val faceId = org.graphiks.kalligraphie.api.FontFaceId(source.id, 0)
+        val policy = org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot(
+            generation = catalog.generation,
+            policyId = "cancellation-token-fixture",
+            version = "1",
+            candidates = listOf(org.graphiks.kalligraphie.api.FontResolutionCandidate(faceId)),
+            lastResortFace = faceId,
+        )
+        val snapshot = Kalligraphie.decodeUtf16(
+            TextVersion.create(),
+            listOf(TextSlice.Utf16("AA".toCharArray())),
+        ).snapshot
+        val constraints = org.graphiks.kalligraphie.api.HorizontalParagraphConstraints(
+            region = org.graphiks.kalligraphie.api.LayoutRect(
+                LayoutUnit(100f),
+                LayoutUnit(50f),
+                LayoutUnit(1_500f),
+                LayoutUnit(1_250f),
+            ),
+            lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+        )
+        val original = JvmEditableParagraphFacadeRequest(
+            snapshot = snapshot,
+            constraints = constraints,
+            baseDirection = BaseDirection.LEFT_TO_RIGHT,
+            language = "en",
+            fontCatalog = catalog,
+            resolutionPolicy = policy,
+            fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+        )
+        val replacement = CancellationToken.cancelled
+
+        val derived = original.withCancellationToken(replacement)
+
+        assertSame(replacement, derived.cancellationToken)
+        assertSame(original.snapshot, derived.snapshot)
+        assertEquals(original.sourceRange, derived.sourceRange)
+        assertSame(original.constraints, derived.constraints)
+        assertEquals(original.baseDirection, derived.baseDirection)
+        assertEquals(original.language, derived.language)
+        assertSame(original.fontCatalog, derived.fontCatalog)
+        assertSame(original.resolutionPolicy, derived.resolutionPolicy)
+        assertEquals(original.fontInstanceDescriptor, derived.fontInstanceDescriptor)
+        assertEquals(original.features, derived.features)
+        assertEquals(original.materialization, derived.materialization)
+        assertEquals(original.overflowPolicy, derived.overflowPolicy)
+        assertEquals(original.positioning, derived.positioning)
+        assertEquals(original.hyphenationMode, derived.hyphenationMode)
+        assertEquals(original.hyphenationService, derived.hyphenationService)
+        assertEquals(original.inlineObjects, derived.inlineObjects)
+        assertEquals(original.textOrientation, derived.textOrientation)
+        assertEquals(original.verticalMetricsPolicy, derived.verticalMetricsPolicy)
+        assertEquals(original.continuation, derived.continuation)
+        assertEquals(original.operationProfile, derived.operationProfile)
+    }
 }
