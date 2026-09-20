@@ -23,6 +23,9 @@ public data class GoldenFingerprint(
 ) {
     init {
         require(sceneId.isNotBlank()) { "A golden fingerprint scene id must not be blank." }
+        require(sceneId.none { char -> char == '\t' || char == '\n' || char == '\r' }) {
+            "A golden fingerprint scene id must not contain a tab or line break."
+        }
         require(width >= 0) { "A golden fingerprint width must be non-negative." }
         require(height >= 0) { "A golden fingerprint height must be non-negative." }
         require(sha256.length == 64 && sha256.all { char -> char in "0123456789abcdef" }) {

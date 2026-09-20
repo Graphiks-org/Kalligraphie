@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.e2e
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 
 class GoldenManifestTest {
@@ -61,5 +62,60 @@ class GoldenManifestTest {
             "a\tGLYPH_OUTLINE\t3x4\tALPHA_8\tsha256:${"11".repeat(32)}\n"
         val rejected = assertIs<GoldenManifestParseResult.Rejected>(GoldenManifest.parse(swapped))
         assertEquals(GoldenDiagnosticCode.MANIFEST_MALFORMED, rejected.code)
+    }
+
+    @Test
+    fun rejectsASceneIdWithATab() {
+        assertFailsWith<IllegalArgumentException> {
+            GoldenFingerprint("a\tb", GoldenSceneFamily.GLYPH_OUTLINE, 1, 1, PixelFormat.ALPHA_8, "11".repeat(32))
+        }
+    }
+
+    @Test
+    fun rejectsASceneIdWithALineBreak() {
+        assertFailsWith<IllegalArgumentException> {
+            GoldenScene("a\nb", GoldenSceneFamily.GLYPH_OUTLINE, 1, 1)
+        }
+    }
+
+    @Test
+    fun rejectsAnInjectedSixFieldRecord() {
+        val injected = "kalligraphie.golden/v1 canonicalization=1\n" +
+            "a\tGLYPH_OUTLINE\t1x1\tALPHA_8\tsha256:${"11".repeat(32)}\textra\n"
+        val rejected = assertIs<GoldenManifestParseResult.Rejected>(GoldenManifest.parse(injected))
+        assertEquals(GoldenDiagnosticCode.MANIFEST_MALFORMED, rejected.code)
+    }
+
+    @Test
+    fun rejectsNonCanonicalNumbers() {
+        val paddedDimension = "kalligraphie.golden/v1 canonicalization=1\n" +
+            "a\tGLYPH_OUTLINE\t04x5\tALPHA_8\tsha256:${"11".repeat(32)}\n"
+        assertEquals(
+            GoldenDiagnosticCode.MANIFEST_MALFORMED,
+            assertIs<GoldenManifestParseResult.Rejected>(GoldenManifest.parse(paddedDimension)).code,
+        )
+        val paddedVersion = "kalligraphie.golden/v1 canonicalization=01\n"
+        assertEquals(
+            GoldenDiagnosticCode.MANIFEST_MALFORMED,
+            assertIs<GoldenManifestParseResult.Rejected>(GoldenManifest.parse(paddedVersion)).code,
+        )
+    }
+
+    @Test
+    fun acceptsCrlfLineEndings() {
+        val text = (GoldenManifest.serialize(GoldenManifest.of(listOf(a, b)))).replace("\n", "\r\n")
+        val parsed = assertIs<GoldenManifestParseResult.Parsed>(GoldenManifest.parse(text))
+        assertEquals(GoldenManifest.of(listOf(a, b)), parsed.manifest)
+    }
+
+    @Test
+    fun roundTripsAdversarialButValidIds() {
+        val ids = listOf("a-b.c_1", "latin-grec-японська", "z".repeat(200), "0", "a~b")
+        val entries = ids.mapIndexed { index, id ->
+            GoldenFingerprint(id, GoldenSceneFamily.GLYPH_OUTLINE, index + 1, index + 1, PixelFormat.ALPHA_8, "11".repeat(32))
+        }
+        val manifest = GoldenManifest.of(entries)
+        val parsed = assertIs<GoldenManifestParseResult.Parsed>(GoldenManifest.parse(GoldenManifest.serialize(manifest)))
+        assertEquals(manifest, parsed.manifest)
     }
 }

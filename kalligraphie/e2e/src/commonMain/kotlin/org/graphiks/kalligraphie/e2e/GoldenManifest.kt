@@ -65,7 +65,7 @@ public class GoldenManifest private constructor(
 
         /** Parses canonical manifest [text], failing closed with a typed code. */
         public fun parse(text: String): GoldenManifestParseResult {
-            val lines = text.split('\n')
+            val lines = text.split('\n').map { line -> line.removeSuffix("\r") }
             val records = if (lines.isNotEmpty() && lines.last().isEmpty()) lines.dropLast(1) else lines
             if (records.isEmpty()) {
                 return GoldenManifestParseResult.Rejected(GoldenDiagnosticCode.MANIFEST_MALFORMED, "empty manifest")
@@ -79,11 +79,14 @@ public class GoldenManifest private constructor(
                     "missing or unrecognised header: $header",
                 )
             }
-            val version = header.removePrefix(expectedPrefix).toIntOrNull()
-                ?: return GoldenManifestParseResult.Rejected(
+            val versionText = header.removePrefix(expectedPrefix)
+            val version = versionText.toIntOrNull()
+            if (version == null || version.toString() != versionText) {
+                return GoldenManifestParseResult.Rejected(
                     GoldenDiagnosticCode.MANIFEST_MALFORMED,
                     "unparsable canonicalization version: $header",
                 )
+            }
             if (version != CANONICALIZATION_VERSION) {
                 return GoldenManifestParseResult.Rejected(
                     GoldenDiagnosticCode.CANONICALIZATION_VERSION_MISMATCH,
@@ -118,9 +121,14 @@ public class GoldenManifest private constructor(
                         GoldenDiagnosticCode.MANIFEST_MALFORMED, "unknown family: ${fields[1]}",
                     )
                 val dimensions = fields[2].split('x')
-                val width = dimensions.getOrNull(0)?.toIntOrNull()
-                val height = dimensions.getOrNull(1)?.toIntOrNull()
-                if (dimensions.size != 2 || width == null || height == null || width < 0 || height < 0) {
+                val widthText = dimensions.getOrNull(0)
+                val heightText = dimensions.getOrNull(1)
+                val width = widthText?.toIntOrNull()
+                val height = heightText?.toIntOrNull()
+                if (dimensions.size != 2 || width == null || height == null ||
+                    widthText != width.toString() || heightText != height.toString() ||
+                    width < 0 || height < 0
+                ) {
                     return GoldenManifestParseResult.Rejected(
                         GoldenDiagnosticCode.MANIFEST_MALFORMED, "unparsable dimensions: ${fields[2]}",
                     )

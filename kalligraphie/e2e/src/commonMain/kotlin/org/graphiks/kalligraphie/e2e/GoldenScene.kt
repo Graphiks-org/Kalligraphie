@@ -21,6 +21,9 @@ public data class GoldenScene(
 ) {
     init {
         require(id.isNotBlank()) { "A golden scene id must not be blank." }
+        require(id.none { char -> char == '\t' || char == '\n' || char == '\r' }) {
+            "A golden scene id must not contain a tab or line break."
+        }
         require(width > 0) { "A golden scene width must be positive." }
         require(height > 0) { "A golden scene height must be positive." }
     }
