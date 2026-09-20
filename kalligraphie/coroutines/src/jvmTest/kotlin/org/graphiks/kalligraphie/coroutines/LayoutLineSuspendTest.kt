@@ -31,8 +31,7 @@ class LayoutLineSuspendTest {
         val fixture = lineFixture("A")
         try {
             val token = object : CancellationToken {
-                private var checks = 0
-                override fun isCancellationRequested(): Boolean = ++checks >= 1
+                override fun isCancellationRequested(): Boolean = true
             }
             val result = KalligraphieCoroutines.layout(lineRequest(fixture, cancellationToken = token))
 
@@ -66,14 +65,9 @@ class LayoutLineSuspendTest {
             val exception = captureCancellation { context ->
                 val job = context[Job]!!
                 val token = object : CancellationToken {
-                    private var checks = 0
                     override fun isCancellationRequested(): Boolean {
-                        checks += 1
-                        if (checks >= 1) {
-                            job.cancel()
-                            return true
-                        }
-                        return false
+                        job.cancel()
+                        return true
                     }
                 }
                 KalligraphieCoroutines.layout(lineRequest(fixture, cancellationToken = token))

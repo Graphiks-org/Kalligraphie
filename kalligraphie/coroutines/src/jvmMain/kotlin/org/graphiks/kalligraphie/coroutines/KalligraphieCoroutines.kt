@@ -17,10 +17,12 @@ public object KalligraphieCoroutines {
     /**
      * Lays out one editable line through [JvmEditableLineFacade].
      *
+     * Any calling-[Job] cancellation observed at entry or at exit raises a
+     * [KalligraphieCancellationException] carrying the engine's typed result, which may be a typed
+     * [EditableLineResult.Cancelled] or a complete result — the engine result is never masked.
      * Cancellation requested by the request token without cancelling the calling coroutine is
-     * returned as [EditableLineResult.Cancelled]. Cancellation of the calling coroutine is reported
-     * as a [KalligraphieCancellationException] carrying that typed result. The resolver borrowed by
-     * a `Renderable` request stays the caller's property.
+     * returned as [EditableLineResult.Cancelled]. The resolver borrowed by a `Renderable` request
+     * stays the caller's property.
      */
     public suspend fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
         val job = coroutineContext[Job]
@@ -33,7 +35,7 @@ public object KalligraphieCoroutines {
         val result = JvmEditableLineFacade.layout(
             request.withCancellationToken(bridgeCancellationToken(job, request.cancellationToken)),
         )
-        if (result is EditableLineResult.Cancelled && job?.isCancelled == true) {
+        if (job?.isCancelled == true) {
             throw KalligraphieCancellationException(
                 result,
                 "The coroutine was cancelled while laying out the editable line.",

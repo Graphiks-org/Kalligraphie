@@ -14,12 +14,9 @@ import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
-import org.graphiks.kalligraphie.api.FontCatalogSnapshot
-import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
-import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LayoutUnit
@@ -121,7 +118,7 @@ internal fun captureCancellation(
         }
     }
     // Unconfined launch runs synchronously up to the first suspension; the block has no suspension.
-    assertTrue(job.isCompleted || job.isCancelled, "the unconfined coroutine did not complete synchronously")
+    assertTrue(job.isCompleted, "the unconfined coroutine did not complete synchronously")
     failure.get()?.let { throw it }
     return checkNotNull(captured.get()) { "no cancellation exception was captured" }
 }
