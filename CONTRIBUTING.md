@@ -142,6 +142,7 @@ Choose the narrowest applicable scope from the current project structure:
 | `platform` | Platform integration across the `kalligraphie/platform/` module family |
 | `apple` | Apple font integration in `:kalligraphie:platform:apple` |
 | `linux` | Linux font integration in `:kalligraphie:platform:linux` |
+| `windows` | Windows font integration in `:kalligraphie:platform:windows` |
 | `buildSrc` | Gradle conventions in `buildSrc/` |
 | `ci` | Automated repository checks in `.github/workflows/` and `.github/scripts/` |
 | `docs` | Documentation in `docs/` and repository documentation files |

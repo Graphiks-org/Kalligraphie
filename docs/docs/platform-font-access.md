@@ -20,7 +20,9 @@ The JVM directory providers capture accessible directory files rather than an
 exact activated registry; the macOS `CoreTextSystemFontCatalog` in
 `:kalligraphie:platform:apple` captures the activated CoreText registry instead,
 and the Linux `FontconfigSystemFontCatalog` in `:kalligraphie:platform:linux`
-captures the activated Fontconfig configuration. Every provider requires explicit
+captures the activated Fontconfig configuration. The Windows
+`DirectWriteSystemFontCatalog` in `:kalligraphie:platform:windows` captures the
+activated DirectWrite system font collection. Every provider requires explicit
 reopening to refresh and preserves independently owned resources from the previous
 generation.
 
@@ -32,7 +34,7 @@ generation.
 | macOS JVM `MacosSystemFontCatalog` | Standard system/user roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; no CoreText registry matching or automatic refresh |
 | macOS JVM `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Activated CoreText registry through `kffi-coretext`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `coretext-registry` generation |
 | macOS JVM optional CoreText adapter | Exact bytes from a portable catalogue; eligible standalone static monochrome TrueType only | Preserves portable shaping; no CoreText layout substitution | Explicitly accepted platform handle, or underlying portable routes; collections excluded from the platform route |
-| Windows JVM | No Windows system-font provider | No bundled operational HarfBuzz target | Portable contracts do not establish a complete Windows font journey |
+| Windows JVM `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Activated DirectWrite system font collection through `kffi-directwrite`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | No bundled operational HarfBuzz target | Same portable routes; a new `open` observes controlled install/removal and mints a new `directwrite-registry` generation |
 | Android / Kotlin Native / iOS | No system-directory provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
 | CFF/CFF2 data on any target | Standalone CFF1 `.otf` and CFF2 outlines are read; collections carrying CFF faces are captured | CFF1 shaping through the portable shaper; CFF2 materialized at the default instance only | Portable cubic outline route for CFF1 and CFF2 (default instance); no CFF2 non-default variation instance and no CoreText CFF route |
 
