@@ -19,7 +19,7 @@
 Le spec validé décrit la cible ; ce plan tranche trois détails d'implémentation que la lecture du code impose. Ce sont des précisions, pas des changements de direction :
 
 1. **Emplacement du catalogue/renderer** — le spec §4 les place en `jvmMain`. Or ils chargent des **fixtures de test** (polices) : les placer en `jvmMain` imposerait d'y mettre des ressources de test. Décision : `commonMain` porte le modèle pur et `GoldenRenderOutcome` ; le catalogue et le rendu vivent en `jvmTest`. `jvmMain` reste vide en P1 et accueillera les adaptateurs quand des scènes non-test apparaîtront.
-2. **Localisation d'un mismatch** — le manifest ne stocke qu'une empreinte, donc la vérification manifest↔image ne peut pas localiser le premier octet divergent. Décision : `GoldenComparison.Mismatch` porte les hashes et les dimensions ; un helper `GoldenImageDiff.firstDifference(expected, actual)` localise le premier octet + ses coordonnées et est validé par le harnais. Le dump opt-in localise visuellement côté manifest.
+2. **Localisation d'un mismatch** — le manifest ne stocke qu'une empreinte, donc la vérification manifest↔image ne peut pas localiser le premier octet divergent. Décision : `GoldenComparison.Mismatch` porte les hashes et les dimensions ; un helper `GoldenImageDiff.firstDifference(expected, actual)` localise le premier octet + ses coordonnées et est validé par le harnais. Le dump opt-in localise visuellement côté manifest. **Cette déviation du spec §6 — qui exige l'octet divergent et ses coordonnées dans le diagnostic de mismatch — doit être corrigée dans le spec lors de P4.**
 3. **Codes de diagnostic supplémentaires** — le spec §6 ne couvre ni une ligne de manifest malformée ni le mismatch lui-même. Décision : ajouter `e2e.manifest-malformed` (parse d'une ligne invalide) et `e2e.mismatch` (empreinte rendue ≠ empreinte enregistrée). Le spec doit être amendé sur ces deux points lors de P4.
 
 4. **Durcissements issus de la revue de Task 3** — (a) le garde d'overflow de `GoldenImage` bornait le produit *après* la multiplication par `bytesPerPixel`, laquelle s'enroule pour `RGBA_8888` et laissait construire une image incohérente ; le bornage se fait désormais sur le nombre de pixels **avant** le passage aux octets (Task 3). (b) `GoldenScene.width`/`height` n'a plus qu'un sens — les dimensions canoniques attendues de l'image — et le vérificateur les assère contre l'image rendue pour **toutes** les familles, y compris à sortie serrée, de sorte qu'une dérive de dimension échoue même après régénération du manifest (Tasks 6, 7).
@@ -1622,7 +1622,6 @@ git commit -m "feat(e2e): add the JVM scene catalog and the smoke outline scene"
 package org.graphiks.kalligraphie.e2e.golden
 
 import kotlin.test.Test
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.e2e.GoldenComparison
 import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
@@ -1692,7 +1691,6 @@ package org.graphiks.kalligraphie.e2e.golden
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
-import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
 import org.graphiks.kalligraphie.e2e.GoldenFingerprint
 import org.graphiks.kalligraphie.e2e.GoldenManifest
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
