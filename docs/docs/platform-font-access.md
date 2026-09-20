@@ -24,7 +24,10 @@ captures the activated Fontconfig configuration. The Windows
 `DirectWriteSystemFontCatalog` in `:kalligraphie:platform:windows` captures the
 activated DirectWrite system font collection, and the Android
 `AndroidSystemFontCatalog` in `:kalligraphie:platform:android` captures the
-platform system font collection on Android 10 and later. Every provider requires explicit
+platform system font collection on Android 10 and later, and the iOS
+`IosSystemFontCatalog` in `:kalligraphie:platform:ios` rebuilds the CoreText
+registry fonts into portable containers because iOS sandboxes system font files.
+Every provider requires explicit
 reopening to refresh and preserves independently owned resources from the previous
 generation.
 
@@ -55,7 +58,10 @@ general equivalence with HarfBuzz's sanitizer for unsupported tables. A discover
 a guarantee that every backend or representation profile can use it. The
 four-target Linux/macOS JVM CI matrix runs actual directory and system-catalog
 shaping/glyph journeys alongside the full shaper tests and native dependency
-audit; that does not establish Windows, mobile or CFF support.
+audit. Windows, Android and iOS carry no bundled HarfBuzz backend, so their
+journeys stop before shaping and use the platform text stack; every provider
+journey runs on a controlled provider boundary over audited fonts, and
+installed-font checks remain optional smoke tests rather than the oracle.
 
 New raw native symbols, types, ABI declarations, constants and library access
 belong in kffi. Kalligraphie owns typographic adaptation, capture, provenance,
@@ -68,6 +74,29 @@ signatures, memory layouts and native owners belong to kffi, while Kalligraphie
 keeps the OpenType feature policy, cluster and GDEF ligature-caret
 interpretation and design-to-layout conversion. Directory capture adds no raw
 native bindings.
+
+## Platform registry providers
+
+Each published platform exposes an optional provider that captures the fonts the
+platform reports for its active configuration. All of them return the same
+portable catalogue contract — immutable generations, content-based identity,
+typed stale-generation refusal and bounded diagnostics — and every one requires
+an explicit `open` to observe a change. The capability matrix is maintained by
+hand and kept consistent with the cross-platform conformance corpus; a provider
+never claims a capability its target does not have.
+
+| Provider | Discovery | Portable data | Platform route | Refresh | Limitations |
+|---|---|---|---|---|---|
+| macOS `CoreTextSystemFontCatalog` | Activated CoreText registry through the kffi CoreText bindings | Registered `.ttf`/`.ttc`/`.otf` bytes with original face indices | CoreText handle route for eligible faces only | A new `open` mints a `coretext-registry` generation | A stale key from another generation is refused rather than reinterpreted |
+| Linux `FontconfigSystemFontCatalog` | Activated Fontconfig configuration through the kffi Fontconfig bindings | Registered file bytes | Portable routes | A new `open` mints a `fontconfig-registry` generation | A registered file that is missing or unreadable is skipped with a bounded diagnostic |
+| Windows `DirectWriteSystemFontCatalog` | DirectWrite system collection through the kffi DirectWrite bindings | Reported file bytes; opaque COM keys are resolved to paths through the local font file loader | Portable routes | A new `open` mints a `directwrite-registry` generation | No bundled HarfBuzz backend: shaping uses the platform text stack |
+| Android `AndroidSystemFontCatalog` | `android.graphics.fonts.SystemFonts` (Android 10 and later) | Reported file bytes | Portable routes | A new `open` mints an `android-platform-fonts` generation | Below Android 10 no supported enumeration route exists, so the provider fails with a typed error instead of scanning unknown paths |
+| iOS `IosSystemFontCatalog` | CoreText registry through the platform CoreText bindings | CoreText tables rebuilt into a standalone SFNT container with a recomputed table directory checksum and `head.checkSumAdjustment` | Portable routes | A new `open` mints an `ios-coretext-registry` generation | System font files are sandboxed, so no path is available; a rebuilt container is not byte-identical to the original file and its `DSIG` signature becomes stale |
+
+Family and face names are taken from the parsed captured bytes, so a provider
+never matches by name on the platform. A provider that cannot capture a face —
+missing file, unreadable source or an exceeded bound — contributes a bounded,
+typed diagnostic and skips it; cancellation publishes no partial catalogue.
 
 ## Optional Apple module
 
