@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.coroutines
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
 import org.graphiks.kalligraphie.JvmEditableLineFacade
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -67,18 +68,28 @@ class MaterializationSuspendTest {
         try {
             val materialization = renderableMaterialization(fixture)
 
-            // A first successful renderable call proves the resolver is operational.
+            // A first successful renderable call produces a real asset key.
             val first = assertIs<EditableLineResult.Success>(
                 KalligraphieCoroutines.layout(lineRequest(fixture, materialization = materialization)),
             )
             val assetKey = assertNotNull(first.line.positionedGlyphRuns.single().glyphs.single().renderAssetKey)
 
-            // A cancelled call must neither close nor consume the caller's resolver.
-            captureCancellation { context ->
-                context[Job]!!.cancel()
-                KalligraphieCoroutines.layout(lineRequest(fixture, materialization = materialization))
+            // Cancel the calling Job DURING a renderable call, so the engine path actually runs.
+            val exception = captureCancellation { context ->
+                val job = context[Job]!!
+                val token = object : CancellationToken {
+                    override fun isCancellationRequested(): Boolean {
+                        job.cancel()
+                        return true
+                    }
+                }
+                KalligraphieCoroutines.layout(
+                    lineRequest(fixture, materialization = materialization, cancellationToken = token),
+                )
             }
+            assertIs<EditableLineResult.Cancelled>(exception.result)
 
+            // The cancelled renderable call must not have closed the caller's resolver.
             val reopened = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
                 fixture.resolver.reopen(assetKey),
             ).value
