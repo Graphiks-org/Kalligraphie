@@ -129,6 +129,13 @@ class FvarReaderTest {
     }
 
     @Test
+    fun rejectsDuplicateAxisTags() {
+        val table = fvarTable()
+        writeTag(table, 16 + 20, "opsz")
+        assertInvalidFvar(table)
+    }
+
+    @Test
     fun rejectsInstanceCountAboveLimit() {
         val result = FvarReader.read(fvarTable(instanceCount = 4), VariationLimits(maxInstances = 1))
         assertIs<FontOperationResult.Failure>(result)

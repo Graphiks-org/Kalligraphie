@@ -10,6 +10,10 @@ internal class CoreTextFontFace(private val delegate: FontFace, private val gene
     override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> = adaptCoreTextResult(delegate.instantiate(descriptor)) { instance ->
         CoreTextFontInstance(instance, generation, source, runtime)
     }
+    override fun variationAxes(): List<FontVariationAxis> = delegate.variationAxes()
+    override fun namedInstances(): List<FontNamedInstance> = delegate.namedInstances()
+    override fun normalize(design: FontVariationCoordinates): FontOperationResult<List<FontAxisCoordinate>> = delegate.normalize(design)
+    override fun stat(): FontOperationResult<StatTable?> = delegate.stat()
 }
 
 internal class CoreTextFontInstance(private val delegate: FontInstance, private val generation: FontCatalogGeneration,

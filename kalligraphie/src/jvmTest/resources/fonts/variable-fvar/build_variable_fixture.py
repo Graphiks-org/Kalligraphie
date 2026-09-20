@@ -7,7 +7,8 @@ HERE = Path(__file__).resolve().parent
 SOURCE = HERE.parent / "liberation" / "LiberationSans-Regular.ttf"
 OUTPUT = HERE / "SyntheticVariable.ttf"
 
-font = TTFont(SOURCE)
+# recalcTimestamp=False keeps the base font's head.modified, so regeneration is byte-deterministic.
+font = TTFont(SOURCE, recalcTimestamp=False)
 fvar = newTable("fvar")
 fvar.majorVersion, fvar.minorVersion = 1, 0
 opsz = Axis(); opsz.axisTag, opsz.minValue, opsz.defaultValue, opsz.maxValue, opsz.axisNameID = "opsz", 8, 14, 144, 256

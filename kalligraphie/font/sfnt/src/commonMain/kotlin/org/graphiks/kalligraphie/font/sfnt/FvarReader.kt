@@ -133,6 +133,9 @@ public object FvarReader {
             val nameId = readUInt16(table, base + 18)?.toInt() ?: return invalid()
             axes += FvarAxis(tag, minValue, defaultValue, maxValue, hidden = (flags and 0x0001) != 0, nameId = nameId)
         }
+        if (axes.map { it.tag }.toSet().size != axes.size) {
+            return variationFailure("font.variation.invalid-fvar", "fvar axis tags must be unique.", "fvar")
+        }
 
         val hasPostScriptNameId = instanceCount > 0 && instanceSize >= axisCount * 4 + 6
         val instances = ArrayList<FvarInstance>(instanceCount)

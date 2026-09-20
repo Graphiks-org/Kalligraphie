@@ -140,7 +140,7 @@ internal class TrueTypeFace(
         return FontOperationResult.Success(
             TrueTypeFontInstance(
                 key = instanceKey(descriptor.layoutSize, effectiveGeometry),
-                descriptor = descriptor.copy(geometry = effectiveGeometry),
+                descriptor = descriptor.copy(variation = null, geometry = effectiveGeometry),
                 resource = resource,
                 faceId = id,
                 generation = generation,
@@ -157,6 +157,10 @@ internal class TrueTypeFace(
         )
     }
 
+    // The metadata surface cannot express a malformed-table failure, so absent or unparseable
+    // fvar collapses to an empty snapshot here; normalize() reports the failure instead.
+    private fun readFvarOrNull(): FvarData? = (readFvarResult() as? FontOperationResult.Success)?.value
+
     override fun variationAxes(): List<FontVariationAxis> =
         readFvarOrNull()?.axes?.map { axis ->
             FontVariationAxis(axis.tag, axis.minValue, axis.defaultValue, axis.maxValue, axis.nameId, axis.hidden)
@@ -168,28 +172,46 @@ internal class TrueTypeFace(
         } ?: emptyList()
 
     override fun normalize(design: FontVariationCoordinates): FontOperationResult<List<FontAxisCoordinate>> {
-        val fvar = readFvarOrNull()
-            ?: return failure(
-                FontError.FontDataFailure(
-                    code = "font.variation.not-variable",
-                    message = "This face has no usable fvar table.",
-                    location = FontDiagnosticLocation.FaceId(id),
-                ),
-            )
-        val avar = readAvarOrNull(fvar.axes.size)
+        val fvar = when (val fvarResult = readFvarResult()) {
+            is FontOperationResult.Success -> fvarResult.value
+                ?: return failure(
+                    FontError.FontDataFailure(
+                        code = "font.variation.not-variable",
+                        message = "This face has no usable fvar table.",
+                        location = FontDiagnosticLocation.FaceId(id),
+                    ),
+                )
+            is FontOperationResult.Failure -> return fvarResult
+            is FontOperationResult.Cancelled -> return fvarResult
+        }
+        val avar = when (val avarResult = readAvarResult(fvar.axes.size)) {
+            is FontOperationResult.Success -> avarResult.value
+            is FontOperationResult.Failure -> return avarResult
+            is FontOperationResult.Cancelled -> return avarResult
+        }
         return VariationNormalizer.normalize(design, fvar, avar)
     }
 
-    private fun readFvarOrNull(): FvarData? {
-        val record = parsedFont.tableRecords["fvar"] ?: return null
-        val table = slice(resource.preparedFont.copySourceBytes(), record) ?: return null
-        return (FvarReader.read(table) as? FontOperationResult.Success)?.value
+    private fun readFvarResult(): FontOperationResult<FvarData?> {
+        val record = parsedFont.tableRecords["fvar"] ?: return FontOperationResult.Success(null)
+        val table = slice(resource.preparedFont.copySourceBytes(), record)
+            ?: return failure(FontError.InvalidFontData("fvar table exceeds embedded source bytes.", FontDiagnosticLocation.Table("fvar")))
+        return when (val result = FvarReader.read(table)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
     }
 
-    private fun readAvarOrNull(axisCount: Int): AvarData? {
-        val record = parsedFont.tableRecords["avar"] ?: return null
-        val table = slice(resource.preparedFont.copySourceBytes(), record) ?: return null
-        return (AvarReader.read(table, axisCount) as? FontOperationResult.Success)?.value
+    private fun readAvarResult(axisCount: Int): FontOperationResult<AvarData?> {
+        val record = parsedFont.tableRecords["avar"] ?: return FontOperationResult.Success(null)
+        val table = slice(resource.preparedFont.copySourceBytes(), record)
+            ?: return failure(FontError.InvalidFontData("avar table exceeds embedded source bytes.", FontDiagnosticLocation.Table("avar")))
+        return when (val result = AvarReader.read(table, axisCount)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
     }
 
     private fun instanceKey(layoutSize: LayoutUnit, geometry: FontGeometryParameters): FontInstanceKey =

@@ -8,6 +8,7 @@ import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontGeometryParameters
+import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -65,6 +66,26 @@ class VariableInstanceIdentityTest {
     fun defaultSelectionStillInstantiates() {
         val instance = success(openFace().instantiate(FontInstanceDescriptor()))
         assertTrue(instance.key.geometry.normalizedAxes.isEmpty())
+    }
+
+    @Test
+    fun variationAxesAreExposed() {
+        val axes = openFace().variationAxes()
+        assertEquals(listOf("opsz", "wght"), axes.map { it.tag })
+        val wght = axes.single { it.tag == "wght" }
+        assertEquals(100f, wght.minValue)
+        assertEquals(400f, wght.defaultValue)
+        assertEquals(900f, wght.maxValue)
+    }
+
+    @Test
+    fun clampDiagnosticSurfacesThroughInstantiate() {
+        val result = openFace().instantiate(
+            FontInstanceDescriptor(variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", 5000f)))),
+        )
+        val success = assertIs<FontOperationResult.Success<FontInstance>>(result)
+        assertTrue(success.diagnostics.any { it.code == "font.variation.axis-clamped" })
+        assertEquals(1f, success.value.key.geometry.normalizedAxes.single { it.tag == "wght" }.value)
     }
 
     private fun openFace(): FontFace {
