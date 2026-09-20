@@ -2,11 +2,16 @@ package org.graphiks.kalligraphie.coroutines
 
 import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Job
+import org.graphiks.kalligraphie.FontDirectoryCatalog
+import org.graphiks.kalligraphie.FontDirectoryCatalogOptions
 import org.graphiks.kalligraphie.JvmEditableLineFacade
 import org.graphiks.kalligraphie.JvmEditableLineFacadeRequest
 import org.graphiks.kalligraphie.JvmEditableParagraphFacade
 import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 
 /**
@@ -70,6 +75,31 @@ public object KalligraphieCoroutines {
             throw KalligraphieCancellationException(
                 result,
                 "The coroutine was cancelled while composing the editable paragraph.",
+            )
+        }
+        return result
+    }
+
+    /**
+     * Captures a detached JVM font catalog through [FontDirectoryCatalog].
+     *
+     * A calling-Job cancellation observed at entry or exit raises a
+     * [KalligraphieCancellationException] carrying the engine's typed result. This route has no
+     * consumer-supplied token, so no consumer-token path exists.
+     */
+    public suspend fun open(options: FontDirectoryCatalogOptions): FontOperationResult<FontCatalogSnapshot> {
+        val job = coroutineContext[Job]
+        if (job?.isCancelled == true) {
+            throw KalligraphieCancellationException(
+                FontOperationResult.Cancelled(),
+                "The coroutine was cancelled before the font catalog capture started.",
+            )
+        }
+        val result = FontDirectoryCatalog.open(options, bridgeCancellationToken(job, CancellationToken.none))
+        if (job?.isCancelled == true) {
+            throw KalligraphieCancellationException(
+                result,
+                "The coroutine was cancelled while capturing the font catalog.",
             )
         }
         return result

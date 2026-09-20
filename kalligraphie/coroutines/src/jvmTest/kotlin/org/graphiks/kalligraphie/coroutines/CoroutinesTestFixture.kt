@@ -50,6 +50,17 @@ internal fun liberationBytes(): ByteArray = checkNotNull(
     LineFixture::class.java.getResourceAsStream("/fonts/liberation/LiberationSans-Regular.ttf"),
 ) { "fixture font is missing" }.use { it.readBytes() }
 
+internal suspend fun withFontRoot(block: suspend (String) -> Unit) {
+    val root = java.nio.file.Files.createTempDirectory("kalligraphie-coroutines")
+    try {
+        java.nio.file.Files.write(root.resolve("LiberationSans-Regular.ttf"), liberationBytes())
+        block(root.toString())
+    } finally {
+        java.nio.file.Files.deleteIfExists(root.resolve("LiberationSans-Regular.ttf"))
+        java.nio.file.Files.deleteIfExists(root)
+    }
+}
+
 internal fun utf8Snapshot(text: String): TextSnapshot = Kalligraphie.decodeUtf8(
     TextVersion.create(),
     listOf(TextSlice.Utf8(text.encodeToByteArray())),
