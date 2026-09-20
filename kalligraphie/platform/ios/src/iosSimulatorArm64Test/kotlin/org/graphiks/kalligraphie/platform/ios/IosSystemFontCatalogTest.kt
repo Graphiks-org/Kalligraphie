@@ -9,6 +9,7 @@ import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OutlineProfile
 
@@ -31,7 +32,9 @@ class IosSystemFontCatalogTest {
         val resolver = success(catalog.openAssetResolver())
         try {
             val face = catalog.faces.first()
-            success(success(catalog.resolveFace(face.id, renderable())).instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
+            val instance = success(success(catalog.resolveFace(face.id, renderable())).instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
+            val asset = success(instance.acquireRenderAsset(resolver, FontRenderVariantKey.default, renderable()))
+            asset.close()
         } finally {
             resolver.close()
         }
