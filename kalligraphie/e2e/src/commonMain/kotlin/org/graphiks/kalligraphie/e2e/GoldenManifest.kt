@@ -108,6 +108,12 @@ public class GoldenManifest private constructor(
                 if (id.isBlank()) {
                     return GoldenManifestParseResult.Rejected(GoldenDiagnosticCode.MANIFEST_MALFORMED, "blank scene id")
                 }
+                if (id.any { char -> char == '\t' || char == '\n' || char == '\r' }) {
+                    return GoldenManifestParseResult.Rejected(
+                        GoldenDiagnosticCode.MANIFEST_MALFORMED,
+                        "scene id contains a control character: $record",
+                    )
+                }
                 if (previousId != null && id <= previousId) {
                     return GoldenManifestParseResult.Rejected(
                         if (id == previousId) GoldenDiagnosticCode.MANIFEST_DUPLICATE_ID else GoldenDiagnosticCode.MANIFEST_MALFORMED,

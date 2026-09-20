@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class GoldenManifestTest {
     private val a = GoldenFingerprint("a", GoldenSceneFamily.GLYPH_OUTLINE, 3, 4, PixelFormat.ALPHA_8, "11".repeat(32))
@@ -117,5 +118,48 @@ class GoldenManifestTest {
         val manifest = GoldenManifest.of(entries)
         val parsed = assertIs<GoldenManifestParseResult.Parsed>(GoldenManifest.parse(GoldenManifest.serialize(manifest)))
         assertEquals(manifest, parsed.manifest)
+    }
+
+    @Test
+    fun rejectsACarriageReturnInsideTheIdWithoutThrowing() {
+        val text = "kalligraphie.golden/v1 canonicalization=1\n" +
+            "a\rb\tGLYPH_OUTLINE\t1x1\tALPHA_8\tsha256:${"11".repeat(32)}\n"
+        val rejected = assertIs<GoldenManifestParseResult.Rejected>(GoldenManifest.parse(text))
+        assertEquals(GoldenDiagnosticCode.MANIFEST_MALFORMED, rejected.code)
+    }
+
+    @Test
+    fun rejectsEmptyInput() {
+        val rejected = assertIs<GoldenManifestParseResult.Rejected>(GoldenManifest.parse(""))
+        assertEquals(GoldenDiagnosticCode.MANIFEST_MALFORMED, rejected.code)
+    }
+
+    @Test
+    fun parsesAHeaderOnlyManifestAsEmpty() {
+        val parsed = assertIs<GoldenManifestParseResult.Parsed>(
+            GoldenManifest.parse("kalligraphie.golden/v1 canonicalization=1\n"),
+        )
+        assertEquals(GoldenManifest.of(emptyList()), parsed.manifest)
+    }
+
+    @Test
+    fun rejectsAPlusSignedVersion() {
+        val rejected = assertIs<GoldenManifestParseResult.Rejected>(
+            GoldenManifest.parse("kalligraphie.golden/v1 canonicalization=+1\n"),
+        )
+        assertEquals(GoldenDiagnosticCode.MANIFEST_MALFORMED, rejected.code)
+    }
+
+    @Test
+    fun ofRejectsDuplicateIds() {
+        val entry = GoldenFingerprint("dup", GoldenSceneFamily.GLYPH_OUTLINE, 1, 1, PixelFormat.ALPHA_8, "11".repeat(32))
+        assertFailsWith<IllegalArgumentException> { GoldenManifest.of(listOf(entry, entry)) }
+    }
+
+    @Test
+    fun fingerprintOfReturnsTheRegisteredEntryOrNull() {
+        val manifest = GoldenManifest.of(listOf(a, b))
+        assertEquals(a, manifest.fingerprintOf("a"))
+        assertNull(manifest.fingerprintOf("missing"))
     }
 }
