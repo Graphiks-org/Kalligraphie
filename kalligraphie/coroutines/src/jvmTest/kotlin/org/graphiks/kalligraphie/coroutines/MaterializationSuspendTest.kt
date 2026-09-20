@@ -5,11 +5,13 @@ import org.graphiks.kalligraphie.JvmEditableLineFacade
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantKey
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertSame
 
 class MaterializationSuspendTest {
@@ -40,13 +42,21 @@ class MaterializationSuspendTest {
     }
 
     @Test
-    fun theBorrowedResolverRemainsTheCallerProperty() = runTest {
+    fun theBorrowedResolverRemainsOperationalAfterTheSuspendCall() = runTest {
         val fixture = lineFixture("A")
-        val request = lineRequest(fixture, materialization = renderableMaterialization(fixture))
+        try {
+            val request = lineRequest(fixture, materialization = renderableMaterialization(fixture))
 
-        assertIs<EditableLineResult.Success>(KalligraphieCoroutines.layout(request))
+            val suspended = assertIs<EditableLineResult.Success>(KalligraphieCoroutines.layout(request))
+            val assetKey = assertNotNull(suspended.line.positionedGlyphRuns.single().glyphs.single().renderAssetKey)
 
-        // The facade must not have closed a resolver it does not own.
-        assertIs<FontOperationResult.Success<Unit>>(fixture.resolver.close())
+            // The facade must not have closed a resolver it does not own: reopening must still work.
+            val reopened = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
+                fixture.resolver.reopen(assetKey),
+            ).value
+            reopened.close()
+        } finally {
+            assertClosed(fixture.resolver.close())
+        }
     }
 }
