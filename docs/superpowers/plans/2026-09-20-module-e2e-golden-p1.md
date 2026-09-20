@@ -1260,8 +1260,9 @@ public object GoldenVerifier {
             )
         }
 
+        val cataloguedIds = ids.toSet()
         for (entry in manifest.entries) {
-            if (rendered[entry.sceneId] == null) {
+            if (entry.sceneId !in cataloguedIds) {
                 results.add(GoldenComparison.StaleManifestEntry(entry.sceneId))
             }
         }
