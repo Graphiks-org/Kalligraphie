@@ -1793,6 +1793,31 @@ class GoldenDumpWriterTest {
         assertEquals("P6\n1 1\n255\n", bytes.copyOfRange(0, 11).decodeToString())
         assertEquals(listOf<Byte>(10, 20, 30), bytes.copyOfRange(11, 14).toList())
     }
+
+    @Test
+    fun writesTheFullRgbaRasterForMultiplePixels() {
+        val image = GoldenImage.rgba8(2, 1, byteArrayOf(1, 2, 3, 255.toByte(), 4, 5, 6, 255.toByte()))
+        val bytes = GoldenDumpWriter.encode(image)
+        assertEquals("P6\n2 1\n255\n", bytes.copyOfRange(0, 11).decodeToString())
+        assertEquals(listOf<Byte>(1, 2, 3, 4, 5, 6), bytes.copyOfRange(11, 17).toList())
+        assertEquals(11 + 6, bytes.size)
+    }
+
+    @Test
+    fun compositesTransparentRgbaOverWhite() {
+        val image = GoldenImage.rgba8(1, 1, byteArrayOf(10, 20, 30, 0))
+        val bytes = GoldenDumpWriter.encode(image)
+        assertEquals(
+            listOf<Byte>(255.toByte(), 255.toByte(), 255.toByte()),
+            bytes.copyOfRange(11, 14).toList(),
+        )
+    }
+
+    @Test
+    fun writesAnEmptyAlphaImage() {
+        val bytes = GoldenDumpWriter.encode(GoldenImage.alpha8(0, 0, ByteArray(0)))
+        assertEquals("P5\n0 0\n255\n", bytes.decodeToString())
+    }
 }
 ```
 
@@ -1811,7 +1836,17 @@ import org.graphiks.kalligraphie.e2e.PixelFormat
 
 /** Encodes canonical images as binary PGM (coverage) or PPM (RGBA) for human inspection. */
 internal object GoldenDumpWriter {
-    /** Returns the binary PGM/PPM bytes for [image]. The header is ASCII, the raster is binary. */
+    /** File extension for [format] in dumps. */
+    fun extensionFor(format: PixelFormat): String = when (format) {
+        PixelFormat.ALPHA_8 -> "pgm"
+        PixelFormat.RGBA_8888 -> "ppm"
+    }
+
+    /**
+     * Returns the binary PGM/PPM bytes for [image]. The header is ASCII, the raster is binary.
+     * Straight RGBA is composited over white with the same integer formula the raster-cpu dumps
+     * use, so an alpha-only difference stays visible and transparent pixels read as white.
+     */
     fun encode(image: GoldenImage): ByteArray {
         val pixels = image.copyCanonicalBytes()
         val header: String
@@ -1825,8 +1860,10 @@ internal object GoldenDumpWriter {
             PixelFormat.RGBA_8888 -> {
                 header = "P6\n${image.width} ${image.height}\n255\n"
                 raster = ByteArray(image.width * image.height * 3) { index ->
-                    val pixelIndex = (index / 3) * 4 + (index % 3)
-                    pixels[pixelIndex]
+                    val pixelIndex = (index / 3) * 4
+                    val alpha = pixels[pixelIndex + 3].toInt() and 0xFF
+                    val channel = pixels[pixelIndex + (index % 3)].toInt() and 0xFF
+                    ((channel * alpha + 255 * (255 - alpha) + 127) / 255).toByte()
                 }
             }
         }
@@ -1866,11 +1903,14 @@ class GoldenDumpRunnerTest {
         Files.createDirectories(directory)
 
         for (entry in JvmGoldenSceneCatalog.entries()) {
+            require(entry.scene.id.none { character -> character == '/' || character == '\\' }) {
+                "A scene id must not contain a path separator: ${entry.scene.id}"
+            }
             when (val outcome = entry.render()) {
-                is GoldenRenderOutcome.Rendered -> {
-                    val extension = if (outcome.image.format.name == "ALPHA_8") "pgm" else "ppm"
-                    Files.write(directory.resolve("${entry.scene.id}.$extension"), GoldenDumpWriter.encode(outcome.image))
-                }
+                is GoldenRenderOutcome.Rendered -> Files.write(
+                    directory.resolve("${entry.scene.id}.${GoldenDumpWriter.extensionFor(outcome.image.format)}"),
+                    GoldenDumpWriter.encode(outcome.image),
+                )
 
                 is GoldenRenderOutcome.Refused ->
                     error("${outcome.code.code} (${entry.scene.id}): ${outcome.detail}")
