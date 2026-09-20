@@ -6,6 +6,26 @@ import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 /**
+ * Resolved per-point `gvar` deltas for one simple glyph.
+ *
+ * Only outline points are exposed; the four phantom slots decoded internally are discarded because
+ * phantom-point metrics are a later sub-plan.
+ */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
+public class GvarGlyphDeltas internal constructor(
+    /** Number of outline points covered by the deltas. */
+    public val pointCount: Int,
+    internal val xDeltas: DoubleArray,
+    internal val yDeltas: DoubleArray,
+) {
+    /** Horizontal delta for [pointIndex], or `0.0` when out of range. */
+    public fun xDelta(pointIndex: Int): Double = if (pointIndex in 0 until pointCount) xDeltas[pointIndex] else 0.0
+
+    /** Vertical delta for [pointIndex], or `0.0` when out of range. */
+    public fun yDelta(pointIndex: Int): Double = if (pointIndex in 0 until pointCount) yDeltas[pointIndex] else 0.0
+}
+
+/**
  * Decoded OpenType `gvar` table: shared tuples, glyph variation-data offsets, and the serialized
  * per-glyph data region. Immutable and safe to share.
  */
@@ -21,7 +41,150 @@ public class GvarData internal constructor(
     private val glyphDataStart: Int,
     private val maxTupleVariations: Int,
     private val maxPointsPerVariation: Int,
-)
+) {
+    /**
+     * Decodes and applies the `gvar` tuple deltas of one simple glyph at [normalizedAxes].
+     *
+     * [baseX]/[baseY] are the unvaried outline coordinates (phantom slots excluded);
+     * [contourEndPoints] is the inclusive last-point index of each contour. Returns `null` when the
+     * glyph has no variation record. Malformed records fail closed; cancellation returns
+     * [FontOperationResult.Cancelled] with no partial output.
+     *
+     * @param glyphId numeric glyph identifier.
+     * @param contourEndPoints inclusive end index of each contour, in order.
+     * @param baseX horizontal coordinates of the decoded outline points.
+     * @param baseY vertical coordinates of the decoded outline points.
+     * @param normalizedAxes normalized coordinates in `fvar` axis order, missing axes treated as 0.
+     * @param cancellationToken cooperative cancellation checked before each tuple.
+     */
+    public fun glyphDeltas(
+        glyphId: Int,
+        contourEndPoints: List<Int>,
+        baseX: List<Double>,
+        baseY: List<Double>,
+        normalizedAxes: List<Double>,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): FontOperationResult<GvarGlyphDeltas?> {
+        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+        if (glyphId !in 0 until glyphCount) return FontOperationResult.Success(null)
+        val pointCount = baseX.size
+        if (baseY.size != pointCount) return invalid("gvar base coordinates are inconsistent.")
+        val start = glyphDataStart + glyphOffsets[glyphId]
+        val end = glyphDataStart + glyphOffsets[glyphId + 1]
+        if (start == end) return FontOperationResult.Success(null)
+        if (start < 0 || end > table.size || end - start < 4) return invalid("gvar glyph record is truncated.")
+        val tupleVariationCountField = readUInt16(table, start)?.toInt() ?: return invalid("gvar glyph record is truncated.")
+        val tupleVariationCount = tupleVariationCountField and GVAR_TUPLE_COUNT_MASK
+        if (tupleVariationCount <= 0) return invalid("gvar glyph record declares no tuple variations.")
+        if (tupleVariationCount > maxTupleVariations) {
+            return variationLimitFailure("gvar tuple variation count $tupleVariationCount exceeds the limit.", "gvar")
+        }
+        val offsetToData = readUInt16(table, start + 2)?.toInt() ?: return invalid("gvar glyph record is truncated.")
+        val tupleDataStart = start + offsetToData
+        if (tupleDataStart < start || tupleDataStart > end) return invalid("gvar tuple data offset is out of range.")
+        val maxPointCount = pointCount + GVAR_PHANTOM_POINT_COUNT
+        if (maxPointCount > maxPointsPerVariation) {
+            return variationLimitFailure("gvar point count $maxPointCount exceeds the limit.", "gvar")
+        }
+        val headers = ArrayList<GvarTupleHeader>(tupleVariationCount)
+        var headerOffset = start + 4
+        repeat(tupleVariationCount) {
+            val variationDataSize = readUInt16Within(table, headerOffset, end) ?: return invalid("gvar tuple header is truncated.")
+            val tupleIndex = readUInt16Within(table, headerOffset + 2, end) ?: return invalid("gvar tuple header is truncated.")
+            headerOffset += 4
+            val peak = if (tupleIndex and GVAR_EMBEDDED_PEAK_TUPLE != 0) {
+                val values = DoubleArray(axisCount)
+                for (axis in 0 until axisCount) {
+                    values[axis] = readF2Dot14Within(table, headerOffset + axis * 2, end)
+                        ?: return invalid("gvar embedded peak tuple is truncated.")
+                }
+                headerOffset += axisCount * 2
+                values
+            } else {
+                sharedTuples.getOrNull(tupleIndex and GVAR_TUPLE_INDEX_MASK)
+                    ?: return invalid("gvar tuple references an unknown shared tuple.")
+            }
+            val startTuple: DoubleArray?
+            val endTuple: DoubleArray?
+            if (tupleIndex and GVAR_INTERMEDIATE_REGION != 0) {
+                startTuple = DoubleArray(axisCount)
+                for (axis in 0 until axisCount) {
+                    startTuple[axis] = readF2Dot14Within(table, headerOffset + axis * 2, end)
+                        ?: return invalid("gvar intermediate start tuple is truncated.")
+                }
+                headerOffset += axisCount * 2
+                endTuple = DoubleArray(axisCount)
+                for (axis in 0 until axisCount) {
+                    endTuple[axis] = readF2Dot14Within(table, headerOffset + axis * 2, end)
+                        ?: return invalid("gvar intermediate end tuple is truncated.")
+                }
+                headerOffset += axisCount * 2
+            } else {
+                startTuple = null
+                endTuple = null
+            }
+            headers += GvarTupleHeader(variationDataSize, tupleIndex, peak, startTuple, endTuple)
+        }
+        if (tupleDataStart < headerOffset) return invalid("gvar tuple data overlaps the tuple headers.")
+
+        var dataOffset = tupleDataStart
+        val sharedPoints = if (tupleVariationCountField and GVAR_SHARED_POINT_NUMBERS != 0) {
+            val packed = readPackedPoints(table, dataOffset, maxPointCount, end)
+                ?: return invalid("gvar shared point numbers are malformed.")
+            dataOffset = packed.nextOffset
+            packed.values
+        } else {
+            null
+        }
+
+        val xDeltas = DoubleArray(maxPointCount)
+        val yDeltas = DoubleArray(maxPointCount)
+        for (header in headers) {
+            if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+            val tupleEnd = dataOffset.toLong() + header.variationDataSize
+            if (tupleEnd > end.toLong()) return invalid("gvar tuple data is truncated.")
+            var tupleOffset = dataOffset
+            val privatePoints = if (header.tupleIndex and GVAR_PRIVATE_POINT_NUMBERS != 0) {
+                val packed = readPackedPoints(table, tupleOffset, maxPointCount, tupleEnd.toInt())
+                    ?: return invalid("gvar private point numbers are malformed.")
+                tupleOffset = packed.nextOffset
+                packed.values
+            } else {
+                null
+            }
+            val targetPoints = privatePoints ?: sharedPoints ?: IntArray(maxPointCount) { it }
+            val tupleX = readPackedDeltas(table, tupleOffset, targetPoints.size, tupleEnd.toInt())
+                ?: return invalid("gvar x deltas are malformed.")
+            tupleOffset = tupleX.nextOffset
+            val tupleY = readPackedDeltas(table, tupleOffset, targetPoints.size, tupleEnd.toInt())
+                ?: return invalid("gvar y deltas are malformed.")
+            if (tupleY.nextOffset > tupleEnd.toInt()) return invalid("gvar tuple data is truncated.")
+            val scalar = TupleVariationScalars.scalar(normalizedAxes, header.peak, header.startTuple, header.endTuple)
+            if (scalar != 0.0) {
+                val resolved = GvarIup.resolvePointDeltas(
+                    pointCount = pointCount,
+                    contourEndPoints = contourEndPoints,
+                    baseX = baseX,
+                    baseY = baseY,
+                    targetPoints = targetPoints,
+                    tupleXDeltas = tupleX.values,
+                    tupleYDeltas = tupleY.values,
+                )
+                for (index in 0 until maxPointCount) {
+                    xDeltas[index] += resolved.xDeltas[index] * scalar
+                    yDeltas[index] += resolved.yDeltas[index] * scalar
+                }
+            }
+            dataOffset = tupleEnd.toInt()
+        }
+        return FontOperationResult.Success(
+            GvarGlyphDeltas(pointCount, xDeltas.copyOf(pointCount), yDeltas.copyOf(pointCount)),
+        )
+    }
+
+    private fun invalid(message: String): FontOperationResult.Failure =
+        variationFailure("font.variation.invalid-gvar", message, "gvar")
+}
 
 /**
  * Decodes the OpenType `gvar` table version 1.0.
@@ -141,3 +304,111 @@ public object GvarReader {
         return raw.toDouble() / 16_384.0
     }
 }
+
+private data class GvarTupleHeader(
+    val variationDataSize: Int,
+    val tupleIndex: Int,
+    val peak: DoubleArray,
+    val startTuple: DoubleArray?,
+    val endTuple: DoubleArray?,
+)
+
+private data class PackedGvarInts(
+    val values: IntArray,
+    val nextOffset: Int,
+)
+
+private fun readPackedPoints(
+    bytes: ByteArray,
+    offset: Int,
+    maxPointCount: Int,
+    limit: Int,
+): PackedGvarInts? {
+    var current = offset
+    val first = readUInt8Within(bytes, current, limit) ?: return null
+    current += 1
+    if (first == 0) return PackedGvarInts(IntArray(maxPointCount) { it }, current)
+    val pointCount = if (first and 0x80 != 0) {
+        val second = readUInt8Within(bytes, current, limit) ?: return null
+        current += 1
+        ((first and 0x7F) shl 8) or second
+    } else {
+        first
+    }
+    if (pointCount > maxPointCount) return null
+    val points = IntArray(pointCount)
+    var index = 0
+    var point = 0
+    while (index < pointCount) {
+        val control = readUInt8Within(bytes, current, limit) ?: return null
+        current += 1
+        val wordDeltas = control and 0x80 != 0
+        val runCount = (control and 0x7F) + 1
+        if (index + runCount > pointCount) return null
+        repeat(runCount) {
+            val delta = if (wordDeltas) {
+                val value = readUInt16Within(bytes, current, limit) ?: return null
+                current += 2
+                value
+            } else {
+                val value = readUInt8Within(bytes, current, limit) ?: return null
+                current += 1
+                value
+            }
+            point += delta
+            if (point >= maxPointCount) return null
+            points[index] = point
+            index += 1
+        }
+    }
+    return PackedGvarInts(points, current)
+}
+
+private fun readPackedDeltas(
+    bytes: ByteArray,
+    offset: Int,
+    count: Int,
+    limit: Int,
+): PackedGvarInts? {
+    val values = IntArray(count)
+    var current = offset
+    var index = 0
+    while (index < count) {
+        val control = readUInt8Within(bytes, current, limit) ?: return null
+        current += 1
+        val runCount = (control and 0x3F) + 1
+        if (index + runCount > count) return null
+        when {
+            control and 0x80 != 0 -> repeat(runCount) {
+                values[index] = 0
+                index += 1
+            }
+            control and 0x40 != 0 -> repeat(runCount) {
+                values[index] = readInt16Within(bytes, current, limit) ?: return null
+                current += 2
+                index += 1
+            }
+            else -> repeat(runCount) {
+                values[index] = readInt8Within(bytes, current, limit) ?: return null
+                current += 1
+                index += 1
+            }
+        }
+    }
+    return PackedGvarInts(values, current)
+}
+
+private fun readUInt8Within(bytes: ByteArray, offset: Int, limit: Int): Int? =
+    if (offset >= 0 && offset < limit && offset < bytes.size) bytes[offset].toInt() and 0xFF else null
+
+private fun readInt8Within(bytes: ByteArray, offset: Int, limit: Int): Int? =
+    readUInt8Within(bytes, offset, limit)?.let { if (it and 0x80 != 0) it - 0x100 else it }
+
+private fun readUInt16Within(bytes: ByteArray, offset: Int, limit: Int): Int? =
+    if (offset >= 0 && offset + 2 <= limit && offset + 2 <= bytes.size) readUInt16(bytes, offset)?.toInt() else null
+
+private fun readInt16Within(bytes: ByteArray, offset: Int, limit: Int): Int? =
+    if (offset >= 0 && offset + 2 <= limit && offset + 2 <= bytes.size) readInt16(bytes, offset) else null
+
+private fun readF2Dot14Within(bytes: ByteArray, offset: Int, limit: Int): Double? =
+    readInt16Within(bytes, offset, limit)?.toDouble()?.div(16_384.0)
