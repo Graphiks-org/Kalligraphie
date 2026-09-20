@@ -27,4 +27,44 @@ class Sha256Test {
             sha256Hex("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq".encodeToByteArray()),
         )
     }
+
+    @Test
+    fun highBitBytesMatchTheKnownVector() {
+        assertEquals(
+            "40aff2e9d2d8922e47afd4648e6967497158785fbd1da870e7110266bf944880",
+            sha256Hex(ByteArray(256) { it.toByte() }),
+        )
+    }
+
+    @Test
+    fun fiftyFiveByteMessageMatchesTheKnownVector() {
+        assertEquals(
+            "d5e285683cd4efc02d021a5c62014694958901005d6f71e89e0989fac77e4072",
+            sha256Hex(ByteArray(55) { 'x'.code.toByte() }),
+        )
+    }
+
+    @Test
+    fun fiftySixByteMessageMatchesTheKnownVector() {
+        assertEquals(
+            "04c26261370ee7541549d16dee320c723e3fd14671e66a099afe0a377c16888e",
+            sha256Hex(ByteArray(56) { 'x'.code.toByte() }),
+        )
+    }
+
+    @Test
+    fun sixtyFourByteMessageMatchesTheKnownVector() {
+        assertEquals(
+            "7ce100971f64e7001e8fe5a51973ecdfe1ced42befe7ee8d5fd6219506b5393c",
+            sha256Hex(ByteArray(64) { 'x'.code.toByte() }),
+        )
+    }
+
+    @Test
+    fun oneMillionAsMatchTheKnownVector() {
+        assertEquals(
+            "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+            sha256Hex(ByteArray(1_000_000) { 'a'.code.toByte() }),
+        )
+    }
 }

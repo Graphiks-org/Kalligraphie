@@ -3,8 +3,10 @@ package org.graphiks.kalligraphie.e2e
 /**
  * Portable lowercase hexadecimal SHA-256 digest.
  *
- * The algorithm is duplicated from the internal implementation in
- * `:kalligraphie:api` rather than widening that module's published surface.
+ * Duplicated from `sha256Hex` in
+ * `kalligraphie/api/src/commonMain/kotlin/org/graphiks/kalligraphie/api/FontIdentity.kt`
+ * rather than widening that module's published surface. The two copies must stay
+ * in sync; any change to the algorithm here must be mirrored there (and vice versa).
  */
 internal fun sha256Hex(bytes: ByteArray): String {
     val digest = Sha256.digest(bytes)
@@ -18,7 +20,7 @@ internal fun sha256Hex(bytes: ByteArray): String {
     return chars.concatToString()
 }
 
-internal object Sha256 {
+private object Sha256 {
     private val initialHash = intArrayOf(
         0x6A09E667,
         0xBB67AE85.toInt(),
