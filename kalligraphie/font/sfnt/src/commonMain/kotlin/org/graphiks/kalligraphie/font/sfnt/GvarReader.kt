@@ -82,10 +82,11 @@ public class GvarData internal constructor(
         val offsetToData = readUInt16(table, start + 2)?.toInt() ?: return invalid("gvar glyph record is truncated.")
         val tupleDataStart = start + offsetToData
         if (tupleDataStart < start || tupleDataStart > end) return invalid("gvar tuple data offset is out of range.")
-        val maxPointCount = pointCount + GVAR_PHANTOM_POINT_COUNT
-        if (maxPointCount > maxPointsPerVariation) {
-            return variationLimitFailure("gvar point count $maxPointCount exceeds the limit.", "gvar")
+        val maxPointCountValue = pointCount.toLong() + GVAR_PHANTOM_POINT_COUNT.toLong()
+        if (maxPointCountValue > maxPointsPerVariation.toLong()) {
+            return variationLimitFailure("gvar point count $maxPointCountValue exceeds the limit.", "gvar")
         }
+        val maxPointCount = maxPointCountValue.toInt()
         val headers = ArrayList<GvarTupleHeader>(tupleVariationCount)
         var headerOffset = start + 4
         repeat(tupleVariationCount) {

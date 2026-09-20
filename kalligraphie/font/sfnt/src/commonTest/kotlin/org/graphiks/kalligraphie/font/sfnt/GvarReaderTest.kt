@@ -5,6 +5,7 @@ package org.graphiks.kalligraphie.font.sfnt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 class GvarReaderTest {
@@ -145,7 +146,7 @@ class GvarReaderTest {
         val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
         val data = success(GvarReader.read(gvar, 1, 1))
         val deltas = success(data.glyphDeltas(0, listOf(0), listOf(100.0), listOf(200.0), listOf(1.0)))
-        assertEquals(null, deltas)
+        assertNull(deltas)
     }
 
     @Test
@@ -248,7 +249,176 @@ class GvarReaderTest {
     fun returnsNullForGlyphIdOutOfRange() {
         val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
         val data = success(GvarReader.read(gvar, 1, 1))
-        assertEquals(null, success(data.glyphDeltas(4, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0))))
+        assertNull(success(data.glyphDeltas(4, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0))))
+    }
+
+    @Test
+    fun usesSharedPointNumbersInsteadOfPrivateOnes() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = intArrayOf(0, 2),
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(0, 100)) + packedDeltas(intArrayOf(0, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.glyphDeltas(0, listOf(2), listOf(0.0, 50.0, 100.0), listOf(0.0, 0.0, 0.0), listOf(1.0)),
+        )
+        assertEquals(50.0, deltas!!.xDelta(1))
+        assertEquals(100.0, deltas.xDelta(2))
+    }
+
+    @Test
+    fun rejectsTruncatedTupleHeader() {
+        val record = ByteArray(6)
+        record.writeUInt16(0, 1)
+        record.writeUInt16(2, 6)
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsUnknownSharedTupleIndex() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    embeddedPeak = false,
+                    sharedTupleIndex = 5,
+                    data = packedDeltas(intArrayOf(0, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsTupleDataOverlappingHeaders() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(0, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(0, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+            ),
+        )
+        record.writeUInt16(2, 4)
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsMalformedPrivatePointNumbers() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    privatePointNumbers = true,
+                    data = byteArrayOf(0x01, 0x03),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsTupleVariationCountAboveLimitAtGlyphLevel() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(0, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(0, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1, limits = GvarLimits(maxTupleVariations = 1)))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun rejectsPointCountAboveLimitAtGlyphLevel() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(10, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1, limits = GvarLimits(maxPointsPerVariation = 4)))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun readsWordSizedPackedPointsAndDeltas() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    privatePointNumbers = true,
+                    data = packedPoints(intArrayOf(0, 128)) +
+                        packedDeltas(intArrayOf(0, 300)) +
+                        packedDeltas(intArrayOf(0, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.glyphDeltas(
+                0,
+                listOf(128),
+                List(129) { it.toDouble() },
+                List(129) { 0.0 },
+                listOf(1.0),
+            ),
+        )
+        assertEquals(300.0, deltas!!.xDelta(128))
+        assertEquals(150.0, deltas.xDelta(64))
+    }
+
+    @Test
+    fun accumulatesDeltasAcrossMultipleTuples() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(10, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+                gvarTuple(peak = listOf(1.0), data = packedDeltas(intArrayOf(5, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0))),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(data.glyphDeltas(0, listOf(0), listOf(100.0), listOf(200.0), listOf(1.0)))
+        assertEquals(15.0, deltas!!.xDelta(0))
     }
 
     private fun <T> success(result: FontOperationResult<T>): T = when (result) {
