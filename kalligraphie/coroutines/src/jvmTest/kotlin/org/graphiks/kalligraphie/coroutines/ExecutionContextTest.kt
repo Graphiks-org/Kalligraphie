@@ -36,19 +36,18 @@ class ExecutionContextTest {
 
     @Test
     fun concurrentInvocationsShareNoMutableState() = runTest {
-        val fixtures = List(4) { lineFixture("A") }
+        val fixture = lineFixture("A")
         try {
-            val requests = fixtures.map { lineRequest(it) }
-            val sequential = requests.map { request ->
-                lineFingerprint(KalligraphieCoroutines.layout(request).line())
-            }
-            val concurrent = requests.map { request ->
+            val request = lineRequest(fixture)
+            val baseline = lineFingerprint(KalligraphieCoroutines.layout(request).line())
+
+            val results = List(4) {
                 async(Dispatchers.Default) { lineFingerprint(KalligraphieCoroutines.layout(request).line()) }
             }.awaitAll()
 
-            assertEquals(sequential, concurrent)
+            assertEquals(List(4) { baseline }, results)
         } finally {
-            fixtures.forEach { assertClosed(it.resolver.close()) }
+            assertClosed(fixture.resolver.close())
         }
     }
 }
