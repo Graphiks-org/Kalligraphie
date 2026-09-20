@@ -4,7 +4,11 @@ package org.graphiks.kalligraphie.e2e
  * One manifest record: the identity and content digest of a scene's canonical image.
  */
 public data class GoldenFingerprint(
-    /** Scene identifier this record describes. */
+    /**
+     * Scene identifier this record describes.
+     *
+     * Also the manifest key, so the manifest codec relies on it containing no tab or newline.
+     */
     public val sceneId: String,
     /** Family of the scene. */
     public val family: GoldenSceneFamily,
@@ -27,7 +31,12 @@ public data class GoldenFingerprint(
     }
 
     public companion object {
-        /** Derives the fingerprint of [image] under the identity of [scene]. */
+        /**
+         * Derives the fingerprint of [image] under the identity of [scene].
+         *
+         * The scene frame is intentionally not validated here; the verifier asserts the rendered
+         * image against the scene frame.
+         */
         public fun of(scene: GoldenScene, image: GoldenImage): GoldenFingerprint = GoldenFingerprint(
             sceneId = scene.id,
             family = scene.family,
