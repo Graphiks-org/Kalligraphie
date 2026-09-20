@@ -41,4 +41,31 @@ class FontVariationCoordinatesTest {
     fun emptySelectionEqualsDefault() {
         assertEquals(FontVariationCoordinates.default, FontVariationCoordinates(emptyList()))
     }
+
+    @Test
+    fun coordinateOrderIsIndependentOfInputOrder() {
+        val a = FontVariationCoordinate("wght", 700f)
+        val b = FontVariationCoordinate("opsz", 14f)
+
+        assertEquals(FontVariationCoordinates(listOf(a, b)), FontVariationCoordinates(listOf(b, a)))
+    }
+
+    @Test
+    fun snapshotIsUnaffectedByInputMutation() {
+        val input = mutableListOf(FontVariationCoordinate("wght", 700f), FontVariationCoordinate("opsz", 14f))
+        val coordinates = FontVariationCoordinates(input)
+
+        input.clear()
+
+        assertEquals(listOf("opsz", "wght"), coordinates.coordinates.map { it.tag })
+    }
+
+    @Test
+    fun negativeZeroCoordinateEqualsPositiveZeroCoordinate() {
+        assertEquals(FontVariationCoordinate("wght", -0f), FontVariationCoordinate("wght", 0f))
+        assertEquals(
+            FontVariationCoordinate("wght", -0f).hashCode(),
+            FontVariationCoordinate("wght", 0f).hashCode(),
+        )
+    }
 }

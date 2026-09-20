@@ -39,7 +39,7 @@ public class FontVariationCoordinate(
  *
  * Coordinates are copied into a tag-sorted, tag-unique snapshot. An empty selection denotes the
  * font default and never enables variation. Callers convert a selection to normalized coordinates
- * through `FontFace.normalize`, which applies the font's `fvar` and `avar` tables.
+ * against the font's `fvar` and `avar` tables.
  */
 public class FontVariationCoordinates(
     coordinates: List<FontVariationCoordinate> = emptyList(),
@@ -50,7 +50,7 @@ public class FontVariationCoordinates(
 
     init {
         require(this.coordinates.zipWithNext().all { (left, right) -> left.tag < right.tag }) {
-            "Font variation coordinates must be sorted by unique axis tag."
+            "Font variation coordinates must have a unique axis tag."
         }
     }
 
