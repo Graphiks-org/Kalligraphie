@@ -1,7 +1,6 @@
 package org.graphiks.kalligraphie.e2e.golden
 
 import kotlin.test.Test
-import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.e2e.GoldenComparison
 import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
@@ -23,6 +22,7 @@ class GoldenVerificationTest {
         }
 
         val entries = JvmGoldenSceneCatalog.entries()
+        assertTrue(entries.isNotEmpty(), "the golden scene catalog must not be empty")
         val rendered = LinkedHashMap<String, GoldenImage>()
         for (entry in entries) {
             when (val outcome = entry.render()) {

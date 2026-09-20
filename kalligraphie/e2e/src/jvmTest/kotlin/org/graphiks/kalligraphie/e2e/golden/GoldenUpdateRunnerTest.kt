@@ -3,7 +3,6 @@ package org.graphiks.kalligraphie.e2e.golden
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
-import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
 import org.graphiks.kalligraphie.e2e.GoldenFingerprint
 import org.graphiks.kalligraphie.e2e.GoldenManifest
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
