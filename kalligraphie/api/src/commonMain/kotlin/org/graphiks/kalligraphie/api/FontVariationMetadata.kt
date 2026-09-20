@@ -49,6 +49,14 @@ public data class FontNamedInstance(
  * Font-wide metrics in design units at a concrete instance.
  *
  * Values are not scaled to layout units; callers apply the instance's layout size.
+ *
+ * @property ascender ascent above the baseline in design units.
+ * @property descender descent below the baseline in design units.
+ * @property lineGap recommended additional spacing between lines in design units.
+ * @property underlinePosition underline offset from the baseline in design units.
+ * @property underlineThickness underline stroke thickness in design units.
+ * @property xHeight x-height of the font in design units.
+ * @property capHeight cap height of the font in design units.
  */
 public data class FontMetrics(
     public val ascender: Float,
@@ -60,7 +68,15 @@ public data class FontMetrics(
     public val capHeight: Float = 0f,
 )
 
-/** One `STAT` axis-value table in read-only form. */
+/**
+ * One `STAT` axis-value table in read-only form.
+ *
+ * @property axisTag four-character axis tag this value applies to.
+ * @property format `STAT` axis-value table format.
+ * @property values design values carried by this table entry.
+ * @property flags `STAT` axis-value flags.
+ * @property nameId `name` table identifier for this value.
+ */
 public data class StatAxisValue(
     public val axisTag: String,
     public val format: Int,
@@ -73,7 +89,11 @@ public data class StatAxisValue(
     }
 }
 
-/** Read-only `STAT` table surface used to map instances to style attributes. */
+/**
+ * Read-only `STAT` table surface used to map instances to style attributes.
+ *
+ * @property axisValueTables axis-value tables declared by the `STAT` table.
+ */
 public data class StatTable(
     public val axisValueTables: List<StatAxisValue>,
 )
