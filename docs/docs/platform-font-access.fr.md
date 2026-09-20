@@ -64,8 +64,11 @@ découverte ne garantit pas son utilisation par tout backend (moteur de
 traitement) ou profil de représentation. La matrice CI (intégration continue)
 JVM Linux/macOS à quatre cibles exécute de vrais parcours de découverte,
 shaping et glyphes avec les tests complets du shaper (moteur de shaping) et
-l’audit des dépendances natives ; elle n’établit pas de support Windows, mobile
-ou CFF.
+l’audit des dépendances natives. Windows, Android et iOS n’embarquent aucun
+backend HarfBuzz : leurs parcours s’arrêtent avant le shaping et s’appuient sur
+la pile texte de la plateforme ; chaque parcours s’exécute sur une frontière de
+fournisseur contrôlée avec des polices auditées, et les vérifications sur les
+polices installées restent des contrôles optionnels, non l’oracle.
 
 Les nouveaux symboles et types natifs bruts, déclarations ABI (interface binaire),
 constantes et accès aux bibliothèques appartiennent à kffi. Kalligraphie garde
@@ -81,6 +84,31 @@ natifs appartiennent à kffi, tandis que Kalligraphie garde la politique de
 features (options OpenType), l’interprétation des clusters et des carets de
 ligature GDEF (coupures de ligature) et la conversion unités de design → unités
 de layout. La capture de répertoires n’ajoute aucune liaison native brute.
+
+## Fournisseurs de registre de plateforme
+
+Chaque plateforme publiée expose un fournisseur facultatif qui capture les fontes
+que la plateforme rapporte pour sa configuration active. Tous renvoient le même
+contrat de catalogue portable — générations immuables, identité fondée sur le
+contenu, refus typé d’une génération obsolète et diagnostics bornés — et chacun
+exige un `open` explicite pour observer un changement. La matrice de capacités est
+tenue à la main et reste cohérente avec le corpus (ensemble de référence) de
+conformance inter-plateformes ; un fournisseur ne revendique jamais une capacité
+absente de sa plateforme.
+
+| Fournisseur | Découverte | Données portables | Route de plateforme | Rafraîchissement | Limites |
+|---|---|---|---|---|---|
+| macOS `CoreTextSystemFontCatalog` | Registre CoreText activé via les bindings (liaisons natives) CoreText de kffi | Octets `.ttf`/`.ttc`/`.otf` enregistrés, indices de face d’origine | Route par handle (poignée opaque) CoreText pour les faces éligibles | Un nouvel `open` crée une génération `coretext-registry` | Une clé d’une autre génération est refusée au lieu d’être réinterprétée |
+| Linux `FontconfigSystemFontCatalog` | Configuration Fontconfig activée via les bindings Fontconfig de kffi | Octets des fichiers enregistrés | Routes portables | Un nouvel `open` crée une génération `fontconfig-registry` | Un fichier enregistré absent ou illisible est ignoré avec un diagnostic borné |
+| Windows `DirectWriteSystemFontCatalog` | Collection système DirectWrite via les bindings DirectWrite de kffi | Octets des fichiers rapportés ; les clés COM opaques sont résolues en chemins par le local font file loader (chargeur de fichiers local) | Routes portables | Un nouvel `open` crée une génération `directwrite-registry` | Aucun backend HarfBuzz embarqué : le shaping utilise la pile texte de la plateforme |
+| Android `AndroidSystemFontCatalog` | `android.graphics.fonts.SystemFonts` (Android 10 et ultérieur) | Octets des fichiers rapportés | Routes portables | Un nouvel `open` crée une génération `android-platform-fonts` | Avant Android 10, aucune route d’énumération supportée : le fournisseur échoue avec une erreur typée plutôt que d’explorer des chemins inconnus |
+| iOS `IosSystemFontCatalog` | Registre CoreText via les bindings CoreText de la plateforme | Tables CoreText reconstruites en un conteneur SFNT autonome (format de fichier de police) avec checksum de répertoire et `head.checkSumAdjustment` recalculés | Routes portables | Un nouvel `open` crée une génération `ios-coretext-registry` | Les fichiers de fontes système sont isolés (sandbox) : aucun chemin n’est disponible ; un conteneur reconstruit n’est pas identique octet pour octet à l’original et sa signature `DSIG` devient obsolète |
+
+Les noms de famille et de face proviennent de l’analyse des octets capturés : un
+fournisseur ne sélectionne jamais par nom sur la plateforme. Un fournisseur
+incapable de capturer une face — fichier absent, source illisible ou limite
+dépassée — ajoute un diagnostic borné et typé puis l’ignore ; une annulation ne
+publie aucun catalogue partiel.
 
 ## Module Apple facultatif
 
