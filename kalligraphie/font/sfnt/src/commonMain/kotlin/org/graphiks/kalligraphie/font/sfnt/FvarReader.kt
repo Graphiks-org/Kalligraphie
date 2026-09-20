@@ -47,6 +47,9 @@ public class FvarData(axes: List<FvarAxis>, instances: List<FvarInstance>) {
 
     /** Returns the axis with [tag], or `null` when the table declares no such axis. */
     public fun axis(tag: String): FvarAxis? = axes.firstOrNull { it.tag == tag }
+
+    /** Returns the index of the axis with [tag] in `fvar` order, or `null` when absent. */
+    public fun axisIndex(tag: String): Int? = axes.indexOfFirst { it.tag == tag }.takeIf { it >= 0 }
 }
 
 /**
