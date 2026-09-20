@@ -4,6 +4,7 @@ package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.DesignBounds
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontDiagnosticData
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
@@ -14,6 +15,10 @@ import org.graphiks.kalligraphie.api.GlyphContour
 import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.font.sfnt.FvarData
+import org.graphiks.kalligraphie.font.sfnt.FvarReader
+import org.graphiks.kalligraphie.font.sfnt.GvarData
+import org.graphiks.kalligraphie.font.sfnt.GvarReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.readInt16
@@ -44,6 +49,7 @@ internal object GlyfReader {
         glyphId: GlyphId,
         profile: OutlineProfile,
         cancellationToken: CancellationToken = CancellationToken.none,
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<ScalerGlyphOutline> {
         if (cancellationToken.isCancellationRequested()) return cancelled()
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
@@ -54,7 +60,7 @@ internal object GlyfReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return readGlyphOutline(prepared, glyphId, profile, cancellationToken)
+        return readGlyphOutline(prepared, glyphId, profile, cancellationToken, normalizedAxes)
     }
 
     /** Prepares immutable `glyf`, `loca`, and `maxp` data for repeated outline reads. */
@@ -80,6 +86,12 @@ internal object GlyfReader {
             is FontOperationResult.Cancelled -> return result
         }
         if (cancellationToken.isCancellationRequested()) return cancelled()
+        val gvar = when (val result = prepareGvar(sourceBytes, parsedFont, cancellationToken)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
         return FontOperationResult.Success(
             PreparedGlyphData(
                 glyf = glyf,
@@ -87,8 +99,43 @@ internal object GlyfReader {
                 glyphCount = parsedFont.metadata.glyphCount,
                 unitsPerEm = parsedFont.metadata.unitsPerEm,
                 maxp = maxp,
+                gvar = gvar?.data,
+                variationAxisTags = gvar?.axisTags ?: emptyList(),
             ),
         )
+    }
+
+    private fun prepareGvar(
+        sourceBytes: ByteArray,
+        parsedFont: ParsedTrueTypeFont,
+        cancellationToken: CancellationToken,
+    ): FontOperationResult<PreparedGvar?> {
+        val gvarRecord = parsedFont.tableRecords["gvar"] ?: return FontOperationResult.Success(null)
+        val fvarRecord = parsedFont.tableRecords["fvar"] ?: return FontOperationResult.Success(null)
+        val fvarBytes = slice(sourceBytes, fvarRecord)
+            ?: return failure(fontFailure("font.variation.invalid-gvar", "fvar exceeds source length.", tableLocation("fvar")))
+        val fvar: FvarData = when (val result = FvarReader.read(fvarBytes, cancellationToken = cancellationToken)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        if (fvar.axes.isEmpty()) return FontOperationResult.Success(null)
+        if (cancellationToken.isCancellationRequested()) return cancelled()
+        val gvarBytes = slice(sourceBytes, gvarRecord)
+            ?: return failure(fontFailure("font.variation.invalid-gvar", "gvar exceeds source length.", tableLocation("gvar")))
+        val data = when (
+            val result = GvarReader.read(
+                gvarBytes,
+                expectedAxisCount = fvar.axes.size,
+                expectedGlyphCount = parsedFont.metadata.glyphCount,
+                cancellationToken = cancellationToken,
+            )
+        ) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return FontOperationResult.Success(PreparedGvar(data, fvar.axes.map { it.tag }))
     }
 
     /**
@@ -110,6 +157,7 @@ internal object GlyfReader {
         glyphId: GlyphId,
         profile: OutlineProfile,
         cancellationToken: CancellationToken,
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<ScalerGlyphOutline> {
         if (cancellationToken.isCancellationRequested()) return cancelled()
         if (glyphId.value !in 0 until prepared.glyphCount) {
@@ -123,6 +171,9 @@ internal object GlyfReader {
             profile,
             prepared.maxp,
             cancellationToken,
+            prepared.gvar,
+            prepared.variationAxisTags,
+            normalizedAxes,
         )
             .resolveRoot(glyphId)
     }
@@ -323,6 +374,13 @@ internal data class PreparedGlyphData(
     val glyphCount: Int,
     val unitsPerEm: Int,
     val maxp: MaxpLimits,
+    val gvar: GvarData? = null,
+    val variationAxisTags: List<String> = emptyList(),
+)
+
+private data class PreparedGvar(
+    val data: GvarData,
+    val axisTags: List<String>,
 )
 
 private class GlyphResolver(
@@ -333,9 +391,22 @@ private class GlyphResolver(
     private val profile: OutlineProfile,
     private val maxp: MaxpLimits,
     private val cancellationToken: CancellationToken,
+    private val gvar: GvarData?,
+    private val variationAxisTags: List<String>,
+    private val normalizedAxes: List<FontAxisCoordinate>,
 ) {
     private var componentCount = 0L
     private var consumedGlyphBytes = 0L
+
+    private fun normalizedInAxisOrder(): List<Double> =
+        if (gvar == null) {
+            emptyList()
+        } else {
+            List(variationAxisTags.size) { index ->
+                val tag = variationAxisTags[index]
+                normalizedAxes.firstOrNull { it.tag == tag }?.value?.toDouble() ?: 0.0
+            }
+        }
 
     fun resolveRoot(glyphId: GlyphId): FontOperationResult<ScalerGlyphOutline> =
         when (val result = resolve(
@@ -505,11 +576,32 @@ private class GlyphResolver(
             GlyphPoint(xs[index], ys[index], flags[index] and FLAG_ON_CURVE != 0)
         }
         if (cancellationToken.isCancellationRequested()) return cancelled()
+        val orderedAxes = normalizedInAxisOrder()
+        val variationDeltas = if (gvar != null && orderedAxes.any { it != 0.0 }) {
+            when (val result = gvar.glyphDeltas(glyphId, endPoints, xs, ys, orderedAxes, cancellationToken)) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+        } else {
+            null
+        }
+        val variedPoints = if (variationDeltas == null) {
+            points
+        } else {
+            points.mapIndexed { index, point ->
+                GlyphPoint(
+                    point.x + variationDeltas.xDelta(index),
+                    point.y + variationDeltas.yDelta(index),
+                    point.onCurve,
+                )
+            }
+        }
         return FontOperationResult.Success(
             ResolvedGlyph(
                 glyphId = glyphId,
-                bounds = boundsForPoints(points) ?: bounds,
-                points = points,
+                bounds = boundsForPoints(variedPoints) ?: bounds,
+                points = variedPoints,
                 contourEndPoints = endPoints,
                 components = emptyList(),
             ),

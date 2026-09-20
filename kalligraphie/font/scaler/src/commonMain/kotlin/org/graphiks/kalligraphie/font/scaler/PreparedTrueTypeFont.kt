@@ -295,6 +295,7 @@ public class PreparedTrueTypeFont internal constructor(
         glyphId: GlyphId,
         profile: OutlineProfile,
         cancellationToken: CancellationToken = CancellationToken.none,
+        normalizedAxes: List<org.graphiks.kalligraphie.api.FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<ScalerGlyphOutline> {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
@@ -308,6 +309,6 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return GlyfReader.readGlyphOutline(glyphData, glyphId, profile, cancellationToken)
+        return GlyfReader.readGlyphOutline(glyphData, glyphId, profile, cancellationToken, normalizedAxes)
     }
 }

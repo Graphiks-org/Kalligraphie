@@ -2,6 +2,8 @@
 
 package org.graphiks.kalligraphie.font.scaler
 
+import org.graphiks.kalligraphie.api.CancellationToken
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -470,6 +472,46 @@ class GlyfReaderTest {
         assertEquals("font.geometry-overflow", failure.diagnostics.single().code)
     }
 
+    @Test
+    fun appliesGvarSimpleGlyphDeltasAtNonDefaultInstance() {
+        val glyph = singlePointGlyph(x = 100, y = 200)
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 1,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, glyph.size),
+                    "glyf" to glyph,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    "gvar" to singleGlyphGvar(singlePointGvarRecord(xDelta = 10)),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+
+        val varied = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        ).value
+        val variedMove = assertIs<GlyphOutlineCommand.MoveTo>(varied.contours.single().commands.first())
+        assertEquals(110.0, variedMove.x)
+        assertEquals(200.0, variedMove.y)
+
+        val unvaried = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(prepared, GlyphId(0), outlineProfile(), CancellationToken.none),
+        ).value
+        val unvariedMove = assertIs<GlyphOutlineCommand.MoveTo>(unvaried.contours.single().commands.first())
+        assertEquals(100.0, unvariedMove.x)
+    }
+
     private fun parseFont(bytes: ByteArray): ParsedFont =
         ParsedFont(
             bytes = bytes,
@@ -506,6 +548,7 @@ private fun minimalTrueTypeFont(
     maxComponentElements: Int = 8,
     maxComponentDepth: Int = 8,
     tables: Map<String, ByteArray>,
+    extraTables: Map<String, ByteArray> = emptyMap(),
 ): ByteArray {
     val requiredTables = linkedMapOf(
         "head" to headTable(unitsPerEm = 2048, indexToLocFormat = indexToLocFormat),
@@ -525,6 +568,7 @@ private fun minimalTrueTypeFont(
         "loca" to tables.getValue("loca"),
         "glyf" to tables.getValue("glyf"),
     )
+    requiredTables.putAll(extraTables)
     val tableTags = requiredTables.keys.toList()
     val directorySize = 12 + tableTags.size * 16
     var nextOffset = directorySize
@@ -766,4 +810,75 @@ private fun ByteArray.writeUInt32(offset: Int, value: Int) {
     this[offset + 1] = (value ushr 16).toByte()
     this[offset + 2] = (value ushr 8).toByte()
     this[offset + 3] = value.toByte()
+}
+
+private fun singlePointGlyph(x: Int, y: Int): ByteArray =
+    ByteArray(20).also { bytes ->
+        bytes.writeInt16(0, 1)
+        bytes.writeInt16(2, x)
+        bytes.writeInt16(4, y)
+        bytes.writeInt16(6, x)
+        bytes.writeInt16(8, y)
+        bytes.writeUInt16(10, 0)
+        bytes.writeUInt16(12, 0)
+        bytes[14] = 0x01
+        bytes.writeInt16(15, x)
+        bytes.writeInt16(17, y)
+    }
+
+private fun singleAxisFvarTable(): ByteArray =
+    ByteArray(36).also { bytes ->
+        bytes.writeUInt16(0, 1)
+        bytes.writeUInt16(2, 0)
+        bytes.writeUInt16(4, 16)
+        bytes.writeUInt16(6, 2)
+        bytes.writeUInt16(8, 1)
+        bytes.writeUInt16(10, 20)
+        bytes.writeUInt16(12, 0)
+        bytes.writeUInt16(14, 0)
+        bytes.writeTag(16, "wght")
+        bytes.writeInt32Fixed(20, 100f)
+        bytes.writeInt32Fixed(24, 100f)
+        bytes.writeInt32Fixed(28, 900f)
+        bytes.writeUInt16(32, 0)
+        bytes.writeUInt16(34, 1)
+    }
+
+private fun singlePointGvarRecord(xDelta: Int): ByteArray =
+    // 17 bytes are used (10 header bytes + 7 serialized bytes); the 18th byte is zero padding so
+    // the short (uint16 / 2) gvar offset stays integral.
+    ByteArray(18).also { record ->
+        record.writeUInt16(0, 1)
+        record.writeUInt16(2, 10)
+        record.writeUInt16(4, 7)
+        record.writeUInt16(6, 0x8000)
+        record.writeInt16(8, 0x4000)
+        record[10] = 0x00
+        record[11] = xDelta.toByte()
+        record[12] = 0x80.toByte()
+        record[13] = 0x80.toByte()
+        record[14] = 0x80.toByte()
+        record[15] = 0x80.toByte()
+        record[16] = 0x84.toByte()
+    }
+
+private fun singleGlyphGvar(glyphRecord: ByteArray): ByteArray {
+    val glyphDataOffset = 24
+    return ByteArray(glyphDataOffset + glyphRecord.size).also { bytes ->
+        bytes.writeUInt16(0, 1)
+        bytes.writeUInt16(2, 0)
+        bytes.writeUInt16(4, 1)
+        bytes.writeUInt16(6, 0)
+        bytes.writeUInt32(8, 0)
+        bytes.writeUInt16(12, 1)
+        bytes.writeUInt16(14, 0)
+        bytes.writeUInt32(16, glyphDataOffset)
+        bytes.writeUInt16(20, 0)
+        bytes.writeUInt16(22, glyphRecord.size / 2)
+        glyphRecord.copyInto(bytes, glyphDataOffset)
+    }
+}
+
+private fun ByteArray.writeInt32Fixed(offset: Int, value: Float) {
+    writeUInt32(offset, (value * 65_536f).toInt())
 }
