@@ -907,6 +907,64 @@ captures bounded, regular `.ttf` files into a portable snapshot and uses the
 same routes as embedded fonts. It does not expose CoreText handles, nor claim
 support for `.otf` or `.ttc` files.
 
+## Variable font selection
+
+A variable face exposes its `fvar` axes and named instances through
+`FontFace.variationAxes()` and `FontFace.namedInstances()`, and maps a design
+selection to normalized coordinates through `FontFace.normalize(design)`. Both
+metadata calls return immutable snapshots and are empty for a static face.
+`FontFace.stat()` optionally returns a read-only `STAT` surface, reporting
+`Success(null)` when the face has no usable `STAT` table.
+
+Pass design coordinates to an instance with the optional
+`FontInstanceDescriptor.variation` field:
+
+```kotlin
+import org.graphiks.kalligraphie.api.FontInstanceDescriptor
+import org.graphiks.kalligraphie.api.FontVariationCoordinate
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
+import org.graphiks.kalligraphie.api.LayoutUnit
+
+val descriptor = FontInstanceDescriptor(
+    layoutSize = LayoutUnit(72f),
+    variation = FontVariationCoordinates(
+        listOf(FontVariationCoordinate("wght", 700f)),
+    ),
+)
+val variable = when (val result = face.instantiate(descriptor)) {
+    is FontOperationResult.Success -> result.value
+    is FontOperationResult.Failure -> error(result.error.message)
+    is FontOperationResult.Cancelled -> error("Instantiation was cancelled.")
+}
+```
+
+`instantiate` normalizes the design selection through the face's `fvar` and
+`avar` version 1 tables, then rebuilds the normalized axes into
+`FontInstanceKey.geometry`. Those axes participate in
+`FontGeometryParameters.normalizedAxes`, so the selection is part of the
+instance identity: two descriptors that differ only in axis values yield keys
+that compare unequal. Call `normalize(design)` directly to preflight a
+selection; it returns tag-sorted, tag-unique coordinates.
+
+A value outside an axis's declared bounds is clamped to the nearest bound and
+reported with an informational `font.variation.axis-clamped` diagnostic on the
+successful result. An axis tag the face does not declare fails with
+`font.variation.unknown-axis`. Combining a design selection with a non-empty
+`FontGeometryParameters.normalizedAxes` fails with
+`font.variation.ambiguous-request`, because the two describe the same selection
+at different levels. Malformed variation tables fail with the typed codes
+`font.variation.invalid-fvar`, `font.variation.unsupported-fvar-version`,
+`font.variation.invalid-avar` and `font.variation.unsupported-avar-version`
+(`avar` version 2 is not supported), and a face without a usable `fvar` table
+fails with `font.variation.not-variable`.
+
+The current variable-font scope is limited to instance selection: `gvar` glyph
+outline deltas, CFF2 non-default instancing, `HVAR`/`VVAR`/`MVAR` metric
+variation, variable colour and synthetic bold/italic geometry are not
+implemented. A non-default selection therefore changes the instance identity
+but not the outline or metrics a portable provider returns, and synthetic
+geometry remains unavailable.
+
 ## Exact editable Unicode lines
 
 The JVM reference target also provides one complete headless route for a
