@@ -11,7 +11,7 @@ public enum class GoldenDiagnosticCode(
     /** The rendered digest differs from the recorded digest. */
     MISMATCH("e2e.mismatch"),
 
-    /** A scene declared impossible canvas dimensions. */
+    /** A scene's declared frame and its rendered bounds disagree. */
     SCENE_BOUNDS_INVALID("e2e.scene-bounds-invalid"),
 
     /** A catalogued scene has no manifest entry. */

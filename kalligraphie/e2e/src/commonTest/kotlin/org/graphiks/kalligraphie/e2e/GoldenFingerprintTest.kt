@@ -36,6 +36,21 @@ class GoldenFingerprintTest {
     }
 
     @Test
+    fun diagnosticCodesMatchTheirNames() {
+        val expected = mapOf(
+            "RENDER_FAILED" to "e2e.render-failed",
+            "MISMATCH" to "e2e.mismatch",
+            "SCENE_BOUNDS_INVALID" to "e2e.scene-bounds-invalid",
+            "MANIFEST_MISSING_ENTRY" to "e2e.manifest-missing-entry",
+            "MANIFEST_STALE_ENTRY" to "e2e.manifest-stale-entry",
+            "MANIFEST_DUPLICATE_ID" to "e2e.manifest-duplicate-id",
+            "CANONICALIZATION_VERSION_MISMATCH" to "e2e.canonicalization-version-mismatch",
+            "MANIFEST_MALFORMED" to "e2e.manifest-malformed",
+        )
+        assertEquals(expected, GoldenDiagnosticCode.entries.associate { entry -> entry.name to entry.code })
+    }
+
+    @Test
     fun rejectsAMalformedDigest() {
         assertFailsWith<IllegalArgumentException> {
             GoldenFingerprint("s", GoldenSceneFamily.GLYPH_OUTLINE, 1, 1, PixelFormat.ALPHA_8, "NOT-A-DIGEST")
