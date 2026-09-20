@@ -4,7 +4,10 @@ import kotlin.coroutines.coroutineContext
 import kotlinx.coroutines.Job
 import org.graphiks.kalligraphie.JvmEditableLineFacade
 import org.graphiks.kalligraphie.JvmEditableLineFacadeRequest
+import org.graphiks.kalligraphie.JvmEditableParagraphFacade
+import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
 import org.graphiks.kalligraphie.api.EditableLineResult
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 
 /**
  * Optional suspend facade over the synchronous Kalligraphie consumer routes.
@@ -39,6 +42,34 @@ public object KalligraphieCoroutines {
             throw KalligraphieCancellationException(
                 result,
                 "The coroutine was cancelled while laying out the editable line.",
+            )
+        }
+        return result
+    }
+
+    /**
+     * Composes an editable paragraph, or resumes a partial one through its request continuation.
+     *
+     * A calling-Job cancellation observed at entry or exit raises a
+     * [KalligraphieCancellationException] carrying the engine's typed result; a consumer-token
+     * cancellation that does not cancel the coroutine returns the typed
+     * [ParagraphLayoutResult.Cancelled]. A borrowed renderable resolver is never closed here.
+     */
+    public suspend fun layout(request: JvmEditableParagraphFacadeRequest): ParagraphLayoutResult {
+        val job = coroutineContext[Job]
+        if (job?.isCancelled == true) {
+            throw KalligraphieCancellationException(
+                ParagraphLayoutResult.Cancelled(),
+                "The coroutine was cancelled before the editable paragraph started.",
+            )
+        }
+        val result = JvmEditableParagraphFacade.layout(
+            request.withCancellationToken(bridgeCancellationToken(job, request.cancellationToken)),
+        )
+        if (job?.isCancelled == true) {
+            throw KalligraphieCancellationException(
+                result,
+                "The coroutine was cancelled while composing the editable paragraph.",
             )
         }
         return result

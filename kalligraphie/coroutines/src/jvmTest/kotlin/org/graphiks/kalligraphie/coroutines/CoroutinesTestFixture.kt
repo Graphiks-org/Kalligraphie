@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.graphiks.kalligraphie.JvmEditableLineFacadeRequest
+import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -14,9 +15,11 @@ import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.LayoutUnit
@@ -96,6 +99,88 @@ internal fun lineFingerprint(line: org.graphiks.kalligraphie.api.EditableLine): 
     line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId to glyph.origin } },
     line.allCaretCandidates.map { candidate -> candidate.position to candidate.geometry },
 )
+
+internal class ParagraphFixture(
+    val snapshot: TextSnapshot,
+    val catalog: FontCatalogSnapshot,
+    val policy: org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot,
+)
+
+internal fun fontSource(relativePath: String, declaredName: String): FontSource = FontSource(
+    sourceBytes = checkNotNull(
+        LineFixture::class.java.getResourceAsStream("/fonts/$relativePath"),
+    ) { "fixture font is missing: $relativePath" }.use { it.readBytes() },
+    provenance = FontSourceProvenance(declaredName),
+)
+
+internal fun paragraphFixture(
+    text: String,
+    fonts: List<Pair<String, String>> = listOf("liberation/LiberationSans-Regular.ttf" to "Liberation Sans Regular"),
+): ParagraphFixture {
+    val sources = fonts.map { (path, name) -> fontSource(path, name) }
+    val catalog = success(Kalligraphie.embedded(sources))
+    val faces = sources.map { source -> org.graphiks.kalligraphie.api.FontFaceId(source.id, 0) }
+    val policy = org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot(
+        generation = catalog.generation,
+        policyId = "coroutines-paragraph-fixture",
+        version = "1",
+        candidates = faces.map { face -> org.graphiks.kalligraphie.api.FontResolutionCandidate(face) },
+        lastResortFace = faces.last(),
+    )
+    val snapshot = Kalligraphie.decodeUtf16(
+        TextVersion.create(),
+        listOf(TextSlice.Utf16(text.toCharArray())),
+    ).snapshot
+    return ParagraphFixture(snapshot, catalog, policy)
+}
+
+internal fun paragraphConstraints(
+    width: Float,
+    top: Float,
+    height: Float,
+): org.graphiks.kalligraphie.api.HorizontalParagraphConstraints =
+    org.graphiks.kalligraphie.api.HorizontalParagraphConstraints(
+        region = org.graphiks.kalligraphie.api.LayoutRect(
+            LayoutUnit(100f),
+            LayoutUnit(top),
+            LayoutUnit(100f + width),
+            LayoutUnit(top + height),
+        ),
+        lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
+    )
+
+internal fun paragraphRequest(
+    fixture: ParagraphFixture,
+    constraints: org.graphiks.kalligraphie.api.HorizontalParagraphConstraints,
+    sourceRange: org.graphiks.kalligraphie.api.TextRange = fixture.snapshot.range,
+    continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
+    cancellationToken: CancellationToken = CancellationToken.none,
+): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
+    snapshot = fixture.snapshot,
+    sourceRange = sourceRange,
+    constraints = constraints,
+    baseDirection = BaseDirection.LEFT_TO_RIGHT,
+    language = "en",
+    fontCatalog = fixture.catalog,
+    resolutionPolicy = fixture.policy,
+    fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+    continuation = continuation,
+    cancellationToken = cancellationToken,
+)
+
+internal fun paragraphFingerprint(
+    result: org.graphiks.kalligraphie.api.ParagraphLayoutResult.Success,
+): List<Any> = result.layout.lines.map { line ->
+    listOf(
+        line.range,
+        line.baseline,
+        line.contentMetrics,
+        line.lineBox,
+        line.designInkBounds,
+        line.positionedGlyphRuns.flatMap { run -> run.glyphs.map { glyph -> glyph.shapedGlyph.glyphId to glyph.origin } },
+        line.allCaretCandidates.map { candidate -> candidate.position to candidate.geometry },
+    )
+}
 
 /**
  * Runs [block] in an unconfined coroutine and returns the [KalligraphieCancellationException] it
