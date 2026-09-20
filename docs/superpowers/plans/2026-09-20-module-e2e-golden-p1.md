@@ -22,6 +22,8 @@ Le spec validé décrit la cible ; ce plan tranche trois détails d'implémentat
 2. **Localisation d'un mismatch** — le manifest ne stocke qu'une empreinte, donc la vérification manifest↔image ne peut pas localiser le premier octet divergent. Décision : `GoldenComparison.Mismatch` porte les hashes et les dimensions ; un helper `GoldenImageDiff.firstDifference(expected, actual)` localise le premier octet + ses coordonnées et est validé par le harnais. Le dump opt-in localise visuellement côté manifest.
 3. **Codes de diagnostic supplémentaires** — le spec §6 ne couvre ni une ligne de manifest malformée ni le mismatch lui-même. Décision : ajouter `e2e.manifest-malformed` (parse d'une ligne invalide) et `e2e.mismatch` (empreinte rendue ≠ empreinte enregistrée). Le spec doit être amendé sur ces deux points lors de P4.
 
+4. **Durcissements issus de la revue de Task 3** — (a) le garde d'overflow de `GoldenImage` bornait le produit *après* la multiplication par `bytesPerPixel`, laquelle s'enroule pour `RGBA_8888` et laissait construire une image incohérente ; le bornage se fait désormais sur le nombre de pixels **avant** le passage aux octets (Task 3). (b) `GoldenScene.width`/`height` n'a plus qu'un sens — les dimensions canoniques attendues de l'image — et le vérificateur les assère contre l'image rendue pour **toutes** les familles, y compris à sortie serrée, de sorte qu'une dérive de dimension échoue même après régénération du manifest (Tasks 6, 7).
+
 Deux autres points de séquençage :
 
 - **Ressources de test** : en P1, `:kalligraphie:e2e` branche temporairement les ressources `jvmTest` de `:kalligraphie` (même mécanisme que `raster-cpu`) pour atteindre `/fonts/liberation/...`. La bascule vers `rootProject.file("test-fixtures")` se fait en P2 après la consolidation décrite au spec §8.
@@ -419,6 +421,39 @@ class GoldenImageTest {
         assertFailsWith<IllegalArgumentException> {
             GoldenScene(id = "scene", family = GoldenSceneFamily.GLYPH_OUTLINE, width = -1, height = 1)
         }
+        assertFailsWith<IllegalArgumentException> {
+            GoldenScene(id = "scene", family = GoldenSceneFamily.GLYPH_OUTLINE, width = 1, height = 0)
+        }
+    }
+
+    @Test
+    fun equalityIsBasedOnContent() {
+        val a = GoldenImage.alpha8(1, 1, byteArrayOf(7))
+        val b = GoldenImage.alpha8(1, 1, byteArrayOf(7))
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun theReturnedBytesAreIndependentOfTheImage() {
+        val image = GoldenImage.alpha8(2, 1, byteArrayOf(1, 2))
+        val returned = image.copyCanonicalBytes()
+        returned[0] = 99
+        assertEquals(listOf<Byte>(1, 2), image.copyCanonicalBytes().toList())
+    }
+
+    @Test
+    fun rgba8RejectsAnOverflowingPixelCount() {
+        assertFailsWith<IllegalArgumentException> {
+            GoldenImage.rgba8(width = Int.MAX_VALUE, height = Int.MAX_VALUE, pixels = byteArrayOf(1, 2, 3, 4))
+        }
+    }
+
+    @Test
+    fun alpha8RejectsTooManyPixels() {
+        assertFailsWith<IllegalArgumentException> {
+            GoldenImage.alpha8(width = 2, height = 2, pixels = byteArrayOf(1, 2, 3, 4, 5))
+        }
     }
 }
 ```
@@ -484,26 +519,26 @@ package org.graphiks.kalligraphie.e2e
 /**
  * Declarative identity of one golden scene.
  *
- * [width] and [height] are the declared canvas dimensions for composed families;
- * for tight-output families (the glyph routes) they document the expected output
- * size and are asserted by the scene's own renderer test.
+ * [width] and [height] are the dimensions of the canonical image the scene is
+ * expected to produce, for every family. The verifier asserts them against the
+ * rendered image, so a scene frame is a checked contract, not documentation.
  */
 public data class GoldenScene(
     /** Stable identifier; also the manifest key. */
     public val id: String,
     /** Route the scene exercises. */
     public val family: GoldenSceneFamily,
-    /** Declared canvas width, or expected output width for tight-output families. */
+    /** Expected canonical image width in pixels; must be positive. */
     public val width: Int,
-    /** Declared canvas height, or expected output height for tight-output families. */
+    /** Expected canonical image height in pixels; must be positive. */
     public val height: Int,
     /** Free-form labels for filtering and reporting. */
     public val tags: Set<String> = emptySet(),
 ) {
     init {
         require(id.isNotBlank()) { "A golden scene id must not be blank." }
-        require(width >= 0) { "A golden scene width must be non-negative." }
-        require(height >= 0) { "A golden scene height must be non-negative." }
+        require(width > 0) { "A golden scene width must be positive." }
+        require(height > 0) { "A golden scene height must be positive." }
     }
 }
 ```
@@ -534,9 +569,12 @@ public class GoldenImage private constructor(
     init {
         require(width >= 0) { "A golden image width must be non-negative." }
         require(height >= 0) { "A golden image height must be non-negative." }
-        val expected = width.toLong() * height.toLong() * format.bytesPerPixel.toLong()
-        require(expected <= Int.MAX_VALUE.toLong()) { "Pixel count exceeds the maximum buffer size." }
-        require(captured.size == expected.toInt()) { "Pixel count does not match the image dimensions." }
+        val pixels = width.toLong() * height.toLong()
+        require(pixels <= (Int.MAX_VALUE / format.bytesPerPixel).toLong()) {
+            "Canonical byte count exceeds the maximum buffer size."
+        }
+        val expected = pixels * format.bytesPerPixel.toLong()
+        require(captured.size == expected.toInt()) { "Canonical byte count does not match the image dimensions." }
     }
 
     /** Returns a caller-owned copy of the canonical bytes. */
@@ -1066,6 +1104,19 @@ class GoldenVerifierTest {
     }
 
     @Test
+    fun reportsMismatchWhenTheRenderedSizeDoesNotMatchTheSceneFrame() {
+        val scene = GoldenScene("s", GoldenSceneFamily.GLYPH_OUTLINE, 1, 1)
+        val rendered = GoldenImage.alpha8(2, 1, byteArrayOf(1, 2))
+        val manifest = GoldenManifest.of(listOf(GoldenFingerprint.of(scene, rendered)))
+        val result = assertIs<GoldenComparison.Mismatch>(
+            GoldenVerifier.verify(listOf(scene), mapOf("s" to rendered), manifest).single(),
+        )
+        assertEquals(1, result.expectedWidth)
+        assertEquals(1, result.expectedHeight)
+        assertEquals(2, result.actualWidth)
+    }
+
+    @Test
     fun firstDifferenceLocatesTheOffendingByte() {
         val expected = GoldenImage.alpha8(2, 2, byteArrayOf(1, 2, 3, 4))
         val actual = GoldenImage.alpha8(2, 2, byteArrayOf(1, 2, 9, 4))
@@ -1110,9 +1161,9 @@ public sealed interface GoldenComparison {
         public val expectedSha256: String,
         /** Digest of the rendered image. */
         public val actualSha256: String,
-        /** Recorded width. */
+        /** Expected width: the scene frame declared by the catalog. */
         public val expectedWidth: Int,
-        /** Recorded height. */
+        /** Expected height: the scene frame declared by the catalog. */
         public val expectedHeight: Int,
         /** Rendered width. */
         public val actualWidth: Int,
@@ -1187,20 +1238,21 @@ public object GoldenVerifier {
                 continue
             }
             val actual = GoldenFingerprint.of(scene, image)
+            val recordMatches = recorded.sha256 == actual.sha256 &&
+                recorded.width == actual.width &&
+                recorded.height == actual.height &&
+                recorded.format == actual.format
+            val frameMatches = image.width == scene.width && image.height == scene.height
             results.add(
-                if (recorded.sha256 == actual.sha256 &&
-                    recorded.width == actual.width &&
-                    recorded.height == actual.height &&
-                    recorded.format == actual.format
-                ) {
+                if (recordMatches && frameMatches) {
                     GoldenComparison.Matched(scene.id)
                 } else {
                     GoldenComparison.Mismatch(
                         sceneId = scene.id,
                         expectedSha256 = recorded.sha256,
                         actualSha256 = actual.sha256,
-                        expectedWidth = recorded.width,
-                        expectedHeight = recorded.height,
+                        expectedWidth = scene.width,
+                        expectedHeight = scene.height,
                         actualWidth = actual.width,
                         actualHeight = actual.height,
                     )
@@ -1444,8 +1496,8 @@ internal object JvmGoldenSceneCatalog {
         val scene = GoldenScene(
             id = "glyph.outline.liberation-sans.A.64",
             family = GoldenSceneFamily.GLYPH_OUTLINE,
-            width = 0,
-            height = 0,
+            width = 43,
+            height = 45,
             tags = setOf("smoke", "scripts:latin"),
         )
         return JvmGoldenEntry(scene) {
@@ -1470,7 +1522,7 @@ internal object JvmGoldenSceneCatalog {
 }
 ```
 
-> **Note :** le `width`/`height` déclarés à `0` sur la scène smoke sont volontaires : pour une famille à sortie serrée, ce sont les dimensions **réelles** de l'image qui font foi, et le test de Task 8 assère `43 × 45`. Le champ reste présent pour l'homogénéité du modèle (spec §4).
+> **Note :** la frame `43 × 45` est la taille canonique attendue, reprise de `raster-cpu`'s `OutlineConformanceTest`. Le vérificateur (Task 6) assère que l'image rendue fait exactement cette taille ; une dérive de dimension échoue même si le manifest a été régénéré.
 
 - [ ] **Step 5: Lancer le test pour vérifier qu'il passe**
 
@@ -1889,6 +1941,7 @@ Non couvert volontairement en P1 : §7 frontière journeys, §8 absorption/fixtu
 - Ajout de `e2e.mismatch` et `e2e.manifest-malformed` (refinement #3) — à reporter dans le spec lors de P4.
 - `GoldenImageDiff` extrait de `GoldenComparison` pour rester honnête sur l'impossibilité de localiser un octet depuis un manifest à empreinte seule.
 - Ressources de test branchées en pont temporaire (P1) avant la bascule `test-fixtures` (P2).
+- Garde d'overflow de `GoldenImage` corrigé et sémantique de `GoldenScene.width/height` unifiée puis assérée par le vérificateur (refinement #4).
 
 ---
 
