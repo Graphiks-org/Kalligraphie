@@ -965,6 +965,14 @@ implemented. A non-default selection therefore changes the instance identity
 but not the outline or metrics a portable provider returns, and synthetic
 geometry remains unavailable.
 
+Two added surfaces are defaulted placeholders rather than implemented reads:
+`FontFace.stat()` returns `Success(null)` and `FontInstance.fontMetrics()`
+remains unsupported because the portable provider does not yet read `STAT` or
+apply `HVAR`/`VVAR`/`MVAR` metric variation (deferred). The axis selection is
+retained as given: an axis explicitly set to its default value is kept,
+normalizes to `0`, and produces a distinct `FontInstanceKey` from omitting that
+axis (there is no default-value pruning).
+
 ## Exact editable Unicode lines
 
 The JVM reference target also provides one complete headless route for a

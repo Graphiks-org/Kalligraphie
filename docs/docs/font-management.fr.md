@@ -1079,6 +1079,15 @@ non par défaut change donc l’identité de l’instance, mais pas le contour n
 métriques renvoyés par un fournisseur portable, et la géométrie synthétique
 reste indisponible.
 
+Deux surfaces ajoutées sont des espaces réservés avec valeur par défaut plutôt
+que des lectures implémentées : `FontFace.stat()` renvoie `Success(null)` et
+`FontInstance.fontMetrics()` reste non pris en charge, car le fournisseur
+portable ne lit pas encore `STAT` et n’applique pas la variation des métriques
+`HVAR`/`VVAR`/`MVAR` (différée). La sélection d’axes est conservée telle quelle :
+un axe explicitement réglé à sa valeur par défaut est gardé, se normalise à `0`
+et produit une `FontInstanceKey` distincte de l’omission de cet axe (aucun
+élagage, ou pruning, des valeurs par défaut).
+
 ## Lignes Unicode éditables exactes
 
 La cible JVM de référence fournit aussi un parcours sans interface graphique

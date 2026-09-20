@@ -106,8 +106,12 @@ public interface FontFace {
      * Returns the read-only `STAT` surface for this face.
      *
      * Three states are possible: a typed failure when the surface cannot be produced;
-     * `Success(null)` when the face has no usable `STAT` table, including implementations that do
-     * not provide the surface; and `Success(table)` when a usable `STAT` table is present.
+     * `Success(null)` when the face has no usable `STAT` table or the implementation does not
+     * provide the surface; and `Success(table)` when a usable `STAT` table is present.
+     *
+     * The default body is a placeholder that returns `Success(null)`: portable `STAT` reading is
+     * not implemented yet, so `Success(null)` currently also means "not yet provided" rather than
+     * proving the face has no `STAT` table.
      */
     public fun stat(): FontOperationResult<StatTable?> = FontOperationResult.Success(null)
 }
@@ -582,6 +586,10 @@ public data class FontInstanceDescriptor(
      * When non-empty, `instantiate` normalizes it with the face's `fvar`/`avar` and rebuilds
      * [geometry]'s normalized axes. Must not be combined with a non-empty [geometry] normalized
      * axes selection; that is a `font.variation.ambiguous-request` failure.
+     *
+     * The selection is retained as given: there is no default-value pruning. An axis explicitly
+     * set to its default value is kept and normalizes to `0`, so it yields a different
+     * [FontInstanceKey] from omitting that axis.
      */
     public val variation: FontVariationCoordinates? = null,
 )
@@ -740,8 +748,9 @@ public interface FontInstance {
     /**
      * Returns font-wide metrics for this instance in design units.
      *
-     * The default implementation is unsupported; concrete providers override it. Variable
-     * instances apply `MVAR` deltas before returning.
+     * The default body is an unsupported placeholder, and no portable implementation provides it
+     * yet: metrics variation (`HVAR`/`VVAR`/`MVAR`) is deferred, so a variable instance does not
+     * apply `MVAR` deltas here.
      */
     public fun fontMetrics(): FontOperationResult<FontMetrics> =
         unsupportedContractOperation("This font instance does not support font metrics.")
