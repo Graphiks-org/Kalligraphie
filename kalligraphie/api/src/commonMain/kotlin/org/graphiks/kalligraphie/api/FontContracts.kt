@@ -62,34 +62,53 @@ public interface FontFace {
      *
      * The successful instance is owned by the caller and remains independent
      * of later descriptor changes. Invalid descriptors are returned as
-     * [FontError.InvalidInstanceDescriptor].
+     * [FontError.InvalidInstanceDescriptor]. A descriptor that combines a
+     * non-empty [FontInstanceDescriptor.variation] with a non-empty
+     * [FontGeometryParameters.normalizedAxes] selection fails with the typed
+     * `font.variation.ambiguous-request` failure; providers that support
+     * design-coordinate variation enforce this precondition.
      */
     public fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance>
 
     /**
      * Returns the `fvar` variation axes declared by this face in design coordinates.
      *
-     * The list is empty when the face is not variable. Providers that wrap a portable variable
-     * face forward to it; a face that cannot instantiate a non-default selection reports that at
-     * [instantiate] rather than returning an empty list here.
+     * The returned list is an immutable snapshot that is safe to retain and read from concurrent
+     * callers. The list is empty when the face is not variable. Providers that wrap a portable
+     * variable face forward to it; a face that cannot instantiate a non-default selection reports
+     * that at [instantiate] rather than returning an empty list here.
      */
     public fun variationAxes(): List<FontVariationAxis> = emptyList()
 
-    /** Returns the `fvar` named instances declared by this face. Empty when the face is not variable. */
+    /**
+     * Returns the `fvar` named instances declared by this face.
+     *
+     * The returned list is an immutable snapshot that is safe to retain and read from concurrent
+     * callers. The list is empty when the face is not variable.
+     */
     public fun namedInstances(): List<FontNamedInstance> = emptyList()
 
     /**
      * Normalizes [design] against this face's `fvar` and `avar` tables.
      *
-     * Returns tag-sorted, tag-unique normalized axes. Axis values outside their declared bounds are
-     * clamped and reported with an informational `font.variation.axis-clamped` diagnostic on the
-     * successful result. An axis tag not declared by the face fails with
-     * `font.variation.unknown-axis`.
+     * Contract for overriding implementations: returns tag-sorted, tag-unique normalized axes.
+     * Axis values outside their declared bounds are clamped and reported with an informational
+     * `font.variation.axis-clamped` diagnostic on the successful result. An axis tag not declared
+     * by the face fails with `font.variation.unknown-axis`.
+     *
+     * The default body is an unsupported placeholder for faces that do not implement variation;
+     * it always fails rather than performing any normalization.
      */
     public fun normalize(design: FontVariationCoordinates): FontOperationResult<List<FontAxisCoordinate>> =
         unsupportedContractOperation("This font face does not support variation normalization.")
 
-    /** Returns the read-only `STAT` surface, or `null` when the face has no usable `STAT` table. */
+    /**
+     * Returns the read-only `STAT` surface for this face.
+     *
+     * Three states are possible: a typed failure when the surface cannot be produced;
+     * `Success(null)` when the face has no usable `STAT` table, including implementations that do
+     * not provide the surface; and `Success(table)` when a usable `STAT` table is present.
+     */
     public fun stat(): FontOperationResult<StatTable?> = FontOperationResult.Success(null)
 }
 
