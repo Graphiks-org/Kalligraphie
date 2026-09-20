@@ -32,6 +32,8 @@ jobs:
           distribution: zulu
           java-version: '25'
           cache: gradle
+      - name: Set up Android SDK and NDK
+        uses: ./.github/actions/setup-android
       - run: chmod +x gradlew
       - run: ./gradlew --no-daemon check
 

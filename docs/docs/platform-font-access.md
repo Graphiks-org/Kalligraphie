@@ -22,7 +22,9 @@ exact activated registry; the macOS `CoreTextSystemFontCatalog` in
 and the Linux `FontconfigSystemFontCatalog` in `:kalligraphie:platform:linux`
 captures the activated Fontconfig configuration. The Windows
 `DirectWriteSystemFontCatalog` in `:kalligraphie:platform:windows` captures the
-activated DirectWrite system font collection. Every provider requires explicit
+activated DirectWrite system font collection, and the Android
+`AndroidSystemFontCatalog` in `:kalligraphie:platform:android` captures the
+platform system font collection on Android 10 and later. Every provider requires explicit
 reopening to refresh and preserves independently owned resources from the previous
 generation.
 
@@ -35,7 +37,8 @@ generation.
 | macOS JVM `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Activated CoreText registry through `kffi-coretext`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `coretext-registry` generation |
 | macOS JVM optional CoreText adapter | Exact bytes from a portable catalogue; eligible standalone static monochrome TrueType only | Preserves portable shaping; no CoreText layout substitution | Explicitly accepted platform handle, or underlying portable routes; collections excluded from the platform route |
 | Windows JVM `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Activated DirectWrite system font collection through `kffi-directwrite`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | No bundled operational HarfBuzz target | Same portable routes; a new `open` observes controlled install/removal and mints a new `directwrite-registry` generation |
-| Android / Kotlin Native / iOS | No system-directory provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
+| Android JVM `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Platform system font collection through `android.graphics.fonts.SystemFonts` (Android 10+), not arbitrary path scanning; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices; family and face names come from parsing the captured bytes | No bundled HarfBuzz backend in this module; the platform text stack applies | Same portable routes; a new `open` observes a controlled change and mints a new `android-platform-fonts` generation |
+| Kotlin Native / iOS | No system-font provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
 | CFF/CFF2 data on any target | Standalone CFF1 `.otf` and CFF2 outlines are read; collections carrying CFF faces are captured | CFF1 shaping through the portable shaper; CFF2 materialized at the default instance only | Portable cubic outline route for CFF1 and CFF2 (default instance); no CFF2 non-default variation instance and no CoreText CFF route |
 
 The standalone embedded route remains available on the JVM. File extensions do
