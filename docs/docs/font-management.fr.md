@@ -1071,13 +1071,23 @@ avec les codes typés `font.variation.invalid-fvar`,
 charge), et une face sans table `fvar` utilisable échoue avec
 `font.variation.not-variable`.
 
-Le périmètre actuel des fontes variables se limite à la sélection d’instance :
-les deltas (écarts) de contours `gvar`, l’instanciation CFF2 non par défaut, la
-variation des métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et la
-géométrie synthétique (gras/italique) ne sont pas implémentées. Une sélection
-non par défaut change donc l’identité de l’instance, mais pas le contour ni les
-métriques renvoyés par un fournisseur portable, et la géométrie synthétique
-reste indisponible.
+Une sélection non par défaut contribue désormais à la fois à l’identité de
+l’instance et à la variation des contours des glyphes simples : la route
+portable de contours TrueType lit la table `gvar` de la face, évalue le facteur
+de région de chaque tuple aux axes normalisés de l’instance, interpole les
+points non touchés via l’IUP TrueType, puis applique les deltas résolus par
+point aux coordonnées des glyphes simples et à leurs bornes recalculées. La
+sélection change donc le contour renvoyé par un fournisseur portable, tandis
+que les deltas `gvar` des glyphes composites, l’instanciation CFF2 non par
+défaut, la variation des métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et
+la géométrie synthétique (gras/italique) restent non implémentés ; les
+métriques restent renvoyées à l’instance par défaut, de sorte qu’une sélection
+non par défaut ne change toujours pas les métriques renvoyées par un
+fournisseur portable. Les données `gvar` malformées échouent avec
+`font.variation.invalid-gvar`, une version de table non prise en charge échoue
+avec `font.variation.unsupported-gvar-version`, et les bornes de ressources
+`gvar` réutilisent `font.resource-limit-exceeded` avec l’emplacement de table
+`gvar`.
 
 Deux surfaces ajoutées sont des espaces réservés avec valeur par défaut plutôt
 que des lectures implémentées : `FontFace.stat()` renvoie `Success(null)` et
