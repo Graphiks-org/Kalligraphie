@@ -19,6 +19,10 @@ kotlin {
             resources.srcDir(rootProject.file("kalligraphie/src/jvmTest/resources"))
             dependencies {
                 implementation(kotlin("test"))
+                implementation(project(":kalligraphie"))
+                implementation(project(":kalligraphie:layout"))
+                implementation(project(":kalligraphie:shaping"))
+                implementation(project(":kalligraphie:unicode"))
             }
         }
     }

@@ -90,3 +90,30 @@ jobs:
       - run: chmod +x gradlew
       - name: Exercise exact fonts, platform ownership and certified layouts
         run: ./gradlew --no-daemon :kalligraphie:platform:apple:jvmTest
+
+  ios-platform-fonts:
+    name: CoreText font journeys (ios-simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+          cache: gradle
+      - run: chmod +x gradlew
+      - name: Exercise the CoreText registry capture and materialization
+        run: ./gradlew --no-daemon :kalligraphie:platform:ios:iosSimulatorArm64Test
+
+  windows-platform-fonts:
+    name: DirectWrite font journeys (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+          cache: gradle
+      - name: Exercise the DirectWrite registry capture
+        run: ./gradlew --no-daemon :kalligraphie:platform:windows:jvmTest

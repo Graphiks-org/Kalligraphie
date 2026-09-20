@@ -16,6 +16,7 @@ allowed_scopes = [
     "linux",
     "windows",
     "android",
+    "ios",
     "buildSrc",
     "ci",
     "docs",
