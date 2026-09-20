@@ -43,6 +43,9 @@ val line = withContext(Dispatchers.Default) { KalligraphieCoroutines.layout(requ
 
 The facade never opens or closes a handle. A resolver borrowed by a renderable request stays the
 caller's property, and a handle survives a cancelled coroutine only according to its own contract.
+Cancellation and explicit `close()` keep the priority defined by the synchronous engine contract: a
+cancellation stays a cancellation, and a close failure never turns a cancelled operation into a
+success.
 
 ## Interactive editor pattern
 

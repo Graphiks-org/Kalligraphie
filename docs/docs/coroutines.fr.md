@@ -47,7 +47,9 @@ val line = withContext(Dispatchers.Default) { KalligraphieCoroutines.layout(requ
 
 La façade n'ouvre ni ne ferme jamais de *handle* (poignée d'accès). Un résolveur emprunté par
 une requête de rendu reste la propriété de l'appelant, et un *handle* ne survit à une coroutine
-annulée que selon son propre contrat.
+annulée que selon son propre contrat. L'annulation et le `close()` explicite conservent la priorité
+définie par le contrat synchrone du moteur : une annulation reste une annulation, et un échec de
+fermeture ne transforme jamais une opération annulée en succès.
 
 ## Patron d'éditeur interactif
 

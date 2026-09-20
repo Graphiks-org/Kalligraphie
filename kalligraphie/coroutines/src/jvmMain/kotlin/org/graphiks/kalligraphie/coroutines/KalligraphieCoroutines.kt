@@ -59,6 +59,11 @@ public object KalligraphieCoroutines {
      * [KalligraphieCancellationException] carrying the engine's typed result; a consumer-token
      * cancellation that does not cancel the coroutine returns the typed
      * [ParagraphLayoutResult.Cancelled]. A borrowed renderable resolver is never closed here.
+     *
+     * The exit check can also discard a *complete* engine result when the Job is cancelled after the
+     * engine's last token poll; that window is not deterministically reachable in tests because the
+     * bridge exposes the Job state to the engine, so the engine observes the cancellation at its next
+     * poll and returns `.Cancelled`.
      */
     public suspend fun layout(request: JvmEditableParagraphFacadeRequest): ParagraphLayoutResult {
         val job = coroutineContext[Job]

@@ -1,7 +1,9 @@
 package org.graphiks.kalligraphie.coroutines
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
 import org.graphiks.kalligraphie.JvmEditableParagraphFacade
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import kotlin.test.Test
@@ -41,5 +43,38 @@ class LayoutParagraphSuspendTest {
 
         assertEquals(CoverageStatus.COMPLETE, suspendedResume.coverageStatus)
         assertEquals(paragraphFingerprint(synchronousResume), paragraphFingerprint(suspendedResume))
+    }
+
+    @Test
+    fun consumerTokenCancellationReturnsTheTypedCancelledParagraph() = runTest {
+        val fixture = paragraphFixture("fi fi fi")
+        val token = object : CancellationToken {
+            override fun isCancellationRequested(): Boolean = true
+        }
+
+        val result = KalligraphieCoroutines.layout(
+            paragraphRequest(fixture, paragraphConstraints(width = 1_400f, top = 50f, height = 1_200f), cancellationToken = token),
+        )
+
+        assertIs<ParagraphLayoutResult.Cancelled>(result)
+    }
+
+    @Test
+    fun jobCancelledDuringTheParagraphThrowsCarryingTheTypedCancelledParagraph() {
+        val fixture = paragraphFixture("fi fi fi")
+        val exception = captureCancellation { context ->
+            val job = context[Job]!!
+            val token = object : CancellationToken {
+                override fun isCancellationRequested(): Boolean {
+                    job.cancel()
+                    return true
+                }
+            }
+            KalligraphieCoroutines.layout(
+                paragraphRequest(fixture, paragraphConstraints(width = 1_400f, top = 50f, height = 1_200f), cancellationToken = token),
+            )
+        }
+
+        assertIs<ParagraphLayoutResult.Cancelled>(exception.result)
     }
 }

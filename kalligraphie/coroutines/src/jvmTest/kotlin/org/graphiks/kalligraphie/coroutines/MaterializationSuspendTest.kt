@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.coroutines
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.test.runTest
 import org.graphiks.kalligraphie.JvmEditableLineFacade
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
@@ -51,6 +52,33 @@ class MaterializationSuspendTest {
             val assetKey = assertNotNull(suspended.line.positionedGlyphRuns.single().glyphs.single().renderAssetKey)
 
             // The facade must not have closed a resolver it does not own: reopening must still work.
+            val reopened = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
+                fixture.resolver.reopen(assetKey),
+            ).value
+            reopened.close()
+        } finally {
+            assertClosed(fixture.resolver.close())
+        }
+    }
+
+    @Test
+    fun aCancelledRenderableCallLeavesTheBorrowedResolverUsable() = runTest {
+        val fixture = lineFixture("A")
+        try {
+            val materialization = renderableMaterialization(fixture)
+
+            // A first successful renderable call proves the resolver is operational.
+            val first = assertIs<EditableLineResult.Success>(
+                KalligraphieCoroutines.layout(lineRequest(fixture, materialization = materialization)),
+            )
+            val assetKey = assertNotNull(first.line.positionedGlyphRuns.single().glyphs.single().renderAssetKey)
+
+            // A cancelled call must neither close nor consume the caller's resolver.
+            captureCancellation { context ->
+                context[Job]!!.cancel()
+                KalligraphieCoroutines.layout(lineRequest(fixture, materialization = materialization))
+            }
+
             val reopened = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
                 fixture.resolver.reopen(assetKey),
             ).value
