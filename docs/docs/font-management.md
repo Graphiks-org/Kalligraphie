@@ -958,12 +958,20 @@ at different levels. Malformed variation tables fail with the typed codes
 (`avar` version 2 is not supported), and a face without a usable `fvar` table
 fails with `font.variation.not-variable`.
 
-The current variable-font scope is limited to instance selection: `gvar` glyph
-outline deltas, CFF2 non-default instancing, `HVAR`/`VVAR`/`MVAR` metric
-variation, variable colour and synthetic bold/italic geometry are not
-implemented. A non-default selection therefore changes the instance identity
-but not the outline or metrics a portable provider returns, and synthetic
-geometry remains unavailable.
+A non-default selection now contributes both instance identity and simple-glyph
+outline variation: the portable TrueType outline route reads the face's `gvar`
+table, evaluates each tuple's region scalar at the instance's normalized axes,
+interpolates untouched points through TrueType IUP, and applies the resolved
+per-point deltas to simple-glyph coordinates and their recomputed bounds. The
+selection therefore changes the outline a portable provider returns, while
+composite-glyph `gvar` deltas, CFF2 non-default instancing, `HVAR`/`VVAR`/`MVAR`
+metric variation, variable colour and synthetic bold/italic geometry remain
+unimplemented; metrics are still returned at the default instance, so a
+non-default selection still does not change the metrics a portable provider
+returns. Malformed `gvar` data fails with `font.variation.invalid-gvar`, an
+unsupported table version fails with `font.variation.unsupported-gvar-version`,
+and `gvar` resource bounds reuse `font.resource-limit-exceeded` with the `gvar`
+table location.
 
 Two added surfaces are defaulted placeholders rather than implemented reads:
 `FontFace.stat()` returns `Success(null)` and `FontInstance.fontMetrics()`
