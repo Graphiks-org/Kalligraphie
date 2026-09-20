@@ -10,27 +10,42 @@ import org.graphiks.kalligraphie.api.immutableListSnapshot
 /** One decoded `fvar` axis record in design coordinates. */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class FvarAxis(
+    /** Four-character axis tag, for example `wght`. */
     public val tag: String,
+    /** Minimum axis value in design units. */
     public val minValue: Float,
+    /** Default axis value in design units. */
     public val defaultValue: Float,
+    /** Maximum axis value in design units. */
     public val maxValue: Float,
+    /** Whether the axis is hidden from user interfaces. */
     public val hidden: Boolean,
+    /** Name ID describing the axis. */
     public val nameId: Int,
 )
 
 /** One decoded `fvar` named instance in design coordinates. */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class FvarInstance(
+    /** Name ID describing the instance subfamily. */
     public val subfamilyNameId: Int,
-    public val coordinates: List<FontVariationCoordinate>,
+    coordinates: List<FontVariationCoordinate>,
+    /** PostScript name ID, or `null` when the instance has no equivalent name. */
     public val postScriptNameId: Int?,
-)
+) {
+    /** Design coordinates this instance selects, in axis order. */
+    public val coordinates: List<FontVariationCoordinate> = coordinates.immutableListSnapshot()
+}
 
 /** Decoded `fvar` data. */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class FvarData(axes: List<FvarAxis>, instances: List<FvarInstance>) {
+    /** Decoded axis records in table order. */
     public val axes: List<FvarAxis> = axes.immutableListSnapshot()
+    /** Decoded named instances in table order. */
     public val instances: List<FvarInstance> = instances.immutableListSnapshot()
+
+    /** Returns the axis with [tag], or `null` when the table declares no such axis. */
     public fun axis(tag: String): FvarAxis? = axes.firstOrNull { it.tag == tag }
 }
 
@@ -43,6 +58,17 @@ public object FvarReader {
     private const val HEADER_SIZE = 16
     private const val AXIS_RECORD_SIZE = 20
 
+    /**
+     * Parses one OpenType `fvar` table with [limits].
+     *
+     * Only version 1.0 is accepted. Every offset is bounds-checked against [table] and the operation
+     * is all-or-nothing: a failure publishes no decoded axes or instances.
+     *
+     * @param table exact bytes of the OpenType `fvar` table.
+     * @param limits resource bounds enforced before allocating decoded records.
+     * @param cancellationToken cooperative cancellation checked before each axis and instance.
+     * @return complete portable data or a typed version, malformed-data, or limit failure.
+     */
     public fun read(
         table: ByteArray,
         limits: VariationLimits = VariationLimits(),
@@ -61,6 +87,9 @@ public object FvarReader {
             return variationFailure("font.variation.unsupported-fvar-version", "Unsupported fvar version $major.$minor.", "fvar")
         }
         val axesArrayOffset = readUInt16(table, 4)?.toInt() ?: return invalid()
+        if (axesArrayOffset < HEADER_SIZE) {
+            return variationFailure("font.variation.invalid-fvar", "fvar axes array must start after the header.", "fvar")
+        }
         val reserved = readUInt16(table, 6)?.toInt() ?: return invalid()
         if (reserved != 2) {
             return variationFailure("font.variation.invalid-fvar", "fvar reserved field must be 2.", "fvar")
@@ -114,7 +143,8 @@ public object FvarReader {
                 coordinates += FontVariationCoordinate(axes[axisIndex].tag, value)
             }
             val postScriptNameId = if (hasPostScriptNameId) {
-                readUInt16(table, base + 4 + axisCount * 4)?.toInt() ?: return invalid()
+                val raw = readUInt16(table, base + 4 + axisCount * 4)?.toInt() ?: return invalid()
+                if (raw == 0xFFFF) null else raw
             } else {
                 null
             }

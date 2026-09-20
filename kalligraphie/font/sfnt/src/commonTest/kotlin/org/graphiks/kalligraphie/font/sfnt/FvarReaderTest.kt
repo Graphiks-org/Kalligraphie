@@ -5,6 +5,7 @@ package org.graphiks.kalligraphie.font.sfnt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontVariationCoordinate
 
@@ -51,12 +52,103 @@ class FvarReaderTest {
         assertEquals("font.resource-limit-exceeded", result.error.code)
     }
 
-    private fun fvarTable(): ByteArray {
+    @Test
+    fun readsPostScriptNameIdWhenPresent() {
+        val result = FvarReader.read(fvarTable(instanceSize = 14, postScriptNameId = 259))
+        assertIs<FontOperationResult.Success<FvarData>>(result)
+        assertEquals(259, result.value.instances.single().postScriptNameId)
+    }
+
+    @Test
+    fun toleratesInstanceSizeWithTrailingByte() {
+        val result = FvarReader.read(fvarTable(instanceSize = 13))
+        assertIs<FontOperationResult.Success<FvarData>>(result)
+        assertNull(result.value.instances.single().postScriptNameId)
+    }
+
+    @Test
+    fun normalizesPostScriptNameIdSentinel() {
+        val result = FvarReader.read(fvarTable(instanceSize = 14, postScriptNameId = 0xFFFF))
+        assertIs<FontOperationResult.Success<FvarData>>(result)
+        assertNull(result.value.instances.single().postScriptNameId)
+    }
+
+    @Test
+    fun rejectsAxesArrayOffsetInsideHeader() {
+        val table = fvarTable()
+        writeU16(table, 4, 8)
+        assertInvalidFvar(table)
+    }
+
+    @Test
+    fun decodesAxisFlagsAndNameIds() {
+        val result = FvarReader.read(fvarTable())
+        assertIs<FontOperationResult.Success<FvarData>>(result)
+        val data = result.value
+        assertEquals(false, data.axes[0].hidden)
+        assertEquals(true, data.axes[1].hidden)
+        assertEquals(256, data.axes[0].nameId)
+        assertEquals(257, data.axes[1].nameId)
+    }
+
+    @Test
+    fun looksUpAxisByTag() {
+        val result = FvarReader.read(fvarTable())
+        assertIs<FontOperationResult.Success<FvarData>>(result)
+        val data = result.value
+        assertEquals("wght", data.axis("wght")!!.tag)
+        assertNull(data.axis("nope"))
+    }
+
+    @Test
+    fun rejectsReservedFieldNotTwo() {
+        val table = fvarTable()
+        writeU16(table, 6, 3)
+        assertInvalidFvar(table)
+    }
+
+    @Test
+    fun rejectsAxisSizeBelowRecordSize() {
+        val table = fvarTable()
+        writeU16(table, 10, 16)
+        assertInvalidFvar(table)
+    }
+
+    @Test
+    fun rejectsInstanceSizeTooSmall() {
+        val table = fvarTable()
+        writeU16(table, 14, 11)
+        assertInvalidFvar(table)
+    }
+
+    @Test
+    fun rejectsDefaultBelowMinimum() {
+        val table = fvarTable()
+        writeFixed(table, 16 + 4, 20f)
+        assertInvalidFvar(table)
+    }
+
+    @Test
+    fun rejectsInstanceCountAboveLimit() {
+        val result = FvarReader.read(fvarTable(instanceCount = 4), VariationLimits(maxInstances = 1))
+        assertIs<FontOperationResult.Failure>(result)
+        assertEquals("font.resource-limit-exceeded", result.error.code)
+    }
+
+    private fun assertInvalidFvar(table: ByteArray) {
+        val result = FvarReader.read(table)
+        assertIs<FontOperationResult.Failure>(result)
+        assertEquals("font.variation.invalid-fvar", result.error.code)
+    }
+
+    private fun fvarTable(
+        instanceCount: Int = 1,
+        instanceSize: Int = 12,
+        postScriptNameId: Int? = null,
+    ): ByteArray {
         val axesOffset = 16
         val axisCount = 2
         val axisSize = 20
-        val instanceCount = 1
-        val instanceSize = axisCount * 4 + 4
         val bytes = ByteArray(axesOffset + axisCount * axisSize + instanceCount * instanceSize)
         writeU16(bytes, 0, 1)
         writeU16(bytes, 2, 0)
@@ -73,10 +165,14 @@ class FvarReaderTest {
         writeTag(bytes, offset, "wght"); writeFixed(bytes, offset + 4, 100f); writeFixed(bytes, offset + 8, 400f)
         writeFixed(bytes, offset + 12, 900f); writeU16(bytes, offset + 16, 1); writeU16(bytes, offset + 18, 257)
         offset += axisSize
-        writeU16(bytes, offset, 258)
-        writeU16(bytes, offset + 2, 0)
-        writeFixed(bytes, offset + 4, 14f)
-        writeFixed(bytes, offset + 8, 700f)
+        repeat(instanceCount) {
+            writeU16(bytes, offset, 258)
+            writeU16(bytes, offset + 2, 0)
+            writeFixed(bytes, offset + 4, 14f)
+            writeFixed(bytes, offset + 8, 700f)
+            if (postScriptNameId != null) writeU16(bytes, offset + 12, postScriptNameId)
+            offset += instanceSize
+        }
         return bytes
     }
 
