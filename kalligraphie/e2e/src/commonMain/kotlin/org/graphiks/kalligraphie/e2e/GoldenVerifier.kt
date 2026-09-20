@@ -57,7 +57,7 @@ public object GoldenVerifier {
         }
 
         for (entry in manifest.entries) {
-            if (entry.sceneId !in cataloguedIds && rendered[entry.sceneId] == null) {
+            if (entry.sceneId !in cataloguedIds) {
                 results.add(GoldenComparison.StaleManifestEntry(entry.sceneId))
             }
         }

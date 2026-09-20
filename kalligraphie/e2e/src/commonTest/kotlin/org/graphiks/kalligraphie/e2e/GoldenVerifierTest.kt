@@ -85,4 +85,14 @@ class GoldenVerifierTest {
         val image = GoldenImage.alpha8(1, 1, byteArrayOf(7))
         assertNull(GoldenImageDiff.firstDifference(image, image))
     }
+
+    @Test
+    fun reportsAnUncataloguedManifestEntryEvenWhenAnImageWasRendered() {
+        val ghost = GoldenScene("ghost", GoldenSceneFamily.GLYPH_OUTLINE, 1, 1)
+        val manifest = manifestOf(ghost to image(1))
+        val result = assertIs<GoldenComparison.StaleManifestEntry>(
+            GoldenVerifier.verify(emptyList(), mapOf("ghost" to image(1)), manifest).single(),
+        )
+        assertEquals("ghost", result.sceneId)
+    }
 }
