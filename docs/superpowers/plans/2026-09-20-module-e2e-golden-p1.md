@@ -1525,7 +1525,7 @@ internal fun fixtureBytes(path: String): ByteArray =
 ```kotlin
 package org.graphiks.kalligraphie.e2e.golden
 
-import org.graphiks.kalligraphie.api.RasterResult
+import org.graphiks.kalligraphie.raster.RasterResult
 import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
 import org.graphiks.kalligraphie.e2e.GoldenImage
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
