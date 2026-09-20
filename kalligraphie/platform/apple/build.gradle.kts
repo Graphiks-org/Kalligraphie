@@ -20,6 +20,9 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(project(":kalligraphie"))
+                implementation(project(":kalligraphie:layout"))
+                implementation(project(":kalligraphie:shaping"))
+                implementation(project(":kalligraphie:unicode"))
             }
         }
     }
