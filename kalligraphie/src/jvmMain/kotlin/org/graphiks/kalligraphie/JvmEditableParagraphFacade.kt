@@ -146,6 +146,36 @@ public class JvmEditableParagraphFacadeRequest(
 
     /** Immutable defensive snapshot of deterministic OpenType feature overrides in caller order. */
     public val features: List<OpenTypeFeature> = Collections.unmodifiableList(features.toList())
+
+    /**
+     * Returns a request with the same inputs but [cancellationToken] as its cooperative signal.
+     *
+     * Every other property is preserved exactly, including the borrowed materialization resolver,
+     * an explicit source range, a replay continuation and the shared operation profile.
+     */
+    public fun withCancellationToken(cancellationToken: CancellationToken): JvmEditableParagraphFacadeRequest =
+        JvmEditableParagraphFacadeRequest(
+            snapshot = snapshot,
+            sourceRange = sourceRange,
+            constraints = constraints,
+            baseDirection = baseDirection,
+            language = language,
+            fontCatalog = fontCatalog,
+            resolutionPolicy = resolutionPolicy,
+            fontInstanceDescriptor = fontInstanceDescriptor,
+            features = features,
+            materialization = materialization,
+            overflowPolicy = overflowPolicy,
+            positioning = positioning,
+            hyphenationMode = hyphenationMode,
+            hyphenationService = hyphenationService,
+            inlineObjects = inlineObjects,
+            textOrientation = textOrientation,
+            verticalMetricsPolicy = verticalMetricsPolicy,
+            continuation = continuation,
+            cancellationToken = cancellationToken,
+            operationProfile = operationProfile,
+        )
 }
 
 /**

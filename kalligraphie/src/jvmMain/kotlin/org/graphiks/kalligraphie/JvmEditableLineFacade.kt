@@ -202,6 +202,31 @@ public class JvmEditableLineFacadeRequest(
     /** Immutable OpenType feature overrides applied in deterministic caller order. */
     public val features: List<OpenTypeFeature> = features.toList()
 
+    /**
+     * Returns a request with the same inputs but [cancellationToken] as its cooperative signal.
+     *
+     * Every other property is preserved exactly, including a `null` positioning policy and the
+     * shared operation profile. The returned request owns no resource and remains safe to share
+     * when its inputs are.
+     */
+    public fun withCancellationToken(cancellationToken: CancellationToken): JvmEditableLineFacadeRequest =
+        JvmEditableLineFacadeRequest(
+            snapshot = snapshot,
+            font = font,
+            baseDirection = baseDirection,
+            language = language,
+            featurePolicy = featurePolicy,
+            features = features,
+            verticalMetrics = verticalMetrics,
+            materialization = materialization,
+            emptyLineBidiLevel = emptyLineBidiLevel,
+            cancellationToken = cancellationToken,
+            unicodeAnalysisProfile = unicodeAnalysisProfile,
+            shapingResourceProfile = shapingResourceProfile,
+            positioning = positioning,
+            operationProfile = operationProfile,
+        )
+
     init {
         require(language.isNotBlank()) { "Language must not be blank." }
         require(this.features.map(OpenTypeFeature::tag).distinct().size == this.features.size) {

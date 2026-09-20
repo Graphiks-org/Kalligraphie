@@ -10,6 +10,7 @@ val kalligraphieModules = listOf(
     ":kalligraphie:unicode",
     ":kalligraphie:shaping",
     ":kalligraphie:layout",
+    ":kalligraphie:coroutines",
     ":kalligraphie:platform:apple",
     ":kalligraphie:platform:linux",
     ":kalligraphie:platform:windows",
