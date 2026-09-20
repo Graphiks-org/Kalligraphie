@@ -2,7 +2,9 @@
 
 `org.graphiks:kalligraphie-coroutines` is an optional module that adapts the synchronous
 Kalligraphie consumer routes to Kotlin coroutines. The portable core does not depend on
-`kotlinx-coroutines`, and every synchronous entry point remains usable unchanged.
+`kotlinx-coroutines`, and every synchronous entry point remains usable unchanged. The module
+targets the JVM reference target only; the portable core and the other platform targets remain
+coroutine-free.
 
 ## Entry points
 
@@ -13,12 +15,14 @@ suspend fun KalligraphieCoroutines.open(options: FontDirectoryCatalogOptions): F
 ```
 
 The four covered journeys are line shaping and layout, paragraph composition (initial and
-continuation), font catalog capture, and renderable materialization through an
-`EditableLineMaterialization.Renderable` request.
+continuation) as described in [Editable Paragraphs](editable-paragraphs.md), font catalog
+capture through the routes documented in [Font Management](font-management.md), and renderable
+materialization through an `EditableLineMaterialization.Renderable` request.
 
 ## Cancellation
 
-Each call bridges the calling `Job` into the Kalligraphie `CancellationToken`.
+Each call bridges the calling `Job` into the Kalligraphie `CancellationToken`. The catalog
+capture route has no consumer-supplied token; it observes calling-Job cancellation only.
 
 - A token cancelled by the consumer without cancelling the coroutine returns the typed
   `.Cancelled` result, including its diagnostics.
