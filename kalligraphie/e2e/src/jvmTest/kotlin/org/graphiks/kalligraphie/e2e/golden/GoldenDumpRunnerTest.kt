@@ -21,11 +21,14 @@ class GoldenDumpRunnerTest {
         Files.createDirectories(directory)
 
         for (entry in JvmGoldenSceneCatalog.entries()) {
+            require(entry.scene.id.none { character -> character == '/' || character == '\\' }) {
+                "A scene id must not contain a path separator: ${entry.scene.id}"
+            }
             when (val outcome = entry.render()) {
-                is GoldenRenderOutcome.Rendered -> {
-                    val extension = if (outcome.image.format.name == "ALPHA_8") "pgm" else "ppm"
-                    Files.write(directory.resolve("${entry.scene.id}.$extension"), GoldenDumpWriter.encode(outcome.image))
-                }
+                is GoldenRenderOutcome.Rendered -> Files.write(
+                    directory.resolve("${entry.scene.id}.${GoldenDumpWriter.extensionFor(outcome.image.format)}"),
+                    GoldenDumpWriter.encode(outcome.image),
+                )
 
                 is GoldenRenderOutcome.Refused ->
                     error("${outcome.code.code} (${entry.scene.id}): ${outcome.detail}")
