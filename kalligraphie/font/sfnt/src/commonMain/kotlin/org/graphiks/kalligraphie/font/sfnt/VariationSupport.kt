@@ -25,12 +25,20 @@ public data class VariationLimits(
 }
 
 /**
- * Builds a typed variation failure whose diagnostic is attached to the result.
+ * Builds a typed data failure whose diagnostic is attached to the result.
  *
- * The code must be a `font.`-prefixed machine-readable code. [tag] is the SFNT table the failure
- * originates from (`fvar`, `avar`, or `head` for face-level failures).
+ * [code] must be a `font.`-prefixed machine-readable code and [message] must not be blank; both
+ * constraints are enforced by [FontError.FontDataFailure], which throws [IllegalArgumentException]
+ * when either is violated. [tag] is the SFNT table the failure originates from (`fvar`, `avar`, or
+ * `head` for face-level failures).
  */
 internal fun variationFailure(code: String, message: String, tag: String): FontOperationResult.Failure {
     val error = FontError.FontDataFailure(code = code, message = message, location = FontDiagnosticLocation.Table(tag))
+    return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
+}
+
+/** Builds a typed resource-limit failure for a variation table bound. */
+internal fun variationLimitFailure(message: String, tag: String): FontOperationResult.Failure {
+    val error = FontError.ResourceLimitExceeded(message, FontDiagnosticLocation.Table(tag))
     return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
 }
