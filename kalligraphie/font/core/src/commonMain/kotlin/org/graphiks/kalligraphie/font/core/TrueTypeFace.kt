@@ -766,7 +766,14 @@ internal class TrueTypeRenderAssetHandle(
                 routeParameters = GLYF_OUTLINE_ROUTE_PARAMETERS,
             )
             resource.cachedRepresentation(representationKey)?.let { cached -> return cached }
-            val outline = when (val result = preparedFont.readGlyphOutline(glyphId, profile, cancellationToken)) {
+            val outline = when (
+                val result = preparedFont.readGlyphOutline(
+                    glyphId,
+                    profile,
+                    cancellationToken,
+                    key.fontInstanceKey.geometry.normalizedAxes,
+                )
+            ) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
@@ -870,7 +877,12 @@ internal class SvgOpenTypeRenderAssetHandle(
             resource.cachedRepresentation(representationKey)?.let { cached -> return cached }
             val representation = when (svgPaint) {
                 null -> if (colorLayers.isEmpty()) {
-                    materializeGlyfOutlineFallback(preparedFont, glyphId, cancellationToken)
+                    materializeGlyfOutlineFallback(
+                        preparedFont,
+                        glyphId,
+                        cancellationToken,
+                        key.fontInstanceKey.geometry.normalizedAxes,
+                    )
                 } else {
                     materializeColrV0Paint(
                         preparedFont = preparedFont,
@@ -879,6 +891,7 @@ internal class SvgOpenTypeRenderAssetHandle(
                         palette = requireNotNull(colorData).palette(requireNotNull(paletteIndex)),
                         foregroundColor = foregroundColor,
                         glyphId = glyphId,
+                        normalizedAxes = key.fontInstanceKey.geometry.normalizedAxes,
                         cancellationToken = cancellationToken,
                     )
                 }
@@ -914,8 +927,11 @@ internal class SvgOpenTypeRenderAssetHandle(
         preparedFont: PreparedTrueTypeFont,
         glyphId: GlyphId,
         cancellationToken: CancellationToken,
+        normalizedAxes: List<FontAxisCoordinate>,
     ): FontOperationResult<GlyphRepresentation> {
-        val outline = when (val result = preparedFont.readGlyphOutline(glyphId, profile.outlineProfile, cancellationToken)) {
+        val outline = when (
+            val result = preparedFont.readGlyphOutline(glyphId, profile.outlineProfile, cancellationToken, normalizedAxes)
+        ) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
@@ -1018,6 +1034,7 @@ internal class ColrV0RenderAssetHandle(
                     palette = palette,
                     foregroundColor = foregroundColor,
                     glyphId = glyphId,
+                    normalizedAxes = key.fontInstanceKey.geometry.normalizedAxes,
                     cancellationToken = cancellationToken,
                 )
             ) {
@@ -1050,12 +1067,15 @@ private fun materializeColrV0Paint(
     palette: List<GlyphColor>,
     foregroundColor: GlyphColor,
     glyphId: GlyphId,
+    normalizedAxes: List<FontAxisCoordinate>,
     cancellationToken: CancellationToken,
 ): FontOperationResult<GlyphRepresentation> {
     val nodes = ArrayList<GlyphPaintNode>(layers.size + 1)
     for (layer in layers) {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
-        val outline = when (val result = preparedFont.readGlyphOutline(layer.glyphId, profile.outlineProfile, cancellationToken)) {
+        val outline = when (
+            val result = preparedFont.readGlyphOutline(layer.glyphId, profile.outlineProfile, cancellationToken, normalizedAxes)
+        ) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result

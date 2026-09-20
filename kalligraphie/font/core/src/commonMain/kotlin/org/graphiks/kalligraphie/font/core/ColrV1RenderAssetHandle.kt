@@ -65,7 +65,14 @@ internal class ColrV1RenderAssetHandle(
                 is SvgGlyphPaint.Paint -> FontOperationResult.Success(GlyphRepresentation.Paint(svgPaint.paint))
                 null -> colorData.resolveGlyph(glyphId, profile, cancellationToken) outline@{ outlineGlyph ->
                     if (cancellationToken.isCancellationRequested()) return@outline FontOperationResult.Cancelled()
-                    when (val outline = preparedFont.readGlyphOutline(outlineGlyph, profile.outlineProfile, cancellationToken)) {
+                    when (
+                        val outline = preparedFont.readGlyphOutline(
+                            outlineGlyph,
+                            profile.outlineProfile,
+                            cancellationToken,
+                            key.fontInstanceKey.geometry.normalizedAxes,
+                        )
+                    ) {
                         is FontOperationResult.Failure -> outline
                         is FontOperationResult.Cancelled -> outline
                         is FontOperationResult.Success -> when (val materialized = OutlineMaterializer.materialize(outline.value, profile.outlineProfile, cancellationToken)) {
