@@ -62,9 +62,58 @@ public interface FontFace {
      *
      * The successful instance is owned by the caller and remains independent
      * of later descriptor changes. Invalid descriptors are returned as
-     * [FontError.InvalidInstanceDescriptor].
+     * [FontError.InvalidInstanceDescriptor]. A descriptor that combines a
+     * non-empty [FontInstanceDescriptor.variation] with a non-empty
+     * [FontGeometryParameters.normalizedAxes] selection fails with the typed
+     * `font.variation.ambiguous-request` failure; providers that support
+     * design-coordinate variation enforce this precondition.
      */
     public fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance>
+
+    /**
+     * Returns the `fvar` variation axes declared by this face in design coordinates.
+     *
+     * The returned list is an immutable snapshot that is safe to retain and read from concurrent
+     * callers. The list is empty when the face is not variable. Providers that wrap a portable
+     * variable face forward to it; a face that cannot instantiate a non-default selection reports
+     * that at [instantiate] rather than returning an empty list here.
+     */
+    public fun variationAxes(): List<FontVariationAxis> = emptyList()
+
+    /**
+     * Returns the `fvar` named instances declared by this face.
+     *
+     * The returned list is an immutable snapshot that is safe to retain and read from concurrent
+     * callers. The list is empty when the face is not variable.
+     */
+    public fun namedInstances(): List<FontNamedInstance> = emptyList()
+
+    /**
+     * Normalizes [design] against this face's `fvar` and `avar` tables.
+     *
+     * Contract for overriding implementations: returns tag-sorted, tag-unique normalized axes.
+     * Axis values outside their declared bounds are clamped and reported with an informational
+     * `font.variation.axis-clamped` diagnostic on the successful result. An axis tag not declared
+     * by the face fails with `font.variation.unknown-axis`.
+     *
+     * The default body is an unsupported placeholder for faces that do not implement variation;
+     * it always fails rather than performing any normalization.
+     */
+    public fun normalize(design: FontVariationCoordinates): FontOperationResult<List<FontAxisCoordinate>> =
+        unsupportedContractOperation("This font face does not support variation normalization.")
+
+    /**
+     * Returns the read-only `STAT` surface for this face.
+     *
+     * Three states are possible: a typed failure when the surface cannot be produced;
+     * `Success(null)` when the face has no usable `STAT` table or the implementation does not
+     * provide the surface; and `Success(table)` when a usable `STAT` table is present.
+     *
+     * The default body is a placeholder that returns `Success(null)`: portable `STAT` reading is
+     * not implemented yet, so `Success(null)` currently also means "not yet provided" rather than
+     * proving the face has no `STAT` table.
+     */
+    public fun stat(): FontOperationResult<StatTable?> = FontOperationResult.Success(null)
 }
 
 /** Descriptive and structural metadata for a font face. */
@@ -531,6 +580,18 @@ public data class FontInstanceDescriptor(
     public val layoutSize: LayoutUnit = LayoutUnit(12f),
     /** Normalized variation and synthetic geometry parameters. */
     public val geometry: FontGeometryParameters = FontGeometryParameters(),
+    /**
+     * Variation selection in design coordinates.
+     *
+     * When non-empty, `instantiate` normalizes it with the face's `fvar`/`avar` and rebuilds
+     * [geometry]'s normalized axes. Must not be combined with a non-empty [geometry] normalized
+     * axes selection; that is a `font.variation.ambiguous-request` failure.
+     *
+     * The selection is retained as given: there is no default-value pruning. An axis explicitly
+     * set to its default value is kept and normalizes to `0`, so it yields a different
+     * [FontInstanceKey] from omitting that axis.
+     */
+    public val variation: FontVariationCoordinates? = null,
 )
 
 /**
@@ -683,6 +744,16 @@ public interface FontInstance {
     public fun acquireRenderAsset(resolver: FontAssetResolverHandle, renderVariant: FontRenderVariantSnapshot,
         requirements: FontAccessRequirementsSnapshot, cancellationToken: CancellationToken): FontOperationResult<FontRenderAssetHandle> =
         cancelledAssetTransfer(cancellationToken) { acquireRenderAsset(resolver, renderVariant, requirements) }
+
+    /**
+     * Returns font-wide metrics for this instance in design units.
+     *
+     * The default body is an unsupported placeholder, and no portable implementation provides it
+     * yet: metrics variation (`HVAR`/`VVAR`/`MVAR`) is deferred, so a variable instance does not
+     * apply `MVAR` deltas here.
+     */
+    public fun fontMetrics(): FontOperationResult<FontMetrics> =
+        unsupportedContractOperation("This font instance does not support font metrics.")
 }
 
 private inline fun cancelledAssetTransfer(token: CancellationToken, dispatch: () -> FontOperationResult<FontRenderAssetHandle>): FontOperationResult<FontRenderAssetHandle> {

@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontGeometryParameters
+import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -22,22 +23,22 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class GlyphMetricsContractTest {
+    // Sub-plan 1 accepts a normalized selection as low-level identity input; outlines are not varied yet.
     @Test
-    fun rejectsUnsupportedVariationAxesAtInstanceCreation() {
+    fun acceptsNormalizedVariationAxesAsLowLevelIdentityInput() {
         val face = openFace(fixtureBytes())
 
         val result = face.instantiate(
             FontInstanceDescriptor(
                 layoutSize = LayoutUnit(2048f),
                 geometry = FontGeometryParameters(
-                    normalizedAxes = listOf(FontAxisCoordinate(tag = "wght", value = 700f)),
+                    normalizedAxes = listOf(FontAxisCoordinate(tag = "wght", value = 0.5f)),
                 ),
             ),
         )
 
-        val failure = assertIs<FontOperationResult.Failure>(result)
-        assertIs<FontError.InvalidInstanceDescriptor>(failure.error)
-        assertEquals("font.invalid-instance-descriptor", failure.error.code)
+        val success = assertIs<FontOperationResult.Success<FontInstance>>(result)
+        assertEquals(listOf("wght"), success.value.key.geometry.normalizedAxes.map { it.tag })
     }
 
     @Test

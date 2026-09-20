@@ -21,6 +21,9 @@ kotlin {
             implementation(project(":kalligraphie:font:sfnt"))
             implementation(kotlin("test"))
         }
+        jvmTest {
+            resources.srcDir(rootProject.file("test-fixtures"))
+        }
     }
 }
 

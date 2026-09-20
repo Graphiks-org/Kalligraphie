@@ -18,6 +18,9 @@ kotlin {
         jvmTest.dependencies {
             implementation(kotlin("test"))
         }
+        jvmTest {
+            resources.srcDir(rootProject.file("test-fixtures"))
+        }
     }
 }
 

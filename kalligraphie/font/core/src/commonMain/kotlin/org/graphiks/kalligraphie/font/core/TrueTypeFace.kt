@@ -5,6 +5,7 @@ package org.graphiks.kalligraphie.font.core
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontDataInterpretationVersion
 import org.graphiks.kalligraphie.api.FontDiagnostic
@@ -13,11 +14,16 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontFaceMetadata
+import org.graphiks.kalligraphie.api.FontGeometryParameters
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontInstanceKey
+import org.graphiks.kalligraphie.api.FontNamedInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontVariationAxis
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
+import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OpenTypeFontData
 import org.graphiks.kalligraphie.api.OpenTypeDataCopyEstimate
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
@@ -40,6 +46,8 @@ import org.graphiks.kalligraphie.api.sortedDiagnostics
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.font.glyph.OutlineMaterializer
 import org.graphiks.kalligraphie.font.scaler.PreparedTrueTypeFont
+import org.graphiks.kalligraphie.font.sfnt.AvarData
+import org.graphiks.kalligraphie.font.sfnt.AvarReader
 import org.graphiks.kalligraphie.font.sfnt.ColrV1Reader
 import org.graphiks.kalligraphie.font.sfnt.ColrV1Data
 import org.graphiks.kalligraphie.font.sfnt.ColrCpalReader
@@ -50,12 +58,15 @@ import org.graphiks.kalligraphie.font.sfnt.CbdtCblcData
 import org.graphiks.kalligraphie.font.sfnt.CbdtCblcReader
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneData
 import org.graphiks.kalligraphie.font.sfnt.EbdtFormatOneReader
+import org.graphiks.kalligraphie.font.sfnt.FvarData
+import org.graphiks.kalligraphie.font.sfnt.FvarReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SbixData
 import org.graphiks.kalligraphie.font.sfnt.SbixReader
 import org.graphiks.kalligraphie.font.sfnt.SvgGlyphPaint
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeData
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeReader
+import org.graphiks.kalligraphie.font.sfnt.VariationNormalizer
 import org.graphiks.kalligraphie.font.sfnt.slice
 
 private const val GLYF_OUTLINE_ROUTE_PARAMETERS: String = "glyf-outline-v1"
@@ -89,22 +100,47 @@ internal class TrueTypeFace(
                 ),
             )
         }
-        if (
-            descriptor.geometry.normalizedAxes.isNotEmpty() ||
-            descriptor.geometry.syntheticBold ||
-            descriptor.geometry.syntheticItalic
-        ) {
+        val variation = descriptor.variation
+        val effectiveGeometry: FontGeometryParameters
+        val successDiagnostics: List<FontDiagnostic>
+        if (variation != null && variation.coordinates.isNotEmpty()) {
+            if (descriptor.geometry.normalizedAxes.isNotEmpty()) {
+                return failure(
+                    FontError.FontDataFailure(
+                        code = "font.variation.ambiguous-request",
+                        message = "A design variation and normalized axes cannot be combined.",
+                        location = FontDiagnosticLocation.FaceId(id),
+                    ),
+                )
+            }
+            when (val normalized = normalize(variation)) {
+                is FontOperationResult.Success -> {
+                    effectiveGeometry = FontGeometryParameters(
+                        normalizedAxes = normalized.value,
+                        syntheticBold = descriptor.geometry.syntheticBold,
+                        syntheticItalic = descriptor.geometry.syntheticItalic,
+                    )
+                    successDiagnostics = normalized.diagnostics
+                }
+                is FontOperationResult.Failure -> return normalized
+                is FontOperationResult.Cancelled -> return normalized
+            }
+        } else {
+            effectiveGeometry = descriptor.geometry
+            successDiagnostics = emptyList()
+        }
+        if (effectiveGeometry.syntheticBold || effectiveGeometry.syntheticItalic) {
             return failure(
                 FontError.InvalidInstanceDescriptor(
-                    message = "Variation axes and synthetic geometry are not supported by this TrueType face.",
+                    message = "Synthetic geometry is not supported by this TrueType face.",
                     location = FontDiagnosticLocation.FaceId(id),
                 ),
             )
         }
         return FontOperationResult.Success(
             TrueTypeFontInstance(
-                key = instanceKey(descriptor),
-                descriptor = descriptor,
+                key = instanceKey(descriptor.layoutSize, effectiveGeometry),
+                descriptor = descriptor.copy(variation = null, geometry = effectiveGeometry),
                 resource = resource,
                 faceId = id,
                 generation = generation,
@@ -117,18 +153,76 @@ internal class TrueTypeFace(
                 cbdtCblcRouteSupported = cbdtCblcRouteSupported,
                 sbixRouteSupported = sbixRouteSupported,
             ),
+            successDiagnostics,
         )
     }
 
-    private fun instanceKey(descriptor: FontInstanceDescriptor): FontInstanceKey =
+    // The metadata surface cannot express a malformed-table failure, so absent or unparseable
+    // fvar collapses to an empty snapshot here; normalize() reports the failure instead.
+    private fun readFvarOrNull(): FvarData? = (readFvarResult() as? FontOperationResult.Success)?.value
+
+    override fun variationAxes(): List<FontVariationAxis> =
+        readFvarOrNull()?.axes?.map { axis ->
+            FontVariationAxis(axis.tag, axis.minValue, axis.defaultValue, axis.maxValue, axis.nameId, axis.hidden)
+        } ?: emptyList()
+
+    override fun namedInstances(): List<FontNamedInstance> =
+        readFvarOrNull()?.instances?.mapIndexed { index, instance ->
+            FontNamedInstance(index, instance.subfamilyNameId, instance.postScriptNameId, FontVariationCoordinates(instance.coordinates))
+        } ?: emptyList()
+
+    override fun normalize(design: FontVariationCoordinates): FontOperationResult<List<FontAxisCoordinate>> {
+        val fvar = when (val fvarResult = readFvarResult()) {
+            is FontOperationResult.Success -> fvarResult.value
+                ?: return failure(
+                    FontError.FontDataFailure(
+                        code = "font.variation.not-variable",
+                        message = "This face has no usable fvar table.",
+                        location = FontDiagnosticLocation.FaceId(id),
+                    ),
+                )
+            is FontOperationResult.Failure -> return fvarResult
+            is FontOperationResult.Cancelled -> return fvarResult
+        }
+        val avar = when (val avarResult = readAvarResult(fvar.axes.size)) {
+            is FontOperationResult.Success -> avarResult.value
+            is FontOperationResult.Failure -> return avarResult
+            is FontOperationResult.Cancelled -> return avarResult
+        }
+        return VariationNormalizer.normalize(design, fvar, avar)
+    }
+
+    private fun readFvarResult(): FontOperationResult<FvarData?> {
+        val record = parsedFont.tableRecords["fvar"] ?: return FontOperationResult.Success(null)
+        val table = slice(resource.preparedFont.copySourceBytes(), record)
+            ?: return failure(FontError.InvalidFontData("fvar table exceeds embedded source bytes.", FontDiagnosticLocation.Table("fvar")))
+        return when (val result = FvarReader.read(table)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
+    }
+
+    private fun readAvarResult(axisCount: Int): FontOperationResult<AvarData?> {
+        val record = parsedFont.tableRecords["avar"] ?: return FontOperationResult.Success(null)
+        val table = slice(resource.preparedFont.copySourceBytes(), record)
+            ?: return failure(FontError.InvalidFontData("avar table exceeds embedded source bytes.", FontDiagnosticLocation.Table("avar")))
+        return when (val result = AvarReader.read(table, axisCount)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
+    }
+
+    private fun instanceKey(layoutSize: LayoutUnit, geometry: FontGeometryParameters): FontInstanceKey =
         FontInstanceKey(
             face = id,
             interpretation = FontDataInterpretationVersion(
                 pipelineId = "org.graphiks.kalligraphie.true-type",
                 version = "1",
             ),
-            layoutSize = descriptor.layoutSize,
-            geometry = descriptor.geometry,
+            layoutSize = layoutSize,
+            geometry = geometry,
         )
 }
 
