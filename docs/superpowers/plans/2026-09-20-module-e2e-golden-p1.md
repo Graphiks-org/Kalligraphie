@@ -686,7 +686,7 @@ public enum class GoldenDiagnosticCode(
     /** The rendered digest differs from the recorded digest. */
     MISMATCH("e2e.mismatch"),
 
-    /** A scene declared impossible canvas dimensions. */
+    /** A scene's declared frame and its rendered bounds disagree. */
     SCENE_BOUNDS_INVALID("e2e.scene-bounds-invalid"),
 
     /** A catalogued scene has no manifest entry. */
@@ -1506,9 +1506,17 @@ internal object JvmGoldenSceneCatalog {
                 when (val result = GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(pixelsPerEm = 64.0))) {
                     is RasterResult.Success -> {
                         val image = result.value
-                        GoldenRenderOutcome.Rendered(
-                            GoldenImage.alpha8(image.width, image.height, image.copyPixels()),
-                        )
+                        if (image.width != scene.width || image.height != scene.height) {
+                            GoldenRenderOutcome.Refused(
+                                code = GoldenDiagnosticCode.SCENE_BOUNDS_INVALID,
+                                detail = "Liberation Sans 'A' rendered ${image.width}x${image.height}, " +
+                                    "expected ${scene.width}x${scene.height}",
+                            )
+                        } else {
+                            GoldenRenderOutcome.Rendered(
+                                GoldenImage.alpha8(image.width, image.height, image.copyPixels()),
+                            )
+                        }
                     }
 
                     is RasterResult.Failure -> GoldenRenderOutcome.Refused(
