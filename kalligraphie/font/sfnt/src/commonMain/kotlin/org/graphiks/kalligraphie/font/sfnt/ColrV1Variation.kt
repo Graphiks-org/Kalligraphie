@@ -32,7 +32,15 @@ public class ColrV1Variation internal constructor(
     private val store: VariationStore,
     private val indexMap: DeltaSetIndexMap?,
 ) {
-    /** Raw delta for [ordinal] of a field whose `VarIndexBase` is [varIndexBase]. */
+    /**
+     * Raw delta for [ordinal] of a field whose `VarIndexBase` is [varIndexBase].
+     *
+     * Each call resolves the addressed item variation data and lets [VariationStoreEvaluator.delta]
+     * re-evaluate that data's region scalars at [orderedAxes]. A variable paint that varies several
+     * fields therefore repeats the scalar evaluation once per field. The COLR paint fields accept
+     * that bounded cost — the field count per paint is small and profile-capped — rather than expose
+     * a separate per-location prepared seam that would widen this internal surface.
+     */
     public fun delta(varIndexBase: Long, ordinal: Int, orderedAxes: List<Double>): Double {
         if (varIndexBase == NO_VARIATION_INDEX) return 0.0
         val target = varIndexBase + ordinal.toLong()

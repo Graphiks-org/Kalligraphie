@@ -60,16 +60,34 @@ class ColrV1VariationTest {
 
     @Test
     fun returnsZeroForTheNoVariationIndex() {
-        val variation = ColrV1Variation(store(listOf(intArrayOf(100))), null)
+        val variation = variationWithMap(
+            rows = listOf(intArrayOf(100), intArrayOf(-200)),
+            entries = listOf(0 to 1),
+        )
 
         assertEquals(0.0, variation.delta(NO_VARIATION_INDEX, 0, listOf(1.0)))
     }
 
     @Test
     fun returnsZeroForATargetBeyondTheThirtyTwoBitRange() {
-        val variation = ColrV1Variation(store(listOf(intArrayOf(100))), null)
+        val variation = variationWithMap(
+            rows = listOf(intArrayOf(100), intArrayOf(-200)),
+            entries = listOf(0 to 1),
+        )
 
         assertEquals(0.0, variation.delta(0x1_0000_0000L, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun reusesTheLastIndexMapEntryBeyondItsEntryCount() {
+        val variation = variationWithMap(
+            rows = listOf(intArrayOf(100), intArrayOf(-200)),
+            entries = listOf(0 to 0, 0 to 1),
+        )
+
+        assertEquals(100.0, variation.delta(0L, 0, listOf(1.0)))
+        assertEquals(-200.0, variation.delta(1L, 0, listOf(1.0)))
+        assertEquals(-200.0, variation.delta(5L, 0, listOf(1.0)))
     }
 
     /**
@@ -172,6 +190,29 @@ class ColrV1VariationTest {
 
     private fun store(bytes: ByteArray): VariationStore =
         success(VariationStoreEvaluator.read(bytes, 0, "COLR", includeDeltas = true))
+
+    /**
+     * A format-0 `DeltaSetIndexMap` built from [entries] and read through the shared reader. The map
+     * bytes are preceded by a one-byte pad because offset `0` is the reader's "absent map" sentinel.
+     */
+    private fun variationWithMap(rows: List<IntArray>, entries: List<Pair<Int, Int>>): ColrV1Variation {
+        val innerBitCount = 8
+        val entryFormat = 0x00 or (innerBitCount - 1)
+        val out = ArrayList<Byte>()
+        fun u8(value: Int) { out += (value and 0xFF).toByte() }
+        fun u16(value: Int) { u8(value shr 8); u8(value) }
+        u8(0)
+        u8(entryFormat)
+        u16(entries.size)
+        entries.forEach { (outer, inner) -> u8((outer shl innerBitCount) or inner) }
+        val encoded = out.toByteArray()
+        val table = ByteArray(1 + encoded.size)
+        encoded.copyInto(table, 1)
+        val map = checkNotNull(
+            success(readDeltaSetIndexMap(table, 1, "COLR", MetricVariationLimits(), CancellationToken.none)),
+        )
+        return ColrV1Variation(store(rows), map)
+    }
 
     /**
      * One-axis format-1 `ItemVariationStore` with two item variation data subtables, each holding a
