@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 class GlyfReaderTest {
@@ -934,7 +935,7 @@ class GlyfReaderTest {
         assertEquals(0.0, withPhantoms.variationPhantoms!!.leftX)
         assertEquals(42.0, withPhantoms.variationPhantoms!!.rightX)
         assertNull(base.variationPhantoms)
-        assert(base != withPhantoms)
+        assertNotEquals(base, withPhantoms)
     }
 
     private fun parseFont(bytes: ByteArray): ParsedFont =
