@@ -28,7 +28,40 @@
   - `wght=900` (scalar 1.0): p0 `(200,200)`, p1 `(1100,275)`, p2 `(75,375)`,
     stop offsets `0.25,1.125`, alphas `0.5,1.0`, clip `(110,270,870,910)`;
     `solid` opacity `0.5`; `moved` translate `(60,-40)`.
+- **Audit (re-derive the oracle above):** with `fonttools==4.65.0` installed, run from the
+  repository root (the original audit used a temporary venv interpreter at
+  `/var/folders/81/9k3fbzrd42b_r_vm8fkfy16w0000gn/T/opencode/fonttools-venv/bin/python`):
+
+  ```bash
+  python3 - <<'EOF'
+  from fontTools.ttLib import TTFont
+  from fontTools.varLib.varStore import VarStoreInstancer
+  f = TTFont("test-fixtures/fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf")
+  print("tables", sorted(f.keys()))
+  print("fvar", [(a.axisTag, a.minValue, a.defaultValue, a.maxValue) for a in f["fvar"].axes])
+  colr = f["COLR"].table
+  print("Version", f["COLR"].version)
+  print("Region", [(a.StartCoord, a.PeakCoord, a.EndCoord) for a in colr.VarStore.VarRegionList.Region[0].VarRegionAxis])
+  print("Items", colr.VarStore.VarData[0].Item)
+  print("Map", colr.VarIndexMap.Format, colr.VarIndexMap.mapping)
+  for rec in colr.BaseGlyphList.BaseGlyphPaintRecord:
+      print("base", rec.BaseGlyph, "root", rec.Paint.Format)
+  print("ClipBox", {g: c.__dict__ for g, c in colr.ClipList.clips.items()})
+  for s in (0.5, 1.0):
+      inst = VarStoreInstancer(colr.VarStore, f["fvar"].axes, {"wght": s})
+      d = {i: inst[i] for i in range(18)}
+      print("scalar", s, "p0", (100 + d[1], 250 + d[2]), "stop0", (d[7] / 16384, min(1.0, 1 + d[8] / 16384)))
+      print("clip", (100 + d[12], 250 + d[13], 900 + d[14], 950 + d[15]))
+  EOF
+  ```
+
+  Expected: `Map 0 [0, 1, ..., 17]`; `Region [(0.0, 1.0, 1.0)]`; `Items [[0], [100], [-50], ...]`;
+  base roots `linear`/`solid`/`moved` all format `10`; `ClipBox {'linear': {'Format': 2, ...,
+  'VarIndexBase': 12}}`; at scalar `1.0` `p0 (200.0, 200.0)`, `stop0 (0.25, 0.5)`, `clip (110.0,
+  270.0, 870.0, 910.0)`.
 - **Regenerate:** `python3 test-fixtures/fonts/kalligraphie-var-colr/build_variable_colr_v1.py`
   (requires `fonttools==4.65.0`).
 - **SHA-256:** `afea84bc83bb5403fa2a1375e6029e0ab4c9436ed19b554668d00937bb0db78b`
-  (replace if the generator reports a different value for a different fontTools version).
+  (the pinned digest depends on the **fontTools 4.65.0** that generated the fixture: re-verify it
+  with the audit command above if the tool is upgraded, and replace it only with the value the
+  generator reports for the upgraded version).
