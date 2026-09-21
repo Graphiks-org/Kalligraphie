@@ -4,6 +4,7 @@ package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.DesignBounds
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -18,6 +19,7 @@ import org.graphiks.kalligraphie.font.scaler.cff.Cff2Table
 import org.graphiks.kalligraphie.font.scaler.cff.CffReader
 import org.graphiks.kalligraphie.font.scaler.cff.CffTable
 import org.graphiks.kalligraphie.font.sfnt.FontFlavor
+import org.graphiks.kalligraphie.font.sfnt.FvarReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.slice
 import kotlin.concurrent.atomics.AtomicReference
@@ -110,10 +112,24 @@ public class PreparedTrueTypeFont internal constructor(
         Cff2Table.read(table, 0)
     }
 
+    private val cff2VariationAxisTagsResult: FontOperationResult<List<String>> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        val record = parsedFont.tableRecords["fvar"] ?: return@lazy FontOperationResult.Success(emptyList())
+        val table = slice(sourceBytes, record)
+            ?: return@lazy failure(
+                FontError.OutOfBounds("Table fvar exceeds source length.", FontDiagnosticLocation.Table("fvar")),
+            )
+        when (val result = FvarReader.read(table)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(result.value.axes.map { it.tag })
+            is FontOperationResult.Failure -> result
+            is FontOperationResult.Cancelled -> result
+        }
+    }
+
     private fun decodePortableOutline(
         glyphId: GlyphId,
         profile: OutlineProfile,
         cancellationToken: CancellationToken,
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<ScalerGlyphOutline> = when (parsedFont.flavor) {
         FontFlavor.CFF -> {
             val record = parsedFont.tableRecords["CFF "] ?: return failure(FontError.MissingRequiredTable("CFF "))
@@ -138,8 +154,19 @@ public class PreparedTrueTypeFont internal constructor(
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
             }
+            val axisTags = if (normalizedAxes.isEmpty()) {
+                emptyList()
+            } else {
+                when (val result = cff2VariationAxisTagsResult) {
+                    is FontOperationResult.Success -> result.value
+                    is FontOperationResult.Failure -> return result
+                    is FontOperationResult.Cancelled -> return result
+                }
+            }
             Cff2Reader.readGlyphOutline(
                 tableBytes, table, glyphId.value, parsedFont.metadata.unitsPerEm, profile, cancellationToken,
+                axisTags = axisTags,
+                normalizedAxes = normalizedAxes,
             )
         }
 
@@ -295,14 +322,14 @@ public class PreparedTrueTypeFont internal constructor(
         glyphId: GlyphId,
         profile: OutlineProfile,
         cancellationToken: CancellationToken = CancellationToken.none,
-        normalizedAxes: List<org.graphiks.kalligraphie.api.FontAxisCoordinate> = emptyList(),
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<ScalerGlyphOutline> {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
         if (parsedFont.flavor != FontFlavor.TRUETYPE) {
-            return decodePortableOutline(glyphId, profile, cancellationToken)
+            return decodePortableOutline(glyphId, profile, cancellationToken, normalizedAxes)
         }
         val glyphData = when (val result = glyphData(cancellationToken)) {
             is FontOperationResult.Success -> result.value
