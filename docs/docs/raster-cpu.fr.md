@@ -35,12 +35,12 @@ orientation image. La tâche dédiée s'exécute toujours lorsqu'elle est invoqu
 explicitement :
 
 ```bash
-env KALLIGRAPHIE_E2E_DUMPS=true \
-    KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
+env KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
     ./gradlew :kalligraphie:e2e:e2eGoldenDumps
 ```
 
-Sans `KALLIGRAPHIE_E2E_DUMPS=true`, la tâche s'exécute mais n'écrit rien.
+La tâche active elle-même le runner ; sans `KALLIGRAPHIE_E2E_DUMPS_OUTPUT`,
+elle échoue plutôt que d'écrire à l'intérieur du dépôt.
 
 `KALLIGRAPHIE_E2E_DUMPS_OUTPUT` doit être un chemin absolu hors du dépôt. Le
 runner (programme d'exécution) est exclu de `check` ; il ne contient aucun
