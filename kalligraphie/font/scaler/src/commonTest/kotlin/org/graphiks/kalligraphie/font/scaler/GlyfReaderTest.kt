@@ -4,6 +4,7 @@ package org.graphiks.kalligraphie.font.scaler
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -512,6 +513,236 @@ class GlyfReaderTest {
         assertEquals(100.0, unvariedMove.x)
     }
 
+    @Test
+    fun appliesGvarCompositeComponentOffsetDeltasAtNonDefaultInstance() {
+        val composite = compositeGlyph(componentGlyphIds = listOf(1, 2))
+        val child1 = singlePointGlyph(x = 0, y = 0)
+        val child2 = singlePointGlyph(x = 0, y = 0)
+        val glyf = composite + child1 + child2
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 3,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, composite.size, composite.size + child1.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    "gvar" to gvarTable(
+                        axisCount = 1,
+                        glyphRecords = listOf(
+                            gvarGlyphRecord(
+                                peak = listOf(1.0),
+                                xDeltas = intArrayOf(100, -200, 0, 7, 0, 0),
+                                yDeltas = intArrayOf(300, 50, 0, 0, 9, 0),
+                            ),
+                            ByteArray(0),
+                            ByteArray(0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+
+        // Default instance: both components keep their raw (0, 0) offsets.
+        val unvaried = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(prepared, GlyphId(0), outlineProfile(), CancellationToken.none),
+        ).value
+        assertEquals(DesignBounds(0, 0, 0, 0), unvaried.bounds)
+
+        // Varied: component 0 -> (100, 300), component 1 -> (-200, 50).
+        val varied = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        ).value
+        assertEquals(DesignBounds(-200, 50, 100, 300), varied.bounds)
+    }
+
+    @Test
+    fun appliesGvarComponentDeltaBeforeScalingScaledComponentOffset() {
+        val composite = compositeGlyphWithScaledOffsetAndUniformScale(
+            componentGlyphId = 1,
+            offsetX = 100,
+            offsetY = 200,
+            scale = 8_192,
+        )
+        val child = singlePointGlyph(x = 0, y = 0)
+        val glyf = composite + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, composite.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    "gvar" to gvarTable(
+                        axisCount = 1,
+                        glyphRecords = listOf(
+                            gvarGlyphRecord(
+                                peak = listOf(1.0),
+                                xDeltas = intArrayOf(10, 0, 0, 0, 0),
+                                yDeltas = intArrayOf(20, 0, 0, 0, 0),
+                            ),
+                            ByteArray(0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+
+        val varied = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        ).value
+        // scale * (rawOffset + delta) = 0.5 * (110, 220) = (55, 110).
+        val move = assertIs<GlyphOutlineCommand.MoveTo>(varied.contours.single().commands.first())
+        assertEquals(55.0, move.x)
+        assertEquals(110.0, move.y)
+    }
+
+    @Test
+    fun ignoresGvarDeltasForPointMatchedComponents() {
+        val parent = compositeGlyphWithPointAlignment(componentGlyphId = 1, parentPoint = 1, childPoint = 0)
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    "gvar" to gvarTable(
+                        axisCount = 1,
+                        glyphRecords = listOf(
+                            // Component 1 is point-matched: its 999 delta must have no effect.
+                            gvarGlyphRecord(
+                                peak = listOf(1.0),
+                                xDeltas = intArrayOf(0, 999, 0, 0, 0, 0),
+                                yDeltas = intArrayOf(0, 0, 0, 0, 0, 0),
+                            ),
+                            ByteArray(0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+
+        val varied = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        ).value
+        assertEquals(DesignBounds(10, 15, 70, 60), varied.bounds)
+    }
+
+    @Test
+    fun propagatesMalformedCompositeGvarFailure() {
+        val composite = compositeGlyph(componentGlyphIds = listOf(1))
+        val child = singlePointGlyph(x = 0, y = 0)
+        val glyf = composite + child
+        val truncated = ByteArray(6).also { it.writeUInt16(0, 1); it.writeUInt16(2, 6) }
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, composite.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    "gvar" to gvarTable(axisCount = 1, glyphRecords = listOf(truncated, ByteArray(0))),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun reportsNestedCompositeComponentBudgetAtTheBreachingChild() {
+        // Root glyph 0 has components [1, 2]; glyph 1 is itself a composite with one component [3].
+        // With a budget of two components, phase 1 counts the root's two components successfully and
+        // the nested composite is the call that crosses the budget, so the failure is located at
+        // glyph 1 rather than at the root. The old interleaved traversal would count the root's
+        // second component after resolving glyph 1 and report the breach at glyph 0; this test pins
+        // the new collect-then-resolve ordering.
+        val root = compositeGlyph(componentGlyphIds = listOf(1, 2))
+        val nested = compositeGlyph(componentGlyphIds = listOf(3))
+        val simple = singlePointGlyph(x = 0, y = 0)
+        val leaf = singlePointGlyph(x = 0, y = 0)
+        val glyf = root + nested + simple + leaf
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 4,
+                tables = mapOf(
+                    "loca" to locaFormat0(
+                        0,
+                        root.size,
+                        root.size + nested.size,
+                        root.size + nested.size + simple.size,
+                        glyf.size,
+                    ),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+        val profile = OutlineProfile(
+            maxBytes = 4_096,
+            maxContours = 32,
+            maxPoints = 256,
+            maxCompositeDepth = 4,
+            maxCompositeComponents = 2,
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), profile),
+        )
+        val error = assertIs<FontError.ResourceLimitExceeded>(failure.error)
+        assertEquals(3L, failure.diagnostics.single().data.observedValue)
+        assertEquals(2L, failure.diagnostics.single().data.limit)
+        assertEquals(FontDiagnosticLocation.Glyph(1), error.location)
+    }
+
     private fun parseFont(bytes: ByteArray): ParsedFont =
         ParsedFont(
             bytes = bytes,
@@ -881,4 +1112,82 @@ private fun singleGlyphGvar(glyphRecord: ByteArray): ByteArray {
 
 private fun ByteArray.writeInt32Fixed(offset: Int, value: Float) {
     writeUInt32(offset, (value * 65_536f).toInt())
+}
+
+private fun compositeGlyphWithScaledOffsetAndUniformScale(
+    componentGlyphId: Int,
+    offsetX: Int,
+    offsetY: Int,
+    scale: Int,
+): ByteArray =
+    ByteArray(20).also { bytes ->
+        bytes.writeInt16(0, -1)
+        // ARG_1_AND_2_ARE_WORDS | ARGS_ARE_XY_VALUES | WE_HAVE_A_SCALE | SCALED_COMPONENT_OFFSET.
+        bytes.writeUInt16(10, 0x0003 or 0x0008 or 0x0800)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, offsetX)
+        bytes.writeInt16(16, offsetY)
+        bytes.writeInt16(18, scale)
+    }
+
+private fun gvarTable(axisCount: Int, glyphRecords: List<ByteArray>): ByteArray {
+    val headerSize = 20
+    val offsetsSize = (glyphRecords.size + 1) * 2
+    val glyphDataOffset = headerSize + offsetsSize
+    fun evenSize(byteCount: Int): Int = (byteCount + 1) / 2 * 2
+    val glyphDataSize = glyphRecords.sumOf { evenSize(it.size) }
+    val bytes = ByteArray(glyphDataOffset + glyphDataSize)
+    bytes.writeUInt16(0, 1)
+    bytes.writeUInt16(2, 0)
+    bytes.writeUInt16(4, axisCount)
+    bytes.writeUInt16(6, 0)
+    bytes.writeUInt32(8, 0)
+    bytes.writeUInt16(12, glyphRecords.size)
+    bytes.writeUInt16(14, 0)
+    bytes.writeUInt32(16, glyphDataOffset)
+    var cursor = 0
+    glyphRecords.forEachIndexed { index, record ->
+        bytes.writeUInt16(headerSize + index * 2, cursor / 2)
+        record.copyInto(bytes, glyphDataOffset + cursor)
+        cursor += evenSize(record.size)
+    }
+    bytes.writeUInt16(headerSize + glyphRecords.size * 2, cursor / 2)
+    return bytes
+}
+
+private fun gvarGlyphRecord(peak: List<Double>, xDeltas: IntArray, yDeltas: IntArray): ByteArray {
+    require(peak.isNotEmpty()) { "gvar peak must declare at least one axis." }
+    require(xDeltas.size == yDeltas.size) { "gvar x and y delta counts must match." }
+    val axisCount = peak.size
+    val headerSize = 4 + 4 + axisCount * 2
+    val data = packedDeltas(xDeltas) + packedDeltas(yDeltas)
+    val record = ByteArray((headerSize + data.size + 1) / 2 * 2)
+    record.writeUInt16(0, 1)
+    record.writeUInt16(2, headerSize)
+    record.writeUInt16(4, data.size)
+    record.writeUInt16(6, 0x8000)
+    peak.forEachIndexed { axis, value ->
+        record.writeInt16(8 + axis * 2, (value * 16_384.0).toInt())
+    }
+    data.copyInto(record, headerSize)
+    return record
+}
+
+private fun packedDeltas(values: IntArray): ByteArray {
+    val body = ArrayList<Byte>(values.size * 3)
+    for (value in values) {
+        when {
+            value == 0 -> body += 0x80.toByte()
+            value in -128..127 -> {
+                body += 0x00
+                body += value.toByte()
+            }
+            else -> {
+                body += 0x40.toByte()
+                body += (value ushr 8).toByte()
+                body += value.toByte()
+            }
+        }
+    }
+    return body.toByteArray()
 }

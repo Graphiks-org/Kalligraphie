@@ -618,10 +618,6 @@ private class GlyphResolver(
         remainingPointBudget: Long,
         remainingContourBudget: Long,
     ): FontOperationResult<ResolvedGlyph> {
-        val points = mutableListOf<GlyphPoint>()
-        val contourEndPoints = mutableListOf<Int>()
-        val directComponents = mutableListOf<GlyphComponentReference>()
-        var componentElementCount = 0L
         val pointLimit = minOf(
             profile.maxPoints.toLong(),
             maxp.maxCompositePoints.toLong(),
@@ -632,6 +628,11 @@ private class GlyphResolver(
             maxp.maxCompositeContours.toLong(),
             remainingContourBudget,
         )
+
+        // Phase 1: read and validate every component record before resolving children, so the
+        // composite's component-indexed variation deltas can be decoded once for the full list.
+        val components = ArrayList<CompositeComponent>()
+        var componentElementCount = 0L
         var flags: Int
         do {
             if (cancellationToken.isCancellationRequested()) return cancelled()
@@ -697,28 +698,10 @@ private class GlyphResolver(
                     ),
                 )
             }
-            if (placement is ComponentPlacement.PointMatch && placement.parentPointIndex !in points.indices) {
-                return failure(
-                    fontFailure(
-                        "font.glyf.component-point-out-of-range",
-                        "Composite parent point index is out of range.",
-                        glyphLocation(glyphId.value),
-                    ),
-                )
-            }
-            val initialTranslation = if (placement is ComponentPlacement.Offset) {
-                Pair(placement.x, placement.y)
-            } else {
-                Pair(0.0, 0.0)
-            }
+            val rawOffsetX = if (placement is ComponentPlacement.Offset) placement.x else 0.0
+            val rawOffsetY = if (placement is ComponentPlacement.Offset) placement.y else 0.0
             val baseTransform = when (
-                val result = readComponentTransform(
-                    reader,
-                    flags,
-                    initialTranslation.first,
-                    initialTranslation.second,
-                    glyphId.value,
-                )
+                val result = readComponentTransform(reader, flags, rawOffsetX, rawOffsetY, glyphId.value)
             ) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
@@ -727,9 +710,51 @@ private class GlyphResolver(
             if (componentGlyphId in path) {
                 return failure(fontFailure("font.glyf.composite-cycle", "Composite glyph re-enters the active path.", glyphLocation(glyphId.value)))
             }
+            components += CompositeComponent(
+                glyphId = componentGlyphId,
+                flags = flags,
+                placement = placement,
+                baseTransform = baseTransform,
+                rawOffsetX = rawOffsetX,
+                rawOffsetY = rawOffsetY,
+            )
+        } while (flags and COMPOSITE_MORE_COMPONENTS != 0)
+
+        if (flags and COMPOSITE_WE_HAVE_INSTRUCTIONS != 0) {
+            val length = reader.readUInt16() ?: return truncated(glyphId.value)
+            if (!reader.skip(length)) return truncated(glyphId.value)
+        }
+        if (cancellationToken.isCancellationRequested()) return cancelled()
+
+        // Phase 2: decode the composite's own tuple deltas. Component offsets are addressed by
+        // component index; composite glyphs get no IUP, so un-referenced components stay at zero.
+        val orderedAxes = normalizedInAxisOrder()
+        val compositeDeltas = if (gvar != null && orderedAxes.any { it != 0.0 }) {
+            when (
+                val result = gvar.compositeGlyphDeltas(
+                    glyphId.value,
+                    components.size,
+                    orderedAxes,
+                    cancellationToken,
+                )
+            ) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+        } else {
+            null
+        }
+
+        // Phase 3: resolve children and assemble the outline with delta-adjusted transforms.
+        val points = mutableListOf<GlyphPoint>()
+        val contourEndPoints = mutableListOf<Int>()
+        val directComponents = mutableListOf<GlyphComponentReference>()
+        components.forEachIndexed { index, component ->
+            if (cancellationToken.isCancellationRequested()) return cancelled()
             val child = when (
                 val result = resolve(
-                    GlyphId(componentGlyphId),
+                    GlyphId(component.glyphId),
                     path = path,
                     depth = depth + 1,
                     publishDirectComponents = false,
@@ -772,6 +797,29 @@ private class GlyphResolver(
                     contourLimit,
                 )
             }
+            val placement = component.placement
+            val baseTransform = if (placement is ComponentPlacement.Offset && compositeDeltas != null) {
+                val adjustedX = component.rawOffsetX + compositeDeltas.xDelta(index)
+                val adjustedY = component.rawOffsetY + compositeDeltas.yDelta(index)
+                if (component.flags and COMPOSITE_SCALED_COMPONENT_OFFSET != 0) {
+                    val scaled = transformVector(adjustedX, adjustedY, component.baseTransform)
+                        ?: return geometryOverflow(glyphId.value, "Scaled composite component offset exceeds Int geometry range.")
+                    component.baseTransform.copy(translationX = scaled.first, translationY = scaled.second)
+                } else {
+                    component.baseTransform.copy(translationX = adjustedX, translationY = adjustedY)
+                }
+            } else {
+                component.baseTransform
+            }
+            if (placement is ComponentPlacement.PointMatch && placement.parentPointIndex !in points.indices) {
+                return failure(
+                    fontFailure(
+                        "font.glyf.component-point-out-of-range",
+                        "Composite parent point index is out of range.",
+                        glyphLocation(glyphId.value),
+                    ),
+                )
+            }
             val transformedChildPoints = ArrayList<GlyphPoint>(child.points.size)
             for (point in child.points) {
                 val transformed = transformPoint(point.x, point.y, baseTransform)
@@ -797,37 +845,26 @@ private class GlyphResolver(
                     if (!isDesignCoordinate(translationX) || !isDesignCoordinate(translationY)) {
                         return geometryOverflow(glyphId.value, "Composite point alignment exceeds Int geometry range.")
                     }
-                    for (index in transformedChildPoints.indices) {
-                        val point = transformedChildPoints[index]
+                    for (childIndex in transformedChildPoints.indices) {
+                        val point = transformedChildPoints[childIndex]
                         val translatedX = point.x + translationX
                         val translatedY = point.y + translationY
                         if (!isDesignCoordinate(translatedX) || !isDesignCoordinate(translatedY)) {
                             return geometryOverflow(glyphId.value, "Composite point alignment exceeds Int geometry range.")
                         }
-                        transformedChildPoints[index] = GlyphPoint(
-                            translatedX,
-                            translatedY,
-                            point.onCurve,
-                        )
+                        transformedChildPoints[childIndex] = GlyphPoint(translatedX, translatedY, point.onCurve)
                     }
-                    baseTransform.copy(
-                        translationX = translationX,
-                        translationY = translationY,
-                    )
+                    baseTransform.copy(translationX = translationX, translationY = translationY)
                 }
             }
             if (publishDirectComponents) {
-                directComponents += GlyphComponentReference(componentGlyphId, transform)
+                directComponents += GlyphComponentReference(component.glyphId, transform)
             }
             val pointOffset = points.size
             points += transformedChildPoints
             child.contourEndPoints.forEach { contourEndPoints += pointOffset + it }
-        } while (flags and COMPOSITE_MORE_COMPONENTS != 0)
-
-        if (flags and COMPOSITE_WE_HAVE_INSTRUCTIONS != 0) {
-            val length = reader.readUInt16() ?: return truncated(glyphId.value)
-            if (!reader.skip(length)) return truncated(glyphId.value)
         }
+
         if (cancellationToken.isCancellationRequested()) return cancelled()
         return FontOperationResult.Success(
             ResolvedGlyph(
@@ -1129,6 +1166,15 @@ private data class GlyphPoint(
     val x: Double,
     val y: Double,
     val onCurve: Boolean,
+)
+
+private data class CompositeComponent(
+    val glyphId: Int,
+    val flags: Int,
+    val placement: ComponentPlacement,
+    val baseTransform: GlyphComponentTransform,
+    val rawOffsetX: Double,
+    val rawOffsetY: Double,
 )
 
 private data class ResolvedGlyph(
