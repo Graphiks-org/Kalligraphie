@@ -32,11 +32,13 @@ class Cff2Test {
     }
 
     @Test
-    fun computesDefaultInstanceRegionScalars() {
+    fun evaluatesRegionScalarsAtTheInstanceLocation() {
         val store = success(CffVarStore.read(variationStoreBytes(), 0))
 
         assertEquals(1, store.regionCount(0))
-        assertContentEquals(doubleArrayOf(0.5), store.scalars(0))
+        assertContentEquals(doubleArrayOf(0.0), store.scalars(0))
+        assertContentEquals(doubleArrayOf(1.0), success(CffVarStore.read(variationStoreBytes(), 0, listOf(-1.0))).scalars(0))
+        assertContentEquals(doubleArrayOf(0.5), success(CffVarStore.read(variationStoreBytes(), 0, listOf(-0.5))).scalars(0))
     }
 
     private fun profile(): OutlineProfile = OutlineProfile(
@@ -62,8 +64,8 @@ class Cff2Test {
         u16(1)              // axisCount
         u16(1)              // regionCount
         u16(0xC000)         // start = -1.0
-        u16(0x4000)         // peak = 1.0
-        u16(0x4000)         // end = 1.0
+        u16(0xC000)         // peak = -1.0
+        u16(0x0000)         // end = 0.0
         // item variation data at 22
         u16(1)              // itemCount
         u16(0)              // wordDeltaCount
