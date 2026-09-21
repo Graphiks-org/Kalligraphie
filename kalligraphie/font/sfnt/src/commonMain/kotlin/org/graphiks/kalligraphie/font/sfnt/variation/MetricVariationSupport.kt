@@ -41,26 +41,67 @@ public data class MetricVariationLimits(
  *
  * Each target index resolves to an `(outer, inner)` delta-set index. When the map declares fewer
  * entries than the number of targets, the last entry applies to every larger index, matching the
- * Common Table Formats specification. Both format 0 and format 1 headers are accepted.
+ * Common Table Formats specification. An empty map is the implicit identity mapping
+ * (`outer = 0, inner = targetIndex`) rather than a delta-set-zero lookup, mirroring HarfBuzz's
+ * `DeltaSetIndexMap::map`. Both format 0 and format 1 headers are accepted.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class DeltaSetIndexMap internal constructor(
     private val outerIndexes: IntArray,
     private val innerIndexes: IntArray,
 ) {
-    /** Number of entries in the map. */
+    /** Number of entries in the map; `0` denotes the implicit identity mapping. */
     public val entryCount: Int get() = outerIndexes.size
 
-    /** Delta-set outer index for [targetIndex]; the last entry is reused for larger indexes. */
+    /**
+     * Delta-set outer index for [targetIndex].
+     *
+     * The last entry is reused for larger indexes; an empty map resolves every target to outer
+     * index `0`.
+     */
     public fun outerIndex(targetIndex: Int): Int =
         if (entryCount == 0) 0 else outerIndexes[minOf(maxOf(targetIndex, 0), entryCount - 1)]
 
-    /** Delta-set inner index for [targetIndex]; the last entry is reused for larger indexes. */
+    /**
+     * Delta-set inner index for [targetIndex].
+     *
+     * The last entry is reused for larger indexes; an empty map resolves every target to its own
+     * index (the implicit identity mapping).
+     */
     public fun innerIndex(targetIndex: Int): Int =
-        if (entryCount == 0) 0 else innerIndexes[minOf(maxOf(targetIndex, 0), entryCount - 1)]
+        if (entryCount == 0) maxOf(targetIndex, 0) else innerIndexes[minOf(maxOf(targetIndex, 0), entryCount - 1)]
 }
 
-/** Reads a `DeltaSetIndexMap` at [offset], or returns `null` when [offset] is zero. */
+/**
+ * Reads the delta-set index map referenced by the Offset32 at [offsetField] in [table].
+ *
+ * Returns `null` when the offset is absent (zero). An offset that does not fit the table fails with
+ * [errorCode]; the map's own failures are produced by [readDeltaSetIndexMap]. Shared by the metric
+ * tables (`HVAR`/`VVAR`) so both report the same diagnostics for the same bytes. [tag] is the
+ * owning table's four-character tag and becomes the diagnostic location.
+ */
+internal fun readMetricMapping(
+    table: ByteArray,
+    offsetField: Int,
+    tag: String,
+    errorCode: String,
+    limits: MetricVariationLimits,
+    cancellationToken: CancellationToken,
+): FontOperationResult<DeltaSetIndexMap?> {
+    val mapOffset = HvarReader.readOffset32(table, offsetField)
+        ?: return variationFailure(errorCode, "$tag delta-set index map offset is out of range.", tag)
+    return readDeltaSetIndexMap(table, mapOffset, tag, limits, cancellationToken)
+}
+
+/**
+ * Reads a `DeltaSetIndexMap` at [offset], or returns `null` when [offset] is zero.
+ *
+ * Shared by the metric tables (`HVAR`/`VVAR`) and, later, `COLR`. Both the format 0 and format 1
+ * header layouts are accepted. A truncated header or entry run fails with
+ * `font.variation.truncated-store`, an unsupported format with `font.variation.invalid-store`, a map
+ * declaring more than [MetricVariationLimits.maxDeltaSetIndexEntries] entries with
+ * `font.resource-limit-exceeded`, and a cancelled [cancellationToken] with a cancelled result.
+ */
 internal fun readDeltaSetIndexMap(
     bytes: ByteArray,
     offset: Int,
@@ -75,11 +116,11 @@ internal fun readDeltaSetIndexMap(
     }
     val format = bytes[offset].toInt() and 0xFF
     val entryFormat = bytes[offset + 1].toInt() and 0xFF
-    val mapCount: Int
+    val mapCountLong: Long
     val dataOffset: Int
     when (format) {
         0 -> {
-            mapCount = readUInt16(bytes, offset + 2)?.toInt()
+            mapCountLong = readUInt16(bytes, offset + 2)?.toInt()?.toLong()
                 ?: return variationFailure("font.variation.truncated-store", "$tag delta-set index map is truncated.", tag)
             dataOffset = offset + 4
         }
@@ -88,12 +129,8 @@ internal fun readDeltaSetIndexMap(
             if (offset.toLong() + 6L > bytes.size.toLong()) {
                 return variationFailure("font.variation.truncated-store", "$tag delta-set index map is truncated.", tag)
             }
-            val count = readUInt32(bytes, offset + 2)?.toLong()
+            mapCountLong = readUInt32(bytes, offset + 2)?.toLong()
                 ?: return variationFailure("font.variation.truncated-store", "$tag delta-set index map is truncated.", tag)
-            if (count > limits.maxDeltaSetIndexEntries.toLong()) {
-                return variationLimitFailure("$tag delta-set index map declares $count entries.", tag)
-            }
-            mapCount = count.toInt()
             dataOffset = offset + 6
         }
 
@@ -103,9 +140,10 @@ internal fun readDeltaSetIndexMap(
             tag,
         )
     }
-    if (mapCount > limits.maxDeltaSetIndexEntries) {
-        return variationLimitFailure("$tag delta-set index map declares $mapCount entries.", tag)
+    if (mapCountLong > limits.maxDeltaSetIndexEntries.toLong()) {
+        return variationLimitFailure("$tag delta-set index map declares $mapCountLong entries.", tag)
     }
+    val mapCount = mapCountLong.toInt()
     val entrySize = ((entryFormat and 0x30) shr 4) + 1
     val innerBitCount = (entryFormat and 0x0F) + 1
     val dataEnd = dataOffset.toLong() + mapCount.toLong() * entrySize.toLong()

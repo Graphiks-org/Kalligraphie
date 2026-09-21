@@ -124,12 +124,13 @@ class HvarReaderTest {
     }
 
     /**
-     * A present advance-width map with zero entries resolves every glyph to delta-set `(0, 0)`:
-     * `DeltaSetIndexMap` returns 0 for both indexes when the map is empty, so the single store row is
-     * reused for every glyph rather than the implicit glyph-id inner index.
+     * A present advance-width map with zero entries resolves to the implicit identity mapping
+     * (`outer = 0, inner = glyphId`), exactly like an absent advance map: `DeltaSetIndexMap` passes
+     * the glyph id straight through when it holds no entries. Glyph 0 therefore reads the single
+     * store row while glyph 7 addresses a row the store does not carry.
      */
     @Test
-    fun treatsAnEmptyAdvanceWidthMapAsDeltaSetZero() {
+    fun treatsAnEmptyAdvanceWidthMapAsTheImplicitGlyphIndex() {
         val table = hvarTable(
             advanceDeltas = intArrayOf(25),
             advanceMap = deltaSetIndexMap0(outer = 0, inner = 0, mapCount = 0),
@@ -138,7 +139,31 @@ class HvarReaderTest {
         val data = success(HvarReader.read(table, expectedAxisCount = 1))
 
         assertEquals(25.0, data.advanceWidthDelta(0, listOf(1.0)))
-        assertEquals(25.0, data.advanceWidthDelta(7, listOf(1.0)))
+        assertEquals(0.0, data.advanceWidthDelta(7, listOf(1.0)))
+    }
+
+    /**
+     * An implicit glyph-id inner index past the store's delta rows (`itemCount < glyphCount`) has no
+     * row to interpolate and yields `0.0` without touching out-of-range storage.
+     */
+    @Test
+    fun returnsZeroWhenTheGlyphExceedsTheDeltaRows() {
+        val table = hvarTable(advanceDeltas = intArrayOf(15))
+
+        val data = success(HvarReader.read(table, expectedAxisCount = 1))
+
+        assertEquals(15.0, data.advanceWidthDelta(0, listOf(1.0)))
+        assertEquals(0.0, data.advanceWidthDelta(7, listOf(1.0)))
+    }
+
+    @Test
+    fun appliesANegativeAdvanceWidthDelta() {
+        val table = hvarTable(advanceDeltas = intArrayOf(-40))
+
+        val data = success(HvarReader.read(table, expectedAxisCount = 1))
+
+        assertEquals(-40.0, data.advanceWidthDelta(0, listOf(1.0)))
+        assertEquals(-20.0, data.advanceWidthDelta(0, listOf(0.5)))
     }
 
     private fun <T> success(result: FontOperationResult<T>): T =

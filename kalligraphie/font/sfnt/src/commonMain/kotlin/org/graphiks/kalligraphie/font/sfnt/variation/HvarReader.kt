@@ -138,11 +138,8 @@ public object HvarReader {
         offset: Int,
         limits: MetricVariationLimits,
         cancellationToken: CancellationToken,
-    ): FontOperationResult<DeltaSetIndexMap?> {
-        val mapOffset = readOffset32(table, offset)
-            ?: return invalid("HVAR delta-set index map offset is out of range.")
-        return readDeltaSetIndexMap(table, mapOffset, "HVAR", limits, cancellationToken)
-    }
+    ): FontOperationResult<DeltaSetIndexMap?> =
+        readMetricMapping(table, offset, "HVAR", "font.variation.invalid-hvar", limits, cancellationToken)
 
     internal fun readOffset32(bytes: ByteArray, offset: Int): Int? {
         val value = readUInt32(bytes, offset)?.toLong() ?: return null
