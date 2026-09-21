@@ -60,13 +60,36 @@ class PreparedTrueTypeFontVariationTest {
 
     @Test
     fun leavesTheVerticalAdvanceUnchangedWithoutVvar() {
-        assertEquals(1000f, verticalMetricsForGraphemeA(normalizedWght = null).advanceHeight.value)
-        assertEquals(1000f, verticalMetricsForGraphemeA(normalizedWght = 1f).advanceHeight.value)
+        val default = verticalMetricsForGraphemeA(normalizedWght = null)
+        assertEquals(1000f, default.advanceHeight.value)
+        assertEquals(154f, default.topSideBearing.value)
+
+        val varied = verticalMetricsForGraphemeA(normalizedWght = 1f)
+        assertEquals(1000f, varied.advanceHeight.value)
+        assertEquals(154f, varied.topSideBearing.value)
+    }
+
+    /**
+     * The fixture's `HVAR` is present but maps a zero advance-width delta for glyph 2, so the varied
+     * horizontal metrics must equal the `hmtx` base — a present-table zero-delta case.
+     */
+    @Test
+    fun keepsTheHmtxBaseWhenHvarCarriesAZeroDelta() {
+        val default = horizontalMetricsForGlyph(glyphId = 2, normalizedWght = null)
+        assertEquals(1000, default.advanceWidthDesignUnits)
+        assertEquals(199, default.leftSideBearingDesignUnits)
+
+        val varied = horizontalMetricsForGlyph(glyphId = 2, normalizedWght = 1f)
+        assertEquals(1000, varied.advanceWidthDesignUnits)
+        assertEquals(199, varied.leftSideBearingDesignUnits)
     }
 
     private fun horizontalMetricsForGraphemeA(normalizedWght: Float?): GlyphMetrics =
+        horizontalMetricsForGlyph(glyphId = 1, normalizedWght = normalizedWght)
+
+    private fun horizontalMetricsForGlyph(glyphId: Int, normalizedWght: Float?): GlyphMetrics =
         assertIs<FontOperationResult.Success<GlyphMetrics>>(
-            preparedFontFixture().readGlyphMetrics(GlyphId(1), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
+            preparedFontFixture().readGlyphMetrics(GlyphId(glyphId), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
         ).value
 
     private fun verticalMetricsForGraphemeA(normalizedWght: Float?): VerticalGlyphMetrics =

@@ -67,6 +67,77 @@ class VariationMetricsTest {
         assertEquals(20, varied.leftSideBearingDesignUnits)
     }
 
+    @Test
+    fun usesThePhantomAdvanceDeltaWithoutHvar() {
+        val prepared = preparedFont(
+            glyphCount = 2,
+            hmtx = hmtx(listOf(500 to 10, 600 to 20)),
+            hhea = hhea(numberOfHMetrics = 2),
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "gvar" to gvarTable(
+                    axisCount = 1,
+                    glyphRecords = listOf(
+                        ByteArray(0),
+                        gvarGlyphRecord(
+                            peak = listOf(1.0),
+                            xDeltas = intArrayOf(0, 0, 40, 0, 0),
+                            yDeltas = intArrayOf(0, 0, 0, 0, 0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val varied = metricsFor(prepared, glyphId = 1, wght = 1f)
+        assertEquals(640, varied.advanceWidthDesignUnits)
+        assertEquals(20, varied.leftSideBearingDesignUnits)
+    }
+
+    @Test
+    fun usesTheVerticalPhantomAdvanceDeltaWithoutVvar() {
+        val prepared = preparedFont(
+            glyphCount = 2,
+            vmtx = vmtx(listOf(1000 to 100, 1000 to 200)),
+            vhea = vhea(numberOfLongVerMetrics = 2),
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "gvar" to gvarTable(
+                    axisCount = 1,
+                    glyphRecords = listOf(
+                        ByteArray(0),
+                        gvarGlyphRecord(
+                            peak = listOf(1.0),
+                            xDeltas = intArrayOf(0, 0, 0, 0, 0),
+                            yDeltas = intArrayOf(0, 0, 0, 30, -50),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val varied = verticalMetricsFor(prepared, glyphId = 1, wght = 1f)
+        assertEquals(1080f, varied.advanceHeight.value)
+        assertEquals(200f, varied.topSideBearing.value)
+    }
+
+    @Test
+    fun fallsBackToBaseMetricsWithoutAGvarGlyphRecord() {
+        val prepared = preparedFont(
+            glyphCount = 2,
+            hmtx = hmtx(listOf(500 to 10, 600 to 20)),
+            hhea = hhea(numberOfHMetrics = 2),
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "gvar" to gvarTable(axisCount = 1, glyphRecords = listOf(ByteArray(0), ByteArray(0))),
+            ),
+        )
+
+        val varied = metricsFor(prepared, glyphId = 1, wght = 1f)
+        assertEquals(600, varied.advanceWidthDesignUnits)
+        assertEquals(20, varied.leftSideBearingDesignUnits)
+    }
+
     private fun metricsFor(prepared: PreparedTrueTypeFont, glyphId: Int, wght: Float?): GlyphMetrics =
         assertIs<FontOperationResult.Success<GlyphMetrics>>(
             prepared.readGlyphMetrics(GlyphId(glyphId), LAYOUT_SIZE, axes(wght)),
@@ -92,9 +163,10 @@ class VariationMetricsTest {
         vhea: ByteArray? = null,
         extraTables: Map<String, ByteArray> = emptyMap(),
     ): PreparedTrueTypeFont {
-        val emptyGlyphSize = 10
-        val glyf = ByteArray(emptyGlyphSize * glyphCount)
-        val loca = locaFormat0(*IntArray(glyphCount + 1) { it * emptyGlyphSize })
+        val glyph = singlePointGlyph(0, 0)
+        val glyf = ByteArray(glyph.size * glyphCount)
+        repeat(glyphCount) { index -> glyph.copyInto(glyf, index * glyph.size) }
+        val loca = locaFormat0(*IntArray(glyphCount + 1) { it * glyph.size })
         val bytes = minimalTrueTypeFont(
             glyphCount = glyphCount,
             tables = mapOf("loca" to loca, "glyf" to glyf),
@@ -117,37 +189,6 @@ class VariationMetricsTest {
     private companion object {
         const val LAYOUT_SIZE = 2048f
     }
-}
-
-private fun hhea(numberOfHMetrics: Int): ByteArray =
-    ByteArray(36).also { bytes -> bytes.writeUInt16(34, numberOfHMetrics) }
-
-private fun hmtx(longMetrics: List<Pair<Int, Int>>): ByteArray =
-    ByteArray(longMetrics.size * 4).also { bytes ->
-        longMetrics.forEachIndexed { index, (advance, bearing) ->
-            bytes.writeUInt16(index * 4, advance)
-            bytes.writeInt16(index * 4 + 2, bearing)
-        }
-    }
-
-private fun vhea(numberOfLongVerMetrics: Int): ByteArray =
-    ByteArray(36).also { bytes -> bytes.writeUInt16(34, numberOfLongVerMetrics) }
-
-private fun vmtx(longMetrics: List<Pair<Int, Int>>): ByteArray =
-    ByteArray(longMetrics.size * 4).also { bytes ->
-        longMetrics.forEachIndexed { index, (advance, bearing) ->
-            bytes.writeUInt16(index * 4, advance)
-            bytes.writeInt16(index * 4 + 2, bearing)
-        }
-    }
-
-private fun ByteArray.writeUInt16(offset: Int, value: Int) {
-    this[offset] = (value ushr 8).toByte()
-    this[offset + 1] = value.toByte()
-}
-
-private fun ByteArray.writeInt16(offset: Int, value: Int) {
-    writeUInt16(offset, value and 0xFFFF)
 }
 
 /**

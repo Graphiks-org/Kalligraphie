@@ -93,8 +93,7 @@ internal object MetricsReader {
         glyphData: PreparedGlyphData,
         glyphId: GlyphId,
         layoutSize: Float,
-        advanceWidthDelta: Double = 0.0,
-        leftSideBearingDelta: Double = 0.0,
+        deltas: MetricVariationDeltas = MetricVariationDeltas(),
     ): FontOperationResult<GlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -119,7 +118,7 @@ internal object MetricsReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return finishMetrics(prepared, metrics, bounds, layoutSize, advanceWidthDelta, leftSideBearingDelta)
+        return finishMetrics(prepared, metrics, bounds, layoutSize, deltas)
     }
 
     /**
@@ -132,8 +131,7 @@ internal object MetricsReader {
         bounds: DesignBounds,
         glyphId: GlyphId,
         layoutSize: Float,
-        advanceWidthDelta: Double = 0.0,
-        leftSideBearingDelta: Double = 0.0,
+        deltas: MetricVariationDeltas = MetricVariationDeltas(),
     ): FontOperationResult<GlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -146,7 +144,7 @@ internal object MetricsReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return finishMetrics(prepared, metrics, bounds, layoutSize, advanceWidthDelta, leftSideBearingDelta)
+        return finishMetrics(prepared, metrics, bounds, layoutSize, deltas)
     }
 
     private fun readHorizontalMetrics(
@@ -201,11 +199,10 @@ internal object MetricsReader {
         metrics: HorizontalMetrics,
         bounds: DesignBounds,
         layoutSize: Float,
-        advanceWidthDelta: Double,
-        leftSideBearingDelta: Double,
+        deltas: MetricVariationDeltas,
     ): FontOperationResult<GlyphMetrics> {
-        val advanceDesignUnits = roundMetric(metrics.advanceWidth.toDouble() + advanceWidthDelta)
-        val lsbDesignUnits = roundMetric(metrics.leftSideBearing.toDouble() + leftSideBearingDelta)
+        val advanceDesignUnits = roundMetric(metrics.advanceWidth.toDouble() + deltas.advance)
+        val lsbDesignUnits = roundMetric(metrics.leftSideBearing.toDouble() + deltas.sideBearing)
         val advanceWidth = scaleDesignUnit(advanceDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceWidth could not be represented as a finite LayoutUnit."))
         val leftSideBearing = scaleDesignUnit(lsbDesignUnits, layoutSize, prepared.unitsPerEm)
