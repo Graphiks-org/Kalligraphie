@@ -11,6 +11,7 @@ import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
 import org.graphiks.kalligraphie.font.sfnt.variation.deltaSetIndexMap0
 import org.graphiks.kalligraphie.font.sfnt.variation.itemVariationStore
 import org.graphiks.kalligraphie.font.sfnt.variation.readDeltaSetIndexMap
+import org.graphiks.kalligraphie.font.sfnt.variation.success
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -257,6 +258,4 @@ class ColrV1VariationTest {
         varIndexMapOffset = varIndexMapOffset,
         varStoreOffset = varStoreOffset,
     )
-
-    private fun <T> success(result: FontOperationResult<T>): T = assertIs<FontOperationResult.Success<T>>(result).value
 }

@@ -562,6 +562,28 @@ public class PreparedTrueTypeFont internal constructor(
     }
 
     /**
+     * Orders the instance's tag-keyed [normalizedAxes] into the face's `fvar` axis order.
+     *
+     * Returns an empty list for an omitted location (an empty [normalizedAxes]) and for a face
+     * without a usable `fvar`, so that path never reads `fvar`. An explicitly selected default
+     * design location on a variable face does read `fvar` here and returns a list of zeros; the
+     * COLR write path then treats an all-zero list as no variation and parses no variation store.
+     * A malformed `fvar` on a non-empty selection propagates its typed failure. This is the shared
+     * `fvar`-order mapping already used by the `gvar`, CFF2 and metric routes, exposed to the COLR
+     * consumer, which lives in a module that cannot see `orderedNormalizedAxes`.
+     */
+    public fun orderedVariationAxes(normalizedAxes: List<FontAxisCoordinate>): FontOperationResult<List<Double>> {
+        if (normalizedAxes.isEmpty()) return FontOperationResult.Success(emptyList())
+        val axisTags = when (val result = variationAxisTagsResult) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        if (axisTags.isEmpty()) return FontOperationResult.Success(emptyList())
+        return FontOperationResult.Success(orderedNormalizedAxes(axisTags, normalizedAxes))
+    }
+
+    /**
      * Reads the instance's font-wide metrics in design units.
      *
      * The defaults come from `OS/2` (falling back to `hhea` for the vertical extents and `post` for

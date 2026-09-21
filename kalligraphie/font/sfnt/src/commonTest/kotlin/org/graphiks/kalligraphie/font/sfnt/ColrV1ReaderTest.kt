@@ -10,6 +10,7 @@ import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import org.graphiks.kalligraphie.api.GlyphOutlineLimits
 import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
+import org.graphiks.kalligraphie.api.GlyphPaintExtendMode
 import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
@@ -18,6 +19,10 @@ import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.PaintGraphLimits
 import org.graphiks.kalligraphie.api.PaintGraphProfile
 import org.graphiks.kalligraphie.font.sfnt.variation.itemVariationStore
+import org.graphiks.kalligraphie.font.sfnt.variation.success
+import org.graphiks.kalligraphie.font.sfnt.variation.writeUInt16
+import org.graphiks.kalligraphie.font.sfnt.variation.writeUInt24
+import org.graphiks.kalligraphie.font.sfnt.variation.writeUInt32
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -64,6 +69,49 @@ class ColrV1ReaderTest {
         assertEquals(1.0, solid.opacity)
     }
 
+    @Test
+    fun treatsAnAllZeroLocationAsTheDefaultInstance() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1SolidTable(deltaRow = -8192),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = profile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(0.0),
+            ),
+        )
+
+        val paint = paintOf(data, GlyphId(1))
+        val clip = assertIs<GlyphPaintNode.GlyphClip>(paint.nodes[paint.rootNode])
+        val solid = assertIs<GlyphPaintNode.Solid>(paint.nodes[clip.paint])
+        assertEquals(1.0, solid.opacity)
+    }
+
+    @Test
+    fun rejectsAVariableRadialGradientWithANegativeRadius() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1RadialTable(deltaRow = -200),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = radialProfile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(1.0),
+            ),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.resolveGlyph(GlyphId(1), radialProfile(), CancellationToken.none) { clipId ->
+                FontOperationResult.Success(outlineFor(clipId, radialProfile().outlineProfile))
+            },
+        )
+
+        assertEquals("font.invalid-font-data", failure.error.code)
+    }
+
     private fun paintOf(data: ColrV1Data, glyphId: GlyphId): GlyphPaintIR =
         assertIs<GlyphRepresentation.Paint>(
             success(
@@ -93,6 +141,21 @@ class ColrV1ReaderTest {
         acceptedNodeKinds = listOf(GlyphPaintNodeKind.GLYPH_CLIP, GlyphPaintNodeKind.SOLID),
         acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
         limits = PaintGraphLimits(maxNodes = 8, maxReferences = 8, maxDepth = 4, maxClips = 1),
+        outlineProfile = OutlineProfile(
+            maxBytes = 1_024,
+            maxContours = 8,
+            maxPoints = 64,
+            maxCompositeDepth = 4,
+            maxCompositeComponents = 8,
+        ),
+        schemaVersion = 2,
+    )
+
+    private fun radialProfile(): PaintGraphProfile = PaintGraphProfile(
+        acceptedNodeKinds = listOf(GlyphPaintNodeKind.GLYPH_CLIP, GlyphPaintNodeKind.RADIAL_GRADIENT),
+        acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
+        acceptedGradientExtendModes = listOf(GlyphPaintExtendMode.PAD),
+        limits = PaintGraphLimits(maxNodes = 8, maxReferences = 8, maxDepth = 4, maxGradients = 1, maxColorStops = 4, maxClips = 1),
         outlineProfile = OutlineProfile(
             maxBytes = 1_024,
             maxContours = 8,
@@ -135,6 +198,46 @@ class ColrV1ReaderTest {
         return out
     }
 
+    /**
+     * One-base-glyph COLR v1 table whose `PaintGlyph` root wraps a `PaintVarRadialGradient` with
+     * `VarIndexBase` zero, followed by the item variation store at offset 73. Ordinal 2 drives
+     * `radius0`, so [deltaRow] occupies row 2 of a three-row store.
+     */
+    private fun colrV1RadialTable(deltaRow: Int): ByteArray {
+        val store = itemVariationStore(listOf(intArrayOf(0), intArrayOf(0), intArrayOf(deltaRow)))
+        val storeOffset = 73
+        val out = ByteArray(storeOffset + store.size)
+        writeUInt16(out, 0, 1)
+        writeUInt16(out, 2, 0)
+        writeUInt32(out, 4, 0)
+        writeUInt32(out, 8, 0)
+        writeUInt16(out, 12, 0)
+        writeUInt32(out, 14, 34)
+        writeUInt32(out, 18, 0)
+        writeUInt32(out, 22, 0)
+        writeUInt32(out, 26, 0)
+        writeUInt32(out, 30, storeOffset)
+        writeUInt32(out, 34, 1)
+        writeUInt16(out, 38, 1)
+        writeUInt32(out, 40, 10)
+        out[44] = 10
+        writeUInt24(out, 45, 6)
+        writeUInt16(out, 48, 0)
+        out[50] = 7
+        writeUInt24(out, 51, 20)
+        writeUInt16(out, 54, 0)
+        writeUInt16(out, 56, 0)
+        writeUInt16(out, 58, 100)
+        writeUInt16(out, 60, 100)
+        writeUInt16(out, 62, 100)
+        writeUInt16(out, 64, 200)
+        writeUInt32(out, 66, 0)
+        out[70] = 1
+        writeUInt16(out, 71, 0)
+        store.copyInto(out, storeOffset)
+        return out
+    }
+
     /** Two-entry CPAL v0 table whose palette holds opaque red and opaque blue records. */
     private fun cpalTable(): ByteArray = ByteArray(32).also { bytes ->
         writeUInt16(bytes, 0, 0)
@@ -146,24 +249,4 @@ class ColrV1ReaderTest {
         bytes[16] = 0; bytes[17] = 0; bytes[18] = 255.toByte(); bytes[19] = 255.toByte()
         bytes[20] = 255.toByte(); bytes[21] = 0; bytes[22] = 0; bytes[23] = 255.toByte()
     }
-
-    private fun writeUInt16(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value ushr 8).toByte()
-        bytes[offset + 1] = value.toByte()
-    }
-
-    private fun writeUInt24(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value ushr 16).toByte()
-        bytes[offset + 1] = (value ushr 8).toByte()
-        bytes[offset + 2] = value.toByte()
-    }
-
-    private fun writeUInt32(bytes: ByteArray, offset: Int, value: Int) {
-        bytes[offset] = (value ushr 24).toByte()
-        bytes[offset + 1] = (value ushr 16).toByte()
-        bytes[offset + 2] = (value ushr 8).toByte()
-        bytes[offset + 3] = value.toByte()
-    }
-
-    private fun <T> success(result: FontOperationResult<T>): T = assertIs<FontOperationResult.Success<T>>(result).value
 }

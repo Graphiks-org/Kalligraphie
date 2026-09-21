@@ -6,9 +6,7 @@ import org.graphiks.kalligraphie.api.*
 import org.graphiks.kalligraphie.font.sfnt.variation.MetricVariationLimits
 import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
 import kotlin.math.PI
-import kotlin.math.ceil
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.tan
 
@@ -84,6 +82,9 @@ public class ColrV1Data internal constructor(
      * whose applied deltas drive `radius0` or `radius1` below zero is rejected as invalid font data
      * (`COLR radial gradient radius is negative.`); the paint model requires non-negative radii, so
      * this is a typed limitation rather than a silent clamp.
+     *
+     * A `PaintColrGlyph` source reference (format 11) is transparent: it reuses its target's node
+     * instead of contributing a node of its own.
      */
     public fun resolveGlyph(
         glyphId: GlyphId,
@@ -126,7 +127,7 @@ public class ColrV1Data internal constructor(
         fun limit(value: Long, maximum: Int, dimension: String) = colrLimit(value, maximum, dimension, location)
         fun color(index: Int): GlyphColor = if (index == 0xFFFF) foregroundColor
         else palette.getOrNull(index) ?: colrInvalid("COLR references an unavailable CPAL entry.", location)
-        fun colorLine(offset: Int, variable: Boolean, deltaAt: (Long, Int) -> Double): GlyphPaintColorLine {
+        fun colorLine(offset: Int, hasVarIndexBase: Boolean, deltaAt: (Long, Int) -> Double): GlyphPaintColorLine {
             reader.range(offset, 3)
             val mode = when (reader.u8(offset)) {
                 1 -> GlyphPaintExtendMode.REPEAT
@@ -137,14 +138,14 @@ public class ColrV1Data internal constructor(
             val count = reader.u16(offset + 1)
             stops += count
             limit(stops, limits.maxColorStops, "color stops")
-            val stopSize = if (variable) 10 else 6
+            val stopSize = if (hasVarIndexBase) 10 else 6
             reader.range(offset + 3, count.toLong() * stopSize)
             val colors = ArrayList<GlyphPaintColorStop>(count)
             repeat(count) { index ->
                 checkCancelled()
                 val stop = offset + 3 + index * stopSize
-                val stopOffset = if (variable) reader.variableF2(stop, deltaAt(reader.u32(stop + 6), 0)) else reader.f2(stop)
-                val alpha = if (variable) {
+                val stopOffset = if (hasVarIndexBase) reader.variableF2(stop, deltaAt(reader.u32(stop + 6), 0)) else reader.f2(stop)
+                val alpha = if (hasVarIndexBase) {
                     reader.variableF2(stop + 4, deltaAt(reader.u32(stop + 6), 1)).coerceIn(0.0, 1.0)
                 } else {
                     reader.opacity(stop + 4)
@@ -253,9 +254,9 @@ public class ColrV1Data internal constructor(
             val node: GlyphPaintNode = when (frame.format) {
                 1 -> GlyphPaintNode.Group(frame.children.map { completed.getValue(it) })
                 2, 3 -> {
-                    val variable = frame.format == 3
-                    reader.range(offset, if (variable) 9 else 5)
-                    val opacity = if (variable) {
+                    val hasVarIndexBase = frame.format == 3
+                    reader.range(offset, if (hasVarIndexBase) 9 else 5)
+                    val opacity = if (hasVarIndexBase) {
                         reader.variableF2(offset + 3, deltaAt(reader.u32(offset + 5), 0)).coerceIn(0.0, 1.0)
                     } else {
                         reader.opacity(offset + 3)
@@ -263,35 +264,35 @@ public class ColrV1Data internal constructor(
                     GlyphPaintNode.Solid(color(reader.u16(offset + 1)), opacity)
                 }
                 4, 5 -> {
-                    val variable = frame.format == 5
-                    reader.range(offset, if (variable) 20 else 16)
-                    val base = if (variable) reader.u32(offset + 16) else NO_VARIATION_INDEX
-                    val p0 = if (variable) reader.variablePoint(offset + 4, deltaAt(base, 0), deltaAt(base, 1)) else reader.point(offset + 4)
-                    val p1 = if (variable) reader.variablePoint(offset + 8, deltaAt(base, 2), deltaAt(base, 3)) else reader.point(offset + 8)
-                    val p2 = if (variable) reader.variablePoint(offset + 12, deltaAt(base, 4), deltaAt(base, 5)) else reader.point(offset + 12)
+                    val hasVarIndexBase = frame.format == 5
+                    reader.range(offset, if (hasVarIndexBase) 20 else 16)
+                    val base = if (hasVarIndexBase) reader.u32(offset + 16) else NO_VARIATION_INDEX
+                    val p0 = if (hasVarIndexBase) reader.variablePoint(offset + 4, deltaAt(base, 0), deltaAt(base, 1)) else reader.point(offset + 4)
+                    val p1 = if (hasVarIndexBase) reader.variablePoint(offset + 8, deltaAt(base, 2), deltaAt(base, 3)) else reader.point(offset + 8)
+                    val p2 = if (hasVarIndexBase) reader.variablePoint(offset + 12, deltaAt(base, 4), deltaAt(base, 5)) else reader.point(offset + 12)
                     val cross = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x)
                     if (cross == 0.0) colrInvalid("COLR linear gradient geometry is degenerate.", location)
-                    GlyphPaintNode.LinearGradient(colorLine(reader.relative(offset, reader.u24(offset + 1)), variable, deltaAt), p0, p1, p2)
+                    GlyphPaintNode.LinearGradient(colorLine(reader.relative(offset, reader.u24(offset + 1)), hasVarIndexBase, deltaAt), p0, p1, p2)
                 }
                 6, 7 -> {
-                    val variable = frame.format == 7
-                    reader.range(offset, if (variable) 20 else 16)
-                    val base = if (variable) reader.u32(offset + 16) else NO_VARIATION_INDEX
-                    val c0 = if (variable) reader.variablePoint(offset + 4, deltaAt(base, 0), deltaAt(base, 1)) else reader.point(offset + 4)
-                    val c1 = if (variable) reader.variablePoint(offset + 10, deltaAt(base, 3), deltaAt(base, 4)) else reader.point(offset + 10)
-                    val r0 = if (variable) reader.variableU16(offset + 8, deltaAt(base, 2)) else reader.u16(offset + 8).toDouble()
-                    val r1 = if (variable) reader.variableU16(offset + 14, deltaAt(base, 5)) else reader.u16(offset + 14).toDouble()
+                    val hasVarIndexBase = frame.format == 7
+                    reader.range(offset, if (hasVarIndexBase) 20 else 16)
+                    val base = if (hasVarIndexBase) reader.u32(offset + 16) else NO_VARIATION_INDEX
+                    val c0 = if (hasVarIndexBase) reader.variablePoint(offset + 4, deltaAt(base, 0), deltaAt(base, 1)) else reader.point(offset + 4)
+                    val c1 = if (hasVarIndexBase) reader.variablePoint(offset + 10, deltaAt(base, 3), deltaAt(base, 4)) else reader.point(offset + 10)
+                    val r0 = if (hasVarIndexBase) reader.variableU16(offset + 8, deltaAt(base, 2)) else reader.u16(offset + 8).toDouble()
+                    val r1 = if (hasVarIndexBase) reader.variableU16(offset + 14, deltaAt(base, 5)) else reader.u16(offset + 14).toDouble()
                     if (r0 < 0.0 || r1 < 0.0) colrInvalid("COLR radial gradient radius is negative.", location)
-                    GlyphPaintNode.RadialGradient(colorLine(reader.relative(offset, reader.u24(offset + 1)), variable, deltaAt), c0, r0, c1, r1)
+                    GlyphPaintNode.RadialGradient(colorLine(reader.relative(offset, reader.u24(offset + 1)), hasVarIndexBase, deltaAt), c0, r0, c1, r1)
                 }
                 8, 9 -> {
-                    val variable = frame.format == 9
-                    reader.range(offset, if (variable) 16 else 12)
-                    val base = if (variable) reader.u32(offset + 12) else NO_VARIATION_INDEX
-                    val center = if (variable) reader.variablePoint(offset + 4, deltaAt(base, 0), deltaAt(base, 1)) else reader.point(offset + 4)
-                    val start = if (variable) reader.variableBiasedAngle(offset + 8, deltaAt(base, 2)) else (reader.f2(offset + 8) + 1.0) * 180.0
-                    val end = if (variable) reader.variableBiasedAngle(offset + 10, deltaAt(base, 3)) else (reader.f2(offset + 10) + 1.0) * 180.0
-                    GlyphPaintNode.SweepGradient(colorLine(reader.relative(offset, reader.u24(offset + 1)), variable, deltaAt), center, start, end)
+                    val hasVarIndexBase = frame.format == 9
+                    reader.range(offset, if (hasVarIndexBase) 16 else 12)
+                    val base = if (hasVarIndexBase) reader.u32(offset + 12) else NO_VARIATION_INDEX
+                    val center = if (hasVarIndexBase) reader.variablePoint(offset + 4, deltaAt(base, 0), deltaAt(base, 1)) else reader.point(offset + 4)
+                    val start = if (hasVarIndexBase) reader.variableBiasedAngle(offset + 8, deltaAt(base, 2)) else (reader.f2(offset + 8) + 1.0) * 180.0
+                    val end = if (hasVarIndexBase) reader.variableBiasedAngle(offset + 10, deltaAt(base, 3)) else (reader.f2(offset + 10) + 1.0) * 180.0
+                    GlyphPaintNode.SweepGradient(colorLine(reader.relative(offset, reader.u24(offset + 1)), hasVarIndexBase, deltaAt), center, start, end)
                 }
                 10 -> {
                     checkCancelled()
@@ -550,9 +551,9 @@ private class ColrBytes(private val bytes: ByteArray) {
             xy = -tan(xAngle * PI)
             yx = tan(yAngle * PI)
         }
-        fun center(at: Int, base: Long, xOrdinal: Int, yOrdinal: Int, variable: Boolean) {
-            centerX = if (variable) variableS16(at, deltaAt(base, xOrdinal)) else s16(at).toDouble()
-            centerY = if (variable) variableS16(at + 2, deltaAt(base, yOrdinal)) else s16(at + 2).toDouble()
+        fun center(at: Int, base: Long, xOrdinal: Int, yOrdinal: Int, hasVarIndexBase: Boolean) {
+            centerX = if (hasVarIndexBase) variableS16(at, deltaAt(base, xOrdinal)) else s16(at).toDouble()
+            centerY = if (hasVarIndexBase) variableS16(at + 2, deltaAt(base, yOrdinal)) else s16(at + 2).toDouble()
             hasCenter = true
         }
         when (format) {
@@ -582,30 +583,30 @@ private class ColrBytes(private val bytes: ByteArray) {
                 val base = u32(offset + 8)
                 xx = variableF2(offset + 4, deltaAt(base, 0)); yy = variableF2(offset + 6, deltaAt(base, 1))
             }
-            18 -> { range(offset, 12); xx = f2(offset + 4); yy = f2(offset + 6); center(offset + 8, 0L, 0, 0, variable = false) }
+            18 -> { range(offset, 12); xx = f2(offset + 4); yy = f2(offset + 6); center(offset + 8, 0L, 0, 0, hasVarIndexBase = false) }
             19 -> {
                 range(offset, 16)
                 val base = u32(offset + 12)
                 xx = variableF2(offset + 4, deltaAt(base, 0)); yy = variableF2(offset + 6, deltaAt(base, 1))
-                center(offset + 8, base, 2, 3, variable = true)
+                center(offset + 8, base, 2, 3, hasVarIndexBase = true)
             }
             20 -> { range(offset, 6); xx = f2(offset + 4); yy = xx }
             21 -> { range(offset, 10); val base = u32(offset + 6); xx = variableF2(offset + 4, deltaAt(base, 0)); yy = xx }
-            22 -> { range(offset, 10); xx = f2(offset + 4); yy = xx; center(offset + 6, 0L, 0, 0, variable = false) }
+            22 -> { range(offset, 10); xx = f2(offset + 4); yy = xx; center(offset + 6, 0L, 0, 0, hasVarIndexBase = false) }
             23 -> {
                 range(offset, 14)
                 val base = u32(offset + 10)
                 xx = variableF2(offset + 4, deltaAt(base, 0)); yy = xx
-                center(offset + 6, base, 1, 2, variable = true)
+                center(offset + 6, base, 1, 2, hasVarIndexBase = true)
             }
             24 -> { range(offset, 6); rotate(f2(offset + 4)) }
             25 -> { range(offset, 10); val base = u32(offset + 6); rotate(variableF2(offset + 4, deltaAt(base, 0))) }
-            26 -> { range(offset, 10); rotate(f2(offset + 4)); center(offset + 6, 0L, 0, 0, variable = false) }
+            26 -> { range(offset, 10); rotate(f2(offset + 4)); center(offset + 6, 0L, 0, 0, hasVarIndexBase = false) }
             27 -> {
                 range(offset, 14)
                 val base = u32(offset + 10)
                 rotate(variableF2(offset + 4, deltaAt(base, 0)))
-                center(offset + 6, base, 1, 2, variable = true)
+                center(offset + 6, base, 1, 2, hasVarIndexBase = true)
             }
             28 -> { range(offset, 8); skew(f2(offset + 4), f2(offset + 6)) }
             29 -> {
@@ -613,12 +614,12 @@ private class ColrBytes(private val bytes: ByteArray) {
                 val base = u32(offset + 8)
                 skew(variableF2(offset + 4, deltaAt(base, 0)), variableF2(offset + 6, deltaAt(base, 1)))
             }
-            30 -> { range(offset, 12); skew(f2(offset + 4), f2(offset + 6)); center(offset + 8, 0L, 0, 0, variable = false) }
+            30 -> { range(offset, 12); skew(f2(offset + 4), f2(offset + 6)); center(offset + 8, 0L, 0, 0, hasVarIndexBase = false) }
             31 -> {
                 range(offset, 16)
                 val base = u32(offset + 12)
                 skew(variableF2(offset + 4, deltaAt(base, 0)), variableF2(offset + 6, deltaAt(base, 1)))
-                center(offset + 8, base, 2, 3, variable = true)
+                center(offset + 8, base, 2, 3, hasVarIndexBase = true)
             }
         }
         if (hasCenter) {

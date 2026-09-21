@@ -612,7 +612,20 @@ internal data class TrueTypeFontInstance(
             ?: return failure(FontError.InvalidFontData("COLR table exceeds embedded source bytes.", FontDiagnosticLocation.Table("COLR")))
         val cpal = slice(source, cpalRecord)
             ?: return failure(FontError.InvalidFontData("CPAL table exceeds embedded source bytes.", FontDiagnosticLocation.Table("CPAL")))
-        return ColrV1Reader.read(colr, cpal, parsedFont.metadata.glyphCount, profile, variant.cpalPaletteIndex ?: 0, variant.foregroundColor ?: GlyphColor(0, 0, 0))
+        val orderedAxes = when (val result = resource.preparedFont.orderedVariationAxes(key.geometry.normalizedAxes)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return ColrV1Reader.read(
+            colr,
+            cpal,
+            parsedFont.metadata.glyphCount,
+            profile,
+            variant.cpalPaletteIndex ?: 0,
+            variant.foregroundColor ?: GlyphColor(0, 0, 0),
+            orderedAxes,
+        )
     }
 
     private fun readColrCpalV0(profile: PaintGraphProfile): FontOperationResult<ColrCpalV0Data> {

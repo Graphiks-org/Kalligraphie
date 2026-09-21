@@ -1,5 +1,8 @@
 package org.graphiks.kalligraphie.font.sfnt.variation
 
+import org.graphiks.kalligraphie.api.FontOperationResult
+import kotlin.test.assertIs
+
 /** DeltaSetIndexMap format 0 with `mapCount` identical `(outer, inner)` entries. */
 internal fun deltaSetIndexMap0(outer: Int, inner: Int, mapCount: Int): ByteArray {
     val innerBitCount = 8
@@ -40,3 +43,27 @@ internal fun itemVariationStore(itemDeltas: List<IntArray>): ByteArray {
     itemDeltas.forEach { row -> row.forEach { u16(it and 0xFFFF) } }
     return out.toByteArray()
 }
+
+/** Writes the big-endian 16-bit [value] at [offset]. */
+internal fun writeUInt16(bytes: ByteArray, offset: Int, value: Int) {
+    bytes[offset] = (value ushr 8).toByte()
+    bytes[offset + 1] = value.toByte()
+}
+
+/** Writes the big-endian 24-bit [value] at [offset]. */
+internal fun writeUInt24(bytes: ByteArray, offset: Int, value: Int) {
+    bytes[offset] = (value ushr 16).toByte()
+    bytes[offset + 1] = (value ushr 8).toByte()
+    bytes[offset + 2] = value.toByte()
+}
+
+/** Writes the big-endian 32-bit [value] at [offset]. */
+internal fun writeUInt32(bytes: ByteArray, offset: Int, value: Int) {
+    bytes[offset] = (value ushr 24).toByte()
+    bytes[offset + 1] = (value ushr 16).toByte()
+    bytes[offset + 2] = (value ushr 8).toByte()
+    bytes[offset + 3] = value.toByte()
+}
+
+/** Unwraps a successful [FontOperationResult] or fails the test with the typed failure. */
+internal fun <T> success(result: FontOperationResult<T>): T = assertIs<FontOperationResult.Success<T>>(result).value
