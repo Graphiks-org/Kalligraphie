@@ -15,7 +15,7 @@ public data class GvarLimits(
     public val maxSharedTuples: Int = 4_096,
     /** Maximum accepted tuple variations per glyph record. */
     public val maxTupleVariations: Int = 4_096,
-    /** Maximum accepted simple-glyph points per variation (including the reserved phantom slots). */
+    /** Maximum accepted outline or component points per variation (including the reserved phantom slots). */
     public val maxPointsPerVariation: Int = 1_000_000,
 ) {
     init {
@@ -27,12 +27,19 @@ public data class GvarLimits(
 }
 
 /**
- * Number of phantom points `gvar` addresses after the outline points.
+ * Number of phantom points `gvar` addresses after the outline or component points.
  *
- * This sub-plan discards phantom-point deltas (metrics are a later sub-plan), but a complete
- * point set always covers `outlinePoints + 4`, so the slots must be reserved while decoding.
+ * The phantom deltas are decoded alongside the outline or component deltas and retained in
+ * `GvarGlyphDeltas` for later metric derivation; a complete point set always covers
+ * `outlinePoints + 4`, so the slots are reserved while decoding.
  */
 internal const val GVAR_PHANTOM_POINT_COUNT: Int = 4
+
+/** Phantom-point slot indices inside the four reserved `gvar` phantom points. */
+internal const val GVAR_PHANTOM_LEFT_INDEX: Int = 0
+internal const val GVAR_PHANTOM_RIGHT_INDEX: Int = 1
+internal const val GVAR_PHANTOM_TOP_INDEX: Int = 2
+internal const val GVAR_PHANTOM_BOTTOM_INDEX: Int = 3
 
 internal const val GVAR_LONG_OFFSETS: Int = 0x0001
 internal const val GVAR_SHARED_POINT_NUMBERS: Int = 0x8000
@@ -90,11 +97,12 @@ internal object TupleVariationScalars {
 }
 
 /**
- * Resolved per-point deltas for one simple glyph.
+ * Resolved per-point deltas for one glyph.
  *
  * `xDeltas` and `yDeltas` are both sized `pointCount + GVAR_PHANTOM_POINT_COUNT`: the four phantom
- * slots after the outline points are reserved and zero-filled by IUP even though phantom-point
- * handling is out of scope for this sub-plan.
+ * slots after the outline or component points are decoded alongside them and retained for later
+ * metric derivation. Simple-glyph IUP never interpolates the phantom slots; composite glyphs get no
+ * interpolation at all.
  */
 internal class GvarResolvedDeltas(
     val xDeltas: DoubleArray,

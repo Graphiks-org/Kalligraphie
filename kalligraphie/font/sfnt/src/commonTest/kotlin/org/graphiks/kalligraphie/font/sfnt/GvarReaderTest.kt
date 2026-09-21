@@ -421,6 +421,76 @@ class GvarReaderTest {
         assertEquals(15.0, deltas!!.xDelta(0))
     }
 
+    @Test
+    fun exposesPhantomDeltasForACompletePointSet() {
+        // One outline point plus four phantom slots: 0 outline, 1 left, 2 right, 3 top, 4 bottom.
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(0, 5, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(0, 0, 0, -3, 4)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )!!
+        assertEquals(5.0, deltas.phantomDeltas.leftX)
+        assertEquals(7.0, deltas.phantomDeltas.rightX)
+        assertEquals(2.0, deltas.phantomDeltas.horizontalAdvanceDelta)
+        assertEquals(-3.0, deltas.phantomDeltas.topY)
+        assertEquals(4.0, deltas.phantomDeltas.bottomY)
+        assertEquals(-7.0, deltas.phantomDeltas.verticalAdvanceDelta)
+    }
+
+    @Test
+    fun phantomSlotsAreNotReportedAsOutlineDeltas() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(0, 5, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(0, 0, 0, -3, 4)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(1.0)),
+        )!!
+        assertEquals(0.0, deltas.xDelta(1))
+        assertEquals(0.0, deltas.yDelta(1))
+    }
+
+    @Test
+    fun phantomDeltasAreZeroAtDefaultCoordinates() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(0, 5, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(0, 0, 0, -3, 4)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.glyphDeltas(0, listOf(0), listOf(0.0), listOf(0.0), listOf(0.0)),
+        )!!
+        assertEquals(0.0, deltas.phantomDeltas.leftX)
+        assertEquals(0.0, deltas.phantomDeltas.rightX)
+        assertEquals(0.0, deltas.phantomDeltas.topY)
+        assertEquals(0.0, deltas.phantomDeltas.bottomY)
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T = when (result) {
         is FontOperationResult.Success -> result.value
         is FontOperationResult.Failure -> error("Unexpected failure: ${result.error}")
