@@ -187,3 +187,42 @@ internal fun testCff2VariationStore(
     out.addAll(store)
     return out.toByteArray()
 }
+
+/**
+ * `0 hmoveto 100 hlineto -100 200 100 1 blend rlineto`: the third vertex's y is `200 + 100` times
+ * the active region scalar.
+ */
+internal fun blendTriangleCharString(): ByteArray = byteArrayOf(
+    139.toByte(), 22, 239.toByte(), 6, 39, 247.toByte(), 92, 239.toByte(), 140.toByte(), 16, 5,
+)
+
+/**
+ * Card16-prefixed CFF2 ItemVariationStore with two item data subtables: item data 0 references a
+ * region that is zero at positive coordinates, item data 1 references `(0, 1, 1)`.
+ */
+internal fun testCff2TwoRegionStore(): ByteArray {
+    val store = ArrayList<Byte>()
+    fun u16(value: Int) { store += ((value shr 8) and 0xFF).toByte(); store += (value and 0xFF).toByte() }
+    fun u32(value: Int) {
+        store += ((value shr 24) and 0xFF).toByte()
+        store += ((value shr 16) and 0xFF).toByte()
+        store += ((value shr 8) and 0xFF).toByte()
+        store += (value and 0xFF).toByte()
+    }
+    u16(1)
+    u32(16)
+    u16(2)
+    u32(32)
+    u32(40)
+    u16(1)
+    u16(2)
+    u16(0xC000); u16(0xC000); u16(0x0000)
+    u16(0x0000); u16(0x4000); u16(0x4000)
+    u16(1); u16(0); u16(1); u16(0)
+    u16(1); u16(0); u16(1); u16(1)
+    val out = ArrayList<Byte>()
+    out += ((store.size shr 8) and 0xFF).toByte()
+    out += (store.size and 0xFF).toByte()
+    out.addAll(store)
+    return out.toByteArray()
+}

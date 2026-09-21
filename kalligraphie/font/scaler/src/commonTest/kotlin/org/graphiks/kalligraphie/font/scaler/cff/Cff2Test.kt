@@ -2,6 +2,7 @@
 
 package org.graphiks.kalligraphie.font.scaler.cff
 
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
@@ -76,6 +77,59 @@ class Cff2Test {
 
         assertEquals(1, table.defaultVsIndex(0))
         assertEquals(0, table.defaultVsIndex(5))
+    }
+
+    @Test
+    fun ordersNormalizedAxesByFvarTag() {
+        val ordered = Cff2Reader.orderAxes(
+            axisTags = listOf("wght", "wdth"),
+            normalizedAxes = listOf(FontAxisCoordinate("wdth", 0.5f)),
+        )
+
+        assertEquals(listOf(0.0, 0.5), ordered)
+    }
+
+    @Test
+    fun blendsAtANonDefaultLocationThroughTheCff2Reader() {
+        val bytes = buildCff2WithVariation(blendTriangleCharString(), testCff2VariationStore())
+        val table = success(Cff2Table.read(bytes))
+        val outline = success(
+            Cff2Reader.readGlyphOutline(
+                bytes, table, 0, 1000, profile(),
+                axisTags = listOf("wght"),
+                normalizedAxes = listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        )
+
+        assertEquals(GlyphOutlineCommand.LineTo(0.0, 300.0), outline.contours.single().commands[2])
+    }
+
+    @Test
+    fun keepsTheDefaultApexWithoutALocation() {
+        val bytes = buildCff2WithVariation(blendTriangleCharString(), testCff2VariationStore())
+        val table = success(Cff2Table.read(bytes))
+        val outline = success(Cff2Reader.readGlyphOutline(bytes, table, 0, 1000, profile()))
+
+        assertEquals(GlyphOutlineCommand.LineTo(0.0, 200.0), outline.contours.single().commands[2])
+    }
+
+    @Test
+    fun seedsTheInterpreterFromThePrivateDictVsIndex() {
+        val bytes = buildCff2WithVariation(
+            charString = blendTriangleCharString(),
+            variationStore = testCff2TwoRegionStore(),
+            privateData = testDictInt(1) + byteArrayOf(22),
+        )
+        val table = success(Cff2Table.read(bytes))
+        val outline = success(
+            Cff2Reader.readGlyphOutline(
+                bytes, table, 0, 1000, profile(),
+                axisTags = listOf("wght"),
+                normalizedAxes = listOf(FontAxisCoordinate("wght", 0.5f)),
+            ),
+        )
+
+        assertEquals(GlyphOutlineCommand.LineTo(0.0, 250.0), outline.contours.single().commands[2])
     }
 
     private fun profile(): OutlineProfile = OutlineProfile(
