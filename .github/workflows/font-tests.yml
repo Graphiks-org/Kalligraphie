@@ -52,6 +52,8 @@ jobs:
             runner: macos-15-intel
           - target: macos-arm64
             runner: macos-15
+          - target: windows-x64
+            runner: windows-latest
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -63,6 +65,7 @@ jobs:
       - run: chmod +x gradlew
       - run: ./gradlew --no-daemon :kalligraphie:shaping:jvmTest
       - name: Exercise directory captures and system-catalog shaping and glyphs
+        if: runner.os != 'Windows'
         run: ./gradlew --no-daemon :kalligraphie:jvmTest --tests '*FontDirectoryCatalogTest*' --tests '*SystemFontCatalogJourneyTest*'
 
   apple-platform-fonts:
