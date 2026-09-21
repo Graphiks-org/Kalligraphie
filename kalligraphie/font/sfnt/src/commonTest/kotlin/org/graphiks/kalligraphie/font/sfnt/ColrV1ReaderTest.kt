@@ -152,7 +152,7 @@ class ColrV1ReaderTest {
     }
 
     @Test
-    fun cancelsDuringTheVariationStoreParse() {
+    fun forwardsTheCancellationTokenToTheVariationStore() {
         val failure = assertIs<FontOperationResult.Cancelled>(
             ColrV1Reader.read(
                 colrTable = colrV1SolidTable(deltaRow = -8192),
@@ -255,9 +255,13 @@ class ColrV1ReaderTest {
         val store = itemVariationStore(deltaRows.map { intArrayOf(it) })
         val clipListOffset = 56
         val clipBoxOffset = clipListOffset + 12
+        val clipBoxExtent = when (clipBoxFormat) {
+            1 -> 9
+            else -> 13
+        }
         val storeOffset = clipBoxOffset + 13
         require(clipListOffset >= 53) { "The ClipList at $clipListOffset overlaps the nine-byte paint at 44..52." }
-        require(storeOffset >= clipBoxOffset + 13) { "The variation store at $storeOffset overlaps the ClipBox at $clipBoxOffset..${clipBoxOffset + 12}." }
+        require(storeOffset >= clipBoxOffset + clipBoxExtent) { "The variation store at $storeOffset overlaps the ClipBox at $clipBoxOffset..${clipBoxOffset + clipBoxExtent - 1}." }
         val out = ByteArray(storeOffset + store.size)
         writeUInt16(out, 0, 1)
         writeUInt16(out, 2, 0)
