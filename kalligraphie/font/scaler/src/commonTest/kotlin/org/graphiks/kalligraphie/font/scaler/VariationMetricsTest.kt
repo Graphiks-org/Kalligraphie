@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
+import org.graphiks.kalligraphie.api.FontMetrics
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
@@ -194,6 +195,36 @@ class VariationMetricsTest {
         assertEquals(20, varied.leftSideBearingDesignUnits)
     }
 
+    @Test
+    fun appliesMvarDeltasToFontWideMetrics() {
+        val prepared = preparedFont(
+            glyphCount = 1,
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "OS/2" to os2Table(ascender = 880, descender = -120, lineGap = 0, xHeight = 543, capHeight = 733),
+                "post" to postTable(underlinePosition = -125, underlineThickness = 50),
+                "MVAR" to mvarTable("hasc" to 200, "xhgt" to -43),
+            ),
+        )
+
+        val default = fontMetricsFor(prepared, wght = null)
+        assertEquals(880f, default.ascender)
+        assertEquals(-120f, default.descender)
+        assertEquals(543f, default.xHeight)
+        assertEquals(-125f, default.underlinePosition)
+
+        val varied = fontMetricsFor(prepared, wght = 1f)
+        assertEquals(1080f, varied.ascender)
+        assertEquals(-120f, varied.descender)
+        assertEquals(500f, varied.xHeight)
+        assertEquals(733f, varied.capHeight)
+    }
+
+    private fun fontMetricsFor(prepared: PreparedTrueTypeFont, wght: Float?) =
+        assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontMetrics>>(
+            prepared.readFontMetrics(axes(wght)),
+        ).value
+
     private fun metricsFor(prepared: PreparedTrueTypeFont, glyphId: Int, wght: Float?): GlyphMetrics =
         assertIs<FontOperationResult.Success<GlyphMetrics>>(
             prepared.readGlyphMetrics(GlyphId(glyphId), LAYOUT_SIZE, axes(wght)),
@@ -314,4 +345,69 @@ private fun vvarTable(advanceHeightDeltas: IntArray): ByteArray {
     u32(0)
     store.forEach { u8(it.toInt() and 0xFF) }
     return out.toByteArray()
+}
+
+/**
+ * Builds a version-4 `OS/2` table with `REGULAR` selection and `USE_TYPO_METRICS` clear.
+ *
+ * The vertical extents are the `sTypo*` fields the `hasc`/`hdsc`/`hlgp` MVAR tags target, and
+ * [xHeight]/[capHeight] are the version-2 `sxHeight`/`sCapHeight` fields.
+ */
+private fun os2Table(
+    ascender: Int,
+    descender: Int,
+    lineGap: Int,
+    xHeight: Int,
+    capHeight: Int,
+): ByteArray {
+    val bytes = ByteArray(96)
+    bytes.writeUInt16(0, 4)
+    bytes.writeInt16(62, 0x0040)
+    bytes.writeInt16(68, ascender)
+    bytes.writeInt16(70, descender)
+    bytes.writeInt16(72, lineGap)
+    bytes.writeInt16(74, 1160)
+    bytes.writeInt16(76, 288)
+    bytes.writeInt16(86, xHeight)
+    bytes.writeInt16(88, capHeight)
+    return bytes
+}
+
+/** Builds a `post` version-2.0 header carrying only the underline offset and thickness. */
+private fun postTable(underlinePosition: Int, underlineThickness: Int): ByteArray =
+    ByteArray(32).also { bytes ->
+        bytes.writeUInt16(0, 2)
+        bytes.writeInt16(8, underlinePosition)
+        bytes.writeInt16(10, underlineThickness)
+    }
+
+/** Builds an MVAR 1.0 table whose value records all point at a single-region delta row. */
+private fun mvarTable(vararg records: Pair<String, Int>): ByteArray {
+    val store = itemVariationStore(itemDeltas = records.map { intArrayOf(it.second) })
+    val valueRecordSize = 8
+    val headerSize = 12
+    val storeOffset = headerSize + records.size * valueRecordSize
+    val out = ArrayList<Byte>()
+    fun u8(value: Int) { out += (value and 0xFF).toByte() }
+    fun u16(value: Int) { u8(value shr 8); u8(value) }
+    u16(1); u16(0); u16(0)
+    u16(valueRecordSize)
+    u16(records.size)
+    u16(storeOffset)
+    records.forEachIndexed { index, (tag, _) ->
+        tag.forEach { u8(it.code) }
+        u16(0)
+        u16(index)
+    }
+    store.forEach { u8(it.toInt() and 0xFF) }
+    return out.toByteArray()
+}
+
+private fun ByteArray.writeUInt16(offset: Int, value: Int) {
+    this[offset] = (value ushr 8).toByte()
+    this[offset + 1] = value.toByte()
+}
+
+private fun ByteArray.writeInt16(offset: Int, value: Int) {
+    writeUInt16(offset, value and 0xFFFF)
 }

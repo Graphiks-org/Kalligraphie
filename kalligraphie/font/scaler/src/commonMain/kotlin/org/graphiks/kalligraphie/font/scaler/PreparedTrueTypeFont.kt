@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontMetrics
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.GlyphId
@@ -24,6 +25,8 @@ import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.slice
 import org.graphiks.kalligraphie.font.sfnt.variation.HvarData
 import org.graphiks.kalligraphie.font.sfnt.variation.HvarReader
+import org.graphiks.kalligraphie.font.sfnt.variation.MvarData
+import org.graphiks.kalligraphie.font.sfnt.variation.MvarReader
 import org.graphiks.kalligraphie.font.sfnt.variation.VvarData
 import org.graphiks.kalligraphie.font.sfnt.variation.VvarReader
 import kotlin.concurrent.atomics.AtomicReference
@@ -152,6 +155,21 @@ public class PreparedTrueTypeFont internal constructor(
                     FontError.OutOfBounds("Table VVAR exceeds source length.", FontDiagnosticLocation.Table("VVAR")),
                 )
             when (val result = VvarReader.read(table, axisTags.size)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+                is FontOperationResult.Failure -> result
+                is FontOperationResult.Cancelled -> result
+            }
+        } ?: FontOperationResult.Success(null)
+    }
+
+    private val mvarResult: FontOperationResult<MvarData?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        metricsVariationAxisTags()?.let { axisTags ->
+            val record = parsedFont.tableRecords["MVAR"] ?: return@let FontOperationResult.Success(null)
+            val table = slice(sourceBytes, record)
+                ?: return@let failure(
+                    FontError.OutOfBounds("Table MVAR exceeds source length.", FontDiagnosticLocation.Table("MVAR")),
+                )
+            when (val result = MvarReader.read(table, axisTags.size)) {
                 is FontOperationResult.Success -> FontOperationResult.Success(result.value)
                 is FontOperationResult.Failure -> result
                 is FontOperationResult.Cancelled -> result
@@ -537,6 +555,36 @@ public class PreparedTrueTypeFont internal constructor(
             }
         }
         return VerticalMetricsReader.readGlyphMetrics(metrics, glyphId, layoutSize, deltas)
+    }
+
+    /**
+     * Reads the instance's font-wide metrics in design units.
+     *
+     * The defaults come from `OS/2` (falling back to `hhea` for the vertical extents and `post` for
+     * the underline) and the `MVAR` deltas are applied afterwards. An empty [normalizedAxes] list is
+     * the default instance and adds no `MVAR` parsing.
+     *
+     * @param normalizedAxes instance location in `fvar` axis order.
+     * @return font-wide metrics, or a typed table failure.
+     */
+    public fun readFontMetrics(
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
+    ): FontOperationResult<FontMetrics> {
+        val orderedAxes = if (normalizedAxes.isEmpty()) {
+            emptyList()
+        } else {
+            metricLocation(normalizedAxes)?.orderedAxes ?: emptyList()
+        }
+        val mvar = if (orderedAxes.isEmpty() || orderedAxes.all { it == 0.0 }) {
+            null
+        } else {
+            when (val result = mvarResult) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+        }
+        return FontMetricsReader.read(sourceBytes, parsedFont, mvar, orderedAxes)
     }
 
     /**
