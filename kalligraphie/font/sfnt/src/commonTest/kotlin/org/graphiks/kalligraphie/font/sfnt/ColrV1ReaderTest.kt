@@ -422,7 +422,7 @@ class ColrV1ReaderTest {
         writeUInt16(out, 62, 100)
         writeUInt16(out, 64, 200)
         writeUInt32(out, 66, 0)
-        out[70] = 1
+        out[70] = 0
         writeUInt16(out, 71, 0)
         store.copyInto(out, storeOffset)
         return out
