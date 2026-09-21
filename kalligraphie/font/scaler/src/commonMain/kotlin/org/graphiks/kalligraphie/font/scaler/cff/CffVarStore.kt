@@ -15,9 +15,9 @@ import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
  * Variation data required by a CFF2 charstring's `blend` and `vsindex` operators.
  *
  * Implementations expose the region count and the region scalars for one variation-store index.
- * Scalars are evaluated at the location the source was created for; the portable route passes the
- * instance's normalized axes in `fvar` axis order, and an empty list is the default instance (all
- * axis coordinates zero).
+ * Scalars are evaluated at the location the source was created for. Callers may pass normalized
+ * axes in `fvar` axis order; the current portable route materialises the default instance
+ * (empty axes, so every coordinate is 0.0).
  */
 internal interface CffVariationSource {
     /** Number of regions in the item variation data at [vsIndex]. */
@@ -55,7 +55,7 @@ internal class CffVarStore private constructor(
             limits: VariationStoreLimits = VariationStoreLimits(),
             cancellationToken: CancellationToken = CancellationToken.none,
         ): FontOperationResult<CffVarStore> {
-            if (offset < 0 || offset + 2 > bytes.size) {
+            if (offset < 0) {
                 return failure("font.variation.truncated-store", "CFF2 variation store is truncated.")
             }
             val base = offset + 2

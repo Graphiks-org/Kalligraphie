@@ -39,6 +39,7 @@ class Cff2Test {
         assertContentEquals(doubleArrayOf(0.0), store.scalars(0))
         assertContentEquals(doubleArrayOf(1.0), success(CffVarStore.read(variationStoreBytes(), 0, listOf(-1.0))).scalars(0))
         assertContentEquals(doubleArrayOf(0.5), success(CffVarStore.read(variationStoreBytes(), 0, listOf(-0.5))).scalars(0))
+        assertContentEquals(doubleArrayOf(0.0), success(CffVarStore.read(variationStoreBytes(), 0, listOf(0.5))).scalars(0))
     }
 
     private fun profile(): OutlineProfile = OutlineProfile(

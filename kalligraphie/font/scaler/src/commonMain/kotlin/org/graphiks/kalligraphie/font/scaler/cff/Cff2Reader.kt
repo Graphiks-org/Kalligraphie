@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.font.scaler.ScalerGlyphOutline
+import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
 
 /**
  * Adapts a parsed CFF2 table into the scaler's [ScalerGlyphOutline] at the
@@ -32,7 +33,14 @@ internal object Cff2Reader {
         val variationSource: CffVariationSource? = if (table.variationStoreOffset == null) {
             null
         } else {
-            when (val result = CffVarStore.read(bytes, table.variationStoreOffset)) {
+            when (
+                val result = CffVarStore.read(
+                    bytes = bytes,
+                    offset = table.variationStoreOffset,
+                    limits = VariationStoreLimits(),
+                    cancellationToken = cancellationToken,
+                )
+            ) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
