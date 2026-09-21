@@ -42,6 +42,29 @@ class Cff2Test {
         assertContentEquals(doubleArrayOf(0.0), success(CffVarStore.read(variationStoreBytes(), 0, listOf(0.5))).scalars(0))
     }
 
+    @Test
+    fun readsTheDefaultVsIndexFromTheFontDictPrivateDict() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+            privateData = testDictInt(1) + byteArrayOf(22),
+        )
+        val table = success(Cff2Table.read(bytes))
+
+        assertEquals(1, table.defaultVsIndex(0))
+    }
+
+    @Test
+    fun defaultsTheVsIndexToZeroWithoutAPrivateDictDeclaration() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+        )
+        val table = success(Cff2Table.read(bytes))
+
+        assertEquals(0, table.defaultVsIndex(0))
+    }
+
     private fun profile(): OutlineProfile = OutlineProfile(
         maxBytes = 1_000_000,
         maxContours = 1_000,
