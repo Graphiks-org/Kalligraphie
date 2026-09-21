@@ -748,9 +748,9 @@ public interface FontInstance {
     /**
      * Returns font-wide metrics for this instance in design units.
      *
-     * The default body is an unsupported placeholder, and no portable implementation provides it
-     * yet: metrics variation (`HVAR`/`VVAR`/`MVAR`) is deferred, so a variable instance does not
-     * apply `MVAR` deltas here.
+     * The default body remains an unsupported placeholder for providers that do not expose
+     * font-wide metrics, while the portable TrueType instance overrides it and derives the `OS/2`
+     * (`hhea` fallback) and `post` defaults with `MVAR` deltas applied at the instance location.
      */
     public fun fontMetrics(): FontOperationResult<FontMetrics> =
         unsupportedContractOperation("This font instance does not support font metrics.")
