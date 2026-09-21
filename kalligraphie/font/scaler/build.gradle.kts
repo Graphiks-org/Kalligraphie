@@ -11,5 +11,8 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        jvmTest {
+            resources.srcDir(rootProject.file("test-fixtures"))
+        }
     }
 }

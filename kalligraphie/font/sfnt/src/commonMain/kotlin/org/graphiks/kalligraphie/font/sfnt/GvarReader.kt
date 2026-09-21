@@ -6,23 +6,69 @@ import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 /**
- * Resolved per-point `gvar` deltas for one simple glyph.
+ * Resolved `gvar` deltas for one glyph's outline (or component) points and its four phantom points.
  *
- * Only outline points are exposed; the four phantom slots decoded internally are discarded because
- * phantom-point metrics are a later sub-plan.
+ * The outline or component point count is [pointCount]; the four phantom slots follow it at indices
+ * [pointCount] through `pointCount + 3`.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class GvarGlyphDeltas internal constructor(
-    /** Number of outline points covered by the deltas. */
+    /** Number of outline or component points covered by the deltas. */
     public val pointCount: Int,
     internal val xDeltas: DoubleArray,
     internal val yDeltas: DoubleArray,
 ) {
-    /** Horizontal delta for [pointIndex], or `0.0` when out of range. */
+    init {
+        require(xDeltas.size == yDeltas.size) { "gvar x and y delta counts must match." }
+        require(xDeltas.size == pointCount + GVAR_PHANTOM_POINT_COUNT) {
+            "gvar delta count must cover the outline points plus the phantom points."
+        }
+    }
+
+    /**
+     * Deltas for the four phantom points that follow the outline or component points.
+     *
+     * For a composite glyph whose component sets `USE_MY_METRICS`, the OpenType specification takes
+     * the composite's phantom positions from that component, so a metrics consumer must prefer the
+     * metrics-source glyph's phantom deltas.
+     */
+    public val phantomDeltas: GvarPhantomDeltas = GvarPhantomDeltas(
+        leftX = xDeltas[pointCount + GVAR_PHANTOM_LEFT_INDEX],
+        rightX = xDeltas[pointCount + GVAR_PHANTOM_RIGHT_INDEX],
+        topY = yDeltas[pointCount + GVAR_PHANTOM_TOP_INDEX],
+        bottomY = yDeltas[pointCount + GVAR_PHANTOM_BOTTOM_INDEX],
+    )
+
+    /** Horizontal delta for outline or component [pointIndex], or `0.0` when out of range; phantom slots are excluded. */
     public fun xDelta(pointIndex: Int): Double = if (pointIndex in 0 until pointCount) xDeltas[pointIndex] else 0.0
 
-    /** Vertical delta for [pointIndex], or `0.0` when out of range. */
+    /** Vertical delta for outline or component [pointIndex], or `0.0` when out of range; phantom slots are excluded. */
     public fun yDelta(pointIndex: Int): Double = if (pointIndex in 0 until pointCount) yDeltas[pointIndex] else 0.0
+}
+
+/**
+ * Resolved `gvar` deltas for the four phantom points of one glyph.
+ *
+ * Phantom points follow the outline or component points in `gvar` point order: the left and right
+ * side-bearing points carry horizontal deltas and the top and bottom side-bearing points carry
+ * vertical deltas. Values are additive adjustments in design units at the requested instance.
+ */
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
+public data class GvarPhantomDeltas internal constructor(
+    /** Horizontal delta of the left side-bearing phantom point. */
+    public val leftX: Double,
+    /** Horizontal delta of the right side-bearing phantom point. */
+    public val rightX: Double,
+    /** Vertical delta of the top side-bearing phantom point. */
+    public val topY: Double,
+    /** Vertical delta of the bottom side-bearing phantom point. */
+    public val bottomY: Double,
+) {
+    /** Advance-width delta: the right side-bearing delta minus the left side-bearing delta. */
+    public val horizontalAdvanceDelta: Double get() = rightX - leftX
+
+    /** Advance-height delta: the top side-bearing delta minus the bottom side-bearing delta. */
+    public val verticalAdvanceDelta: Double get() = topY - bottomY
 }
 
 /**
@@ -65,10 +111,65 @@ public class GvarData internal constructor(
         normalizedAxes: List<Double>,
         cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<GvarGlyphDeltas?> {
+        return decodeDeltas(
+            glyphId = glyphId,
+            pointCount = baseX.size,
+            contourEndPoints = contourEndPoints,
+            baseX = baseX,
+            baseY = baseY,
+            normalizedAxes = normalizedAxes,
+            cancellationToken = cancellationToken,
+        )
+    }
+
+    /**
+     * Decodes and applies the `gvar` tuple deltas of one composite glyph at [normalizedAxes].
+     *
+     * For a composite glyph the glyph's points are its components in glyph-entry order followed by
+     * the four phantom points: point numbers refer to component indices and no interpolation is
+     * performed for un-referenced components. The caller applies each component delta to that
+     * component's placement offset only when the component selects `ARGS_ARE_XY_VALUES`. Returns
+     * `null` when [componentCount] is `0` or the glyph has no variation record; a negative count
+     * fails closed. Malformed records fail closed; cancellation returns
+     * [FontOperationResult.Cancelled] with no partial output.
+     *
+     * @param glyphId numeric glyph identifier.
+     * @param componentCount number of components in the composite glyph.
+     * @param normalizedAxes normalized coordinates in `fvar` axis order, missing axes treated as 0.
+     * @param cancellationToken cooperative cancellation checked before each tuple.
+     */
+    public fun compositeGlyphDeltas(
+        glyphId: Int,
+        componentCount: Int,
+        normalizedAxes: List<Double>,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): FontOperationResult<GvarGlyphDeltas?> {
+        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+        if (componentCount < 0) return invalid("gvar component count must not be negative.")
+        if (componentCount == 0) return FontOperationResult.Success(null)
+        return decodeDeltas(
+            glyphId = glyphId,
+            pointCount = componentCount,
+            contourEndPoints = emptyList(),
+            baseX = emptyList(),
+            baseY = emptyList(),
+            normalizedAxes = normalizedAxes,
+            cancellationToken = cancellationToken,
+        )
+    }
+
+    private fun decodeDeltas(
+        glyphId: Int,
+        pointCount: Int,
+        contourEndPoints: List<Int>,
+        baseX: List<Double>,
+        baseY: List<Double>,
+        normalizedAxes: List<Double>,
+        cancellationToken: CancellationToken,
+    ): FontOperationResult<GvarGlyphDeltas?> {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId !in 0 until glyphCount) return FontOperationResult.Success(null)
-        val pointCount = baseX.size
-        if (baseY.size != pointCount) return invalid("gvar base coordinates are inconsistent.")
+        if (baseX.size != baseY.size) return invalid("gvar base coordinates are inconsistent.")
         val start = glyphDataStart + glyphOffsets[glyphId]
         val end = glyphDataStart + glyphOffsets[glyphId + 1]
         if (start == end) return FontOperationResult.Success(null)
@@ -178,9 +279,7 @@ public class GvarData internal constructor(
             }
             dataOffset = tupleEnd.toInt()
         }
-        return FontOperationResult.Success(
-            GvarGlyphDeltas(pointCount, xDeltas.copyOf(pointCount), yDeltas.copyOf(pointCount)),
-        )
+        return FontOperationResult.Success(GvarGlyphDeltas(pointCount, xDeltas, yDeltas))
     }
 
     private fun invalid(message: String): FontOperationResult.Failure =

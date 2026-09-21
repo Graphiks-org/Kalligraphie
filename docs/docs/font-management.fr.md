@@ -1072,22 +1072,30 @@ charge), et une face sans table `fvar` utilisable échoue avec
 `font.variation.not-variable`.
 
 Une sélection non par défaut contribue désormais à la fois à l’identité de
-l’instance et à la variation des contours des glyphes simples : la route
-portable de contours TrueType lit la table `gvar` de la face, évalue le facteur
-de région de chaque tuple aux axes normalisés de l’instance, interpole les
-points non touchés via l’IUP TrueType, puis applique les deltas résolus par
-point aux coordonnées des glyphes simples et à leurs bornes recalculées. La
-sélection change donc le contour renvoyé par un fournisseur portable, tandis
-que les deltas `gvar` des glyphes composites, l’instanciation CFF2 non par
-défaut, la variation des métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et
-la géométrie synthétique (gras/italique) restent non implémentés ; les
-métriques restent renvoyées à l’instance par défaut, de sorte qu’une sélection
-non par défaut ne change toujours pas les métriques renvoyées par un
-fournisseur portable. Les données `gvar` malformées échouent avec
-`font.variation.invalid-gvar`, une version de table non prise en charge échoue
-avec `font.variation.unsupported-gvar-version`, et les bornes de ressources
-`gvar` réutilisent `font.resource-limit-exceeded` avec l’emplacement de table
-`gvar`.
+l’instance et à la variation des contours. La route portable de contours
+TrueType lit la table `gvar` de la face, évalue le facteur de région de chaque
+tuple aux axes normalisés de l’instance, interpole les points non touchés des
+glyphes simples via l’IUP TrueType, applique les deltas résolus par point aux
+coordonnées des glyphes simples et à leurs bornes recalculées, puis applique
+les deltas des glyphes composites aux décalages de placement de leurs
+composants. Les deltas de composant ne s’appliquent que si le composant
+sélectionne `ARGS_ARE_XY_VALUES`, s’ajoutent au décalage brut avant la
+transformation éventuelle de décalage mis à l’échelle, et sont ignorés pour les
+composants alignés par points, conformément aux règles `gvar` des composites.
+Les quatre deltas de points fantômes qui suivent les points de contour ou de
+composant sont décodés en même temps que le contour et exposés via
+`GlyphVariationPhantoms` du module scaler (delta d’avance horizontale
+droite moins gauche, delta d’avance verticale haut moins bas) ; ils valent
+`null` à l’instance par défaut. Une étape ultérieure de métriques les
+consommera ; les métriques restent donc renvoyées à l’instance par défaut et
+une sélection non par défaut ne change toujours pas les métriques renvoyées par
+un fournisseur portable. L’instanciation CFF2 non par défaut, la variation des
+métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et la géométrie synthétique
+(gras/italique) restent non implémentées. Les données `gvar` malformées
+échouent avec `font.variation.invalid-gvar`, une version de table non prise en
+charge échoue avec `font.variation.unsupported-gvar-version`, et les bornes de
+ressources `gvar` réutilisent `font.resource-limit-exceeded` avec
+l’emplacement de table `gvar`.
 
 Deux surfaces ajoutées sont des espaces réservés avec valeur par défaut plutôt
 que des lectures implémentées : `FontFace.stat()` renvoie `Success(null)` et
