@@ -303,6 +303,37 @@ class VariationStoreEvaluatorTest {
         assertEquals("font.variation.invalid-store", failure.error.code)
     }
 
+    @Test
+    fun acceptsAnEmptyDeltaListWhenDeltasAreRequested() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = emptyList(), longWords = false, wordCount = 1),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertEquals(0, store.itemCountAt(0))
+        assertNull(store.deltaRow(0, 0))
+        assertEquals(0.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun signExtendsANegativeLongWordDeltaBelowInt16Range() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(-70_000)), longWords = true, wordCount = 1),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertContentEquals(intArrayOf(-70_000), store.deltaRow(0, 0))
+        assertEquals(-70_000.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T =
         assertIs<FontOperationResult.Success<T>>(result).value
 

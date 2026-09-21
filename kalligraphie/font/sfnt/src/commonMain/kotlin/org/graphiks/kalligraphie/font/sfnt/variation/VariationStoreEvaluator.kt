@@ -79,7 +79,8 @@ public class VariationStore internal constructor(
      * Raw per-region deltas of delta-set row [innerIndex] in item variation data [itemDataIndex].
      *
      * The array length equals [regionCountAt]`(itemDataIndex)`. Returns `null` when the row is
-     * absent or the store was read without deltas (`includeDeltas = false`).
+     * absent or the store was read without deltas (`includeDeltas = false`). The returned array is
+     * the store's backing storage and must not be mutated.
      */
     public fun deltaRow(itemDataIndex: Int, innerIndex: Int): IntArray? =
         itemDataDeltas.getOrNull(itemDataIndex)?.getOrNull(innerIndex)
@@ -340,7 +341,9 @@ public object VariationStoreEvaluator {
      * The result is the sum over the row's regions of `delta * regionScalar`, matching the
      * OpenType "Interpolation of Instance Values" algorithm. [normalizedAxes] is indexed in `fvar`
      * axis order; a missing coordinate is treated as zero. Returns `0.0` when the row is absent.
-     * Requires the store to have been read with `includeDeltas = true`.
+     * Requires the store to have been read with `includeDeltas = true`. Callers that evaluate many
+     * rows at one location should hoist `scalars(store, itemDataIndex, normalizedAxes)` per
+     * `(itemDataIndex, location)`: this method re-evaluates the scalars on every call.
      */
     public fun delta(
         store: VariationStore,
