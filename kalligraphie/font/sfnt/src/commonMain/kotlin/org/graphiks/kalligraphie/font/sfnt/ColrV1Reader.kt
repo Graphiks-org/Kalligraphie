@@ -353,6 +353,8 @@ internal class ColrV1Indexes(
     val legacyFirsts: IntArray,
     val legacyCounts: IntArray,
     val legacyLayerOffset: Int,
+    val varIndexMapOffset: Long,
+    val varStoreOffset: Long,
 )
 
 private fun readIndexes(table: ByteArray, glyphCount: Int, limits: PaintGraphLimits?): ColrV1Indexes {
@@ -383,10 +385,10 @@ private fun readIndexes(table: ByteArray, glyphCount: Int, limits: PaintGraphLim
         legacyFirsts[index] = first
         legacyCounts[index] = count
     }
-    for (field in listOf(26, 30)) {
-        val offset = reader.u32(field)
-        if (offset != 0L) reader.range(offset, 1)
-    }
+    val varIndexMapOffset = reader.u32(26)
+    val varStoreOffset = reader.u32(30)
+    if (varIndexMapOffset != 0L) reader.range(varIndexMapOffset, 1)
+    if (varStoreOffset != 0L) reader.range(varStoreOffset, 1)
     val base = reader.relative(0, reader.u32(14))
     val count = reader.u32(base)
     colrLimit(count, limits?.maxBaseGlyphRecords ?: 65_536, "base glyph records")
@@ -409,7 +411,7 @@ private fun readIndexes(table: ByteArray, glyphCount: Int, limits: PaintGraphLim
         IntArray(layerCount.toInt()) { reader.relative(baseLayer, reader.u32(baseLayer + 4 + it * 4)) }
     }
     val clipOffset = reader.u32(22)
-    if (clipOffset == 0L) return ColrV1Indexes(glyphs, paints, layers, IntArray(0), IntArray(0), IntArray(0), legacyGlyphs, legacyFirsts, legacyCounts, reader.u32(8).toInt())
+    if (clipOffset == 0L) return ColrV1Indexes(glyphs, paints, layers, IntArray(0), IntArray(0), IntArray(0), legacyGlyphs, legacyFirsts, legacyCounts, reader.u32(8).toInt(), varIndexMapOffset, varStoreOffset)
     val clipBase = reader.relative(0, clipOffset)
     if (reader.u8(clipBase) != 1) colrInvalid("COLR ClipList format is invalid.")
     val clipCount = reader.u32(clipBase + 1)
@@ -433,7 +435,7 @@ private fun readIndexes(table: ByteArray, glyphCount: Int, limits: PaintGraphLim
         ends[index] = end
         offsets[index] = offset
     }
-    return ColrV1Indexes(glyphs, paints, layers, starts, ends, offsets, legacyGlyphs, legacyFirsts, legacyCounts, reader.u32(8).toInt())
+    return ColrV1Indexes(glyphs, paints, layers, starts, ends, offsets, legacyGlyphs, legacyFirsts, legacyCounts, reader.u32(8).toInt(), varIndexMapOffset, varStoreOffset)
 }
 
 private class PaintFrame(val offset: Int, val format: Int, val depth: Int, val children: IntArray, var nextChild: Int = 0)
