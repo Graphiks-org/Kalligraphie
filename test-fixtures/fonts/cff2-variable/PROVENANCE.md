@@ -16,5 +16,6 @@
 - **Regenerate:**
   `python3 kalligraphie/src/jvmTest/resources/fonts/cff2-variable/build_cff2_variable_fixture.py`
   (requires `fonttools`).
-- **Scope note:** the portable route materializes the default instance only; a
-  non-default variation instance is not supported.
+- **Scope note:** the portable route now supports non-default variation instances;
+  this fixture serves as the offline oracle — apex at `y=200` at the default
+  instance and `y=300` at `wght=1000`.
