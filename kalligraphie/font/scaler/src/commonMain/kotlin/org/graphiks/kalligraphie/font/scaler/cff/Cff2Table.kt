@@ -26,11 +26,21 @@ internal class Cff2Table private constructor(
     val glyphCount: Int
         get() = charStringsIndex.itemCount
 
-    /** Default `vsindex` declared by the Font DICT selected for [glyphId], or zero when absent. */
+    /**
+     * Default `vsindex` declared by the Font DICT selected for [glyphId].
+     *
+     * Reads the CFF2 `vsindex` operator (op 22) from the glyph's Font DICT Private DICT. A glyph
+     * outside `0 until glyphCount`, a glyph with no FDSelect entry, and a Private DICT without a
+     * `vsindex` declaration all yield `0` (the default instance).
+     */
     fun defaultVsIndex(glyphId: Int): Int {
-        val fdIndex = fdSelect?.getOrNull(glyphId) ?: 0
+        if (glyphId !in 0 until glyphCount) return 0
+        val fdIndex = fdIndexOf(glyphId)
         return fontDicts?.getOrNull(fdIndex)?.privateData?.integer(VSINDEX_OP) ?: 0
     }
+
+    /** Index of the Font DICT selected for [glyphId], defaulting to `0` when FDSelect is absent. */
+    internal fun fdIndexOf(glyphId: Int): Int = fdSelect?.getOrNull(glyphId) ?: 0
 
     companion object {
         private val location: FontDiagnosticLocation = FontDiagnosticLocation.Table("CFF2")

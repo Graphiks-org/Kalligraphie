@@ -28,7 +28,7 @@ internal object Cff2Reader {
     ): FontOperationResult<ScalerGlyphOutline> {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId < 0 || glyphId >= table.glyphCount) return FontOperationResult.Failure(FontError.GlyphOutOfRange(glyphId))
-        val fdIndex = table.fdSelect?.getOrNull(glyphId) ?: 0
+        val fdIndex = table.fdIndexOf(glyphId)
         val localSubrs = table.fontDicts?.getOrNull(fdIndex)?.localSubrs
         val variationSource: CffVariationSource? = if (table.variationStoreOffset == null) {
             null

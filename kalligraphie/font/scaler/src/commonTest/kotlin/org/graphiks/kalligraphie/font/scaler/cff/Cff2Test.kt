@@ -55,7 +55,7 @@ class Cff2Test {
     }
 
     @Test
-    fun defaultsTheVsIndexToZeroWithoutAPrivateDictDeclaration() {
+    fun defaultsTheVsIndexToZeroWhenThePrivateDictIsEmpty() {
         val bytes = buildCff2WithVariation(
             charString = byteArrayOf(139.toByte(), 22),
             variationStore = testCff2VariationStore(),
@@ -63,6 +63,19 @@ class Cff2Test {
         val table = success(Cff2Table.read(bytes))
 
         assertEquals(0, table.defaultVsIndex(0))
+    }
+
+    @Test
+    fun returnsZeroForAnOutOfRangeGlyphId() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+            privateData = testDictInt(1) + byteArrayOf(22),
+        )
+        val table = success(Cff2Table.read(bytes))
+
+        assertEquals(1, table.defaultVsIndex(0))
+        assertEquals(0, table.defaultVsIndex(5))
     }
 
     private fun profile(): OutlineProfile = OutlineProfile(
