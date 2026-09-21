@@ -140,15 +140,8 @@ class Type2CharstringTest {
             override fun scalars(vsIndex: Int): DoubleArray = doubleArrayOf(0.5)
         }
         val outline = success(
-            Type2CharstringInterpreter.interpret(
-                charString = byteArrayOf(149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
-                globalSubrs = emptyList(),
-                localSubrs = emptyList(),
-                nominalWidthX = 0,
-                defaultWidthX = 0,
-                maxPoints = 1_000,
-                maxContours = 10,
-                hasWidth = false,
+            interpret(
+                bytes = byteArrayOf(149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
                 variationSource = source,
             ),
         )
@@ -159,9 +152,9 @@ class Type2CharstringTest {
     @Test
     fun seedsTheVsIndexFromTheInitialIndex() {
         val outline = success(
-            interpretWithSource(
+            interpret(
                 bytes = byteArrayOf(149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
-                source = singleRegionOnlyAtVsIndexOne(),
+                variationSource = singleRegionOnlyAtVsIndexOne(),
                 initialVsIndex = 1,
             ),
         )
@@ -172,9 +165,9 @@ class Type2CharstringTest {
     @Test
     fun appliesAnExplicitVsIndexOverride() {
         val outline = success(
-            interpretWithSource(
+            interpret(
                 bytes = byteArrayOf(140.toByte(), 15, 149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
-                source = singleRegionOnlyAtVsIndexOne(),
+                variationSource = singleRegionOnlyAtVsIndexOne(),
                 initialVsIndex = 0,
             ),
         )
@@ -183,17 +176,24 @@ class Type2CharstringTest {
     }
 
     @Test
-    fun rejectsAVsIndexWithoutRegionData() {
+    fun rejectsABlendWhenTheVsIndexHasNoRegions() {
         val source = object : CffVariationSource {
             override fun regionCount(vsIndex: Int): Int = 0
             override fun scalars(vsIndex: Int): DoubleArray = DoubleArray(0)
         }
 
-        val result = interpretWithSource(
-            bytes = byteArrayOf(140.toByte(), 15, 149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
-            source = source,
+        val result = interpret(
+            bytes = byteArrayOf(149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
+            variationSource = source,
             initialVsIndex = 0,
         )
+
+        assertIs<FontError.InvalidFontData>(assertIs<FontOperationResult.Failure>(result).error)
+    }
+
+    @Test
+    fun rejectsANegativeInitialVsIndex() {
+        val result = interpret(byteArrayOf(149.toByte(), 159.toByte(), 21, 14), initialVsIndex = -1)
 
         assertIs<FontError.InvalidFontData>(assertIs<FontOperationResult.Failure>(result).error)
     }
@@ -203,29 +203,14 @@ class Type2CharstringTest {
         override fun scalars(vsIndex: Int): DoubleArray = if (vsIndex == 1) doubleArrayOf(1.0) else DoubleArray(0)
     }
 
-    private fun interpretWithSource(
-        bytes: ByteArray,
-        source: CffVariationSource,
-        initialVsIndex: Int,
-    ): FontOperationResult<Type2Outline> = Type2CharstringInterpreter.interpret(
-        charString = bytes,
-        globalSubrs = emptyList(),
-        localSubrs = emptyList(),
-        nominalWidthX = 0,
-        defaultWidthX = 0,
-        maxPoints = 100_000,
-        maxContours = 1_000,
-        hasWidth = false,
-        variationSource = source,
-        initialVsIndex = initialVsIndex,
-    )
-
     private fun interpret(
         bytes: ByteArray,
         localSubrs: List<ByteArray> = emptyList(),
         globalSubrs: List<ByteArray> = emptyList(),
         nominalWidthX: Int = 0,
         defaultWidthX: Int = 0,
+        variationSource: CffVariationSource? = null,
+        initialVsIndex: Int = 0,
     ): FontOperationResult<Type2Outline> = Type2CharstringInterpreter.interpret(
         charString = bytes,
         globalSubrs = globalSubrs,
@@ -234,6 +219,8 @@ class Type2CharstringTest {
         defaultWidthX = defaultWidthX,
         maxPoints = 100_000,
         maxContours = 1_000,
+        variationSource = variationSource,
+        initialVsIndex = initialVsIndex,
     )
 
     private fun <T> success(result: FontOperationResult<T>): T =
