@@ -139,6 +139,7 @@ Choose the narrowest applicable scope from the current project structure:
 | `shaping` | Text shaping backends in `:kalligraphie:shaping` |
 | `layout` | Text layout and editing geometry in `:kalligraphie:layout` |
 | `conformance` | Portable conformance capability identities and public-interface conformance tests in `:kalligraphie:conformance` |
+| `e2e` | End-to-end golden fingerprint verification in `:kalligraphie:e2e` |
 | `platform` | Platform integration across the `kalligraphie/platform/` module family |
 | `apple` | Apple font integration in `:kalligraphie:platform:apple` |
 | `linux` | Linux font integration in `:kalligraphie:platform:linux` |

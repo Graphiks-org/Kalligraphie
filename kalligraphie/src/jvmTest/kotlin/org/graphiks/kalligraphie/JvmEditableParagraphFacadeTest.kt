@@ -1247,8 +1247,9 @@ class JvmEditableParagraphFacadeTest {
         val classpathPath = "/fonts/$relativePath"
         javaClass.getResourceAsStream(classpathPath)?.use { stream -> return stream.readBytes() }
         val sourceCandidates = listOf(
-            Path.of("shaping", "src", "jvmTest", "resources", "fonts", relativePath),
-            Path.of("kalligraphie", "shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+            Path.of("test-fixtures", "fonts", relativePath),
+            Path.of("..", "test-fixtures", "fonts", relativePath),
+            Path.of("..", "..", "test-fixtures", "fonts", relativePath),
         )
         val source = sourceCandidates.firstOrNull(Files::isRegularFile)
         return Files.readAllBytes(checkNotNull(source) { "fixture font is missing: $relativePath" })

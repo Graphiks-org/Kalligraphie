@@ -1128,8 +1128,9 @@ private fun incrementalFixtureBytes(relativePath: String): ByteArray {
         return stream.readBytes()
     }
     val candidates = listOf(
-        Path.of("shaping", "src", "jvmTest", "resources", "fonts", relativePath),
-        Path.of("kalligraphie", "shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+        Path.of("test-fixtures", "fonts", relativePath),
+        Path.of("..", "test-fixtures", "fonts", relativePath),
+        Path.of("..", "..", "test-fixtures", "fonts", relativePath),
     )
     return Files.readAllBytes(checkNotNull(candidates.firstOrNull(Files::isRegularFile)))
 }
