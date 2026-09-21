@@ -23,6 +23,7 @@ import org.graphiks.kalligraphie.api.PaintGraphProfile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 
 class VariableColrV1RepresentationTest {
     private val bytes: ByteArray = requireNotNull(
@@ -129,19 +130,27 @@ class VariableColrV1RepresentationTest {
     fun defaultDesignLocationIsIdenticalToNoSelection() {
         val explicitDefault = sample(0x42, 400f)
         val noSelection = sample(0x42, null)
+        val nonDefault = sample(0x42, 900f)
 
         assertEquals(noSelection, explicitDefault)
+        assertNotEquals(noSelection, nonDefault)
     }
 
     @Test
     fun theNonVariableSkiaColrV1FontIsUnchanged() {
-        val skia = requireNotNull(
-            javaClass.getResourceAsStream("/fonts/skia-colr-v1/test_glyphs-glyf_colr_1.ttf.b64"),
-        ).use { java.util.Base64.getMimeDecoder().decode(it.readBytes()) }
-        val first = sampleFrom(skia, 0xF0100, null)
-        val second = sampleFrom(skia, 0xF0100, null)
+        val paint = sampleFrom(decodeSkiaColrV1Fixture(), 0xF0100, null)
 
-        assertEquals(first, second)
+        assertEquals(DesignBounds(100, 250, 900, 950), paint.clipBounds)
+        val clip = assertIs<GlyphPaintNode.GlyphClip>(paint.nodes[paint.rootNode])
+        val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[clip.paint])
+        assertEquals(GlyphPaintPoint(100.0, 250.0), gradient.p0)
+        assertEquals(GlyphPaintPoint(900.0, 250.0), gradient.p1)
+        assertEquals(GlyphPaintPoint(100.0, 300.0), gradient.p2)
+        assertEquals(GlyphPaintExtendMode.REPEAT, gradient.colorLine.extendMode)
+        assertEquals(
+            listOf(GlyphColor(255, 0, 0, 255), GlyphColor(0, 0, 255, 255)),
+            gradient.colorLine.colorStops.map { it.color },
+        )
     }
 
     /**

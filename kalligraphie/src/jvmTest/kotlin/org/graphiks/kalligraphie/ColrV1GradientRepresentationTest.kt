@@ -9,7 +9,7 @@ import kotlin.test.assertIs
 class ColrV1GradientRepresentationTest {
     @Test
     fun rejectsAnUnknownFuturePaintSchemaAtFaceResolution() {
-        val catalog = success(Kalligraphie.embedded(auditedFontBytes(), FontSourceProvenance("Skia COLR v1 test glyphs")))
+        val catalog = success(Kalligraphie.embedded(decodeSkiaColrV1Fixture(), FontSourceProvenance("Skia COLR v1 test glyphs")))
         val requirements = FontAccessRequirementsSnapshot.renderable(
             listOf(
                 PaintGraphProfile(
@@ -173,7 +173,7 @@ class ColrV1GradientRepresentationTest {
         reopenAsset: Boolean = false,
         assertions: (GlyphPaintIR) -> Unit,
     ) {
-        val catalog = success(Kalligraphie.embedded(auditedFontBytes(), FontSourceProvenance("Skia COLR v1 test glyphs")))
+        val catalog = success(Kalligraphie.embedded(decodeSkiaColrV1Fixture(), FontSourceProvenance("Skia COLR v1 test glyphs")))
         val requirements = FontAccessRequirementsSnapshot.renderable(listOf(PaintGraphProfile(
             acceptedNodeKinds = listOf(GlyphPaintNodeKind.GROUP, GlyphPaintNodeKind.SOLID_OUTLINE, GlyphPaintNodeKind.SOLID, GlyphPaintNodeKind.LINEAR_GRADIENT, GlyphPaintNodeKind.RADIAL_GRADIENT, GlyphPaintNodeKind.SWEEP_GRADIENT, GlyphPaintNodeKind.GLYPH_CLIP),
             acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
@@ -206,9 +206,11 @@ class ColrV1GradientRepresentationTest {
         }
     }
 
-    private fun auditedFontBytes(): ByteArray =
-        checkNotNull(javaClass.getResourceAsStream("/fonts/skia-colr-v1/test_glyphs-glyf_colr_1.ttf.b64"))
-            .use { Base64.getMimeDecoder().decode(it.readBytes()) }
-
     private fun <T> success(result: FontOperationResult<T>): T = assertIs<FontOperationResult.Success<T>>(result).value
 }
+
+internal fun decodeSkiaColrV1Fixture(): ByteArray =
+    checkNotNull(
+        ColrV1GradientRepresentationTest::class.java
+            .getResourceAsStream("/fonts/skia-colr-v1/test_glyphs-glyf_colr_1.ttf.b64"),
+    ).use { Base64.getMimeDecoder().decode(it.readBytes()) }
