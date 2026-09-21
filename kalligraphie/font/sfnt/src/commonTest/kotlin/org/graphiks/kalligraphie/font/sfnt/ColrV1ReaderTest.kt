@@ -112,11 +112,108 @@ class ColrV1ReaderTest {
         assertEquals("font.invalid-font-data", failure.error.code)
     }
 
-    private fun paintOf(data: ColrV1Data, glyphId: GlyphId): GlyphPaintIR =
+    @Test
+    fun variesTheClipBoxAtANonDefaultLocation() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1ClipTable(deltaRows = listOf(10, 0, 0, 0)),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = clipProfile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(1.0),
+            ),
+        )
+
+        assertEquals(DesignBounds(110, 250, 900, 950), paintOf(data, GlyphId(1), clipProfile()).clipBounds)
+    }
+
+    /**
+     * At scalar 0.2 with deltas `[3, 3, 2, 2]`: `xMin`/`yMin` = 100.6/250.6 round down (floor) to
+     * 100/250, and `xMax`/`yMax` = 900.4/950.4 round up (ceil) to 901/951. A nearest-integer round
+     * would instead give 101/251/900/950, so this pins the `ClipBoxFormat2` rule.
+     */
+    @Test
+    fun roundsTheVariedClipBoxOutwardAtAFractionalLocation() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1ClipTable(deltaRows = listOf(3, 3, 2, 2)),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = clipProfile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(0.2),
+            ),
+        )
+
+        assertEquals(DesignBounds(100, 250, 901, 951), paintOf(data, GlyphId(1), clipProfile()).clipBounds)
+    }
+
+    private fun clipProfile(): PaintGraphProfile = PaintGraphProfile(
+        acceptedNodeKinds = listOf(GlyphPaintNodeKind.GLYPH_CLIP, GlyphPaintNodeKind.SOLID),
+        acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
+        limits = PaintGraphLimits(maxNodes = 8, maxReferences = 8, maxDepth = 4, maxClips = 1),
+        outlineProfile = OutlineProfile(
+            maxBytes = 1_024,
+            maxContours = 8,
+            maxPoints = 64,
+            maxCompositeDepth = 4,
+            maxCompositeComponents = 8,
+        ),
+        schemaVersion = 2,
+    )
+
+    /**
+     * One-base-glyph COLR v1 table whose root is a `PaintVarSolid` at 44 and whose glyph-level
+     * `ClipList` (format 1) sits at 56. The `ClipBox` (format 2, `(100,250,900,950)`) is at 68 with
+     * `VarIndexBase` zero, and the item variation store follows the ClipList at 81 — the ClipList
+     * never overlaps the nine-byte paint.
+     */
+    private fun colrV1ClipTable(deltaRows: List<Int>): ByteArray {
+        val store = itemVariationStore(deltaRows.map { intArrayOf(it) })
+        val clipListOffset = 56
+        val clipBoxOffset = clipListOffset + 12
+        val storeOffset = clipBoxOffset + 13
+        val out = ByteArray(storeOffset + store.size)
+        writeUInt16(out, 0, 1)
+        writeUInt16(out, 2, 0)
+        writeUInt32(out, 4, 0)
+        writeUInt32(out, 8, 0)
+        writeUInt16(out, 12, 0)
+        writeUInt32(out, 14, 34)
+        writeUInt32(out, 18, 0)
+        writeUInt32(out, 22, clipListOffset)
+        writeUInt32(out, 26, 0)
+        writeUInt32(out, 30, storeOffset)
+        writeUInt32(out, 34, 1)
+        writeUInt16(out, 38, 1)
+        writeUInt32(out, 40, 10)
+        out[44] = 3
+        writeUInt16(out, 45, 0)
+        writeUInt16(out, 47, 16384)
+        writeUInt32(out, 49, 0)
+        out[clipListOffset] = 1
+        writeUInt32(out, clipListOffset + 1, 1)
+        writeUInt16(out, clipListOffset + 5, 1)
+        writeUInt16(out, clipListOffset + 7, 1)
+        writeUInt24(out, clipListOffset + 9, 12)
+        out[clipBoxOffset] = 2
+        writeUInt16(out, clipBoxOffset + 1, 100)
+        writeUInt16(out, clipBoxOffset + 3, 250)
+        writeUInt16(out, clipBoxOffset + 5, 900)
+        writeUInt16(out, clipBoxOffset + 7, 950)
+        writeUInt32(out, clipBoxOffset + 9, 0)
+        store.copyInto(out, storeOffset)
+        return out
+    }
+
+    private fun paintOf(data: ColrV1Data, glyphId: GlyphId, profile: PaintGraphProfile = profile()): GlyphPaintIR =
         assertIs<GlyphRepresentation.Paint>(
             success(
-                data.resolveGlyph(glyphId, profile(), CancellationToken.none) { clipId ->
-                    FontOperationResult.Success(outlineFor(clipId, profile().outlineProfile))
+                data.resolveGlyph(glyphId, profile, CancellationToken.none) { clipId ->
+                    FontOperationResult.Success(outlineFor(clipId, profile.outlineProfile))
                 },
             ),
         ).paint

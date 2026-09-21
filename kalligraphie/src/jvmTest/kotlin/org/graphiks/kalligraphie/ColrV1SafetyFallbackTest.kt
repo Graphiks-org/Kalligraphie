@@ -115,7 +115,7 @@ class ColrV1SafetyFallbackTest {
     /**
      * Format 33 is reserved: the reader accepts only paint formats 1..32, so an unrecognized value
      * must fail typed. Format 19 is a supported variable transform and is pinned by
-     * [variableScaleUniformAroundCenterResolvesStaticallyAtTheDefaultInstance].
+     * [variableScaleAroundCenterResolvesStaticallyAtTheDefaultInstance].
      */
     @Test
     fun unknownCompositeUsesClearWhileMalformedReferencesAndVariablePaintFailTyped() {
@@ -147,10 +147,11 @@ class ColrV1SafetyFallbackTest {
 
     /**
      * At the default instance the variable transform contributes zero deltas, so format 19
-     * (`PaintVarScaleUniformAroundCenter`) resolves to the same matrix as its static counterpart.
+     * (`PaintVarScaleAroundCenter`, two scales plus a centre) resolves to the same matrix as its
+     * static counterpart.
      */
     @Test
-    fun variableScaleUniformAroundCenterResolvesStaticallyAtTheDefaultInstance() {
+    fun variableScaleAroundCenterResolvesStaticallyAtTheDefaultInstance() {
         ColrV1Fixture(mutateSource = { it[17947] = 19 }).use { fixture ->
             val paint = fixture.paint(0xF0300, 84)
             val composite = assertIs<GlyphPaintNode.Composite>(paint.nodes[paint.rootNode])

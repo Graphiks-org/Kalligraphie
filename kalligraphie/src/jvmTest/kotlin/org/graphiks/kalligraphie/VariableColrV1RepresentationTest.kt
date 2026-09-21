@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie
 
+import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
@@ -14,6 +15,7 @@ import org.graphiks.kalligraphie.api.GlyphPaintExtendMode
 import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
+import org.graphiks.kalligraphie.api.GlyphPaintPoint
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.PaintGraphLimits
@@ -37,6 +39,60 @@ class VariableColrV1RepresentationTest {
     fun translateVariesWithTheInstanceLocation() {
         assertTransform(wght = null, expectedDx = 10.0, expectedDy = 20.0, expectedChildOpacity = 1.0)
         assertTransform(wght = 900f, expectedDx = 60.0, expectedDy = -40.0, expectedChildOpacity = 0.5)
+    }
+
+    @Test
+    fun linearGradientStopsAndClipVaryWithTheInstanceLocation() {
+        assertLinear(
+            wght = null,
+            expectedClip = DesignBounds(100, 250, 900, 950),
+            expectedP0 = GlyphPaintPoint(100.0, 250.0),
+            expectedP2 = GlyphPaintPoint(100.0, 300.0),
+            expectedStop0Offset = 0.0,
+            expectedStop0Opacity = 1.0,
+            expectedStop1Offset = 1.0,
+        )
+        assertLinear(
+            wght = 650f,
+            expectedClip = DesignBounds(105, 260, 885, 930),
+            expectedP0 = GlyphPaintPoint(150.0, 225.0),
+            expectedP2 = GlyphPaintPoint(87.5, 337.5),
+            expectedStop0Offset = 0.125,
+            expectedStop0Opacity = 0.75,
+            expectedStop1Offset = 1.0625,
+        )
+        assertLinear(
+            wght = 900f,
+            expectedClip = DesignBounds(110, 270, 870, 910),
+            expectedP0 = GlyphPaintPoint(200.0, 200.0),
+            expectedP2 = GlyphPaintPoint(75.0, 375.0),
+            expectedStop0Offset = 0.25,
+            expectedStop0Opacity = 0.5,
+            expectedStop1Offset = 1.125,
+        )
+    }
+
+    private fun assertLinear(
+        wght: Float?,
+        expectedClip: DesignBounds,
+        expectedP0: GlyphPaintPoint,
+        expectedP2: GlyphPaintPoint,
+        expectedStop0Offset: Double,
+        expectedStop0Opacity: Double,
+        expectedStop1Offset: Double,
+    ) {
+        withPaint(0x41, wght) { paint ->
+            assertEquals(expectedClip, paint.clipBounds)
+            val clip = assertIs<GlyphPaintNode.GlyphClip>(paint.nodes[paint.rootNode])
+            val gradient = assertIs<GlyphPaintNode.LinearGradient>(paint.nodes[clip.paint])
+            assertEquals(expectedP0, gradient.p0)
+            assertEquals(expectedP2, gradient.p2)
+            assertEquals(GlyphPaintExtendMode.REPEAT, gradient.colorLine.extendMode)
+            assertEquals(listOf(GlyphColor(255, 0, 0, 255), GlyphColor(0, 0, 255, 255)), gradient.colorLine.colorStops.map { it.color })
+            assertEquals(expectedStop0Offset, gradient.colorLine.colorStops[0].offset)
+            assertEquals(expectedStop0Opacity, gradient.colorLine.colorStops[0].opacity)
+            assertEquals(expectedStop1Offset, gradient.colorLine.colorStops[1].offset)
+        }
     }
 
     private fun assertSolid(wght: Float?, expectedOpacity: Double) {

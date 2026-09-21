@@ -6,7 +6,9 @@ import org.graphiks.kalligraphie.api.*
 import org.graphiks.kalligraphie.font.sfnt.variation.MetricVariationLimits
 import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
 import kotlin.math.PI
+import kotlin.math.ceil
 import kotlin.math.cos
+import kotlin.math.floor
 import kotlin.math.sin
 import kotlin.math.tan
 
@@ -105,8 +107,11 @@ public class ColrV1Data internal constructor(
         val clipIndex = indexes.clipStarts.asList().binarySearch(glyphId.value).let { found -> if (found >= 0) found else -found - 2 }
         val clip = if (clipIndex >= 0 && glyphId.value <= indexes.clipEnds[clipIndex]) {
             val offset = indexes.clipOffsets[clipIndex]
-            if (reader.u8(offset) != 1) colrUnsupported("Variable or unknown COLR clip boxes are unsupported.", location)
-            reader.bounds(offset)
+            when (reader.u8(offset)) {
+                1 -> reader.bounds(offset)
+                2 -> reader.variableBounds(offset, deltaAt)
+                else -> colrInvalid("COLR clip box format is invalid.", location)
+            }
         } else null
         val limits = profile.limits
         val nodes = ArrayList<GlyphPaintNode>()
@@ -637,6 +642,25 @@ private class ColrBytes(private val bytes: ByteArray) {
     fun bounds(offset: Int): DesignBounds {
         range(offset, 9)
         val result = DesignBounds(s16(offset + 1), s16(offset + 3), s16(offset + 5), s16(offset + 7))
+        if (result.minX > result.maxX || result.minY > result.maxY) colrInvalid("COLR clip bounds are reversed.")
+        return result
+    }
+
+    /**
+     * Resolves a `ClipBoxFormat2` (variable) clip box.
+     *
+     * The four coordinates plus their deltas evaluate in floating point and then round outward so
+     * the box never shrinks: `xMin`/`yMin` toward -infinity (`floor`) and `xMax`/`yMax` toward
+     * +infinity (`ceil`).
+     */
+    fun variableBounds(offset: Int, deltaAt: (Long, Int) -> Double): DesignBounds {
+        range(offset, 13)
+        val base = u32(offset + 9)
+        val minX = s16(offset + 1) + deltaAt(base, 0)
+        val minY = s16(offset + 3) + deltaAt(base, 1)
+        val maxX = s16(offset + 5) + deltaAt(base, 2)
+        val maxY = s16(offset + 7) + deltaAt(base, 3)
+        val result = DesignBounds(floor(minX).toInt(), floor(minY).toInt(), ceil(maxX).toInt(), ceil(maxY).toInt())
         if (result.minX > result.maxX || result.minY > result.maxY) colrInvalid("COLR clip bounds are reversed.")
         return result
     }
