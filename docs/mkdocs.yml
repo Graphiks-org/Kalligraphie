@@ -58,6 +58,7 @@ nav:
   - Incremental Layout Measurement: incremental-layout-measurement.md
   - Advanced Typography: advanced-typography.md
   - Conformance Matrix: conformance-matrix.md
+  - End-to-End Golden: e2e-golden.md
   - Raster CPU: raster-cpu.md
 
 # !!! EMBEDDED DOKKA START, DO NOT COMMIT !!! #

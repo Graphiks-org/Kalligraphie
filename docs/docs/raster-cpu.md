@@ -33,12 +33,12 @@ the EBDT strike keeps its image orientation. The dedicated task always executes
 when invoked explicitly:
 
 ```bash
-env KALLIGRAPHIE_E2E_DUMPS=true \
-    KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
+env KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
     ./gradlew :kalligraphie:e2e:e2eGoldenDumps
 ```
 
-Without `KALLIGRAPHIE_E2E_DUMPS=true`, the task still runs but writes nothing.
+The task enables the runner itself; without `KALLIGRAPHIE_E2E_DUMPS_OUTPUT` it
+fails rather than writing inside the repository.
 
 `KALLIGRAPHIE_E2E_DUMPS_OUTPUT` must be an absolute path outside the repository.
 The runner is excluded from `check`; it contains no performance threshold.
