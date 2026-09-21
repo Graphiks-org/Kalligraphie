@@ -165,6 +165,9 @@ internal fun readDeltaSetIndexMap(
     if (mapCountLong > limits.maxDeltaSetIndexEntries.toLong()) {
         return variationLimitFailure("$tag delta-set index map declares $mapCountLong entries.", tag)
     }
+    if (mapCountLong > Int.MAX_VALUE.toLong()) {
+        return variationLimitFailure("$tag delta-set index map declares $mapCountLong entries.", tag)
+    }
     val mapCount = mapCountLong.toInt()
     val entrySize = ((entryFormat and 0x30) shr 4) + 1
     val innerBitCount = (entryFormat and 0x0F) + 1
