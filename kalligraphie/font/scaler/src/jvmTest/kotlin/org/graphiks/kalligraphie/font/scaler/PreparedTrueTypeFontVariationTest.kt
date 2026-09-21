@@ -84,6 +84,57 @@ class PreparedTrueTypeFontVariationTest {
         assertEquals(199, varied.leftSideBearingDesignUnits)
     }
 
+    /**
+     * The fixture's `HVAR` item row for glyph 1 is 86, so 574 + 86 = 660; no LSB mapping is
+     * present, so the `hmtx` side bearing is unchanged.
+     */
+    @Test
+    fun variesTheAdvanceWidthThroughHvarAtNormalizedWghtOne() {
+        val prepared = preparedFixture()
+        val default = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.GlyphMetrics>>(
+            prepared.readGlyphMetrics(GlyphId(1), 2048f),
+        ).value
+        assertEquals(574, default.advanceWidthDesignUnits)
+        assertEquals(11, default.leftSideBearingDesignUnits)
+
+        val varied = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.GlyphMetrics>>(
+            prepared.readGlyphMetrics(GlyphId(1), 2048f, listOf(FontAxisCoordinate("wght", 1f))),
+        ).value
+        assertEquals(660, varied.advanceWidthDesignUnits)
+        assertEquals(11, varied.leftSideBearingDesignUnits)
+    }
+
+    @Test
+    fun keepsVerticalMetricsFromVmtxWithoutVvar() {
+        val prepared = preparedFixture()
+        val varied = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.VerticalGlyphMetrics>>(
+            prepared.readVerticalGlyphMetrics(GlyphId(1), LAYOUT_SIZE, listOf(FontAxisCoordinate("wght", 1f))),
+        ).value
+        assertEquals(1000f, varied.advanceHeight.value)
+    }
+
+    @Test
+    fun readsFontWideMetricsFromOs2WhenMvarIsAbsent() {
+        val prepared = preparedFixture()
+        val font = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontMetrics>>(
+            prepared.readFontMetrics(listOf(FontAxisCoordinate("wght", 1f))),
+        ).value
+        assertEquals(880f, font.ascender)
+        assertEquals(-120f, font.descender)
+        assertEquals(0f, font.lineGap)
+        assertEquals(-125f, font.underlinePosition)
+        assertEquals(50f, font.underlineThickness)
+        assertEquals(543f, font.xHeight)
+        assertEquals(733f, font.capHeight)
+    }
+
+    private fun preparedFixture(): PreparedTrueTypeFont {
+        val parsed = assertIs<FontOperationResult.Success<ParsedTrueTypeFont>>(
+            SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture"))),
+        ).value
+        return PreparedTrueTypeFont(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture")), parsed)
+    }
+
     private fun horizontalMetricsForGraphemeA(normalizedWght: Float?): GlyphMetrics =
         horizontalMetricsForGlyph(glyphId = 1, normalizedWght = normalizedWght)
 

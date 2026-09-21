@@ -19,6 +19,7 @@ import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontInstanceKey
+import org.graphiks.kalligraphie.api.FontMetrics
 import org.graphiks.kalligraphie.api.FontNamedInstance
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontVariationAxis
@@ -252,10 +253,20 @@ internal data class TrueTypeFontInstance(
         resource.preparedFont.resolveGlyph(codePoint, variationSelector)
 
     override fun metrics(glyphId: GlyphId): FontOperationResult<GlyphMetrics> =
-        resource.preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value)
+        resource.preparedFont.readGlyphMetrics(glyphId, descriptor.layoutSize.value, key.geometry.normalizedAxes)
 
     override fun verticalMetrics(glyphId: GlyphId): FontOperationResult<org.graphiks.kalligraphie.api.VerticalGlyphMetrics> =
-        resource.preparedFont.readVerticalGlyphMetrics(glyphId, descriptor.layoutSize.value)
+        resource.preparedFont.readVerticalGlyphMetrics(glyphId, descriptor.layoutSize.value, key.geometry.normalizedAxes)
+
+    /**
+     * Returns the instance's font-wide metrics derived from `OS/2`, `hhea`, `post`, and `MVAR`.
+     *
+     * [FontInstance.fontMetrics]'s interface default deliberately remains an unsupported placeholder;
+     * this portable TrueType instance is where the derivation is wired in, so a client that holds a
+     * concrete TrueType instance gets real metrics while the shared interface contract is unchanged.
+     */
+    override fun fontMetrics(): FontOperationResult<FontMetrics> =
+        resource.preparedFont.readFontMetrics(key.geometry.normalizedAxes)
 
     override fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> =
         FontOperationResult.Success(OpenTypeFontData(faceId, resource.preparedFont.copySourceBytes()))
