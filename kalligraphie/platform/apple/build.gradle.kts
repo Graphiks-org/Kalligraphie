@@ -16,7 +16,7 @@ kotlin {
             implementation(libs.kffi.coretext.jvm)
         }
         jvmTest {
-            resources.srcDir(rootProject.file("kalligraphie/src/jvmTest/resources"))
+            resources.srcDir(rootProject.file("test-fixtures"))
             dependencies {
                 implementation(kotlin("test"))
                 implementation(project(":kalligraphie"))
@@ -29,11 +29,6 @@ kotlin {
 }
 configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
-}
-tasks.named<Copy>("jvmTestProcessResources") {
-    from(rootProject.file("kalligraphie/shaping/src/jvmTest/resources")) {
-        include("fonts/dejavu/DejaVuSans.ttf", "fonts/dejavu/PROVENANCE.md", "fonts/dejavu/LICENSE.txt")
-    }
 }
 dokka { dokkaSourceSets.configureEach { reportUndocumented.set(true) } }
 mavenPublishing { coordinates(artifactId = "kalligraphie-platform-apple") }

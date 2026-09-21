@@ -18,7 +18,7 @@ kotlin {
             dependencies {
                 implementation(kotlin("test"))
             }
-            resources.srcDir(rootProject.file("kalligraphie/src/jvmTest/resources"))
+            resources.srcDir(rootProject.file("test-fixtures"))
         }
     }
 }
