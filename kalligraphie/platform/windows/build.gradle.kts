@@ -16,7 +16,7 @@ kotlin {
             implementation(libs.kffi.directwrite.jvm)
         }
         jvmTest {
-            resources.srcDir(rootProject.file("kalligraphie/src/jvmTest/resources"))
+            resources.srcDir(rootProject.file("test-fixtures"))
             dependencies {
                 implementation(kotlin("test"))
             }

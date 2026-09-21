@@ -14,18 +14,21 @@ kotlin {
         jvmTest.dependencies {
             implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:raster-cpu"))
+            implementation(project(":kalligraphie:layout"))
+            implementation(project(":kalligraphie:shaping"))
+            implementation(project(":kalligraphie:unicode"))
+            implementation(project(":kalligraphie:font:core"))
+            implementation(project(":kalligraphie:font:sfnt"))
             implementation(kotlin("test"))
+        }
+        jvmTest {
+            resources.srcDir(rootProject.file("test-fixtures"))
         }
     }
 }
 
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
-}
-
-// Temporary bridge until P2 consolidates the shared font set into test-fixtures/.
-tasks.named<Copy>("jvmTestProcessResources") {
-    from(project(":kalligraphie").layout.projectDirectory.dir("src/jvmTest/resources"))
 }
 
 val updateClass = "org.graphiks.kalligraphie.e2e.golden.GoldenUpdateRunnerTest"

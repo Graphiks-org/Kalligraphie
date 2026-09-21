@@ -18,11 +18,10 @@ kotlin {
             implementation(project(":kalligraphie"))
             implementation(kotlin("test"))
         }
+        jvmTest {
+            resources.srcDir(rootProject.file("test-fixtures"))
+        }
     }
-}
-
-tasks.named<Copy>("jvmTestProcessResources") {
-    from(project(":kalligraphie").layout.projectDirectory.dir("src/jvmTest/resources"))
 }
 
 val rasterDumpClass = "org.graphiks.kalligraphie.raster.RasterDumpRunnerTest"

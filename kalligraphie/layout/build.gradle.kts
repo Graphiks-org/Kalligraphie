@@ -20,9 +20,8 @@ kotlin {
             implementation(project(":kalligraphie:font:sfnt"))
             implementation(kotlin("test"))
         }
+        jvmTest {
+            resources.srcDir(rootProject.file("test-fixtures"))
+        }
     }
-}
-
-tasks.named<Copy>("jvmTestProcessResources") {
-    from(project(":kalligraphie:shaping").layout.projectDirectory.dir("src/jvmTest/resources"))
 }

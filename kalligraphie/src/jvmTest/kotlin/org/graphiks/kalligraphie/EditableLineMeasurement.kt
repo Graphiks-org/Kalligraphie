@@ -768,8 +768,9 @@ internal object EditableLineMeasurement {
             return stream.readBytes()
         }
         val candidates = listOf(
-            Path.of("shaping", "src", "jvmTest", "resources", "fonts", relativePath),
-            Path.of("kalligraphie", "shaping", "src", "jvmTest", "resources", "fonts", relativePath),
+            Path.of("test-fixtures", "fonts", relativePath),
+            Path.of("..", "test-fixtures", "fonts", relativePath),
+            Path.of("..", "..", "test-fixtures", "fonts", relativePath),
         )
         val fixture = checkNotNull(candidates.firstOrNull(Files::isRegularFile)) {
             "Missing measurement font fixture /fonts/$relativePath."
