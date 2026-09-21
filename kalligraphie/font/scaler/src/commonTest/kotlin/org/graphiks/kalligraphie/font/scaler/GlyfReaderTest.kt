@@ -651,6 +651,11 @@ class GlyfReaderTest {
             GlyfReader.prepare(parsed.bytes, parsed.font),
         ).value
 
+        // Default instance: no tuple deltas are decoded, so this run is the all-zero-delta reference.
+        val unvaried = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(prepared, GlyphId(0), outlineProfile(), CancellationToken.none),
+        ).value
+
         val varied = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
             GlyfReader.readGlyphOutline(
                 prepared,
@@ -660,7 +665,42 @@ class GlyfReaderTest {
                 listOf(FontAxisCoordinate("wght", 1f)),
             ),
         ).value
+
+        // Point alignment cancels the added translation in the assembled contours and bounds, so the
+        // bounds assertions alone cannot detect a delta wrongly applied to the point-matched component.
+        // The published component references retain that translation, so compare them to the zero-delta
+        // run: a mutant that applied the 999 delta to component 1 would shift its transform translation
+        // by -999 and fail this equality.
+        assertEquals(DesignBounds(10, 15, 70, 60), unvaried.bounds)
         assertEquals(DesignBounds(10, 15, 70, 60), varied.bounds)
+        assertEquals(unvaried.components, varied.components)
+        assertEquals(unvaried.components[1].transform, varied.components[1].transform)
+    }
+
+    @Test
+    fun reportsPointMatchedCycleBeforeOutOfRangeParentUnderCollectFirstOrdering() {
+        // The point-matched second component is both out of range (parent point 99) and a self-cycle
+        // (its component glyph 0 is already in the active path). Phase 1 validates every component
+        // record before resolving children, so it reports the cycle; the old interleaved reader
+        // checked the parent point first and reported font.glyf.component-point-out-of-range. This
+        // pins that accepted diagnostic-precedence shift as intentional.
+        val parent = compositeGlyphWithPointAlignedSelfCycle(parentPoint = 99, childPoint = 0)
+        val child = simpleGlyphWithFalseHeaderBounds()
+        val glyf = parent + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, parent.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+            ),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            GlyfReader.readGlyphOutline(parsed.bytes, parsed.font, GlyphId(0), outlineProfile()),
+        )
+        assertEquals("font.glyf.composite-cycle", failure.error.code)
     }
 
     @Test
@@ -1191,3 +1231,18 @@ private fun packedDeltas(values: IntArray): ByteArray {
     }
     return body.toByteArray()
 }
+
+private fun compositeGlyphWithPointAlignedSelfCycle(parentPoint: Int, childPoint: Int): ByteArray =
+    ByteArray(26).also { bytes ->
+        bytes.writeInt16(0, -1)
+        // First component: words | XY offsets | more components, glyph 1 at offset (0, 0).
+        bytes.writeUInt16(10, 0x0023)
+        bytes.writeUInt16(12, 1)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+        // Second component: words-only point match whose component glyph 0 re-enters the active path.
+        bytes.writeUInt16(18, 0x0001)
+        bytes.writeUInt16(20, 0)
+        bytes.writeUInt16(22, parentPoint)
+        bytes.writeUInt16(24, childPoint)
+    }
