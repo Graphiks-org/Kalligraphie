@@ -156,6 +156,70 @@ class Type2CharstringTest {
         assertEquals(GlyphOutlineCommand.MoveTo(20.0, 0.0), outline.contours.single().commands[0])
     }
 
+    @Test
+    fun seedsTheVsIndexFromTheInitialIndex() {
+        val outline = success(
+            interpretWithSource(
+                bytes = byteArrayOf(149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
+                source = singleRegionOnlyAtVsIndexOne(),
+                initialVsIndex = 1,
+            ),
+        )
+
+        assertEquals(GlyphOutlineCommand.MoveTo(30.0, 0.0), outline.contours.single().commands[0])
+    }
+
+    @Test
+    fun appliesAnExplicitVsIndexOverride() {
+        val outline = success(
+            interpretWithSource(
+                bytes = byteArrayOf(140.toByte(), 15, 149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
+                source = singleRegionOnlyAtVsIndexOne(),
+                initialVsIndex = 0,
+            ),
+        )
+
+        assertEquals(GlyphOutlineCommand.MoveTo(30.0, 0.0), outline.contours.single().commands[0])
+    }
+
+    @Test
+    fun rejectsAVsIndexWithoutRegionData() {
+        val source = object : CffVariationSource {
+            override fun regionCount(vsIndex: Int): Int = 0
+            override fun scalars(vsIndex: Int): DoubleArray = DoubleArray(0)
+        }
+
+        val result = interpretWithSource(
+            bytes = byteArrayOf(140.toByte(), 15, 149.toByte(), 159.toByte(), 140.toByte(), 16, 22),
+            source = source,
+            initialVsIndex = 0,
+        )
+
+        assertIs<FontError.InvalidFontData>(assertIs<FontOperationResult.Failure>(result).error)
+    }
+
+    private fun singleRegionOnlyAtVsIndexOne(): CffVariationSource = object : CffVariationSource {
+        override fun regionCount(vsIndex: Int): Int = if (vsIndex == 1) 1 else 0
+        override fun scalars(vsIndex: Int): DoubleArray = if (vsIndex == 1) doubleArrayOf(1.0) else DoubleArray(0)
+    }
+
+    private fun interpretWithSource(
+        bytes: ByteArray,
+        source: CffVariationSource,
+        initialVsIndex: Int,
+    ): FontOperationResult<Type2Outline> = Type2CharstringInterpreter.interpret(
+        charString = bytes,
+        globalSubrs = emptyList(),
+        localSubrs = emptyList(),
+        nominalWidthX = 0,
+        defaultWidthX = 0,
+        maxPoints = 100_000,
+        maxContours = 1_000,
+        hasWidth = false,
+        variationSource = source,
+        initialVsIndex = initialVsIndex,
+    )
+
     private fun interpret(
         bytes: ByteArray,
         localSubrs: List<ByteArray> = emptyList(),

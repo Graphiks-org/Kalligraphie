@@ -73,9 +73,11 @@ internal object Type2CharstringInterpreter {
         maxContours: Int,
         hasWidth: Boolean = true,
         variationSource: CffVariationSource? = null,
+        initialVsIndex: Int = 0,
     ): FontOperationResult<Type2Outline> = try {
         val interpreter = Interpreter(
             globalSubrs, localSubrs, nominalWidthX, defaultWidthX, maxPoints, maxContours, hasWidth, variationSource,
+            initialVsIndex,
         )
         interpreter.execute(charString, 0)
         FontOperationResult.Success(interpreter.finish())
@@ -94,6 +96,7 @@ internal object Type2CharstringInterpreter {
         private val maxContours: Int,
         private val hasWidth: Boolean,
         private val variationSource: CffVariationSource?,
+        initialVsIndex: Int,
     ) {
         private val stack = ArrayList<Double>(48)
         private val transient = DoubleArray(32)
@@ -104,7 +107,7 @@ internal object Type2CharstringInterpreter {
         private var pendingWidth = 0
         private var widthParsed = false
         private var hintCount = 0
-        private var vsIndex = 0
+        private var vsIndex = initialVsIndex
         private var pointCount = 0
         private var operations = 0
         private var ended = false
