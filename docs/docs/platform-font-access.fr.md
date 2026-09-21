@@ -35,13 +35,13 @@ consommateurs.
 
 | Cible / fournisseur | Découverte et données sources | Shaping opérationnel | Accès aux glyphes et rafraîchissement |
 |---|---|---|---|
-| JVM `FontDirectoryCatalog` | Racines lisibles explicites ; TrueType statique à face unique et TTC 1/2, source/indice d’origine | HarfBuzz embarqué sur Linux/macOS x64 et arm64 | Profils portables de contour/peinture/bitmap déclarés ; nouvel `open` |
+| JVM `FontDirectoryCatalog` | Racines lisibles explicites ; TrueType statique à face unique et TTC 1/2, source/indice d’origine | HarfBuzz embarqué sur Linux/macOS x64 et arm64, Windows x64 | Profils portables de contour/peinture/bitmap déclarés ; nouvel `open` |
 | JVM Linux `LinuxSystemFontCatalog` | Racines système, utilisateur historique et XDG, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur Linux x64 et arm64 | Mêmes routes portables ; pas de matching (sélection) par registre Fontconfig ni rafraîchissement automatique |
 | JVM Linux `FontconfigSystemFontCatalog` (`:kalligraphie:platform:linux`) | Configuration Fontconfig activée via `kffi-fontconfig`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur Linux x64 et arm64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `fontconfig-registry` |
 | JVM macOS `MacosSystemFontCatalog` | Racines système/utilisateur standard, ou racines explicites ; même capture TrueType/TTC | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; pas de sélection par registre CoreText ni rafraîchissement automatique |
 | JVM macOS `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Registre CoreText activé via `kffi-coretext`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur macOS x64 et arm64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `coretext-registry` |
 | Adaptateur CoreText facultatif sur JVM macOS | Octets exacts d’un catalogue portable ; TrueType statique monochrome à face unique éligible uniquement | Conserve le shaping portable ; aucune substitution par une mise en page CoreText | Handle de plateforme explicitement accepté, ou routes portables sous-jacentes ; collections exclues de la route de plateforme |
-| JVM Windows `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Collection de fontes système DirectWrite activée via `kffi-directwrite`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | Aucune cible HarfBuzz opérationnelle embarquée | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `directwrite-registry` |
+| JVM Windows `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Collection de fontes système DirectWrite activée via `kffi-directwrite`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur Windows x64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `directwrite-registry` |
 | JVM Android `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Collection de fontes système de la plateforme via `android.graphics.fonts.SystemFonts` (Android 10+), pas un parcours de chemins arbitraires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine ; les noms de famille et de face proviennent de l’analyse des octets capturés | Aucun backend HarfBuzz embarqué dans ce module ; la pile texte de la plateforme s’applique | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `android-platform-fonts` |
 | iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | Registre CoreText via les bindings CoreText de la plateforme, pas une liste de répertoires ; iOS isole (sandbox) les fichiers de fontes système, donc le contenu `.ttf`/`.ttc`/`.otf` est reconstruit à partir des tables copiées de chaque fonte | Aucun backend HarfBuzz embarqué dans ce module ; la pile texte de la plateforme s’applique | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `ios-coretext-registry` |
 | Kotlin Native (autres cibles) | Aucun fournisseur de fontes système sur ces cibles | Aucun parcours de shaping complet implémenté | Contrats communs portables ; ces parcours exécutables ne sont pas implémentés |
@@ -65,13 +65,14 @@ container sanitizer (validateur de sécurité du conteneur) de HarfBuzz pour les
 tables non prises en charge. Une face
 découverte ne garantit pas son utilisation par tout backend (moteur de
 traitement) ou profil de représentation. La matrice CI (intégration continue)
-JVM Linux/macOS à quatre cibles exécute de vrais parcours de découverte,
-shaping et glyphes avec les tests complets du shaper (moteur de shaping) et
-l’audit des dépendances natives. Windows, Android et iOS n’embarquent aucun
-backend HarfBuzz : leurs parcours s’arrêtent avant le shaping et s’appuient sur
-la pile texte de la plateforme ; chaque parcours s’exécute sur une frontière de
-fournisseur contrôlée avec des polices auditées, et les vérifications sur les
-polices installées restent des contrôles optionnels, non l’oracle.
+JVM Linux/macOS/Windows à cinq cibles exécute les tests complets du shaper
+(moteur de shaping) et l’audit des dépendances natives sur chaque cible, et les
+vrais parcours de découverte, shaping et glyphes sur Linux et macOS. Android et
+iOS n’embarquent aucun backend HarfBuzz : leurs parcours s’arrêtent avant le
+shaping et s’appuient sur la pile texte de la plateforme ; chaque parcours
+s’exécute sur une frontière de fournisseur contrôlée avec des polices
+auditées, et les vérifications sur les polices installées restent des
+contrôles optionnels, non l’oracle.
 
 Les nouveaux symboles et types natifs bruts, déclarations ABI (interface binaire),
 constantes et accès aux bibliothèques appartiennent à kffi. Kalligraphie garde
@@ -103,7 +104,7 @@ absente de sa plateforme.
 |---|---|---|---|---|---|
 | macOS `CoreTextSystemFontCatalog` | Registre CoreText activé via les bindings (liaisons natives) CoreText de kffi | Octets `.ttf`/`.ttc`/`.otf` enregistrés, indices de face d’origine | Route par handle (poignée opaque) CoreText pour les faces éligibles | Un nouvel `open` crée une génération `coretext-registry` | Une clé d’une autre génération est refusée au lieu d’être réinterprétée |
 | Linux `FontconfigSystemFontCatalog` | Configuration Fontconfig activée via les bindings Fontconfig de kffi | Octets des fichiers enregistrés | Routes portables | Un nouvel `open` crée une génération `fontconfig-registry` | Un fichier enregistré absent ou illisible est ignoré avec un diagnostic borné |
-| Windows `DirectWriteSystemFontCatalog` | Collection système DirectWrite via les bindings DirectWrite de kffi | Octets des fichiers rapportés ; les clés COM opaques sont résolues en chemins par le local font file loader (chargeur de fichiers local) | Routes portables | Un nouvel `open` crée une génération `directwrite-registry` | Aucun backend HarfBuzz embarqué : le shaping utilise la pile texte de la plateforme |
+| Windows `DirectWriteSystemFontCatalog` | Collection système DirectWrite via les bindings DirectWrite de kffi | Octets des fichiers rapportés ; les clés COM opaques sont résolues en chemins par le local font file loader (chargeur de fichiers local) | Routes portables | Un nouvel `open` crée une génération `directwrite-registry` | HarfBuzz embarqué sur Windows x64 |
 | Android `AndroidSystemFontCatalog` | `android.graphics.fonts.SystemFonts` (Android 10 et ultérieur) | Octets des fichiers rapportés | Routes portables | Un nouvel `open` crée une génération `android-platform-fonts` | Avant Android 10, aucune route d’énumération supportée : le fournisseur échoue avec une erreur typée plutôt que d’explorer des chemins inconnus |
 | iOS `IosSystemFontCatalog` | Registre CoreText via les bindings CoreText de la plateforme | Tables CoreText reconstruites en un conteneur SFNT autonome (format de fichier de police) avec checksum de répertoire et `head.checkSumAdjustment` recalculés | Routes portables | Un nouvel `open` crée une génération `ios-coretext-registry` | Les fichiers de fontes système sont isolés (sandbox) : aucun chemin n’est disponible ; un conteneur reconstruit n’est pas identique octet pour octet à l’original et sa signature `DSIG` devient obsolète |
 

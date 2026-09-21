@@ -44,7 +44,7 @@ hit-testing geometry without retaining platform or renderer resources.
 The JVM reference route includes:
 
 - canonical Unicode decoding, paragraph-level BiDi analysis, UAX #14 line
-  breaking, and HarfBuzz shaping;
+  breaking, and HarfBuzz shaping (Linux/macOS x64+arm64, Windows x64);
 - ordered multi-font fallback, OpenType features, hyphenation, justification,
   tabs, ellipsis, inline objects, and horizontal or vertical writing;
 - editable paragraph geometry and incremental layout after text or typography
