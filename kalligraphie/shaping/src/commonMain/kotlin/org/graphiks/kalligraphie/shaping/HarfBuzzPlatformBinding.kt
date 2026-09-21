@@ -22,8 +22,14 @@ internal interface HarfBuzzPlatformBinding {
     /** Allocates a shaping buffer owned by the caller; every buffer must be [PlatformHarfBuzzBuffer.close]d. */
     fun createBuffer(): PlatformHarfBuzzBuffer
 
-    /** Opens a blob/face/font over [fontBytes] and applies [layoutSize]. */
-    fun prepare(fontBytes: ByteArray, faceIndex: Int, layoutSize: Float): PlatformPreparedFont
+    /**
+     * Opens a blob/face/font over [fontBytes] at [faceIndex].
+     *
+     * The platform font must be scaled by its face [PlatformPreparedFont.unitsPerEm] in design units
+     * only: the caller applies the layout size through [DesignToLayoutScale]. Do not pre-apply the
+     * layout size here — doing so would double-scale every shaped metric.
+     */
+    fun prepare(fontBytes: ByteArray, faceIndex: Int): PlatformPreparedFont
 
     /** Releases the native objects retained by [prepared]. */
     fun release(prepared: PlatformPreparedFont)

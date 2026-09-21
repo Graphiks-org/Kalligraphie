@@ -65,7 +65,7 @@ public object HarfBuzzShapingBackend {
         preparedFontCachePolicy: PreparedFontCachePolicy,
     ): FontOperationResult<ShapingBackend> =
         when (val loaded = HarfBuzzBindings.open()) {
-            is FontOperationResult.Success -> FontOperationResult.Success(HarfBuzzJvmBackend(loaded.value, preparedFontCachePolicy))
+            is FontOperationResult.Success -> FontOperationResult.Success(HarfBuzzPortableBackend(loaded.value, preparedFontCachePolicy))
             is FontOperationResult.Failure -> loaded
             is FontOperationResult.Cancelled -> loaded
         }
@@ -76,14 +76,14 @@ public object HarfBuzzShapingBackend {
      */
     @org.graphiks.kalligraphie.api.KalligraphieInternalApi
     public fun preparedFontCacheUsageInspector(backend: ShapingBackend): () -> PreparedFontCacheUsage =
-        if (backend is HarfBuzzJvmBackend) {
+        if (backend is HarfBuzzPortableBackend) {
             { backend.preparedFontCacheUsage }
         } else {
             { PreparedFontCacheUsage(0, 0, 0, 0, 0, 0) }
         }
 }
 
-private class HarfBuzzJvmBackend(
+private class HarfBuzzPortableBackend(
     private val bindings: HarfBuzzBindings,
     policy: PreparedFontCachePolicy,
 ) : ShapingBackend {
@@ -651,6 +651,10 @@ private const val CONFIGURATION_FINGERPRINT: String =
     "harfbuzz-14.3.0;shaper=ot;ot-font-funcs;scale=face-upem;layout-conversion=layout-size-over-upem;explicit-direction-script-language-bot-eot;" +
         "cluster-level=monotone-characters;flags=produce-unsafe-to-concat;feature-policy=harfbuzz-defaults@14.3.0;feature-overrides=explicit"
 internal val HARFBUZZ_SEMANTIC_IDENTITY: ShapingSemanticIdentity = ShapingSemanticIdentity(
+    // Legacy semantic literal shared by every target: ShapingSemanticIdentity is the portable
+    // semantic identity, invariant across OS/arch/artifact, so it must be byte-identical on JVM,
+    // Android and iOS. Do not rename it to "harfbuzz-android" — that would break cross-target
+    // semantic equality.
     backendId = "harfbuzz-jvm",
     engineId = "harfbuzz",
     engineVersion = HARFBUZZ_VERSION,

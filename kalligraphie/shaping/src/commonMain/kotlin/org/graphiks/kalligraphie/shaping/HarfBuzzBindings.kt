@@ -42,11 +42,11 @@ internal class HarfBuzzBindings private constructor(private val binding: HarfBuz
     )
 
     fun prepare(fontBytes: ByteArray, faceIndex: Int, layoutSize: Float): PreparedHarfBuzzFont {
-        val prepared = binding.prepare(fontBytes, faceIndex, layoutSize)
+        val prepared = binding.prepare(fontBytes, faceIndex)
         val designToLayout = try {
             DesignToLayoutScale.create(layoutSize, prepared.unitsPerEm)
         } catch (error: Throwable) {
-            binding.release(prepared)
+            runCatching { binding.release(prepared) }.exceptionOrNull()?.let(error::addSuppressed)
             throw error
         }
         return PreparedHarfBuzzFont(this, prepared, designToLayout)
@@ -78,7 +78,6 @@ internal class HarfBuzzBindings private constructor(private val binding: HarfBuz
                 scalarTable += ContextScalar(sourceRange = scalarRange, itemToken = itemToken)
             }
             buffer.addUtf32(text, itemOffset, itemScalarRanges.size)
-            observeCancellation(request)
             observeCancellation(request)
             val accepted = buffer.shape(preparedFont.font, request.features)
             observeCancellation(request)
@@ -225,6 +224,12 @@ internal class HarfBuzzBindings private constructor(private val binding: HarfBuz
     }
 
     companion object {
+        /**
+         * Test seam: builds the adapter over an arbitrary [binding] without loading the platform
+         * native library. Production code must use [open].
+         */
+        internal fun fromBinding(binding: HarfBuzzPlatformBinding): HarfBuzzBindings = HarfBuzzBindings(binding)
+
         fun open(): FontOperationResult<HarfBuzzBindings> = try {
             FontOperationResult.Success(HarfBuzzBindings(openHarfBuzzPlatformBinding()))
         } catch (failure: HarfBuzzBindingException) {

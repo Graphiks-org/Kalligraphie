@@ -41,7 +41,7 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
 
     override fun createBuffer(): PlatformHarfBuzzBuffer = JvmHarfBuzzBuffer(hb, hb.createBuffer())
 
-    override fun prepare(fontBytes: ByteArray, faceIndex: Int, layoutSize: Float): PlatformPreparedFont {
+    override fun prepare(fontBytes: ByteArray, faceIndex: Int): PlatformPreparedFont {
         val blob = hb.createBlob(fontBytes)
         var face: HarfBuzzFace? = null
         var font: HarfBuzzFont? = null
@@ -55,9 +55,12 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
             font.makeImmutable()
             return JvmPreparedFont(blob, face, font, unitsPerEm)
         } catch (error: Throwable) {
-            font?.close()
-            face?.close()
-            blob.close()
+            val failures = buildList {
+                runCatching { font?.close() }.exceptionOrNull()?.let(::add)
+                runCatching { face?.close() }.exceptionOrNull()?.let(::add)
+                runCatching { blob.close() }.exceptionOrNull()?.let(::add)
+            }
+            aggregateFailures(failures)?.let(error::addSuppressed)
             throw error
         }
     }
