@@ -11,6 +11,10 @@ kotlin {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
+        }
         jvmMain.dependencies {
             implementation(libs.kffi.harfbuzz.jvm)
         }
