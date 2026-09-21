@@ -51,10 +51,45 @@ class VariationStoreEvaluatorTest {
     }
 
     @Test
+    fun multipliesScalarsAcrossAxes() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeBytes(listOf(intArrayOf(0x0000, 0x4000, 0x4000, 0x0000, 0x4000, 0x4000))),
+                0,
+                "CFF2",
+            ),
+        )
+
+        assertContentEquals(doubleArrayOf(0.0), VariationStoreEvaluator.scalars(store, 0, listOf(0.0, 0.0)))
+        assertContentEquals(doubleArrayOf(0.25), VariationStoreEvaluator.scalars(store, 0, listOf(0.5, 0.5)))
+        assertContentEquals(doubleArrayOf(0.5), VariationStoreEvaluator.scalars(store, 0, listOf(1.0, 0.5)))
+    }
+
+    @Test
+    fun evaluatesRegionStartPeakAndEndExactly() {
+        val store = success(
+            VariationStoreEvaluator.read(storeBytes(listOf(intArrayOf(0x1000, 0x2000, 0x4000))), 0, "CFF2"),
+        )
+
+        assertContentEquals(doubleArrayOf(0.0), VariationStoreEvaluator.scalars(store, 0, listOf(0.25)))
+        assertContentEquals(doubleArrayOf(0.5), VariationStoreEvaluator.scalars(store, 0, listOf(0.375)))
+        assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(store, 0, listOf(0.5)))
+        assertContentEquals(doubleArrayOf(0.5), VariationStoreEvaluator.scalars(store, 0, listOf(0.75)))
+        assertContentEquals(doubleArrayOf(0.0), VariationStoreEvaluator.scalars(store, 0, listOf(1.0)))
+    }
+
+    @Test
     fun returnsEmptyScalarsForAnUnknownItemData() {
         val store = success(VariationStoreEvaluator.read(storeBytes(), 0, "CFF2"))
 
         assertContentEquals(DoubleArray(0), VariationStoreEvaluator.scalars(store, 7, listOf(0.0)))
+    }
+
+    @Test
+    fun returnsEmptyScalarsForANegativeItemData() {
+        val store = success(VariationStoreEvaluator.read(storeBytes(), 0, "CFF2"))
+
+        assertContentEquals(DoubleArray(0), VariationStoreEvaluator.scalars(store, -1, listOf(0.0)))
     }
 
     @Test
@@ -74,9 +109,38 @@ class VariationStoreEvaluatorTest {
     }
 
     @Test
+    fun rejectsAnOutOfRangeRegionIndex() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            VariationStoreEvaluator.read(
+                storeBytes(itemDataRegionIndexes = listOf(intArrayOf(3))),
+                0,
+                "CFF2",
+            ),
+        )
+        assertEquals("font.variation.invalid-store", failure.error.code)
+        assertEquals(
+            "Item variation data references region index 3 but the store declares 1 region(s).",
+            failure.error.message,
+        )
+    }
+
+    @Test
     fun rejectsTooManyRegions() {
         val failure = assertIs<FontOperationResult.Failure>(
             VariationStoreEvaluator.read(storeBytes(), 0, "CFF2", VariationStoreLimits(maxRegions = 0)),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun rejectsAnItemDataLargerThanTheRegionLimit() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            VariationStoreEvaluator.read(
+                storeBytes(itemDataRegionIndexes = listOf(intArrayOf(0, 0))),
+                0,
+                "CFF2",
+                VariationStoreLimits(maxRegions = 1),
+            ),
         )
         assertEquals("font.resource-limit-exceeded", failure.error.code)
     }
