@@ -111,10 +111,63 @@ public class GvarData internal constructor(
         normalizedAxes: List<Double>,
         cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<GvarGlyphDeltas?> {
+        if (baseX.size != baseY.size) return invalid("gvar base coordinates are inconsistent.")
+        return decodeDeltas(
+            glyphId = glyphId,
+            pointCount = baseX.size,
+            contourEndPoints = contourEndPoints,
+            baseX = baseX,
+            baseY = baseY,
+            normalizedAxes = normalizedAxes,
+            cancellationToken = cancellationToken,
+        )
+    }
+
+    /**
+     * Decodes and applies the `gvar` tuple deltas of one composite glyph at [normalizedAxes].
+     *
+     * For a composite glyph the glyph's points are its components in glyph-entry order followed by
+     * the four phantom points: point numbers refer to component indices and no interpolation is
+     * performed for un-referenced components. The caller applies each component delta to that
+     * component's placement offset only when the component selects `ARGS_ARE_XY_VALUES`. Returns
+     * `null` when the glyph has no variation record. Malformed records fail closed; cancellation
+     * returns [FontOperationResult.Cancelled] with no partial output.
+     *
+     * @param glyphId numeric glyph identifier.
+     * @param componentCount number of components in the composite glyph.
+     * @param normalizedAxes normalized coordinates in `fvar` axis order, missing axes treated as 0.
+     * @param cancellationToken cooperative cancellation checked before each tuple.
+     */
+    public fun compositeGlyphDeltas(
+        glyphId: Int,
+        componentCount: Int,
+        normalizedAxes: List<Double>,
+        cancellationToken: CancellationToken = CancellationToken.none,
+    ): FontOperationResult<GvarGlyphDeltas?> {
+        if (componentCount < 0) return invalid("gvar component count must not be negative.")
+        if (componentCount == 0) return FontOperationResult.Success(null)
+        return decodeDeltas(
+            glyphId = glyphId,
+            pointCount = componentCount,
+            contourEndPoints = emptyList(),
+            baseX = emptyList(),
+            baseY = emptyList(),
+            normalizedAxes = normalizedAxes,
+            cancellationToken = cancellationToken,
+        )
+    }
+
+    private fun decodeDeltas(
+        glyphId: Int,
+        pointCount: Int,
+        contourEndPoints: List<Int>,
+        baseX: List<Double>,
+        baseY: List<Double>,
+        normalizedAxes: List<Double>,
+        cancellationToken: CancellationToken,
+    ): FontOperationResult<GvarGlyphDeltas?> {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId !in 0 until glyphCount) return FontOperationResult.Success(null)
-        val pointCount = baseX.size
-        if (baseY.size != pointCount) return invalid("gvar base coordinates are inconsistent.")
         val start = glyphDataStart + glyphOffsets[glyphId]
         val end = glyphDataStart + glyphOffsets[glyphId + 1]
         if (start == end) return FontOperationResult.Success(null)

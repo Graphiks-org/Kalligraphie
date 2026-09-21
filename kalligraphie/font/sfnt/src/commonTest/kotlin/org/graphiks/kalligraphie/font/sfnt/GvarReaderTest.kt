@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNull
+import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 class GvarReaderTest {
@@ -489,6 +490,122 @@ class GvarReaderTest {
         assertEquals(0.0, deltas.phantomDeltas.rightX)
         assertEquals(0.0, deltas.phantomDeltas.topY)
         assertEquals(0.0, deltas.phantomDeltas.bottomY)
+    }
+
+    @Test
+    fun compositeGlyphDeltasApplyComponentAndPhantomDeltas() {
+        // Two components plus four phantom slots = six points.
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(10, -5, 0, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(20, 30, 0, 0, 9, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )!!
+        assertEquals(10.0, deltas.xDelta(0))
+        assertEquals(-5.0, deltas.xDelta(1))
+        assertEquals(20.0, deltas.yDelta(0))
+        assertEquals(30.0, deltas.yDelta(1))
+        assertEquals(0.0, deltas.phantomDeltas.leftX)
+        assertEquals(7.0, deltas.phantomDeltas.rightX)
+        assertEquals(7.0, deltas.phantomDeltas.horizontalAdvanceDelta)
+        assertEquals(9.0, deltas.phantomDeltas.topY)
+    }
+
+    @Test
+    fun compositeGlyphDeltasDoNotInterpolateUnreferencedComponents() {
+        // Private point list names only component 0; component 1 must stay at zero (no composite IUP).
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    privatePointNumbers = true,
+                    data = packedPoints(intArrayOf(0)) +
+                        packedDeltas(intArrayOf(40)) +
+                        packedDeltas(intArrayOf(0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )!!
+        assertEquals(40.0, deltas.xDelta(0))
+        assertEquals(0.0, deltas.xDelta(1))
+    }
+
+    @Test
+    fun compositeGlyphDeltasReturnNullForUnknownGlyph() {
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        assertNull(success(data.compositeGlyphDeltas(4, componentCount = 2, normalizedAxes = listOf(1.0))))
+    }
+
+    @Test
+    fun rejectsMalformedCompositeRecord() {
+        val record = ByteArray(6)
+        record.writeUInt16(0, 1)
+        record.writeUInt16(2, 6)
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun rejectsCompositePointCountAboveLimit() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(10, -5, 0, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(20, 30, 0, 0, 9, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1, limits = GvarLimits(maxPointsPerVariation = 4)))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun compositeGlyphDeltasHonourCancellation() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(10, -5, 0, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(20, 30, 0, 0, 9, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        assertIs<FontOperationResult.Cancelled>(
+            data.compositeGlyphDeltas(
+                0,
+                componentCount = 2,
+                normalizedAxes = listOf(1.0),
+                cancellationToken = CancellationToken.cancelled,
+            ),
+        )
     }
 
     private fun <T> success(result: FontOperationResult<T>): T = when (result) {
