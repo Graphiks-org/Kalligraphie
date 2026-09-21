@@ -14,6 +14,11 @@ kotlin {
         jvmTest.dependencies {
             implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:raster-cpu"))
+            implementation(project(":kalligraphie:layout"))
+            implementation(project(":kalligraphie:shaping"))
+            implementation(project(":kalligraphie:unicode"))
+            implementation(project(":kalligraphie:font:core"))
+            implementation(project(":kalligraphie:font:sfnt"))
             implementation(kotlin("test"))
         }
         jvmTest {
