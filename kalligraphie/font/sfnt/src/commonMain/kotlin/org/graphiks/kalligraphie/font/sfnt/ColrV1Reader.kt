@@ -110,7 +110,7 @@ public class ColrV1Data internal constructor(
             when (reader.u8(offset)) {
                 1 -> reader.bounds(offset)
                 2 -> reader.variableBounds(offset, deltaAt)
-                else -> colrInvalid("COLR clip box format is invalid.", location)
+                else -> colrInvalid("COLR ClipBox format is invalid.", location)
             }
         } else null
         val limits = profile.limits
@@ -639,11 +639,16 @@ private class ColrBytes(private val bytes: ByteArray) {
     }
     fun opacity(offset: Int): Double = f2(offset).coerceIn(0.0, 1.0)
     fun point(offset: Int): GlyphPaintPoint = GlyphPaintPoint(s16(offset).toDouble(), s16(offset + 2).toDouble())
+
+    /** Builds a clip box, rejecting a reversed coordinate pair. Shared by both ClipBox formats. */
+    private fun designBounds(minX: Int, minY: Int, maxX: Int, maxY: Int): DesignBounds {
+        if (minX > maxX || minY > maxY) colrInvalid("COLR clip bounds are reversed.")
+        return DesignBounds(minX, minY, maxX, maxY)
+    }
+
     fun bounds(offset: Int): DesignBounds {
         range(offset, 9)
-        val result = DesignBounds(s16(offset + 1), s16(offset + 3), s16(offset + 5), s16(offset + 7))
-        if (result.minX > result.maxX || result.minY > result.maxY) colrInvalid("COLR clip bounds are reversed.")
-        return result
+        return designBounds(s16(offset + 1), s16(offset + 3), s16(offset + 5), s16(offset + 7))
     }
 
     /**
@@ -651,7 +656,8 @@ private class ColrBytes(private val bytes: ByteArray) {
      *
      * The four coordinates plus their deltas evaluate in floating point and then round outward so
      * the box never shrinks: `xMin`/`yMin` toward -infinity (`floor`) and `xMax`/`yMax` toward
-     * +infinity (`ceil`).
+     * +infinity (`ceil`). The reversal check runs on the rounded integers, so a sub-unit float
+     * reversal that rounds outward to a non-reversed box is accepted.
      */
     fun variableBounds(offset: Int, deltaAt: (Long, Int) -> Double): DesignBounds {
         range(offset, 13)
@@ -660,9 +666,7 @@ private class ColrBytes(private val bytes: ByteArray) {
         val minY = s16(offset + 3) + deltaAt(base, 1)
         val maxX = s16(offset + 5) + deltaAt(base, 2)
         val maxY = s16(offset + 7) + deltaAt(base, 3)
-        val result = DesignBounds(floor(minX).toInt(), floor(minY).toInt(), ceil(maxX).toInt(), ceil(maxY).toInt())
-        if (result.minX > result.maxX || result.minY > result.maxY) colrInvalid("COLR clip bounds are reversed.")
-        return result
+        return designBounds(floor(minX).toInt(), floor(minY).toInt(), ceil(maxX).toInt(), ceil(maxY).toInt())
     }
 }
 

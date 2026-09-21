@@ -119,14 +119,14 @@ class ColrV1ReaderTest {
                 colrTable = colrV1ClipTable(deltaRows = listOf(10, 0, 0, 0)),
                 cpalTable = cpalTable(),
                 glyphCount = 2,
-                profile = clipProfile(),
+                profile = profile(),
                 paletteIndex = 0,
                 foregroundColor = GlyphColor(0, 0, 0),
                 orderedAxes = listOf(1.0),
             ),
         )
 
-        assertEquals(DesignBounds(110, 250, 900, 950), paintOf(data, GlyphId(1), clipProfile()).clipBounds)
+        assertEquals(DesignBounds(110, 250, 900, 950), paintOf(data, GlyphId(1)).clipBounds)
     }
 
     /**
@@ -141,41 +141,123 @@ class ColrV1ReaderTest {
                 colrTable = colrV1ClipTable(deltaRows = listOf(3, 3, 2, 2)),
                 cpalTable = cpalTable(),
                 glyphCount = 2,
-                profile = clipProfile(),
+                profile = profile(),
                 paletteIndex = 0,
                 foregroundColor = GlyphColor(0, 0, 0),
                 orderedAxes = listOf(0.2),
             ),
         )
 
-        assertEquals(DesignBounds(100, 250, 901, 951), paintOf(data, GlyphId(1), clipProfile()).clipBounds)
+        assertEquals(DesignBounds(100, 250, 901, 951), paintOf(data, GlyphId(1)).clipBounds)
     }
 
-    private fun clipProfile(): PaintGraphProfile = PaintGraphProfile(
-        acceptedNodeKinds = listOf(GlyphPaintNodeKind.GLYPH_CLIP, GlyphPaintNodeKind.SOLID),
-        acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
-        limits = PaintGraphLimits(maxNodes = 8, maxReferences = 8, maxDepth = 4, maxClips = 1),
-        outlineProfile = OutlineProfile(
-            maxBytes = 1_024,
-            maxContours = 8,
-            maxPoints = 64,
-            maxCompositeDepth = 4,
-            maxCompositeComponents = 8,
-        ),
-        schemaVersion = 2,
-    )
+    @Test
+    fun cancelsDuringTheVariationStoreParse() {
+        val failure = assertIs<FontOperationResult.Cancelled>(
+            ColrV1Reader.read(
+                colrTable = colrV1SolidTable(deltaRow = -8192),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = profile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(1.0),
+                cancellationToken = CancellationToken.cancelled,
+            ),
+        )
+    }
+
+    @Test
+    fun aNonVariableColourTableIsStaticAtANonDefaultLocation() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1SolidTable(deltaRow = -8192, withStore = false),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = profile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(1.0),
+            ),
+        )
+
+        val paint = paintOf(data, GlyphId(1))
+        val clip = assertIs<GlyphPaintNode.GlyphClip>(paint.nodes[paint.rootNode])
+        val solid = assertIs<GlyphPaintNode.Solid>(paint.nodes[clip.paint])
+        assertEquals(1.0, solid.opacity)
+    }
+
+    @Test
+    fun rejectsAnUnknownClipBoxFormat() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            ColrV1Reader.read(
+                colrTable = colrV1ClipTable(deltaRows = listOf(10, 0, 0, 0), clipBoxFormat = 3),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = profile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(1.0),
+            ),
+        )
+
+        assertEquals("font.invalid-font-data", failure.error.code)
+    }
+
+    @Test
+    fun rejectsAReversedVariedClipBox() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1ClipTable(deltaRows = listOf(800, 0, -800, 0)),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = profile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(1.0),
+            ),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(resolve(data, GlyphId(1)))
+        assertEquals("font.invalid-font-data", failure.error.code)
+    }
+
+    /**
+     * At scalar 0.25 with deltas `[3203, 0, 1, 0]` the raw coordinates are reversed
+     * (`xMin` = 900.75 > `xMax` = 900.25). Outward rounding floors `xMin` to 900 and ceils `xMax`
+     * to 901, producing the non-reversed box `(900, 250, 901, 950)`. The reversal check runs on the
+     * rounded integers — a float reversal narrower than one font unit is widened, not rejected —
+     * so this pins that the check is not applied to the intermediate doubles.
+     */
+    @Test
+    fun acceptsAFloatReversedClipBoxThatRoundsForward() {
+        val data = success(
+            ColrV1Reader.read(
+                colrTable = colrV1ClipTable(deltaRows = listOf(3203, 0, 1, 0)),
+                cpalTable = cpalTable(),
+                glyphCount = 2,
+                profile = profile(),
+                paletteIndex = 0,
+                foregroundColor = GlyphColor(0, 0, 0),
+                orderedAxes = listOf(0.25),
+            ),
+        )
+
+        assertEquals(DesignBounds(900, 250, 901, 950), paintOf(data, GlyphId(1)).clipBounds)
+    }
 
     /**
      * One-base-glyph COLR v1 table whose root is a `PaintVarSolid` at 44 and whose glyph-level
-     * `ClipList` (format 1) sits at 56. The `ClipBox` (format 2, `(100,250,900,950)`) is at 68 with
-     * `VarIndexBase` zero, and the item variation store follows the ClipList at 81 — the ClipList
-     * never overlaps the nine-byte paint.
+     * `ClipList` (format 1) sits at 56. The `ClipBox` (format 2 by default, `(100,250,900,950)`) is
+     * at 68 with `VarIndexBase` zero, and the item variation store follows the ClipBox at 81.
      */
-    private fun colrV1ClipTable(deltaRows: List<Int>): ByteArray {
+    private fun colrV1ClipTable(deltaRows: List<Int>, clipBoxFormat: Int = 2): ByteArray {
         val store = itemVariationStore(deltaRows.map { intArrayOf(it) })
         val clipListOffset = 56
         val clipBoxOffset = clipListOffset + 12
         val storeOffset = clipBoxOffset + 13
+        require(clipListOffset >= 53) { "The ClipList at $clipListOffset overlaps the nine-byte paint at 44..52." }
+        require(storeOffset >= clipBoxOffset + 13) { "The variation store at $storeOffset overlaps the ClipBox at $clipBoxOffset..${clipBoxOffset + 12}." }
         val out = ByteArray(storeOffset + store.size)
         writeUInt16(out, 0, 1)
         writeUInt16(out, 2, 0)
@@ -199,7 +281,7 @@ class ColrV1ReaderTest {
         writeUInt16(out, clipListOffset + 5, 1)
         writeUInt16(out, clipListOffset + 7, 1)
         writeUInt24(out, clipListOffset + 9, 12)
-        out[clipBoxOffset] = 2
+        out[clipBoxOffset] = clipBoxFormat.toByte()
         writeUInt16(out, clipBoxOffset + 1, 100)
         writeUInt16(out, clipBoxOffset + 3, 250)
         writeUInt16(out, clipBoxOffset + 5, 900)
@@ -209,14 +291,17 @@ class ColrV1ReaderTest {
         return out
     }
 
+    private fun resolve(
+        data: ColrV1Data,
+        glyphId: GlyphId,
+        profile: PaintGraphProfile = profile(),
+    ): FontOperationResult<GlyphRepresentation> =
+        data.resolveGlyph(glyphId, profile, CancellationToken.none) { clipId ->
+            FontOperationResult.Success(outlineFor(clipId, profile.outlineProfile))
+        }
+
     private fun paintOf(data: ColrV1Data, glyphId: GlyphId, profile: PaintGraphProfile = profile()): GlyphPaintIR =
-        assertIs<GlyphRepresentation.Paint>(
-            success(
-                data.resolveGlyph(glyphId, profile, CancellationToken.none) { clipId ->
-                    FontOperationResult.Success(outlineFor(clipId, profile.outlineProfile))
-                },
-            ),
-        ).paint
+        assertIs<GlyphRepresentation.Paint>(success(resolve(data, glyphId, profile))).paint
 
     /** A real empty-contour outline whose limits match [outline], so the paint profile accepts it. */
     private fun outlineFor(glyphId: GlyphId, outline: OutlineProfile): GlyphOutlineIR = GlyphOutlineIR(
@@ -264,13 +349,17 @@ class ColrV1ReaderTest {
     )
 
     /**
-     * One-base-glyph COLR v1 table whose `PaintGlyph` root wraps a `PaintVarSolid` with
-     * `VarIndexBase` zero, followed by the item variation store at offset 59.
+     * One-base-glyph COLR v1 table whose `PaintGlyph` root at 44 wraps a `PaintVarSolid` at 50 with
+     * `VarIndexBase` zero. With [withStore] the one-axis item variation store follows the paint at
+     * 59; without it the store offset field is zero and the table is a static COLR v1 header and
+     * paint region of 59 bytes.
      */
-    private fun colrV1SolidTable(deltaRow: Int): ByteArray {
-        val store = itemVariationStore(listOf(intArrayOf(deltaRow)))
-        val storeOffset = 59
-        val out = ByteArray(storeOffset + store.size)
+    private fun colrV1SolidTable(deltaRow: Int, withStore: Boolean = true): ByteArray {
+        val store = if (withStore) itemVariationStore(listOf(intArrayOf(deltaRow))) else ByteArray(0)
+        val storeOffset = if (withStore) 59 else 0
+        val total = if (withStore) storeOffset + store.size else 59
+        require(!withStore || storeOffset >= 59) { "The variation store at $storeOffset overlaps the paint at 44..58." }
+        val out = ByteArray(total)
         writeUInt16(out, 0, 1)
         writeUInt16(out, 2, 0)
         writeUInt32(out, 4, 0)

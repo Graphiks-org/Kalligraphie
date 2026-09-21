@@ -51,6 +51,51 @@ class ColrV1VariationTest {
         assertEquals(-200.0, variation.delta(0, 0, listOf(1.0)))
     }
 
+    /**
+     * The map fixture is read from offset `1` because offset `0` is the shared reader's "absent map"
+     * sentinel, so the map bytes are preceded by a one-byte pad.
+     */
+    @Test
+    fun addressesANonIdentityIndexMap() {
+        val mapBytes = deltaSetIndexMap0(outer = 0, inner = 1, mapCount = 1)
+        val table = ByteArray(1 + mapBytes.size)
+        mapBytes.copyInto(table, 1)
+        val map = checkNotNull(
+            success(
+                readDeltaSetIndexMap(
+                    table,
+                    1,
+                    "COLR",
+                    MetricVariationLimits(),
+                    CancellationToken.none,
+                ),
+            ),
+        )
+        val variation = ColrV1Variation(store(listOf(intArrayOf(100), intArrayOf(-200))), map)
+
+        assertEquals(-200.0, variation.delta(0, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun rejectsAStoreThatExceedsTheSourceByteLimit() {
+        val store = itemVariationStore(listOf(intArrayOf(1)))
+        val table = ByteArray(1 + store.size)
+        store.copyInto(table, 1)
+        val indexes = indexes(varIndexMapOffset = 0L, varStoreOffset = 1L)
+
+        val failure = assertIs<FontOperationResult.Failure>(
+            readColrVariation(
+                table,
+                indexes,
+                1,
+                MetricVariationLimits(maxSourceBytes = 4),
+                VariationStoreLimits(),
+                CancellationToken.none,
+            ),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
     @Test
     fun scalesTheDeltaAtAnIntermediateLocation() {
         val variation = ColrV1Variation(store(listOf(intArrayOf(100))), null)
