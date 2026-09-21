@@ -4,10 +4,8 @@ package org.graphiks.kalligraphie.font.sfnt.variation
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
-import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
 import org.graphiks.kalligraphie.font.sfnt.variationFailure
-import org.graphiks.kalligraphie.font.sfnt.variationLimitFailure
 
 /**
  * Decoded OpenType `HVAR` table.
@@ -81,39 +79,38 @@ public object HvarReader {
         storeLimits: VariationStoreLimits = VariationStoreLimits(),
         cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<HvarData> {
-        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
-        if (table.size > limits.maxSourceBytes) {
-            return variationLimitFailure("HVAR table exceeds the source-byte limit.", "HVAR")
-        }
-        if (table.size < HEADER_SIZE) return invalid("HVAR header is truncated.")
-        val major = readUInt16(table, 0)?.toInt() ?: return invalid("HVAR header is truncated.")
-        val minor = readUInt16(table, 2)?.toInt() ?: return invalid("HVAR header is truncated.")
-        if (major != 1 || minor != 0) {
-            return variationFailure("font.variation.unsupported-hvar-version", "Unsupported HVAR version $major.$minor.", "HVAR")
-        }
-        if (limits.maxVariationStores < 1) {
-            return variationLimitFailure("HVAR requires a variation store but the limit forbids one.", "HVAR")
-        }
-        val storeOffset = readOffset32(table, 4) ?: return invalid("HVAR item variation store offset is out of range.")
-        if (storeOffset <= 0 || storeOffset >= table.size) {
-            return invalid("HVAR item variation store offset is out of range.")
-        }
-        val store = when (
-            val result = VariationStoreEvaluator.read(
+        when (
+            val result = readMetricVariationVersion(
                 table,
-                storeOffset,
                 "HVAR",
+                HEADER_SIZE,
+                "font.variation.unsupported-hvar-version",
+                "font.variation.invalid-hvar",
+                limits,
+                cancellationToken,
+            )
+        ) {
+            is FontOperationResult.Success -> Unit
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val storeOffset = readOffset32(table, 4)
+            ?: return invalid("HVAR item variation store offset is out of range.")
+        val store = when (
+            val result = readMetricVariationStore(
+                table,
+                "HVAR",
+                "font.variation.invalid-hvar",
+                storeOffset,
+                expectedAxisCount,
+                limits,
                 storeLimits,
                 cancellationToken,
-                includeDeltas = true,
             )
         ) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
-        }
-        if (store.axisCount != expectedAxisCount) {
-            return invalid("HVAR axis count ${store.axisCount} does not match fvar $expectedAxisCount.")
         }
         val advanceWidthMap = when (val result = readMap(table, 8, limits, cancellationToken)) {
             is FontOperationResult.Success -> result.value

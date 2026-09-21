@@ -91,15 +91,20 @@ public object MvarReader {
         storeLimits: VariationStoreLimits = VariationStoreLimits(),
         cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<MvarData> {
-        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
-        if (table.size > limits.maxSourceBytes) {
-            return variationLimitFailure("MVAR table exceeds the source-byte limit.", "MVAR")
-        }
-        if (table.size < HEADER_SIZE) return invalid("MVAR header is truncated.")
-        val major = readUInt16(table, 0)?.toInt() ?: return invalid("MVAR header is truncated.")
-        val minor = readUInt16(table, 2)?.toInt() ?: return invalid("MVAR header is truncated.")
-        if (major != 1 || minor != 0) {
-            return variationFailure("font.variation.unsupported-mvar-version", "Unsupported MVAR version $major.$minor.", "MVAR")
+        when (
+            val result = readMetricVariationVersion(
+                table,
+                "MVAR",
+                HEADER_SIZE,
+                "font.variation.unsupported-mvar-version",
+                "font.variation.invalid-mvar",
+                limits,
+                cancellationToken,
+            )
+        ) {
+            is FontOperationResult.Success -> Unit
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
         }
         val valueRecordSize = readUInt16(table, 6)?.toInt() ?: return invalid("MVAR header is truncated.")
         val valueRecordCount = readUInt16(table, 8)?.toInt() ?: return invalid("MVAR header is truncated.")
@@ -115,11 +120,21 @@ public object MvarReader {
         if (valueRecordCount == 0) {
             return FontOperationResult.Success(MvarData(null, emptyMap()))
         }
-        if (limits.maxVariationStores < 1) {
-            return variationLimitFailure("MVAR requires a variation store but the limit forbids one.", "MVAR")
-        }
-        if (storeOffset <= 0 || storeOffset >= table.size) {
-            return invalid("MVAR item variation store offset is out of range.")
+        val store = when (
+            val result = readMetricVariationStore(
+                table,
+                "MVAR",
+                "font.variation.invalid-mvar",
+                storeOffset,
+                expectedAxisCount,
+                limits,
+                storeLimits,
+                cancellationToken,
+            )
+        ) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
         }
         val records = LinkedHashMap<String, IntArray>(valueRecordCount)
         var previousTag: String? = null
@@ -139,23 +154,6 @@ public object MvarReader {
             val inner = readUInt16(table, recordOffset + 6)?.toInt()
                 ?: return invalid("MVAR value record is truncated.")
             records[tag] = intArrayOf(outer, inner)
-        }
-        val store = when (
-            val result = VariationStoreEvaluator.read(
-                table,
-                storeOffset,
-                "MVAR",
-                storeLimits,
-                cancellationToken,
-                includeDeltas = true,
-            )
-        ) {
-            is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return result
-            is FontOperationResult.Cancelled -> return result
-        }
-        if (store.axisCount != expectedAxisCount) {
-            return invalid("MVAR axis count ${store.axisCount} does not match fvar $expectedAxisCount.")
         }
         return FontOperationResult.Success(MvarData(store, records))
     }

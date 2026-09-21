@@ -40,10 +40,10 @@ public data class MetricVariationLimits(
  * Parsed OpenType `DeltaSetIndexMap`.
  *
  * Each target index resolves to an `(outer, inner)` delta-set index. When the map declares fewer
- * entries than the number of targets, the last entry applies to every larger index, matching the
- * Common Table Formats specification. An empty map is the implicit identity mapping
- * (`outer = 0, inner = targetIndex`) rather than a delta-set-zero lookup, mirroring HarfBuzz's
- * `DeltaSetIndexMap::map`. Both format 0 and format 1 headers are accepted.
+ * entries than the number of targets the last entry applies to every larger index, except that an
+ * empty map is the implicit identity mapping (`outer = 0, inner = targetIndex`) rather than a
+ * delta-set-zero lookup, mirroring HarfBuzz's `DeltaSetIndexMap::map`. Both format 0 and format 1
+ * headers are accepted.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class DeltaSetIndexMap internal constructor(
@@ -77,8 +77,15 @@ public class DeltaSetIndexMap internal constructor(
  *
  * Returns `null` when the offset is absent (zero). An offset that does not fit the table fails with
  * [errorCode]; the map's own failures are produced by [readDeltaSetIndexMap]. Shared by the metric
- * tables (`HVAR`/`VVAR`) so both report the same diagnostics for the same bytes. [tag] is the
- * owning table's four-character tag and becomes the diagnostic location.
+ * tables (`HVAR`/`VVAR`) so both report the same diagnostics for the same bytes.
+ *
+ * @param table exact bytes of the owning metric-variation table.
+ * @param offsetField byte offset of the Offset32 that points at the map.
+ * @param tag four-character table tag used as the diagnostic location.
+ * @param errorCode failure code for an offset that does not fit [table].
+ * @param limits metric-variation bounds forwarded to [readDeltaSetIndexMap].
+ * @param cancellationToken cooperative cancellation; a cancelled token yields a cancelled result.
+ * @return the decoded map, `null` when absent, or a typed failure.
  */
 internal fun readMetricMapping(
     table: ByteArray,
@@ -165,4 +172,106 @@ internal fun readDeltaSetIndexMap(
         inner[index] = entry and innerMask
     }
     return FontOperationResult.Success(DeltaSetIndexMap(outer, inner))
+}
+
+/**
+ * Reads and validates the metric-variation table header shared by `HVAR`/`VVAR`/`MVAR`.
+ *
+ * Checks [cancellationToken] before any read, the [MetricVariationLimits.maxSourceBytes] bound, the
+ * fixed [headerSize], and the `1.0` version field. [tag] is the four-character table tag used as the
+ * diagnostic location; [unsupportedVersionCode] and [invalidCode] are the owning table's typed
+ * failure codes. The store offset and the store itself are read by [readMetricVariationStore],
+ * because their field width and placement differ per table (`MVAR` carries an Offset16 and parses
+ * value records before its store, which is table-specific).
+ *
+ * @param table exact bytes of the owning metric-variation table.
+ * @param tag four-character table tag used as the diagnostic location.
+ * @param headerSize fixed header extent in bytes that [table] must cover.
+ * @param unsupportedVersionCode failure code for a version other than `1.0`.
+ * @param invalidCode failure code for a malformed or truncated header.
+ * @param limits metric-variation bounds; [MetricVariationLimits.maxSourceBytes] is enforced here.
+ * @param cancellationToken cooperative cancellation checked before any read.
+ * @return success, or a typed version or malformed-data failure.
+ */
+internal fun readMetricVariationVersion(
+    table: ByteArray,
+    tag: String,
+    headerSize: Int,
+    unsupportedVersionCode: String,
+    invalidCode: String,
+    limits: MetricVariationLimits,
+    cancellationToken: CancellationToken,
+): FontOperationResult<Unit> {
+    if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+    if (table.size > limits.maxSourceBytes) {
+        return variationLimitFailure("$tag table exceeds the source-byte limit.", tag)
+    }
+    if (table.size < headerSize) {
+        return variationFailure(invalidCode, "$tag header is truncated.", tag)
+    }
+    val major = readUInt16(table, 0)?.toInt()
+        ?: return variationFailure(invalidCode, "$tag header is truncated.", tag)
+    val minor = readUInt16(table, 2)?.toInt()
+        ?: return variationFailure(invalidCode, "$tag header is truncated.", tag)
+    if (major != 1 || minor != 0) {
+        return variationFailure(unsupportedVersionCode, "Unsupported $tag version $major.$minor.", tag)
+    }
+    return FontOperationResult.Success(Unit)
+}
+
+/**
+ * Reads the format-1 item variation store shared by `HVAR`/`VVAR`/`MVAR`.
+ *
+ * Enforces [MetricVariationLimits.maxVariationStores], bounds-checks [storeOffset] against [table],
+ * parses the store with deltas retained, and requires [expectedAxisCount] to equal the store's axis
+ * count. Store diagnostics keep their own `font.variation.*-store` codes, and a cancelled
+ * [cancellationToken] propagates as a cancelled result. [storeOffset] is read by the caller at the
+ * owning table's field width (`Offset32` for `HVAR`/`VVAR`, `Offset16` for `MVAR`) because that
+ * width is table-specific.
+ *
+ * @param table exact bytes of the owning metric-variation table.
+ * @param tag four-character table tag used as the diagnostic location.
+ * @param invalidCode failure code for an out-of-range offset or an axis-count mismatch.
+ * @param storeOffset byte offset of the store within [table].
+ * @param expectedAxisCount axis count that must equal the store axis count.
+ * @param limits metric-variation bounds; [MetricVariationLimits.maxVariationStores] is enforced here.
+ * @param storeLimits bounds forwarded to the embedded store parse.
+ * @param cancellationToken cooperative cancellation checked before the store parse.
+ * @return the parsed store, or a typed failure.
+ */
+internal fun readMetricVariationStore(
+    table: ByteArray,
+    tag: String,
+    invalidCode: String,
+    storeOffset: Int,
+    expectedAxisCount: Int,
+    limits: MetricVariationLimits,
+    storeLimits: VariationStoreLimits,
+    cancellationToken: CancellationToken,
+): FontOperationResult<VariationStore> {
+    if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+    if (limits.maxVariationStores < 1) {
+        return variationLimitFailure("$tag requires a variation store but the limit forbids one.", tag)
+    }
+    if (storeOffset <= 0 || storeOffset >= table.size) {
+        return variationFailure(invalidCode, "$tag item variation store offset is out of range.", tag)
+    }
+    val store = when (
+        val result = VariationStoreEvaluator.read(
+            table,
+            storeOffset,
+            tag,
+            storeLimits,
+            cancellationToken,
+            includeDeltas = true,
+        )
+    ) {
+        is FontOperationResult.Success -> result.value
+        is FontOperationResult.Failure -> return result
+        is FontOperationResult.Cancelled -> return result
+    }
+    if (store.axisCount != expectedAxisCount) {
+        return variationFailure(invalidCode, "$tag axis count ${store.axisCount} does not match fvar $expectedAxisCount.", tag)
+    }
+    return FontOperationResult.Success(store)
 }
