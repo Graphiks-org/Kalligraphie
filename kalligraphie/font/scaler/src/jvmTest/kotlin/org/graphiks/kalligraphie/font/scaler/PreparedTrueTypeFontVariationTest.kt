@@ -140,23 +140,16 @@ class PreparedTrueTypeFontVariationTest {
 
     private fun horizontalMetricsForGlyph(glyphId: Int, normalizedWght: Float?): GlyphMetrics =
         assertIs<FontOperationResult.Success<GlyphMetrics>>(
-            preparedFontFixture().readGlyphMetrics(GlyphId(glyphId), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
+            preparedFixture().readGlyphMetrics(GlyphId(glyphId), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
         ).value
 
     private fun verticalMetricsForGraphemeA(normalizedWght: Float?): VerticalGlyphMetrics =
         assertIs<FontOperationResult.Success<VerticalGlyphMetrics>>(
-            preparedFontFixture().readVerticalGlyphMetrics(GlyphId(1), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
+            preparedFixture().readVerticalGlyphMetrics(GlyphId(1), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
         ).value
 
     private fun fixtureAxes(normalizedWght: Float?): List<FontAxisCoordinate> =
         normalizedWght?.let { listOf(FontAxisCoordinate("wght", it)) } ?: emptyList()
-
-    private fun preparedFontFixture(): PreparedTrueTypeFont {
-        val parsed = assertIs<FontOperationResult.Success<ParsedTrueTypeFont>>(
-            SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture"))),
-        ).value
-        return PreparedTrueTypeFont(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture")), parsed)
-    }
 
     private fun outlineForGraphemeA(normalizedWght: Float?): ScalerGlyphOutline {
         val parsed = assertIs<FontOperationResult.Success<ParsedTrueTypeFont>>(
