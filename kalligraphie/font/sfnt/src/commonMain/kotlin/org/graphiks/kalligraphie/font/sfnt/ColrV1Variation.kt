@@ -59,10 +59,13 @@ public class ColrV1Variation internal constructor(
  *
  * Returns `null` when the `itemVariationStoreOffset` is absent, so a non-variable COLR font (or the
  * default instance) never allocates a variation store. A malformed store keeps the shared
- * `font.variation.*-store` codes; a `varIndexMapOffset` or `varStoreOffset` whose unsigned value
- * exceeds `Int.MAX_VALUE` reports `font.variation.invalid-colr`, while an in-range but truncated
- * offset surfaces as `font.variation.truncated-store` from the shared readers. An axis-count
- * mismatch reports `font.variation.invalid-colr`, a breach of [limits] (including the
+ * `font.variation.*-store` codes, and an in-range but truncated offset surfaces as
+ * `font.variation.truncated-store` from the shared readers. The `varIndexMapOffset`/`varStoreOffset`
+ * guard below is defensive for a direct caller that supplies unchecked [indexes]; the integrated
+ * `ColrV1Reader.readIndexes` range-checks both header offsets and reports `font.invalid-font-data`
+ * before this function runs, so `ColrV1Reader.read` never observes that guard, which reports
+ * `font.variation.invalid-colr` only for such a caller. An axis-count mismatch reports
+ * `font.variation.invalid-colr`, a breach of [limits] (including the
  * [MetricVariationLimits.maxSourceBytes] table bound) reuses `font.resource-limit-exceeded`, and a
  * cancelled [cancellationToken] returns a cancelled result without touching the table.
  */
