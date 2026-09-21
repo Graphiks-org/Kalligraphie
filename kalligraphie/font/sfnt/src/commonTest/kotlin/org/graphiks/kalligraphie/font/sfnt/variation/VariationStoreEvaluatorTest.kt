@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
 
@@ -176,6 +177,132 @@ class VariationStoreEvaluatorTest {
         assertIs<FontOperationResult.Cancelled>(result)
     }
 
+    @Test
+    fun interpolatesAWordDeltaRowAtALocation() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(100)), longWords = false, wordCount = 1),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertEquals(0.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(0.0)))
+        assertEquals(50.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(0.5)))
+        assertEquals(100.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun interpolatesALongWordDeltaRow() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(70_000)), longWords = true, wordCount = 1),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertEquals(70_000.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun signExtendsTheTrailingByteDeltas() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(
+                    regions = listOf(intArrayOf(0x0000, 0x4000, 0x4000), intArrayOf(0x0000, 0x4000, 0x4000)),
+                    regionIndexes = intArrayOf(0, 1),
+                    deltas = listOf(intArrayOf(5, -7)),
+                    longWords = false,
+                    wordCount = 1,
+                ),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertEquals(-2.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun returnsTheRawDeltaRowAndItemCount() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(11), intArrayOf(-4)), longWords = false, wordCount = 1),
+                0,
+                "MVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertEquals(2, store.itemCountAt(0))
+        assertContentEquals(intArrayOf(11), store.deltaRow(0, 0))
+        assertContentEquals(intArrayOf(-4), store.deltaRow(0, 1))
+        assertNull(store.deltaRow(0, 2))
+    }
+
+    @Test
+    fun returnsZeroForAnAbsentDeltaRow() {
+        val store = success(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(100)), longWords = false, wordCount = 1),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+
+        assertEquals(0.0, VariationStoreEvaluator.delta(store, 0, 7, listOf(1.0)))
+        assertEquals(0.0, VariationStoreEvaluator.delta(store, 4, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun doesNotRequireDeltaBytesWhenDeltasAreNotRequested() {
+        val store = success(VariationStoreEvaluator.read(storeBytes(), 0, "CFF2"))
+
+        assertEquals(1, store.itemCountAt(0))
+        assertNull(store.deltaRow(0, 0))
+        assertEquals(0.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
+    }
+
+    @Test
+    fun rejectsAnItemCountAboveTheLimit() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(1), intArrayOf(2)), longWords = false, wordCount = 1),
+                0,
+                "HVAR",
+                VariationStoreLimits(maxItemCount = 1),
+                includeDeltas = true,
+            ),
+        )
+        assertEquals("font.resource-limit-exceeded", failure.error.code)
+    }
+
+    @Test
+    fun rejectsMissingDeltaBytesWhenDeltasAreRequested() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            VariationStoreEvaluator.read(storeBytes(), 0, "HVAR", includeDeltas = true),
+        )
+        assertEquals("font.variation.truncated-store", failure.error.code)
+    }
+
+    @Test
+    fun rejectsAWordCountAboveTheRegionIndexCount() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            VariationStoreEvaluator.read(
+                storeWithDeltas(deltas = listOf(intArrayOf(1, 2, 3)), wordCount = 3),
+                0,
+                "HVAR",
+                includeDeltas = true,
+            ),
+        )
+        assertEquals("font.variation.invalid-store", failure.error.code)
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T =
         assertIs<FontOperationResult.Success<T>>(result).value
 
@@ -211,4 +338,39 @@ class VariationStoreEvaluatorTest {
         }
         return out.toByteArray()
     }
+}
+
+private fun storeWithDeltas(
+    regions: List<IntArray> = listOf(intArrayOf(0x0000, 0x4000, 0x4000)),
+    regionIndexes: IntArray = intArrayOf(0),
+    deltas: List<IntArray>,
+    longWords: Boolean = false,
+    wordCount: Int,
+): ByteArray {
+    val axisCount = regions.first().size / 3
+    val regionListOffset = 12
+    val regionListSize = 4 + regions.size * axisCount * 6
+    val itemDataOffset = regionListOffset + regionListSize
+    val out = ArrayList<Byte>()
+    fun u8(value: Int) { out += (value and 0xFF).toByte() }
+    fun u16(value: Int) { u8(value shr 8); u8(value) }
+    fun u32(value: Int) { u8(value shr 24); u8(value shr 16); u8(value shr 8); u8(value) }
+    u16(1)
+    u32(regionListOffset)
+    u16(1)
+    u32(itemDataOffset)
+    u16(axisCount)
+    u16(regions.size)
+    for (region in regions) for (value in region) u16(value)
+    u16(deltas.size)
+    u16(if (longWords) 0x8000 or wordCount else wordCount)
+    u16(regionIndexes.size)
+    regionIndexes.forEach { u16(it) }
+    for (row in deltas) {
+        for (position in 0 until wordCount) {
+            if (longWords) u32(row[position]) else u16(row[position] and 0xFFFF)
+        }
+        for (position in wordCount until row.size) u8(row[position] and 0xFF)
+    }
+    return out.toByteArray()
 }
