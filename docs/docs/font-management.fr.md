@@ -1089,11 +1089,42 @@ droite moins gauche, delta d’avance verticale haut moins bas) ; ils valent
 `null` à l’instance par défaut. Une étape ultérieure de métriques les
 consommera ; les métriques restent donc renvoyées à l’instance par défaut et
 une sélection non par défaut ne change toujours pas les métriques renvoyées par
-un fournisseur portable. L’instanciation CFF2 non par défaut, la variation des
-métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et la géométrie synthétique
-(gras/italique) restent non implémentées. Les données `gvar` malformées
-échouent avec `font.variation.invalid-gvar`, une version de table non prise en
-charge échoue avec `font.variation.unsupported-gvar-version`, et les bornes de
+un fournisseur portable.
+
+La route portable de contours CFF2 varie elle aussi désormais. Les opérandes
+`blend` de chaque charstring sont évaluées aux axes normalisés de l’instance,
+les facteurs de région provenant des données de variation d’item du charstring
+via un évaluateur `ItemVariationStore` format 1 partagé, borné et annulable
+(`VariationStoreEvaluator` avec `VariationStoreLimits`, dans le paquet
+`org.graphiks.kalligraphie.font.sfnt.variation`). Ses bornes déclarées
+`maxRegions`, `maxItemData`, `maxAxes` et `maxSourceBytes` sont appliquées de
+façon incrémentale pendant le décodage. Le `vsindex` utilisé avant le premier
+`blend` du charstring est initialisé depuis le DICT Privé du Font DICT
+sélectionné (`vsindex`, opérateur 22, résolu par glyphe via `FDSelect` et
+valant FD 0 par défaut), et une surcharge `vsindex` du charstring est validée
+contre les données de région du store. Les axes normalisés de l’instance
+atteignent la route via la même table d’ordre d’axes
+(`VariationAxisOrder.orderedNormalizedAxes`) que celle utilisée par la route
+`gvar`. Une sélection non par défaut change désormais le contour CFF2 renvoyé
+par un fournisseur portable : le sommet de `A` de la fixture CFF2 variable
+auditée vaut 200 à l’instance par défaut et 300 à `wght = 1.0` normalisé. Un
+store dont le format n’est pas 1 échoue avec
+`font.variation.unsupported-store-format`, un store tronqué échoue avec
+`font.variation.truncated-store`, une référence de région hors limites échoue
+avec `font.variation.invalid-store`, et un dépassement des bornes déclarées
+réutilise `font.resource-limit-exceeded`. Les tags d’axes `fvar` sont lus de
+façon paresseuse et uniquement lorsqu’un emplacement non vide est fourni, de
+sorte que le chemin par défaut n’ajoute aucun décodage et emprunte le même
+chemin d’appel qu’auparavant. L’évaluateur partagé corrige toutefois la règle
+de région : un store qui contient une région traversant zéro ou un ordre de
+bornes invalide change donc à l’instance par défaut (un correctif délibéré, et
+non une régression), et un store déclarant zéro entrée de données d’item est
+désormais accepté au lieu d’être rejeté.
+La variation des métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et la
+géométrie synthétique (gras/italique) restent non implémentées ; les métriques
+CFF2 restent à l’instance par défaut. Les données `gvar` malformées échouent
+avec `font.variation.invalid-gvar`, une version de table non prise en charge
+échoue avec `font.variation.unsupported-gvar-version`, et les bornes de
 ressources `gvar` réutilisent `font.resource-limit-exceeded` avec
 l’emplacement de table `gvar`.
 

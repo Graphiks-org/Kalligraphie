@@ -2,10 +2,12 @@
 
 package org.graphiks.kalligraphie.font.scaler.cff
 
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.font.scaler.orderedNormalizedAxes
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -32,11 +34,118 @@ class Cff2Test {
     }
 
     @Test
-    fun computesDefaultInstanceRegionScalars() {
+    fun rejectsAnFdSelectFormatThreeWithNoRanges() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+            fdSelect = byteArrayOf(3, 0, 0, 0, 0),
+        )
+
+        val error = assertIs<FontError.InvalidFontData>(
+            assertIs<FontOperationResult.Failure>(Cff2Table.read(bytes)).error,
+        )
+
+        assertEquals("CFF2 FDSelect format 3 declares no ranges.", error.message)
+    }
+
+    @Test
+    fun evaluatesRegionScalarsAtTheInstanceLocation() {
         val store = success(CffVarStore.read(variationStoreBytes(), 0))
 
         assertEquals(1, store.regionCount(0))
-        assertContentEquals(doubleArrayOf(0.5), store.scalars(0))
+        assertContentEquals(doubleArrayOf(0.0), store.scalars(0))
+        assertContentEquals(doubleArrayOf(1.0), success(CffVarStore.read(variationStoreBytes(), 0, listOf(-1.0))).scalars(0))
+        assertContentEquals(doubleArrayOf(0.5), success(CffVarStore.read(variationStoreBytes(), 0, listOf(-0.5))).scalars(0))
+        assertContentEquals(doubleArrayOf(0.0), success(CffVarStore.read(variationStoreBytes(), 0, listOf(0.5))).scalars(0))
+    }
+
+    @Test
+    fun readsTheDefaultVsIndexFromTheFontDictPrivateDict() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+            privateData = testDictInt(1) + byteArrayOf(22),
+        )
+        val table = success(Cff2Table.read(bytes))
+
+        assertEquals(1, table.defaultVsIndex(0))
+    }
+
+    @Test
+    fun defaultsTheVsIndexToZeroWhenThePrivateDictIsEmpty() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+        )
+        val table = success(Cff2Table.read(bytes))
+
+        assertEquals(0, table.defaultVsIndex(0))
+    }
+
+    @Test
+    fun returnsZeroForAnOutOfRangeGlyphId() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+            privateData = testDictInt(1) + byteArrayOf(22),
+        )
+        val table = success(Cff2Table.read(bytes))
+
+        assertEquals(1, table.defaultVsIndex(0))
+        assertEquals(0, table.defaultVsIndex(5))
+    }
+
+    @Test
+    fun ordersNormalizedAxesByFvarTag() {
+        val ordered = orderedNormalizedAxes(
+            axisTags = listOf("wght", "wdth"),
+            normalizedAxes = listOf(FontAxisCoordinate("wdth", 0.5f)),
+        )
+
+        assertEquals(listOf(0.0, 0.5), ordered)
+    }
+
+    @Test
+    fun blendsAtANonDefaultLocationThroughTheCff2Reader() {
+        val bytes = buildCff2WithVariation(blendTriangleCharString(), testCff2VariationStore())
+        val table = success(Cff2Table.read(bytes))
+        val outline = success(
+            Cff2Reader.readGlyphOutline(
+                bytes, table, 0, 1000, profile(),
+                axisTags = listOf("wght"),
+                normalizedAxes = listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        )
+
+        assertEquals(GlyphOutlineCommand.LineTo(0.0, 300.0), outline.contours.single().commands[2])
+    }
+
+    @Test
+    fun keepsTheDefaultApexWithoutALocation() {
+        val bytes = buildCff2WithVariation(blendTriangleCharString(), testCff2VariationStore())
+        val table = success(Cff2Table.read(bytes))
+        val outline = success(Cff2Reader.readGlyphOutline(bytes, table, 0, 1000, profile()))
+
+        assertEquals(GlyphOutlineCommand.LineTo(0.0, 200.0), outline.contours.single().commands[2])
+    }
+
+    @Test
+    fun seedsTheInterpreterFromThePrivateDictVsIndex() {
+        val bytes = buildCff2WithVariation(
+            charString = blendTriangleCharString(),
+            variationStore = testCff2TwoRegionStore(),
+            privateData = testDictInt(1) + byteArrayOf(22),
+        )
+        val table = success(Cff2Table.read(bytes))
+        val outline = success(
+            Cff2Reader.readGlyphOutline(
+                bytes, table, 0, 1000, profile(),
+                axisTags = listOf("wght"),
+                normalizedAxes = listOf(FontAxisCoordinate("wght", 0.5f)),
+            ),
+        )
+
+        assertEquals(GlyphOutlineCommand.LineTo(0.0, 250.0), outline.contours.single().commands[2])
     }
 
     private fun profile(): OutlineProfile = OutlineProfile(
@@ -62,8 +171,8 @@ class Cff2Test {
         u16(1)              // axisCount
         u16(1)              // regionCount
         u16(0xC000)         // start = -1.0
-        u16(0x4000)         // peak = 1.0
-        u16(0x4000)         // end = 1.0
+        u16(0xC000)         // peak = -1.0
+        u16(0x0000)         // end = 0.0
         // item variation data at 22
         u16(1)              // itemCount
         u16(0)              // wordDeltaCount

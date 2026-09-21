@@ -86,13 +86,16 @@ internal fun buildCff1WithGlyphs(charStrings: List<ByteArray>, sids: List<Int>):
 }
 
 /** Builds a minimal CID-keyed CFF1 with one glyph routed through one Font DICT. */
-internal fun buildCidCff1(charString: ByteArray, defaultWidthX: Int = 100): ByteArray {
+internal fun buildCidCff1(
+    charString: ByteArray,
+    defaultWidthX: Int = 100,
+    fdSelect: ByteArray = byteArrayOf(0, 0),
+): ByteArray {
     val header = byteArrayOf(1, 0, 4, 4)
     val nameIndex = testCffIndex(listOf("Test".encodeToByteArray()))
     val stringIndex = byteArrayOf(0, 0)
     val globalSubr = byteArrayOf(0, 0)
     val charStringsIndex = testCffIndex(listOf(charString))
-    val fdSelect = byteArrayOf(0, 0)
     val privateDictData = testDictInt(defaultWidthX) + byteArrayOf(20)
     fun fontDict(privateOffset: Int): ByteArray =
         testDictInt(privateDictData.size) + testDictInt(privateOffset) + byteArrayOf(18)
@@ -112,4 +115,117 @@ internal fun buildCidCff1(charString: ByteArray, defaultWidthX: Int = 100): Byte
     val fdArray = testCffIndex(listOf(fontDict(privateOffset)))
     val topIndex = testCffIndex(listOf(topDict(fdArrayOffset, fdSelectOffset, charStringsOffset)))
     return header + nameIndex + topIndex + stringIndex + globalSubr + fdSelect + charStringsIndex + fdArray + privateDictData
+}
+
+/**
+ * Builds a minimal CFF2 with one glyph, one Font DICT, an optional Private DICT and a
+ * Card16-prefixed variation store. [privateData] is emitted between the FDArray and the store,
+ * and the Font DICT's `Private` ref points at it.
+ */
+internal fun buildCff2WithVariation(
+    charString: ByteArray,
+    variationStore: ByteArray,
+    privateData: ByteArray = ByteArray(0),
+    fdSelect: ByteArray = byteArrayOf(0, 0),
+): ByteArray {
+    val header = byteArrayOf(2, 0, 5, 0, 0)
+    val globalSubr = byteArrayOf(0, 0, 0, 0)
+    val charStringsIndex = testCff2Index(listOf(charString))
+    fun fontDict(privateOffset: Int): ByteArray =
+        testDictInt(privateData.size) + testDictInt(privateOffset) + byteArrayOf(18)
+    fun topDict(fdArrayOffset: Int, fdSelectOffset: Int, charStringsOffset: Int, vstoreOffset: Int): ByteArray =
+        testDictInt(charStringsOffset) + byteArrayOf(17) +
+            testDictInt(fdArrayOffset) + byteArrayOf(12, 36) +
+            testDictInt(fdSelectOffset) + byteArrayOf(12, 37) +
+            testDictInt(vstoreOffset) + byteArrayOf(24)
+
+    val probeTop = topDict(0, 0, 0, 0)
+    header[3] = ((probeTop.size shr 8) and 0xFF).toByte()
+    header[4] = (probeTop.size and 0xFF).toByte()
+    val globalSubrOffset = header.size + probeTop.size
+    val fdSelectOffset = globalSubrOffset + globalSubr.size
+    val charStringsOffset = fdSelectOffset + fdSelect.size
+    val fdArrayOffset = charStringsOffset + charStringsIndex.size
+    val fdArrayLength = testCff2Index(listOf(fontDict(0))).size
+    val privateOffset = fdArrayOffset + fdArrayLength
+    val vstoreOffset = privateOffset + privateData.size
+    val topDictBytes = topDict(fdArrayOffset, fdSelectOffset, charStringsOffset, vstoreOffset)
+    val fdArray = testCff2Index(listOf(fontDict(privateOffset)))
+    return header + topDictBytes + globalSubr + fdSelect + charStringsIndex + fdArray + privateData + variationStore
+}
+
+/** Builds a Card16-prefixed CFF2 ItemVariationStore with one axis, one region and one item data. */
+internal fun testCff2VariationStore(
+    regionStart: Int = 0x0000,
+    regionPeak: Int = 0x4000,
+    regionEnd: Int = 0x4000,
+): ByteArray {
+    val store = ArrayList<Byte>()
+    fun u16(value: Int) {
+        store += ((value shr 8) and 0xFF).toByte()
+        store += (value and 0xFF).toByte()
+    }
+    fun u32(value: Int) {
+        store += ((value shr 24) and 0xFF).toByte()
+        store += ((value shr 16) and 0xFF).toByte()
+        store += ((value shr 8) and 0xFF).toByte()
+        store += (value and 0xFF).toByte()
+    }
+    u16(1)
+    u32(12)
+    u16(1)
+    u32(22)
+    u16(1)
+    u16(1)
+    u16(regionStart)
+    u16(regionPeak)
+    u16(regionEnd)
+    u16(1)
+    u16(0)
+    u16(1)
+    u16(0)
+    val out = ArrayList<Byte>()
+    out += ((store.size shr 8) and 0xFF).toByte()
+    out += (store.size and 0xFF).toByte()
+    out.addAll(store)
+    return out.toByteArray()
+}
+
+/**
+ * `0 hmoveto 100 hlineto -100 200 100 1 blend rlineto`: the third vertex's y is
+ * `200 + 100×scalar`, where `scalar` is the active region scalar.
+ */
+internal fun blendTriangleCharString(): ByteArray = byteArrayOf(
+    139.toByte(), 22, 239.toByte(), 6, 39, 247.toByte(), 92, 239.toByte(), 140.toByte(), 16, 5,
+)
+
+/**
+ * Card16-prefixed CFF2 ItemVariationStore with two item data subtables: item data 0 references a
+ * region that is zero at positive coordinates, item data 1 references `(0, 1, 1)`.
+ */
+internal fun testCff2TwoRegionStore(): ByteArray {
+    val store = ArrayList<Byte>()
+    fun u16(value: Int) { store += ((value shr 8) and 0xFF).toByte(); store += (value and 0xFF).toByte() }
+    fun u32(value: Int) {
+        store += ((value shr 24) and 0xFF).toByte()
+        store += ((value shr 16) and 0xFF).toByte()
+        store += ((value shr 8) and 0xFF).toByte()
+        store += (value and 0xFF).toByte()
+    }
+    u16(1)
+    u32(16)
+    u16(2)
+    u32(32)
+    u32(40)
+    u16(1)
+    u16(2)
+    u16(0xC000); u16(0xC000); u16(0x0000)
+    u16(0x0000); u16(0x4000); u16(0x4000)
+    u16(1); u16(0); u16(1); u16(0)
+    u16(1); u16(0); u16(1); u16(1)
+    val out = ArrayList<Byte>()
+    out += ((store.size shr 8) and 0xFF).toByte()
+    out += (store.size and 0xFF).toByte()
+    out.addAll(store)
+    return out.toByteArray()
 }

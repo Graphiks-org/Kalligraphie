@@ -46,8 +46,9 @@ internal data class Type2Seac(
  *
  * A malformed program, an unsupported operator, an underflowing stack or an
  * exceeded point/contour/call budget returns a typed
- * [FontError.InvalidFontData] failure instead of a wrong outline. CFF2 `blend`
- * and `vsindex` are handled by the CFF2 entry point, not here.
+ * [FontError.InvalidFontData] failure instead of a wrong outline. This
+ * interpreter owns the CFF2 `blend`/`vsindex` state: CFF2 callers seed the
+ * initial variation-store index through [interpret]'s `initialVsIndex`.
  */
 internal object Type2CharstringInterpreter {
     private const val MAX_CALL_DEPTH = 10
@@ -73,9 +74,11 @@ internal object Type2CharstringInterpreter {
         maxContours: Int,
         hasWidth: Boolean = true,
         variationSource: CffVariationSource? = null,
+        initialVsIndex: Int = 0,
     ): FontOperationResult<Type2Outline> = try {
         val interpreter = Interpreter(
             globalSubrs, localSubrs, nominalWidthX, defaultWidthX, maxPoints, maxContours, hasWidth, variationSource,
+            initialVsIndex,
         )
         interpreter.execute(charString, 0)
         FontOperationResult.Success(interpreter.finish())
@@ -94,6 +97,7 @@ internal object Type2CharstringInterpreter {
         private val maxContours: Int,
         private val hasWidth: Boolean,
         private val variationSource: CffVariationSource?,
+        initialVsIndex: Int,
     ) {
         private val stack = ArrayList<Double>(48)
         private val transient = DoubleArray(32)
@@ -104,7 +108,7 @@ internal object Type2CharstringInterpreter {
         private var pendingWidth = 0
         private var widthParsed = false
         private var hintCount = 0
-        private var vsIndex = 0
+        private var vsIndex = initialVsIndex
         private var pointCount = 0
         private var operations = 0
         private var ended = false
@@ -114,6 +118,10 @@ internal object Type2CharstringInterpreter {
         private var maxX = 0.0
         private var maxY = 0.0
         private var hasBounds = false
+
+        init {
+            if (vsIndex < 0) fail("CFF2 vsindex must be non-negative.")
+        }
 
         fun execute(code: ByteArray, depth: Int) {
             if (depth > MAX_CALL_DEPTH) fail("CFF charstring call depth exceeds $MAX_CALL_DEPTH.")

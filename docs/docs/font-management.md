@@ -974,10 +974,37 @@ alongside the outline and exposed through the scaler's internal
 advance-height deltas), and are `null` at the default instance. A later metrics
 step will consume them, so metrics are still returned at the default instance
 and a non-default selection still does not change the metrics a portable
-provider returns. CFF2 non-default instancing, `HVAR`/`VVAR`/`MVAR` metric
-variation, variable colour and synthetic bold/italic geometry remain
-unimplemented. Malformed `gvar` data fails with `font.variation.invalid-gvar`,
-an unsupported table version fails with
+provider returns.
+
+The portable CFF2 outline route now varies too. Each charstring's `blend`
+operands are evaluated at the instance's normalized axes, with the region
+scalars supplied by the charstring's item variation data through a shared,
+bounded, cancellable format-1 `ItemVariationStore` evaluator
+(`VariationStoreEvaluator` with `VariationStoreLimits`, in the
+`org.graphiks.kalligraphie.font.sfnt.variation` package). Its declared
+`maxRegions`, `maxItemData`, `maxAxes` and `maxSourceBytes` bounds are enforced
+incrementally while decoding. The `vsindex` used before the first charstring
+`blend` is seeded from the selected Font DICT's Private DICT (`vsindex`,
+operator 22, resolved per glyph through `FDSelect` and defaulting to FD 0), and
+a charstring `vsindex` override is validated against the store's region data.
+The instance's normalized axes reach the route through the same axis-order
+mapping (`VariationAxisOrder.orderedNormalizedAxes`) the `gvar` route uses. A
+non-default selection now changes the CFF2 outline a portable provider returns:
+the audited variable CFF2 fixture's `A` apex is 200 at the default instance and
+300 at normalized `wght = 1.0`. A store whose format is not 1 fails with
+`font.variation.unsupported-store-format`, a truncated store fails with
+`font.variation.truncated-store`, an out-of-range region reference fails with
+`font.variation.invalid-store`, and a breach of the declared bounds reuses
+`font.resource-limit-exceeded`. The `fvar` axis tags are read lazily and only
+when a non-empty location is supplied, so the default path adds no parsing and
+takes the same call path as before. The shared evaluator corrects the region
+rule, though, so a store that contains a zero-crossing region or an invalid
+bound ordering changes at the default instance (a deliberate fix, not a
+regression), and a store that declares zero item-data entries is now accepted
+rather than rejected. `HVAR`/`VVAR`/`MVAR` metric variation, variable colour
+and synthetic bold/italic geometry remain unimplemented, and CFF2 metrics stay
+at the default instance. Malformed `gvar` data fails with
+`font.variation.invalid-gvar`, an unsupported table version fails with
 `font.variation.unsupported-gvar-version`, and `gvar` resource bounds reuse
 `font.resource-limit-exceeded` with the `gvar` table location.
 

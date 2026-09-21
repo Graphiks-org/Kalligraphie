@@ -48,6 +48,20 @@ class CffReaderTest {
     }
 
     @Test
+    fun refusesACidKeyedFaceWithAnEmptyFdSelectRangeList() {
+        val bytes = buildCidCff1(
+            charString = byteArrayOf(139.toByte(), 139.toByte(), 21, 149.toByte(), 139.toByte(), 5, 14),
+            fdSelect = byteArrayOf(3, 0, 0, 0, 0),
+        )
+
+        val error = assertIs<FontError.InvalidFontData>(
+            assertIs<FontOperationResult.Failure>(CffTable.read(bytes)).error,
+        )
+
+        assertEquals("CFF FDSelect format 3 declares no ranges.", error.message)
+    }
+
+    @Test
     fun refusesACidKeyedFaceWithoutAFontDict() {
         val ros = testDictInt(0) + testDictInt(0) + byteArrayOf(12, 30)
         val bytes = minimalCff1WithGlyph(byteArrayOf(14), topDictPrefix = ros)
