@@ -27,10 +27,10 @@ public object MvarValueTags {
     /** `OS/2.sCapHeight`. */
     public const val CAP_HEIGHT: String = "cpht"
 
-    /** `post.underlinePosition`. */
+    /** `post.underlinePosition` → `FontMetrics.underlinePosition`. */
     public const val UNDERLINE_OFFSET: String = "undo"
 
-    /** `post.underlineThickness`. */
+    /** `post.underlineThickness` → `FontMetrics.underlineThickness`. */
     public const val UNDERLINE_SIZE: String = "unds"
 }
 
@@ -44,8 +44,11 @@ public object MvarValueTags {
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class MvarData internal constructor(
     private val store: VariationStore?,
-    private val valueRecords: Map<String, IntArray>,
+    private val valueRecords: Map<String, MvarValueRecord>,
 ) {
+    /** Number of variation axes the item variation store is expressed against; `0` without a store. */
+    public val axisCount: Int get() = store?.axisCount ?: 0
+
     /** Number of value records declared by the table. */
     public val valueRecordCount: Int get() = valueRecords.size
 
@@ -56,7 +59,7 @@ public class MvarData internal constructor(
     public fun delta(valueTag: String, normalizedAxes: List<Double>): Double {
         val activeStore = store ?: return 0.0
         val record = valueRecords[valueTag] ?: return 0.0
-        return VariationStoreEvaluator.delta(activeStore, record[0], record[1], normalizedAxes)
+        return VariationStoreEvaluator.delta(activeStore, record.outerIndex, record.innerIndex, normalizedAxes)
     }
 }
 
@@ -136,7 +139,7 @@ public object MvarReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        val records = LinkedHashMap<String, IntArray>(valueRecordCount)
+        val records = LinkedHashMap<String, MvarValueRecord>(valueRecordCount)
         var previousTag: String? = null
         for (index in 0 until valueRecordCount) {
             if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
@@ -153,7 +156,7 @@ public object MvarReader {
                 ?: return invalid("MVAR value record is truncated.")
             val inner = readUInt16(table, recordOffset + 6)?.toInt()
                 ?: return invalid("MVAR value record is truncated.")
-            records[tag] = intArrayOf(outer, inner)
+            records[tag] = MvarValueRecord(outer, inner)
         }
         return FontOperationResult.Success(MvarData(store, records))
     }
@@ -164,3 +167,9 @@ public object MvarReader {
     private fun invalid(message: String): FontOperationResult.Failure =
         variationFailure("font.variation.invalid-mvar", message, "MVAR")
 }
+
+/** One `MVAR` value record's delta-set outer and inner index. */
+internal data class MvarValueRecord(
+    val outerIndex: Int,
+    val innerIndex: Int,
+)

@@ -4,7 +4,6 @@ package org.graphiks.kalligraphie.font.sfnt.variation
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
-import org.graphiks.kalligraphie.font.sfnt.readUInt32
 import org.graphiks.kalligraphie.font.sfnt.variationFailure
 
 /**
@@ -137,11 +136,6 @@ public object HvarReader {
         cancellationToken: CancellationToken,
     ): FontOperationResult<DeltaSetIndexMap?> =
         readMetricMapping(table, offset, "HVAR", "font.variation.invalid-hvar", limits, cancellationToken)
-
-    internal fun readOffset32(bytes: ByteArray, offset: Int): Int? {
-        val value = readUInt32(bytes, offset)?.toLong() ?: return null
-        return if (value > Int.MAX_VALUE.toLong()) null else value.toInt()
-    }
 
     internal fun invalid(message: String): FontOperationResult.Failure =
         variationFailure("font.variation.invalid-hvar", message, "HVAR")

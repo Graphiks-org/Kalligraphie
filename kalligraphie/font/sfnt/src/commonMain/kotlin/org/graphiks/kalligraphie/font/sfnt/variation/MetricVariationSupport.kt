@@ -95,9 +95,24 @@ internal fun readMetricMapping(
     limits: MetricVariationLimits,
     cancellationToken: CancellationToken,
 ): FontOperationResult<DeltaSetIndexMap?> {
-    val mapOffset = HvarReader.readOffset32(table, offsetField)
+    val mapOffset = readOffset32(table, offsetField)
         ?: return variationFailure(errorCode, "$tag delta-set index map offset is out of range.", tag)
     return readDeltaSetIndexMap(table, mapOffset, tag, limits, cancellationToken)
+}
+
+/**
+ * Reads a big-endian 32-bit offset as a non-negative `Int`.
+ *
+ * Returns `null` when the field is truncated or its unsigned value exceeds `Int.MAX_VALUE`, so a
+ * caller can treat an out-of-range offset as a malformed-table failure. Shared by the metric tables
+ * (`HVAR`/`VVAR`) and their delta-set index map reader.
+ *
+ * @param bytes source buffer, which is not modified.
+ * @param offset byte offset of the value.
+ */
+internal fun readOffset32(bytes: ByteArray, offset: Int): Int? {
+    val value = readUInt32(bytes, offset)?.toLong() ?: return null
+    return if (value > Int.MAX_VALUE.toLong()) null else value.toInt()
 }
 
 /**
@@ -182,7 +197,11 @@ internal fun readDeltaSetIndexMap(
  * diagnostic location; [unsupportedVersionCode] and [invalidCode] are the owning table's typed
  * failure codes. The store offset and the store itself are read by [readMetricVariationStore],
  * because their field width and placement differ per table (`MVAR` carries an Offset16 and parses
- * value records before its store, which is table-specific).
+ * its store before the value records, which is table-specific).
+ *
+ * Both the major and minor version fields must be `1` and `0`: a non-zero minor version is rejected
+ * with [unsupportedVersionCode], which is stricter than the specification's minor-version
+ * forward-compatibility intent but matches the existing table readers.
  *
  * @param table exact bytes of the owning metric-variation table.
  * @param tag four-character table tag used as the diagnostic location.

@@ -84,14 +84,50 @@ class MvarReaderTest {
         assertEquals("font.variation.invalid-mvar", failure.error.code)
     }
 
+    /**
+     * A `valueRecordSize` wider than the 8-byte record must stride forward by the declared size and
+     * ignore the extra bytes, or a later tag is read out of phase.
+     */
+    @Test
+    fun readsValueRecordsWiderThanTheMinimalRecord() {
+        val data = success(
+            MvarReader.read(mvarTable("hasc" to 10, "hdsc" to 20, valueRecordSize = 10), expectedAxisCount = 1),
+        )
+
+        assertTrue(data.hasValueRecord("hasc"))
+        assertTrue(data.hasValueRecord("hdsc"))
+        assertEquals(10.0, data.delta("hasc", listOf(1.0)))
+        assertEquals(20.0, data.delta("hdsc", listOf(1.0)))
+    }
+
+    @Test
+    fun rejectsADuplicateValueTag() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            MvarReader.read(mvarTable("hasc" to 1, "hasc" to 2), expectedAxisCount = 1),
+        )
+        assertEquals("font.variation.invalid-mvar", failure.error.code)
+    }
+
+    /** An inner index past the store's delta rows has no row and yields `0.0`. */
+    @Test
+    fun returnsZeroWhenTheValueRecordInnerIndexExceedsTheStoreRows() {
+        val data = success(MvarReader.read(mvarTable("hasc" to 25, innerIndexes = listOf(5)), expectedAxisCount = 1))
+
+        assertEquals(1, data.axisCount)
+        assertEquals(0.0, data.delta("hasc", listOf(1.0)))
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T =
         assertIs<FontOperationResult.Success<T>>(result).value
 }
 
 /** Builds an MVAR 1.0 table whose value records all point at a single-region delta row. */
-private fun mvarTable(vararg records: Pair<String, Int>): ByteArray {
+private fun mvarTable(
+    vararg records: Pair<String, Int>,
+    valueRecordSize: Int = 8,
+    innerIndexes: List<Int>? = null,
+): ByteArray {
     val store = itemVariationStore(itemDeltas = records.map { intArrayOf(it.second) })
-    val valueRecordSize = 8
     val headerSize = 12
     val storeOffset = headerSize + records.size * valueRecordSize
     val out = ArrayList<Byte>()
@@ -104,7 +140,8 @@ private fun mvarTable(vararg records: Pair<String, Int>): ByteArray {
     records.forEachIndexed { index, (tag, _) ->
         tag.forEach { u8(it.code) }
         u16(0)
-        u16(index)
+        u16(innerIndexes?.get(index) ?: index)
+        repeat(valueRecordSize - 8) { u8(0) }
     }
     store.forEach { u8(it.toInt() and 0xFF) }
     return out.toByteArray()

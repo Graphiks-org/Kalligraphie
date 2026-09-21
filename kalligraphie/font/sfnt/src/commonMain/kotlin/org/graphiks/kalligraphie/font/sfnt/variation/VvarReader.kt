@@ -92,7 +92,7 @@ public object VvarReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        val storeOffset = HvarReader.readOffset32(table, 4)
+        val storeOffset = readOffset32(table, 4)
             ?: return invalid("VVAR item variation store offset is out of range.")
         val store = when (
             val result = readMetricVariationStore(
