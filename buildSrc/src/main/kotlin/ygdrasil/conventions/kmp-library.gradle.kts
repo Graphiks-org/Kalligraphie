@@ -24,7 +24,7 @@ extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
         org.gradle.api.Action<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
             namespace = "io.ygdrasil.shared"
             compileSdk = 36
-            minSdk = 24
+            minSdk = 28
         }
     )
 }
