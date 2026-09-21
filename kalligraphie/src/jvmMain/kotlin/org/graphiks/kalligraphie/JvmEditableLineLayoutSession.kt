@@ -11,7 +11,7 @@ import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.ShapingBackend
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
  * Reusable JVM editable-line layout session backed by one owned HarfBuzz instance.
@@ -161,7 +161,7 @@ public class JvmEditableLineLayoutSession private constructor(
          * the returned session and the caller must invoke [close].
          */
         public fun open(): FontOperationResult<JvmEditableLineLayoutSession> =
-            when (val opened = JvmHarfBuzzShapingBackend.open()) {
+            when (val opened = HarfBuzzShapingBackend.open()) {
                 is FontOperationResult.Success -> FontOperationResult.Success(
                     JvmEditableLineLayoutSession(opened.value),
                     opened.diagnostics,

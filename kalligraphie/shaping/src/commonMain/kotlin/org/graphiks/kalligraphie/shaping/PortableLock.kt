@@ -6,7 +6,7 @@ package org.graphiks.kalligraphie.shaping
  * Decision recorded for the HarfBuzz adapter hoist (multiplatform backends
  * design, §5.2 "Kalligraphie boundary"). Moving the adapter from `jvmMain` to
  * `commonMain` requires replacing the JVM-only concurrency primitives used by
- * `JvmHarfBuzzShapingBackend` (`@Volatile`, `@Synchronized` and
+ * `HarfBuzzShapingBackend` (`@Volatile`, `@Synchronized` and
  * `synchronized(lock)`) with portable equivalents. The chosen layer is:
  *
  * 1. **Mutual exclusion** — this `expect`/`actual` lock. The `jvmMain` and

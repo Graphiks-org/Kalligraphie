@@ -40,7 +40,7 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisOutcome
 import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ParagraphComposer
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
@@ -178,7 +178,7 @@ public object JvmEditableParagraphFacade {
             return ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it))
         }
         if (context.isCancellationRequested()) return ParagraphLayoutResult.Cancelled()
-        val backend = when (val opened = JvmHarfBuzzShapingBackend.open()) {
+        val backend = when (val opened = HarfBuzzShapingBackend.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return ParagraphLayoutResult.Failure(
                 ParagraphLayoutError.FontFailure(opened.error),

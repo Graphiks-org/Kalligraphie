@@ -39,7 +39,7 @@ import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapingResourceProfile
 import org.graphiks.kalligraphie.api.SourceEncoding
 import org.graphiks.kalligraphie.api.SourceOffset
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -59,7 +59,7 @@ class JvmEditableLineFacadeTest {
                 fixture.font,
                 BaseDirection.LEFT_TO_RIGHT,
                 "en",
-                JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                HarfBuzzShapingBackend.pinnedFeaturePolicy,
                 emptyList(),
                 LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                 EditableLineMaterialization.LayoutOnly,
@@ -550,7 +550,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.Renderable(
@@ -757,7 +757,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.LayoutOnly,
@@ -792,7 +792,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.LayoutOnly,
@@ -825,7 +825,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.Renderable(
@@ -857,7 +857,7 @@ class JvmEditableLineFacadeTest {
             slices = listOf(TextSlice.Utf8(byteArrayOf(0x41))),
         ).snapshot
         val fixture = renderableFixture()
-        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(JvmHarfBuzzShapingBackend.open()).value
+        val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(HarfBuzzShapingBackend.open()).value
         try {
             val result = JvmEditableLineFacade.layout(
                 JvmEditableLineFacadeRequest(
@@ -865,7 +865,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.LayoutOnly,
@@ -897,7 +897,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.LayoutOnly,
@@ -925,7 +925,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.LayoutOnly,
@@ -954,7 +954,7 @@ class JvmEditableLineFacadeTest {
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                     materialization = EditableLineMaterialization.LayoutOnly,
@@ -1002,7 +1002,7 @@ class JvmEditableLineFacadeTest {
         font = font,
         baseDirection = baseDirection,
         language = "en",
-        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
         features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
         materialization = materialization,

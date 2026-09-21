@@ -16,59 +16,44 @@ import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.ShapingResourceLimit
 import org.graphiks.kalligraphie.api.ShapingSafetyFlags
 import org.graphiks.kalligraphie.api.TextRange
-import org.graphiks.kffi.harfbuzz.HarfBuzz
-import org.graphiks.kffi.harfbuzz.HarfBuzzBindingException
-import org.graphiks.kffi.harfbuzz.HarfBuzzBindingFailure
-import org.graphiks.kffi.harfbuzz.HarfBuzzBlob
-import org.graphiks.kffi.harfbuzz.HarfBuzzBuffer
-import org.graphiks.kffi.harfbuzz.HarfBuzzBufferFlags
-import org.graphiks.kffi.harfbuzz.HarfBuzzClusterLevel
-import org.graphiks.kffi.harfbuzz.HarfBuzzDirection
-import org.graphiks.kffi.harfbuzz.HarfBuzzFace
-import org.graphiks.kffi.harfbuzz.HarfBuzzFeature
-import org.graphiks.kffi.harfbuzz.HarfBuzzFont
-import org.graphiks.kffi.harfbuzz.HarfBuzzTag
 
-/** Thin adapter over the published kffi HarfBuzz binding. */
-internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
+/**
+ * Common adapter over the platform HarfBuzz binding.
+ *
+ * The typographic adaptation (buffer configuration, cluster construction, GDEF ligature-caret
+ * interpretation and design-to-layout conversion) is shared; the native operations stay behind
+ * [HarfBuzzPlatformBinding]. The adapter owns prepared fonts and releases them through the
+ * platform binding on [PreparedHarfBuzzFont.close].
+ */
+internal class HarfBuzzBindings private constructor(private val binding: HarfBuzzPlatformBinding) {
 
-    /** The semantic identity is unchanged; only the provenance artifactId names the kffi publication. */
+    /** The semantic identity is unchanged; only the provenance artifactId names the native publication. */
     val identity: ShapingBackendIdentity = ShapingBackendIdentity(
         semantic = HARFBUZZ_SEMANTIC_IDENTITY,
         provenance = ShapingDistributionProvenance(
-            operatingSystem = hb.bindingIdentity.operatingSystem,
-            architecture = hb.bindingIdentity.architecture,
-            artifactId = hb.bindingIdentity.artifactId,
-            artifactSha256 = hb.bindingIdentity.artifactSha256,
+            operatingSystem = binding.identity.operatingSystem,
+            architecture = binding.identity.architecture,
+            artifactId = binding.identity.artifactId,
+            artifactSha256 = binding.identity.artifactSha256,
             sourceProject = "harfbuzz",
-            sourceRevision = hb.bindingIdentity.upstreamSourceRevision,
-            buildChainIdentity = hb.bindingIdentity.buildChainIdentity,
+            sourceRevision = binding.identity.upstreamSourceRevision,
+            buildChainIdentity = binding.identity.buildChainIdentity,
         ),
     )
 
     fun prepare(fontBytes: ByteArray, faceIndex: Int, layoutSize: Float): PreparedHarfBuzzFont {
-        val blob = hb.createBlob(fontBytes)
-        var face: HarfBuzzFace? = null
-        var font: HarfBuzzFont? = null
-        try {
-            face = blob.createFace(faceIndex)
-            val designToLayout = DesignToLayoutScale.create(layoutSize, face.unitsPerEm())
-            font = face.createFont()
-            font.useOpenTypeFunctions()
-            font.setScale(designToLayout.unitsPerEm, designToLayout.unitsPerEm)
-            face.makeImmutable()
-            font.makeImmutable()
-            return PreparedHarfBuzzFont(this, blob, face, font, designToLayout)
+        val prepared = binding.prepare(fontBytes, faceIndex, layoutSize)
+        val designToLayout = try {
+            DesignToLayoutScale.create(layoutSize, prepared.unitsPerEm)
         } catch (error: Throwable) {
-            font?.close()
-            face?.close()
-            blob.close()
+            binding.release(prepared)
             throw error
         }
+        return PreparedHarfBuzzFont(this, prepared, designToLayout)
     }
 
     fun shape(request: ShapingRequest, preparedFont: PreparedHarfBuzzFont): ShapedGlyphRun {
-        val buffer = hb.createBuffer()
+        val buffer = binding.createBuffer()
         try {
             configureBuffer(buffer, request)
             val scalarTable = mutableListOf<ContextScalar>()
@@ -94,9 +79,8 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
             }
             buffer.addUtf32(text, itemOffset, itemScalarRanges.size)
             observeCancellation(request)
-            val features = request.features.map { HarfBuzzFeature(HarfBuzzTag.of(it.tag), it.value) }
             observeCancellation(request)
-            val accepted = buffer.shape(preparedFont.font, features)
+            val accepted = buffer.shape(preparedFont.font, request.features)
             observeCancellation(request)
             check(accepted) { "HarfBuzz did not accept the explicit OpenType shaper configuration." }
             return shapedRun(request, preparedFont, buffer, scalarTable, itemScalarRanges)
@@ -106,32 +90,25 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
     }
 
     fun release(prepared: PreparedHarfBuzzFont) {
-        val failures = buildList {
-            runCatching { prepared.font.close() }.exceptionOrNull()?.let(::add)
-            runCatching { prepared.face.close() }.exceptionOrNull()?.let(::add)
-            runCatching { prepared.blob.close() }.exceptionOrNull()?.let(::add)
-        }
-        aggregateFailures(failures)?.let { throw it }
+        binding.release(prepared.font)
     }
 
-    private fun configureBuffer(buffer: HarfBuzzBuffer, request: ShapingRequest) {
-        buffer.setDirection(request.direction.toKffiDirection())
-        buffer.setScript(hb.parseScript(request.script.value))
-        buffer.setLanguage(hb.parseLanguage(request.language))
-        buffer.setClusterLevel(HarfBuzzClusterLevel.MONOTONE_CHARACTERS)
+    private fun configureBuffer(buffer: PlatformHarfBuzzBuffer, request: ShapingRequest) {
+        buffer.setDirection(request.direction)
+        buffer.setScript(request.script.value)
+        buffer.setLanguage(request.language)
+        buffer.setClusterLevelMonotoneCharacters()
         buffer.setFlags(
-            HarfBuzzBufferFlags(
-                beginningOfText = request.bot,
-                endOfText = request.eot,
-                produceUnsafeToConcat = true,
-            ),
+            beginningOfText = request.bot,
+            endOfText = request.eot,
+            produceUnsafeToConcat = true,
         )
     }
 
     private fun shapedRun(
         request: ShapingRequest,
         prepared: PreparedHarfBuzzFont,
-        buffer: HarfBuzzBuffer,
+        buffer: PlatformHarfBuzzBuffer,
         scalarTable: List<ContextScalar>,
         itemScalarRanges: List<TextRange>,
     ): ShapedGlyphRun {
@@ -155,8 +132,8 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
             NativeGlyphRecord(
                 glyphId = info.glyphId,
                 tokenValue = itemToken.value,
-                safetyMask = (if (info.flags.unsafeToBreak) HB_GLYPH_FLAG_UNSAFE_TO_BREAK else 0) or
-                    (if (info.flags.unsafeToConcat) HB_GLYPH_FLAG_UNSAFE_TO_CONCAT else 0),
+                safetyMask = (if (info.unsafeToBreak) HB_GLYPH_FLAG_UNSAFE_TO_BREAK else 0) or
+                    (if (info.unsafeToConcat) HB_GLYPH_FLAG_UNSAFE_TO_CONCAT else 0),
                 xAdvance = position.xAdvance,
                 yAdvance = position.yAdvance,
                 xOffset = position.xOffset,
@@ -195,7 +172,7 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
                     cluster,
                     finalAdvanceMatchesUnshapedAdvance = advancesMatch(
                         shapedAdvance = record.xAdvance,
-                        unshapedAdvance = prepared.font.glyphHorizontalAdvance(record.glyphId),
+                        unshapedAdvance = prepared.font.horizontalAdvance(record.glyphId),
                     ),
                     prepared.designToLayout,
                 )
@@ -221,7 +198,7 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
     }
 
     private fun ligatureCaretFact(
-        font: HarfBuzzFont,
+        font: PlatformPreparedFont,
         direction: ShapingDirection,
         glyphId: Int,
         glyphIndex: Int,
@@ -230,7 +207,7 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
         designToLayout: DesignToLayoutScale,
     ): GdefLigatureCaretFact {
         val expectedCaretCount = cluster.internalAdmissibleGraphemeBoundaries().size
-        val carets = font.ligatureCarets(direction.toKffiDirection(), glyphId, 0, expectedCaretCount)
+        val carets = font.ligatureCarets(direction, glyphId, 0, expectedCaretCount)
         val safelyReadableCount = carets.copiedCount.coerceIn(0, expectedCaretCount)
         return LigatureCaretFactInterpreter.fromNativeResponse(
             glyphIndex = glyphIndex,
@@ -249,7 +226,7 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
 
     companion object {
         fun open(): FontOperationResult<HarfBuzzBindings> = try {
-            FontOperationResult.Success(HarfBuzzBindings(HarfBuzz.open()))
+            FontOperationResult.Success(HarfBuzzBindings(openHarfBuzzPlatformBinding()))
         } catch (failure: HarfBuzzBindingException) {
             bindingFailureError(failure)
         } catch (error: Throwable) {
@@ -262,18 +239,38 @@ internal class HarfBuzzBindings private constructor(private val hb: HarfBuzz) {
     }
 }
 
-/** An open prepared font: owns the kffi blob/face/font and the design-to-layout scale. */
+/** An open prepared font: owns the platform HarfBuzz objects and the design-to-layout scale. */
 internal class PreparedHarfBuzzFont(
     private val bindings: HarfBuzzBindings,
-    internal val blob: HarfBuzzBlob,
-    internal val face: HarfBuzzFace,
-    internal val font: HarfBuzzFont,
+    internal val font: PlatformPreparedFont,
     internal val designToLayout: DesignToLayoutScale,
 ) {
     fun close() {
         bindings.release(this)
     }
 }
+
+/**
+ * Portable classification of a native binding failure.
+ *
+ * Mirrors the kffi failure taxonomy so the adapter maps to the same typed diagnostic codes without
+ * depending on any native type.
+ */
+internal enum class HarfBuzzBindingFailure {
+    UNSUPPORTED_PLATFORM,
+    RESOURCE_MISSING,
+    RESOURCE_CORRUPT,
+    LIBRARY_LOAD,
+    SYMBOL_RESOLUTION,
+    VERSION_MISMATCH,
+    NATIVE_OPERATION,
+}
+
+/** Portable binding exception raised by [openHarfBuzzPlatformBinding] and mapped by [bindingFailureError]. */
+internal class HarfBuzzBindingException(
+    val failure: HarfBuzzBindingFailure,
+    message: String? = null,
+) : RuntimeException(message)
 
 internal fun bindingFailureError(failure: HarfBuzzBindingException): FontOperationResult.Failure {
     val code = when (failure.failure) {
@@ -287,10 +284,4 @@ internal fun bindingFailureError(failure: HarfBuzzBindingException): FontOperati
         HarfBuzzBindingFailure.NATIVE_OPERATION -> "font.shaping-native-failure"
     }
     return shapingFailure(code, failure.message ?: "The bundled HarfBuzz binding failed.")
-}
-
-private fun ShapingDirection.toKffiDirection(): HarfBuzzDirection = when (this) {
-    ShapingDirection.LEFT_TO_RIGHT -> HarfBuzzDirection.LEFT_TO_RIGHT
-    ShapingDirection.RIGHT_TO_LEFT -> HarfBuzzDirection.RIGHT_TO_LEFT
-    ShapingDirection.TOP_TO_BOTTOM -> HarfBuzzDirection.TOP_TO_BOTTOM
 }

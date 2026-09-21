@@ -29,7 +29,7 @@ import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -91,7 +91,7 @@ class CbdtCblcGlyphRepresentationTest {
                         font = instance,
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
                         language = "en",
-                        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                        featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                         features = emptyList(),
                         verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                         materialization = EditableLineMaterialization.Renderable(

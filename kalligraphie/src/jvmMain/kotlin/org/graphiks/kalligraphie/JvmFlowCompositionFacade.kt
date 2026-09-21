@@ -22,7 +22,7 @@ import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.TextOrientation
 import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
 import org.graphiks.kalligraphie.layout.IncrementalFlowLayoutEngine
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
  * Immutable JVM preparation options for one portable [IncrementalFlowLayoutRequest].
@@ -94,7 +94,7 @@ public object JvmFlowCompositionFacade {
             return FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(it))
         }
         if (context.isCancellationRequested()) return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
-        val backend = when (val opened = JvmHarfBuzzShapingBackend.open()) {
+        val backend = when (val opened = HarfBuzzShapingBackend.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return FlowCompositionResult.Failure(
                 FlowCompositionError.ParagraphFailure(ParagraphLayoutError.FontFailure(opened.error)),

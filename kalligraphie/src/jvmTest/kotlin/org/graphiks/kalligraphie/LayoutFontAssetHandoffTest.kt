@@ -53,7 +53,7 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.createIncrementalFlowLayoutRequest
 import org.graphiks.kalligraphie.layout.openLayoutHandle
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -70,7 +70,7 @@ class LayoutFontAssetHandoffTest {
             ),
         )
         val resolver = success(fixture.catalog.openAssetResolver())
-        val backend = success(JvmHarfBuzzShapingBackend.open())
+        val backend = success(HarfBuzzShapingBackend.open())
         val request = JvmEditableParagraphFacadeRequest(
             snapshot = fixture.snapshot,
             sourceRange = fixture.snapshot.range,
@@ -155,7 +155,7 @@ class LayoutFontAssetHandoffTest {
             ),
         )
         val resolver = success(fixture.catalog.openAssetResolver())
-        val backend = success(JvmHarfBuzzShapingBackend.open())
+        val backend = success(HarfBuzzShapingBackend.open())
         val chain = FlowChain(List(2) { index ->
             TestFlowRegion(
                 LayoutRect(
@@ -559,7 +559,7 @@ class LayoutFontAssetHandoffTest {
             ),
         )
         val resolver = success(fixture.catalog.openAssetResolver())
-        val backend = success(JvmHarfBuzzShapingBackend.open())
+        val backend = success(HarfBuzzShapingBackend.open())
         try {
             val paragraph = assertIs<ParagraphLayoutResult.Success>(
                 JvmEditableParagraphFacade.layoutBorrowing(JvmEditableParagraphFacadeRequest(
@@ -802,7 +802,7 @@ class LayoutFontAssetHandoffTest {
                 font = font,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
                 language = "en",
-                featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                 features = emptyList(),
                 verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
                 materialization = EditableLineMaterialization.Renderable(

@@ -26,7 +26,7 @@ import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.layout.openLayoutHandle
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
  * The complete consumer journey for the Fontconfig registry provider, on a
@@ -58,7 +58,7 @@ class FontconfigRegistryJourneyTest {
                             font = font,
                             baseDirection = BaseDirection.LEFT_TO_RIGHT,
                             language = "en",
-                            featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                            featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                             features = emptyList(),
                             verticalMetrics = LineVerticalMetrics(LayoutUnit(1000f), LayoutUnit(250f)),
                             materialization = EditableLineMaterialization.Renderable(resolver, FontRenderVariantSnapshot.default, requirements),

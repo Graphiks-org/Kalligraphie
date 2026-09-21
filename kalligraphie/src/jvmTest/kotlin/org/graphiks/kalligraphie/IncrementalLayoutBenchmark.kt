@@ -29,7 +29,7 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 
 class IncrementalLayoutBenchmarkTest {
@@ -713,7 +713,7 @@ internal object IncrementalLayoutBenchmark {
         result as? IncrementalLayoutResult.Success
             ?: error("Measurement accepts only complete successes; received $result.")
 
-    private fun openedHarfBuzzVersion(): String = when (val opened = JvmHarfBuzzShapingBackend.open()) {
+    private fun openedHarfBuzzVersion(): String = when (val opened = HarfBuzzShapingBackend.open()) {
         is FontOperationResult.Success -> try {
             opened.value.identity.semantic.engineVersion
         } finally {
