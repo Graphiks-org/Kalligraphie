@@ -20,28 +20,32 @@ couverture utilise seize sous-échantillons fixes et la composition emploie
 l'arithmétique entière : des entrées identiques produisent des octets identiques
 sur toutes les plateformes.
 
-La démonstration opt-in (à activation explicite) écrit des images PGM et PPM
-accompagnées d'un manifeste (fichier d'inventaire). Chaque exécution publie les
-dumps (images de référence brutes) de glyphes isolés, des planches (sheets)
-d'alphabets latin, grec, cyrillique, arabe et devanagari, des planches couleur
-(Bungee Color et EmojiTwo), un strike bitmap EBDT normalisé, et de vraies
-lignes de texte composées par la façade de paragraphe — dont une ligne mixte
-multi-scripts résolue par repli (fallback) entre trois polices. Les planches et
-lignes composées sont retournées verticalement pour la lisibilité ; les dumps
-de référence conservent l'orientation source du rastériseur. La tâche dédiée
-s'exécute toujours lorsqu'elle est invoquée explicitement :
+Les empreintes de conformité qui scellent ces octets résident dans le module
+bout-en-bout (`:kalligraphie:e2e`), pas ici : son manifeste golden enregistre un
+SHA-256 pour les glyphes isolés (contour, peinture, bitmap), pour les planches
+d'alphabets latin, grec, cyrillique, arabe et devanagari, et pour de vraies lignes
+de texte composées par la façade de paragraphe — dont une ligne mixte
+multi-scripts résolue par repli (fallback) entre trois polices.
+
+Ce module héberge aussi la démonstration opt-in (à activation explicite), qui
+écrit une image PGM ou PPM par scène golden. Les planches et lignes composées
+sont retournées verticalement pour la lisibilité ; les dumps de référence
+conservent l'orientation source du rastériseur ; le strike EBDT conserve son
+orientation image. La tâche dédiée s'exécute toujours lorsqu'elle est invoquée
+explicitement :
 
 ```bash
-env KALLIGRAPHIE_RASTER_DUMPS=true \
-    KALLIGRAPHIE_RASTER_DUMPS_OUTPUT=/tmp/kalligraphie-raster \
-    ./gradlew :kalligraphie:raster-cpu:rasterDumps
+env KALLIGRAPHIE_E2E_DUMPS=true \
+    KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
+    ./gradlew :kalligraphie:e2e:e2eGoldenDumps
 ```
 
-Sans `KALLIGRAPHIE_RASTER_DUMPS=true`, la tâche s'exécute mais n'écrit rien.
+Sans `KALLIGRAPHIE_E2E_DUMPS=true`, la tâche s'exécute mais n'écrit rien.
 
-`KALLIGRAPHIE_RASTER_DUMPS_OUTPUT` doit être un chemin absolu hors du dépôt. Le
+`KALLIGRAPHIE_E2E_DUMPS_OUTPUT` doit être un chemin absolu hors du dépôt. Le
 runner (programme d'exécution) est exclu de `check` ; il ne contient aucun
-seuil de performance.
+seuil de performance. La régénération des empreintes commitées est une tâche
+opt-in distincte : `./gradlew :kalligraphie:e2e:updateE2eGolden`.
 
 Les ressources du logo du dépôt sont produites par le même module sous forme de
 deux artefacts distincts. Le badge compose un carré arrondi plein avec le `K`
