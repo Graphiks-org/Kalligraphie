@@ -63,6 +63,26 @@ class VvarReaderTest {
         assertEquals("font.variation.invalid-vvar", failure.error.code)
     }
 
+    /**
+     * A present advance-height map with zero entries resolves to the implicit identity mapping
+     * (`outer = 0, inner = glyphId`), exactly like an absent map: `DeltaSetIndexMap` passes the glyph
+     * id straight through when it holds no entries. Glyph 0 therefore reads the single store row while
+     * glyph 7 addresses a row the store does not carry, pinning the HarfBuzz identity semantics where
+     * a delta-set-zero lookup would instead return row 0 for every glyph.
+     */
+    @Test
+    fun treatsAnEmptyAdvanceHeightMapAsTheImplicitGlyphIndex() {
+        val table = vvarTable(
+            advanceHeightDeltas = intArrayOf(25),
+            advanceMap = deltaSetIndexMap0(outer = 0, inner = 0, mapCount = 0),
+        )
+
+        val data = success(VvarReader.read(table, expectedAxisCount = 1))
+
+        assertEquals(25.0, data.advanceHeightDelta(0, listOf(1.0)))
+        assertEquals(0.0, data.advanceHeightDelta(7, listOf(1.0)))
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T =
         assertIs<FontOperationResult.Success<T>>(result).value
 }
@@ -70,12 +90,14 @@ class VvarReaderTest {
 /** Builds a VVAR 1.0 table with one implicit advance-height delta row per glyph. */
 private fun vvarTable(
     advanceHeightDeltas: IntArray,
+    advanceMap: ByteArray? = null,
     tsbMap: ByteArray? = null,
     bsbMap: ByteArray? = null,
 ): ByteArray {
     val store = itemVariationStore(itemDeltas = advanceHeightDeltas.map { intArrayOf(it) })
     val headerSize = 24
     var cursor = headerSize
+    val advanceOffset = if (advanceMap == null) 0 else cursor.also { cursor += advanceMap.size }
     val tsbOffset = if (tsbMap == null) 0 else cursor.also { cursor += tsbMap.size }
     val bsbOffset = if (bsbMap == null) 0 else cursor.also { cursor += bsbMap.size }
     val storeOffset = cursor
@@ -85,10 +107,11 @@ private fun vvarTable(
     fun u32(value: Int) { u8(value shr 24); u8(value shr 16); u8(value shr 8); u8(value) }
     u16(1); u16(0)
     u32(storeOffset)
-    u32(0)
+    u32(advanceOffset)
     u32(tsbOffset)
     u32(bsbOffset)
     u32(0)
+    advanceMap?.forEach { u8(it.toInt() and 0xFF) }
     tsbMap?.forEach { u8(it.toInt() and 0xFF) }
     bsbMap?.forEach { u8(it.toInt() and 0xFF) }
     store.forEach { u8(it.toInt() and 0xFF) }

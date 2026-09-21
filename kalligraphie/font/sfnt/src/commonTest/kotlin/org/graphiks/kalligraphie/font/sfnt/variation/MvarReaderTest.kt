@@ -89,7 +89,7 @@ class MvarReaderTest {
 }
 
 /** Builds an MVAR 1.0 table whose value records all point at a single-region delta row. */
-internal fun mvarTable(vararg records: Pair<String, Int>): ByteArray {
+private fun mvarTable(vararg records: Pair<String, Int>): ByteArray {
     val store = itemVariationStore(itemDeltas = records.map { intArrayOf(it.second) })
     val valueRecordSize = 8
     val headerSize = 12
@@ -111,7 +111,7 @@ internal fun mvarTable(vararg records: Pair<String, Int>): ByteArray {
 }
 
 /** Builds an MVAR 1.0 header with no value records and no store. */
-internal fun mvarHeaderOnly(): ByteArray {
+private fun mvarHeaderOnly(): ByteArray {
     val out = ArrayList<Byte>()
     fun u8(value: Int) { out += (value and 0xFF).toByte() }
     fun u16(value: Int) { u8(value shr 8); u8(value) }
