@@ -86,13 +86,16 @@ internal fun buildCff1WithGlyphs(charStrings: List<ByteArray>, sids: List<Int>):
 }
 
 /** Builds a minimal CID-keyed CFF1 with one glyph routed through one Font DICT. */
-internal fun buildCidCff1(charString: ByteArray, defaultWidthX: Int = 100): ByteArray {
+internal fun buildCidCff1(
+    charString: ByteArray,
+    defaultWidthX: Int = 100,
+    fdSelect: ByteArray = byteArrayOf(0, 0),
+): ByteArray {
     val header = byteArrayOf(1, 0, 4, 4)
     val nameIndex = testCffIndex(listOf("Test".encodeToByteArray()))
     val stringIndex = byteArrayOf(0, 0)
     val globalSubr = byteArrayOf(0, 0)
     val charStringsIndex = testCffIndex(listOf(charString))
-    val fdSelect = byteArrayOf(0, 0)
     val privateDictData = testDictInt(defaultWidthX) + byteArrayOf(20)
     fun fontDict(privateOffset: Int): ByteArray =
         testDictInt(privateDictData.size) + testDictInt(privateOffset) + byteArrayOf(18)
@@ -123,10 +126,10 @@ internal fun buildCff2WithVariation(
     charString: ByteArray,
     variationStore: ByteArray,
     privateData: ByteArray = ByteArray(0),
+    fdSelect: ByteArray = byteArrayOf(0, 0),
 ): ByteArray {
     val header = byteArrayOf(2, 0, 5, 0, 0)
     val globalSubr = byteArrayOf(0, 0, 0, 0)
-    val fdSelect = byteArrayOf(0, 0)
     val charStringsIndex = testCff2Index(listOf(charString))
     fun fontDict(privateOffset: Int): ByteArray =
         testDictInt(privateData.size) + testDictInt(privateOffset) + byteArrayOf(18)

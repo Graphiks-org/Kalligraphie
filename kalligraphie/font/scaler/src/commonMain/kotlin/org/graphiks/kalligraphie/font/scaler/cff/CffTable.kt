@@ -330,6 +330,7 @@ internal class CffTable private constructor(
                     if (position + 2 > bytes.size) return failure("CFF FDSelect format 3 is truncated.")
                     val rangeCount = readUInt16At(bytes, position)
                     position += 2
+                    if (rangeCount == 0) return failure("CFF FDSelect format 3 declares no ranges.")
                     if (position + rangeCount * 3 + 2 > bytes.size) return failure("CFF FDSelect ranges are truncated.")
                     val firsts = IntArray(rangeCount)
                     val assignments = IntArray(rangeCount)

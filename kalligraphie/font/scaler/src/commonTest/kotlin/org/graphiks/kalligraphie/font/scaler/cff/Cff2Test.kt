@@ -34,6 +34,21 @@ class Cff2Test {
     }
 
     @Test
+    fun rejectsAnFdSelectFormatThreeWithNoRanges() {
+        val bytes = buildCff2WithVariation(
+            charString = byteArrayOf(139.toByte(), 22),
+            variationStore = testCff2VariationStore(),
+            fdSelect = byteArrayOf(3, 0, 0, 0, 0),
+        )
+
+        val error = assertIs<FontError.InvalidFontData>(
+            assertIs<FontOperationResult.Failure>(Cff2Table.read(bytes)).error,
+        )
+
+        assertEquals("CFF2 FDSelect format 3 declares no ranges.", error.message)
+    }
+
+    @Test
     fun evaluatesRegionScalarsAtTheInstanceLocation() {
         val store = success(CffVarStore.read(variationStoreBytes(), 0))
 
