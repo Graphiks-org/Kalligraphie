@@ -45,7 +45,7 @@ consommateurs.
 | JVM Android `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Collection de fontes système de la plateforme via `android.graphics.fonts.SystemFonts` (Android 10+), pas un parcours de chemins arbitraires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine ; les noms de famille et de face proviennent de l’analyse des octets capturés | Aucun backend HarfBuzz embarqué dans ce module ; la pile texte de la plateforme s’applique | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `android-platform-fonts` |
 | iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | Registre CoreText via les bindings CoreText de la plateforme, pas une liste de répertoires ; iOS isole (sandbox) les fichiers de fontes système, donc le contenu `.ttf`/`.ttc`/`.otf` est reconstruit à partir des tables copiées de chaque fonte | Aucun backend HarfBuzz embarqué dans ce module ; la pile texte de la plateforme s’applique | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `ios-coretext-registry` |
 | Kotlin Native (autres cibles) | Aucun fournisseur de fontes système sur ces cibles | Aucun parcours de shaping complet implémenté | Contrats communs portables ; ces parcours exécutables ne sont pas implémentés |
-| Données CFF/CFF2 sur toute cible | Les contours CFF1 `.otf` isolés et CFF2 sont lus ; les collections portant des faces CFF sont capturées | Shaping CFF1 par le shaper portable ; `blend`/`vsindex` CFF2 évalués aux axes normalisés de l’instance | Route portable de contours cubiques pour CFF1 et CFF2 (variation appliquée à l’emplacement de l’instance) ; variation des métriques portable (`HVAR`/`VVAR`/`MVAR`) sur les routes TrueType et CFF2, couleur variable et géométrie synthétique encore non implémentées, et aucune route CFF CoreText |
+| Données CFF/CFF2 sur toute cible | Les contours CFF1 `.otf` isolés et CFF2 sont lus ; les collections portant des faces CFF sont capturées | Shaping CFF1 par le shaper portable ; `blend`/`vsindex` CFF2 évalués aux axes normalisés de l’instance | Route portable de contours cubiques pour CFF1 et CFF2 (variation appliquée à l’emplacement de l’instance) ; variation des métriques portable (`HVAR`/`VVAR`/`MVAR`) sur les routes TrueType et CFF2, couleur variable (COLR v1 `VarIndexBase`/`VarStore` et clip box variable) sur la route portable, géométrie synthétique encore non implémentée, et aucune route CFF CoreText |
 
 La route embarquée à face unique reste disponible sur la JVM. Une extension ne
 garantit pas le type de contours : `.otf` peut contenir du TrueType, du CFF1 ou
@@ -54,8 +54,9 @@ cubiques CFF2 sont évalués aux axes normalisés de l’instance, si bien qu’
 instance de variation non par défaut change désormais le contour renvoyé par un
 fournisseur portable. La variation des métriques portable (`HVAR`/`VVAR`/`MVAR`)
 fait désormais varier les avances et les métriques de fonte à l’emplacement de
-l’instance ; la couleur variable et la géométrie synthétique restent non
-implémentées. L’admission en répertoire est bornée : une source TTC/OTC dont le
+l’instance ; la couleur variable (COLR v1) est évaluée à l’emplacement de
+l’instance et la géométrie synthétique reste non
+implémentée. L’admission en répertoire est bornée : une source TTC/OTC dont le
 nombre total de faces dépasse le budget d’examen restant est refusée entièrement,
 avec un diagnostic de limite typé, avant tout examen de ses répertoires. Aucun
 préfixe de collection partiellement examinée n’est publié. Des sources distinctes

@@ -698,9 +698,16 @@ source. Un enregistrement `PaintColrLayers` valide de format 1 avec zéro couche
 est préservé sous forme d’un graphe de peinture à un seul nœud `Group` vide ;
 il n’est pas réduit à `GlyphRepresentation.Empty`. La `ClipList` (liste de
 découpes) de format 1 avec une `ClipBox` (boîte de découpe) de format 1 est
-acceptée. Les formats variables `PaintVar*`, `ClipBox` format 2, les magasins
-et tables d’index de variations, CFF/CFF2 et les valeurs CPAL/COLR variables ne
-sont pas pris en charge. Le parcours SVG-in-OpenType distinct accepte les
+acceptée. Les formats variables `PaintVar*`, la `VarColorLine` variable, la
+`ClipBox` (boîte de découpe) de format 2, les magasins `ItemVariationStore` et la
+table d’index `DeltaSetIndexMap` COLR sont résolus à l’emplacement normalisé de
+l’instance via l’évaluateur de variations partagé : à une instance non par
+défaut, le graphe de peinture résolu porte des alphas de solides variés, une
+géométrie de dégradé, des décalages et alphas d’arrêts de couleur, des
+coefficients de transformation et des bornes de découpe variés, les valeurs étant
+figées dans les mêmes nœuds de schéma 2/3. Les indices de palette ne sont pas
+variables, et ni le CFF/CFF2 dans COLR ni les valeurs CPAL variables ne sont pris
+en charge. Le parcours SVG-in-OpenType distinct accepte les
 gradients linéaires et radiaux concentriques statiques ainsi que les découpes
 bornées à enfant unique dans l’espace utilisateur décrites plus haut via le
 schéma 3 ; il n’acquiert pas pour autant les découpes SVG générales, masques,
@@ -1122,8 +1129,10 @@ désormais accepté au lieu d’être rejeté.
 La variation des métriques `HVAR`/`VVAR`/`MVAR` est implémentée : une instance non
 par défaut fait varier les avances horizontales via `HVAR`, les avances verticales
 via `VVAR`, les métriques de fonte via `MVAR`, et retombe sur les deltas de points
-fantômes `gvar` lorsque `HVAR`/`VVAR` sont absents ; la couleur variable et la
-géométrie synthétique (gras/italique) restent non implémentées. Les données `gvar` malformées échouent
+fantômes `gvar` lorsque `HVAR`/`VVAR` sont absents ; la couleur variable est
+implémentée sur la route portable COLR v1 : une instance non par défaut fait
+varier le graphe de peinture de couleur résolu, tandis que la géométrie
+synthétique (gras/italique) reste non implémentée. Les données `gvar` malformées échouent
 avec `font.variation.invalid-gvar`, une version de table non prise en charge
 échoue avec `font.variation.unsupported-gvar-version`, et les bornes de
 ressources `gvar` réutilisent `font.resource-limit-exceeded` avec
@@ -1132,7 +1141,7 @@ l’emplacement de table `gvar`.
 `FontFace.stat()` reste un espace réservé avec valeur par défaut qui renvoie
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
 différée, au même titre que les ponts natifs de métriques (limités au cas par
-défaut), `avar` version 2, `cvar`, `VARC`, la couleur variable, la géométrie
+défaut), `avar` version 2, `cvar`, `VARC`, la géométrie
 synthétique (gras/italique), les champs de limite de profil qui régénèrent les
 empreintes, la vérification croisée des métriques HarfBuzz du sous-plan de
 composition (`metrics() == HarfBuzz` n’est pas un critère de sortie lié à ce

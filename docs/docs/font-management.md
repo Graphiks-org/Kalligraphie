@@ -608,8 +608,14 @@ the graph rather than exposed as source-table references. A valid format-1
 `PaintColrLayers` record with zero layers is preserved as a one-node paint
 graph containing an empty `Group`; it is not collapsed to
 `GlyphRepresentation.Empty`. ClipList format 1 with ClipBox format 1 is
-accepted. Variable `PaintVar*` formats, ClipBox format 2, variation stores and
-maps, CFF/CFF2, and variable CPAL/COLR values are not supported. The separate
+accepted. The variable `PaintVar*` formats, the variable `VarColorLine`, the
+variable `ClipBox` format 2 and the COLR `ItemVariationStore`/`DeltaSetIndexMap`
+are resolved at the instance's normalized location through the shared variation
+evaluator: at a non-default instance the resolved paint graph carries varied
+solid alphas, gradient geometry, colour-stop offsets/alphas, transform
+coefficients and clip bounds, with the values frozen into the same schema-2/3
+nodes. Palette indices are not variable, and CFF/CFF2-in-COLR and variable CPAL
+values are not supported. The separate
 SVG-in-OpenType route supports the static linear and concentric radial
 gradients plus the bounded single-child user-space clips described above through
 schema 3; it does not gain general SVG clips, masks, strokes, or animation.
@@ -1003,15 +1009,17 @@ regression), and a store that declares zero item-data entries is now accepted
 rather than rejected. `HVAR`/`VVAR`/`MVAR` metric variation is implemented: a
 non-default instance now varies horizontal advances through `HVAR`, vertical
 advances through `VVAR`, font-wide metrics through `MVAR`, and falls back to the
-`gvar` phantom-point deltas when `HVAR`/`VVAR` are absent; variable colour and
-synthetic bold/italic geometry remain unimplemented. Malformed `gvar` data fails with
+`gvar` phantom-point deltas when `HVAR`/`VVAR` are absent; variable colour is
+implemented on the portable COLR v1 route (a non-default instance varies the
+resolved colour paint graph), while synthetic bold/italic geometry remains
+unimplemented. Malformed `gvar` data fails with
 `font.variation.invalid-gvar`, an unsupported table version fails with
 `font.variation.unsupported-gvar-version`, and `gvar` resource bounds reuse
 `font.resource-limit-exceeded` with the `gvar` table location.
 
 `FontFace.stat()` remains a defaulted placeholder that returns `Success(null)`:
 portable `STAT` reading is a separate concern and is deferred, alongside native
-metric bridges (default-only), `avar` version 2, `cvar`, `VARC`, variable colour,
+metric bridges (default-only), `avar` version 2, `cvar`, `VARC`,
 synthetic bold/italic geometry, the fingerprint-regenerating profile limit fields,
 the shaping sub-plan's HarfBuzz metric cross-check (the `metrics() == HarfBuzz`
 exit criterion is not bound by this metric-variation sub-plan), and the §8
