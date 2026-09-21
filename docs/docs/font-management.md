@@ -1010,7 +1010,13 @@ synthetic bold/italic geometry remain unimplemented. Malformed `gvar` data fails
 `font.resource-limit-exceeded` with the `gvar` table location.
 
 `FontFace.stat()` remains a defaulted placeholder that returns `Success(null)`:
-portable `STAT` reading is a separate concern and is deferred. `FontInstance.fontMetrics()`
+portable `STAT` reading is a separate concern and is deferred, alongside native
+metric bridges (default-only), `avar` version 2, `cvar`, `VARC`, variable colour,
+synthetic bold/italic geometry, the fingerprint-regenerating profile limit fields,
+the shaping sub-plan's HarfBuzz metric cross-check (the `metrics() == HarfBuzz`
+exit criterion is not bound by this metric-variation sub-plan), and the §8
+`maxVariationTableBytes`/`retainedBytes` cache-budget billing of the decoded
+metric tables. `FontInstance.fontMetrics()`
 is implemented: it returns the instance's `OS/2` (with `hhea` fallback), `post` and
 `MVAR` font-wide metrics in design units. Horizontal metrics use the priority
 `HVAR` then `gvar` phantom-point deltas then `hmtx`; vertical metrics use `VVAR`
@@ -1021,7 +1027,15 @@ value is retained, which follows the specification but differs from fontTools
 Ink bounds remain the unvaried `glyf` header bounds on the TrueType route. The axis
 selection is retained as given: an axis explicitly set to its default value is kept,
 normalizes to `0`, and produces a distinct `FontInstanceKey` from omitting that
-axis (there is no default-value pruning).
+axis (there is no default-value pruning). Metric-variation coverage remains
+partial: `VVAR` and `MVAR` are exercised only against synthetic bytes because no
+real fixture carries them, the composite metrics-source plus `gvar`-phantom
+(no-`HVAR`) horizontal fallback path is code-correct but untested, and the `HVAR`
+`lsb`/`rsb` and `VVAR` `tsb`/`bsb` mapping-present paths are reader-level only, so
+the scaler's non-zero side-bearing delta path is untested. The synthetic variable
+CFF2 fixture carries an `HVAR` whose store declares no regions and no item deltas,
+so fontTools confirms its glyph `A` advance stays `1000` at `wght = 1.0` and there
+is no varied advance to assert through the CFF2 metric route.
 
 ## Exact editable Unicode lines
 

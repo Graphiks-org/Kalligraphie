@@ -15,6 +15,9 @@ import org.graphiks.kalligraphie.font.sfnt.variationFailure
  * corresponding delta is `0.0` and the `hmtx` side bearing is left unchanged, per the `HVAR`
  * specification ("variation data for side bearings are optional. If included, mapping tables are
  * required").
+ *
+ * The optional RSB path — the `rsbMap` parse and [rightSideBearingDelta] — is exercised only at the
+ * reader level today; the scaler consumes only the advance-width and LSB deltas.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class HvarData internal constructor(
@@ -40,7 +43,12 @@ public class HvarData internal constructor(
         return VariationStoreEvaluator.delta(store, map.outerIndex(glyphId), map.innerIndex(glyphId), normalizedAxes)
     }
 
-    /** Right side-bearing adjustment for [glyphId], or `0.0` when no RSB mapping is present. */
+    /**
+     * Right side-bearing adjustment for [glyphId], or `0.0` when no RSB mapping is present.
+     *
+     * Reader-level only today: the scaler consumes the advance-width and LSB deltas, so this path
+     * has no scaler integration coverage.
+     */
     public fun rightSideBearingDelta(glyphId: Int, normalizedAxes: List<Double>): Double {
         if (glyphId < 0) return 0.0
         val map = rsbMap ?: return 0.0

@@ -184,9 +184,13 @@ public class PreparedTrueTypeFont internal constructor(
      * The metric-variation tables are meaningless without `fvar`, so a variable-table read is only
      * attempted when `fvar` is present and parses. A malformed `fvar` collapses to `null` here
      * (default metrics), matching the face-level metadata philosophy where `variationAxes()`
-     * collapses an unparseable `fvar` to an empty list and `normalize()` reports the failure.
-     * Cancellation is deliberately not threaded because `by lazy` would memoize a `Cancelled`
-     * result permanently, matching the existing CFF2 axis-tag cache.
+     * collapses an unparseable `fvar` to an empty list and `normalize()` reports the failure. This
+     * deliberately diverges from the outline route, where `decodePortableOutline` and
+     * `GlyfReader.prepareGvar` return a typed `fvar` failure for the same face: a non-default metric
+     * read on a malformed-`fvar` face silently returns the base metrics instead of failing. This
+     * asymmetry is accepted rather than propagated here. Cancellation is deliberately not threaded
+     * because `by lazy` would memoize a `Cancelled` result permanently, matching the existing CFF2
+     * axis-tag cache.
      */
     private fun metricsVariationAxisTags(): List<String>? {
         if (parsedFont.tableRecords["fvar"] == null) return null
