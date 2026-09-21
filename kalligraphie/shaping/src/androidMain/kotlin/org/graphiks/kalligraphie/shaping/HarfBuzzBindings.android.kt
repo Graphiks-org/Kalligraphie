@@ -3,13 +3,9 @@ package org.graphiks.kalligraphie.shaping
 /**
  * Android actual for [openHarfBuzzPlatformBinding].
  *
- * TODO(B4): replace this graceful-degradation stub with the real kffi-Android HarfBuzz binding.
- * Until then Android reports the same typed failure as any other target without a native library
- * (`font.shaping-native-platform-unsupported`) through [HarfBuzzBindings.open], so the module keeps
- * compiling while every target shares the common adapter.
+ * Delegates to [openAndroidHarfBuzzPlatformBinding], which loads the published kffi HarfBuzz
+ * binding backed by the from-source `libharfbuzz.so` shipped in the `kffi-harfbuzz-android` AAR.
+ * Only the Android source set references the native kffi surface; `commonMain` stays binding-free
+ * so the module keeps compiling for targets (iOS) that have no kffi HarfBuzz artifact yet.
  */
-internal actual fun openHarfBuzzPlatformBinding(): HarfBuzzPlatformBinding =
-    throw HarfBuzzBindingException(
-        HarfBuzzBindingFailure.UNSUPPORTED_PLATFORM,
-        "The HarfBuzz shaping backend is not available on Android in this revision.",
-    )
+internal actual fun openHarfBuzzPlatformBinding(): HarfBuzzPlatformBinding = openAndroidHarfBuzzPlatformBinding()

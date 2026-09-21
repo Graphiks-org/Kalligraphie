@@ -21,6 +21,9 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.kffi.harfbuzz.jvm)
         }
+        androidMain.dependencies {
+            implementation(libs.kffi.harfbuzz.android)
+        }
         jvmTest.dependencies {
             implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:unicode"))

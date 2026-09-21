@@ -38,7 +38,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class HarfBuzzJvmBackendTest {
+class HarfBuzzPortableBackendTest {
     private val backends = mutableListOf<ShapingBackend>()
 
     @Test
