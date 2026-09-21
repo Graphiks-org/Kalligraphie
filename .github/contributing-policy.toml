@@ -11,6 +11,7 @@ allowed_scopes = [
     "shaping",
     "layout",
     "conformance",
+    "e2e",
     "platform",
     "apple",
     "linux",
