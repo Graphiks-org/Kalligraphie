@@ -24,23 +24,12 @@ kotlin {
     }
 }
 
-val rasterDumpClass = "org.graphiks.kalligraphie.raster.RasterDumpRunnerTest"
 val logoDumpClass = "org.graphiks.kalligraphie.raster.logo.KalligraphieLogoDumpTest"
 val rasterJvmTestTask = tasks.named<Test>("jvmTest")
 
 rasterJvmTestTask.configure {
-    filter.excludeTestsMatching(rasterDumpClass)
     filter.excludeTestsMatching(logoDumpClass)
     inputs.dir(rootProject.layout.projectDirectory.dir("docs/assets")).withPropertyName("logoAssets")
-}
-
-tasks.register<Test>("rasterDumps") {
-    group = "verification"
-    description = "Writes opt-in raster demonstration dumps outside the functional test suite."
-    testClassesDirs = rasterJvmTestTask.get().testClassesDirs
-    classpath = rasterJvmTestTask.get().classpath
-    filter.includeTestsMatching("$rasterDumpClass.writesDeterministicDumpsOnlyWhenExplicitlyEnabled")
-    outputs.upToDateWhen { false }
 }
 
 tasks.register<Test>("renderLogo") {
