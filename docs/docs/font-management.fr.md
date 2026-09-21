@@ -1131,7 +1131,14 @@ l’emplacement de table `gvar`.
 
 `FontFace.stat()` reste un espace réservé avec valeur par défaut qui renvoie
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
-différée. `FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
+différée, au même titre que les ponts natifs de métriques (limités au cas par
+défaut), `avar` version 2, `cvar`, `VARC`, la couleur variable, la géométrie
+synthétique (gras/italique), les champs de limite de profil qui régénèrent les
+empreintes, la vérification croisée des métriques HarfBuzz du sous-plan de
+composition (`metrics() == HarfBuzz` n’est pas un critère de sortie lié à ce
+sous-plan de variation des métriques) et la facturation de budget de cache §8
+`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées.
+`FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
 de fonte de l’instance issues de `OS/2` (avec repli sur `hhea`), `post` et `MVAR`,
 en unités de design. Les métriques horizontales suivent la priorité `HVAR` puis
 deltas de points fantômes `gvar` puis `hmtx` ; les métriques verticales suivent
@@ -1143,7 +1150,17 @@ la demi-approche gauche à partir du contour varié. Les bornes d’encre resten
 bornes d’en-tête `glyf` non variées sur la route TrueType. La sélection d’axes est
 conservée telle quelle : un axe explicitement réglé à sa valeur par défaut est
 gardé, se normalise à `0` et produit une `FontInstanceKey` distincte de l’omission
-de cet axe (aucun élagage, ou pruning, des valeurs par défaut).
+de cet axe (aucun élagage, ou pruning, des valeurs par défaut). La couverture de
+la variation des métriques reste partielle : `VVAR` et `MVAR` ne sont exercés que
+sur des octets synthétiques, aucune fixture réelle ne les portant ; le chemin de
+repli horizontal composite + points fantômes `gvar` (sans `HVAR`) est correct dans
+le code mais non testé ; et les chemins de correspondance présents `lsb`/`rsb` de
+`HVAR` et `tsb`/`bsb` de `VVAR` ne sont couverts qu’au niveau du lecteur, de sorte
+que le chemin de delta non nul des demi-approches du scaler n’est pas testé. La
+fixture CFF2 variable synthétique porte un `HVAR` dont le store ne déclare ni
+région ni delta d’item ; fontTools confirme donc que l’avance du glyphe `A` reste
+`1000` à `wght = 1.0`, et aucune avance variée ne peut être affirmée via la route
+de métriques CFF2.
 
 ## Lignes Unicode éditables exactes
 

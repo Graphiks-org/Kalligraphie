@@ -7,12 +7,12 @@ package org.graphiks.kalligraphie.font.scaler
  *
  * Phantom points follow the outline or component points in `gvar` point order: the left and right
  * side-bearing points carry horizontal deltas and the top and bottom side-bearing points carry
- * vertical deltas. The values are in design units and are consumed by the deferred metric-variation
- * step, not by the outline geometry.
+ * vertical deltas. The values are in design units and are consumed by the metric-variation step in
+ * `PreparedTrueTypeFont.readGlyphMetrics`/`readVerticalGlyphMetrics`, not by the outline geometry.
  *
  * A composite glyph that has a component with `COMPOSITE_USE_MY_METRICS` set takes its phantom
- * positions from that component, so the deferred metrics step MUST resolve the metrics-source glyph
- * with `GlyfReader.horizontalMetricsGlyphId(prepared, glyphId)` and read that glyph's
+ * positions from that component, so the metrics step MUST resolve the metrics-source glyph with
+ * `GlyfReader.horizontalMetricsGlyphId(prepared, glyphId)` and read that glyph's
  * `variationPhantoms`, never the composite's own. This reader surfaces the composite's own deltas
  * unconditionally and does not redirect them; the redirect is the consumer's responsibility.
  */

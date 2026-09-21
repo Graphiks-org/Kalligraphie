@@ -14,6 +14,9 @@ import org.graphiks.kalligraphie.font.sfnt.variationFailure
  * subtable; with no mapping the corresponding delta is `0.0` and the `vmtx` value is unchanged.
  * Vertical-origin mapping data is not consumed: it is only defined for CFF2 vertical origins and is
  * outside the portable glyph-metrics surface.
+ *
+ * The optional BSB path — the `bsbMap` parse and [bottomSideBearingDelta] — is exercised only at the
+ * reader level today; the scaler consumes only the advance-height and TSB deltas.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public class VvarData internal constructor(
@@ -39,7 +42,12 @@ public class VvarData internal constructor(
         return VariationStoreEvaluator.delta(store, map.outerIndex(glyphId), map.innerIndex(glyphId), normalizedAxes)
     }
 
-    /** Bottom side-bearing adjustment for [glyphId], or `0.0` when no BSB mapping is present. */
+    /**
+     * Bottom side-bearing adjustment for [glyphId], or `0.0` when no BSB mapping is present.
+     *
+     * Reader-level only today: the scaler consumes the advance-height and TSB deltas, so this path
+     * has no scaler integration coverage.
+     */
     public fun bottomSideBearingDelta(glyphId: Int, normalizedAxes: List<Double>): Double {
         if (glyphId < 0) return 0.0
         val map = bsbMap ?: return 0.0
