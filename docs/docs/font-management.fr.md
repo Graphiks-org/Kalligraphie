@@ -1114,7 +1114,12 @@ store dont le format n’est pas 1 échoue avec
 avec `font.variation.invalid-store`, et un dépassement des bornes déclarées
 réutilise `font.resource-limit-exceeded`. Les tags d’axes `fvar` sont lus de
 façon paresseuse et uniquement lorsqu’un emplacement non vide est fourni, de
-sorte que le chemin de l’instance par défaut reste identique octet pour octet.
+sorte que le chemin par défaut n’ajoute aucun décodage et emprunte le même
+chemin d’appel qu’auparavant. L’évaluateur partagé corrige toutefois la règle
+de région : un store qui contient une région traversant zéro ou un ordre de
+bornes invalide change donc à l’instance par défaut (un correctif délibéré, et
+non une régression), et un store déclarant zéro entrée de données d’item est
+désormais accepté au lieu d’être rejeté.
 La variation des métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et la
 géométrie synthétique (gras/italique) restent non implémentées ; les métriques
 CFF2 restent à l’instance par défaut. Les données `gvar` malformées échouent

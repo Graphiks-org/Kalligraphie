@@ -17,8 +17,11 @@ import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
  * CFF2 charstrings carry no width and no `endchar`; variation deltas are applied through the
  * ItemVariationStore block. [axisTags] is the face's `fvar` axis order and [normalizedAxes] the
  * instance's tag-keyed normalized selection; together they select the charstring's `blend`
- * scalars. An empty [normalizedAxes] materializes the default instance and leaves the default
- * outline unchanged.
+ * scalars. An empty [normalizedAxes] materializes the default instance with no added parsing and the
+ * same call path as before, but the shared evaluator corrects the region rule, so a store that
+ * contains a zero-crossing region or an invalid bound ordering changes at the default instance (a
+ * fix, not a regression); a store that declares zero item-data entries is accepted rather than
+ * rejected.
  */
 internal object Cff2Reader {
     fun readGlyphOutline(

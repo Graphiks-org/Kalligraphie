@@ -996,8 +996,12 @@ the audited variable CFF2 fixture's `A` apex is 200 at the default instance and
 `font.variation.truncated-store`, an out-of-range region reference fails with
 `font.variation.invalid-store`, and a breach of the declared bounds reuses
 `font.resource-limit-exceeded`. The `fvar` axis tags are read lazily and only
-when a non-empty location is supplied, so the default-instance path is
-byte-identical to before. `HVAR`/`VVAR`/`MVAR` metric variation, variable colour
+when a non-empty location is supplied, so the default path adds no parsing and
+takes the same call path as before. The shared evaluator corrects the region
+rule, though, so a store that contains a zero-crossing region or an invalid
+bound ordering changes at the default instance (a deliberate fix, not a
+regression), and a store that declares zero item-data entries is now accepted
+rather than rejected. `HVAR`/`VVAR`/`MVAR` metric variation, variable colour
 and synthetic bold/italic geometry remain unimplemented, and CFF2 metrics stay
 at the default instance. Malformed `gvar` data fails with
 `font.variation.invalid-gvar`, an unsupported table version fails with
