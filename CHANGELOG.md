@@ -80,6 +80,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multilingual docs (EN/FR) MkDocs + Dokka
 - GitHub templates (issues, PR)
 - Code of Conduct, CONTRIBUTING, SECURITY, SUPPORT, CHANGELOG
+- The HarfBuzz JVM shaping backend now loads on Windows x64: `kffi-harfbuzz-jvm` bundles
+  `kffi/harfbuzz/windows/x64/libharfbuzz.dll` (`org.lwjgl:lwjgl-harfbuzz:3.4.3:natives-windows`,
+  upstream revision `9f2f0317…`) and the JVM native loader resolves a normalized `windows`/`x64`
+  target. Glyphs, clusters, advances, positions, GDEF ligature-caret facts and typed errors are
+  unchanged; the four-target CI matrix gains a `windows-x64` entry.
 
 ### Changed
 - Replaced the Dokka GFM and Python post-processing pipeline with Dokka for Material for MkDocs.

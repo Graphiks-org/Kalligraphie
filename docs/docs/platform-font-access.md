@@ -33,13 +33,13 @@ generation.
 
 | Target / provider | Discovery and source data | Operational shaping | Glyph access and refresh |
 |---|---|---|---|
-| JVM `FontDirectoryCatalog` | Explicit readable roots; standalone static TrueType and TTC 1/2, original source/index | Bundled HarfBuzz on Linux/macOS x64 and arm64 | Portable advertised outline/paint/bitmap profiles; new `open` for refresh |
+| JVM `FontDirectoryCatalog` | Explicit readable roots; standalone static TrueType and TTC 1/2, original source/index | Bundled HarfBuzz on Linux/macOS x64 and arm64, Windows x64 | Portable advertised outline/paint/bitmap profiles; new `open` for refresh |
 | Linux JVM `LinuxSystemFontCatalog` | System, legacy user and XDG roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on Linux x64 and arm64 | Same portable routes; no Fontconfig registry matching or automatic refresh |
 | Linux JVM `FontconfigSystemFontCatalog` (`:kalligraphie:platform:linux`) | Activated Fontconfig configuration through `kffi-fontconfig`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on Linux x64 and arm64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `fontconfig-registry` generation |
 | macOS JVM `MacosSystemFontCatalog` | Standard system/user roots, or explicit roots; same TrueType/TTC capture | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; no CoreText registry matching or automatic refresh |
 | macOS JVM `CoreTextSystemFontCatalog` (`:kalligraphie:platform:apple`) | Activated CoreText registry through `kffi-coretext`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on macOS x64 and arm64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `coretext-registry` generation |
 | macOS JVM optional CoreText adapter | Exact bytes from a portable catalogue; eligible standalone static monochrome TrueType only | Preserves portable shaping; no CoreText layout substitution | Explicitly accepted platform handle, or underlying portable routes; collections excluded from the platform route |
-| Windows JVM `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Activated DirectWrite system font collection through `kffi-directwrite`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | No bundled operational HarfBuzz target | Same portable routes; a new `open` observes controlled install/removal and mints a new `directwrite-registry` generation |
+| Windows JVM `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Activated DirectWrite system font collection through `kffi-directwrite`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on Windows x64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `directwrite-registry` generation |
 | Android JVM `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Platform system font collection through `android.graphics.fonts.SystemFonts` (Android 10+), not arbitrary path scanning; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices; family and face names come from parsing the captured bytes | No bundled HarfBuzz backend in this module; the platform text stack applies | Same portable routes; a new `open` observes a controlled change and mints a new `android-platform-fonts` generation |
 | iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | CoreText registry through the platform CoreText bindings, not a directory listing; iOS sandboxes system font files, so the `.ttf`/`.ttc`/`.otf` content is rebuilt from each font's copied tables | No bundled HarfBuzz backend in this module; the platform text stack applies | Same portable routes; a new `open` observes a controlled change and mints a new `ios-coretext-registry` generation |
 | Kotlin Native (other targets) | No system-font provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
@@ -59,12 +59,13 @@ form a partial catalog; the accepted-face cap applies independently after source
 examination, preserving original selected indices. These checks do not claim
 general equivalence with HarfBuzz's sanitizer for unsupported tables. A discovered face is not
 a guarantee that every backend or representation profile can use it. The
-four-target Linux/macOS JVM CI matrix runs actual directory and system-catalog
-shaping/glyph journeys alongside the full shaper tests and native dependency
-audit. Windows, Android and iOS carry no bundled HarfBuzz backend, so their
-journeys stop before shaping and use the platform text stack; every provider
-journey runs on a controlled provider boundary over audited fonts, and
-installed-font checks remain optional smoke tests rather than the oracle.
+five-target Linux/macOS/Windows JVM CI matrix runs the full shaper tests and
+native dependency audit on every target, and the actual directory and
+system-catalog shaping/glyph journeys on Linux and macOS. Android and iOS carry
+no bundled HarfBuzz backend, so their journeys stop before shaping and use the
+platform text stack; every provider journey runs on a controlled provider
+boundary over audited fonts, and installed-font checks remain optional smoke
+tests rather than the oracle.
 
 New raw native symbols, types, ABI declarations, constants and library access
 belong in kffi. Kalligraphie owns typographic adaptation, capture, provenance,
@@ -92,7 +93,7 @@ never claims a capability its target does not have.
 |---|---|---|---|---|---|
 | macOS `CoreTextSystemFontCatalog` | Activated CoreText registry through the kffi CoreText bindings | Registered `.ttf`/`.ttc`/`.otf` bytes with original face indices | CoreText handle route for eligible faces only | A new `open` mints a `coretext-registry` generation | A stale key from another generation is refused rather than reinterpreted |
 | Linux `FontconfigSystemFontCatalog` | Activated Fontconfig configuration through the kffi Fontconfig bindings | Registered file bytes | Portable routes | A new `open` mints a `fontconfig-registry` generation | A registered file that is missing or unreadable is skipped with a bounded diagnostic |
-| Windows `DirectWriteSystemFontCatalog` | DirectWrite system collection through the kffi DirectWrite bindings | Reported file bytes; opaque COM keys are resolved to paths through the local font file loader | Portable routes | A new `open` mints a `directwrite-registry` generation | No bundled HarfBuzz backend: shaping uses the platform text stack |
+| Windows `DirectWriteSystemFontCatalog` | DirectWrite system collection through the kffi DirectWrite bindings | Reported file bytes; opaque COM keys are resolved to paths through the local font file loader | Portable routes | A new `open` mints a `directwrite-registry` generation | Bundled HarfBuzz on Windows x64 |
 | Android `AndroidSystemFontCatalog` | `android.graphics.fonts.SystemFonts` (Android 10 and later) | Reported file bytes | Portable routes | A new `open` mints an `android-platform-fonts` generation | Below Android 10 no supported enumeration route exists, so the provider fails with a typed error instead of scanning unknown paths |
 | iOS `IosSystemFontCatalog` | CoreText registry through the platform CoreText bindings | CoreText tables rebuilt into a standalone SFNT container with a recomputed table directory checksum and `head.checkSumAdjustment` | Portable routes | A new `open` mints an `ios-coretext-registry` generation | System font files are sandboxed, so no path is available; a rebuilt container is not byte-identical to the original file and its `DSIG` signature becomes stale |
 

@@ -18,10 +18,11 @@ import org.graphiks.kalligraphie.api.OutlineProfile
  * The consumer journey for the DirectWrite registry provider, on a controlled
  * provider boundary over an audited font collection.
  *
- * Windows carries no bundled HarfBuzz backend, so the journey reaches the
- * catalogue, selection, instance creation, render-asset certification and
- * retention: captured bytes are materialized into a portable render asset. The
- * registry is substituted so the journey never depends on what is installed.
+ * The Windows platform journey reaches the catalogue, selection, instance
+ * creation, render-asset certification and retention: captured bytes are
+ * materialized into a portable render asset, while shaping is exercised by the
+ * JVM shaping suite. The registry is substituted so the journey never depends
+ * on what is installed.
  */
 class DirectWriteRegistryJourneyTest {
     @Test
