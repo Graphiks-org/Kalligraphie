@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontMetrics
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.GlyphId
@@ -22,6 +23,12 @@ import org.graphiks.kalligraphie.font.sfnt.FontFlavor
 import org.graphiks.kalligraphie.font.sfnt.FvarReader
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.slice
+import org.graphiks.kalligraphie.font.sfnt.variation.HvarData
+import org.graphiks.kalligraphie.font.sfnt.variation.HvarReader
+import org.graphiks.kalligraphie.font.sfnt.variation.MvarData
+import org.graphiks.kalligraphie.font.sfnt.variation.MvarReader
+import org.graphiks.kalligraphie.font.sfnt.variation.VvarData
+import org.graphiks.kalligraphie.font.sfnt.variation.VvarReader
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -112,7 +119,7 @@ public class PreparedTrueTypeFont internal constructor(
         Cff2Table.read(table, 0)
     }
 
-    private val cff2VariationAxisTagsResult: FontOperationResult<List<String>> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+    private val variationAxisTagsResult: FontOperationResult<List<String>> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         val record = parsedFont.tableRecords["fvar"] ?: return@lazy FontOperationResult.Success(emptyList())
         val table = slice(sourceBytes, record)
             ?: return@lazy failure(
@@ -122,6 +129,75 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Success -> FontOperationResult.Success(result.value.axes.map { it.tag })
             is FontOperationResult.Failure -> result
             is FontOperationResult.Cancelled -> result
+        }
+    }
+
+    private val hvarResult: FontOperationResult<HvarData?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        metricsVariationAxisTags()?.let { axisTags ->
+            val record = parsedFont.tableRecords["HVAR"] ?: return@let FontOperationResult.Success(null)
+            val table = slice(sourceBytes, record)
+                ?: return@let failure(
+                    FontError.OutOfBounds("Table HVAR exceeds source length.", FontDiagnosticLocation.Table("HVAR")),
+                )
+            when (val result = HvarReader.read(table, axisTags.size)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+                is FontOperationResult.Failure -> result
+                is FontOperationResult.Cancelled -> result
+            }
+        } ?: FontOperationResult.Success(null)
+    }
+
+    private val vvarResult: FontOperationResult<VvarData?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        metricsVariationAxisTags()?.let { axisTags ->
+            val record = parsedFont.tableRecords["VVAR"] ?: return@let FontOperationResult.Success(null)
+            val table = slice(sourceBytes, record)
+                ?: return@let failure(
+                    FontError.OutOfBounds("Table VVAR exceeds source length.", FontDiagnosticLocation.Table("VVAR")),
+                )
+            when (val result = VvarReader.read(table, axisTags.size)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+                is FontOperationResult.Failure -> result
+                is FontOperationResult.Cancelled -> result
+            }
+        } ?: FontOperationResult.Success(null)
+    }
+
+    private val mvarResult: FontOperationResult<MvarData?> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        metricsVariationAxisTags()?.let { axisTags ->
+            val record = parsedFont.tableRecords["MVAR"] ?: return@let FontOperationResult.Success(null)
+            val table = slice(sourceBytes, record)
+                ?: return@let failure(
+                    FontError.OutOfBounds("Table MVAR exceeds source length.", FontDiagnosticLocation.Table("MVAR")),
+                )
+            when (val result = MvarReader.read(table, axisTags.size)) {
+                is FontOperationResult.Success -> FontOperationResult.Success(result.value)
+                is FontOperationResult.Failure -> result
+                is FontOperationResult.Cancelled -> result
+            }
+        } ?: FontOperationResult.Success(null)
+    }
+
+    /**
+     * Returns the face's `fvar` axis tags, or `null` when the face is not variable or its `fvar`
+     * cannot be parsed.
+     *
+     * The metric-variation tables are meaningless without `fvar`, so a variable-table read is only
+     * attempted when `fvar` is present and parses. A malformed `fvar` collapses to `null` here
+     * (default metrics), matching the face-level metadata philosophy where `variationAxes()`
+     * collapses an unparseable `fvar` to an empty list and `normalize()` reports the failure. This
+     * deliberately diverges from the outline route, where `decodePortableOutline` and
+     * `GlyfReader.prepareGvar` return a typed `fvar` failure for the same face: a non-default metric
+     * read on a malformed-`fvar` face silently returns the base metrics instead of failing. This
+     * asymmetry is accepted rather than propagated here. Cancellation is deliberately not threaded
+     * because `by lazy` would memoize a `Cancelled` result permanently, matching the existing CFF2
+     * axis-tag cache.
+     */
+    private fun metricsVariationAxisTags(): List<String>? {
+        if (parsedFont.tableRecords["fvar"] == null) return null
+        return when (val result = variationAxisTagsResult) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> null
+            is FontOperationResult.Cancelled -> null
         }
     }
 
@@ -157,7 +233,7 @@ public class PreparedTrueTypeFont internal constructor(
             val axisTags = if (normalizedAxes.isEmpty()) {
                 emptyList()
             } else {
-                when (val result = cff2VariationAxisTagsResult) {
+                when (val result = variationAxisTagsResult) {
                     is FontOperationResult.Success -> result.value
                     is FontOperationResult.Failure -> return result
                     is FontOperationResult.Cancelled -> return result
@@ -243,12 +319,14 @@ public class PreparedTrueTypeFont internal constructor(
      *
      * @param glyphId glyph identifier in the parsed face.
      * @param layoutSize requested positive layout size in the public unit.
-     * @return metrics scaled to [layoutSize], or a typed range, descriptor, or
-     * table-data failure.
+     * @param normalizedAxes instance location in `fvar` axis order; an empty list is the default
+     * instance and adds no table parsing.
+     * @return metrics scaled to [layoutSize], or a typed range, descriptor, or table-data failure.
      */
     public fun readGlyphMetrics(
         glyphId: GlyphId,
         layoutSize: Float,
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<GlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -261,33 +339,190 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
+        val location = metricLocation(normalizedAxes)
+        val orderedAxes = location?.orderedAxes
         if (parsedFont.flavor != FontFlavor.TRUETYPE) {
             val outline = when (
-                val result = decodePortableOutline(glyphId, metricsOutlineProfile(), CancellationToken.none)
+                val result = decodePortableOutline(glyphId, metricsOutlineProfile(), CancellationToken.none, normalizedAxes)
             ) {
                 is FontOperationResult.Success -> result.value
                 is FontOperationResult.Failure -> return result
                 is FontOperationResult.Cancelled -> return result
             }
-            return MetricsReader.readGlyphMetrics(metrics, outline.bounds, glyphId, layoutSize)
+            if (orderedAxes == null || orderedAxes.all { it == 0.0 }) {
+                return MetricsReader.readGlyphMetrics(metrics, outline.bounds, glyphId, layoutSize)
+            }
+            val hvar = when (val result = hvarResult) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            val deltas = hvarDeltas(hvar, glyphId, orderedAxes)
+            return MetricsReader.readGlyphMetrics(metrics, outline.bounds, glyphId, layoutSize, deltas)
         }
         val glyphData = when (val result = glyphData(CancellationToken.none)) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return MetricsReader.readGlyphMetrics(metrics, glyphData, glyphId, layoutSize)
+        if (orderedAxes == null || orderedAxes.all { it == 0.0 }) {
+            return MetricsReader.readGlyphMetrics(metrics, glyphData, glyphId, layoutSize)
+        }
+        val hvar = when (val result = hvarResult) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val metricsGlyphId = when (val result = GlyfReader.horizontalMetricsGlyphId(glyphData, glyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val deltas = when (val result = trueTypeHorizontalDeltas(glyphData, hvar, metricsGlyphId, checkNotNull(location))) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return MetricsReader.readGlyphMetrics(metrics, glyphData, glyphId, layoutSize, deltas)
     }
+
+    /** Returns the face's axis tags and the location's coordinates in that order, or `null` for the default. */
+    private fun metricLocation(normalizedAxes: List<FontAxisCoordinate>): MetricLocation? {
+        if (normalizedAxes.isEmpty()) return null
+        val axisTags = metricsVariationAxisTags() ?: return null
+        return MetricLocation(axisTags, orderedNormalizedAxes(axisTags, normalizedAxes))
+    }
+
+    /** `HVAR` advance and left side-bearing deltas for [metricsGlyphId], zero without `HVAR`. */
+    private fun hvarDeltas(
+        hvar: HvarData?,
+        metricsGlyphId: GlyphId,
+        orderedAxes: List<Double>,
+    ): MetricVariationDeltas {
+        if (hvar == null) return MetricVariationDeltas()
+        return MetricVariationDeltas(
+            advance = hvar.advanceWidthDelta(metricsGlyphId.value, orderedAxes),
+            sideBearing = hvar.leftSideBearingDelta(metricsGlyphId.value, orderedAxes),
+        )
+    }
+
+    /** `VVAR` advance-height and top side-bearing deltas for [metricsGlyphId], zero without `VVAR`. */
+    private fun vvarDeltas(
+        vvar: VvarData?,
+        metricsGlyphId: GlyphId,
+        orderedAxes: List<Double>,
+    ): MetricVariationDeltas {
+        if (vvar == null) return MetricVariationDeltas()
+        return MetricVariationDeltas(
+            advance = vvar.advanceHeightDelta(metricsGlyphId.value, orderedAxes),
+            sideBearing = vvar.topSideBearingDelta(metricsGlyphId.value, orderedAxes),
+        )
+    }
+
+    /**
+     * Horizontal variation deltas for a TrueType glyph: `HVAR` when present, otherwise the
+     * metrics-source glyph's `gvar` phantom-point deltas.
+     *
+     * [metricsGlyphId] is the glyph returned by [GlyfReader.horizontalMetricsGlyphId], i.e. the
+     * component that supplies a composite's `hmtx` base when its `USE_MY_METRICS` flag is set. Both
+     * the `HVAR` row and the phantom fallback are read for that same glyph, so a redirected
+     * composite never mixes a component's base advance with its own variation delta.
+     *
+     * The left phantom point is `xMin - lsb` and the right is `xMin - lsb + advanceWidth`, so only
+     * the advance is recoverable from the phantom deltas; the side bearing stays at its `hmtx` value
+     * in the fallback path.
+     */
+    private fun trueTypeHorizontalDeltas(
+        glyphData: PreparedGlyphData,
+        hvar: HvarData?,
+        metricsGlyphId: GlyphId,
+        location: MetricLocation,
+    ): FontOperationResult<MetricVariationDeltas> = trueTypeVariationDeltas(
+        glyphData = glyphData,
+        metricsGlyphId = metricsGlyphId,
+        location = location,
+        variationTableDeltas = hvar?.let { hvarDeltas(it, metricsGlyphId, location.orderedAxes) },
+        phantomAdvanceDelta = { it.horizontalAdvanceDelta },
+    )
+
+    /**
+     * Vertical variation deltas for a TrueType glyph: `VVAR` when present, otherwise the glyph's
+     * `gvar` phantom-point deltas (`verticalAdvanceDelta = topY - bottomY`).
+     *
+     * `USE_MY_METRICS` is horizontal-only, and no vertical metrics-glyph redirect exists in this
+     * codebase ([GlyfReader] exposes only `horizontalMetricsGlyphId`), so [metricsGlyphId] is the
+     * requested glyph on this path and no composite redirect is applied.
+     */
+    private fun trueTypeVerticalDeltas(
+        glyphData: PreparedGlyphData,
+        vvar: VvarData?,
+        metricsGlyphId: GlyphId,
+        location: MetricLocation,
+    ): FontOperationResult<MetricVariationDeltas> = trueTypeVariationDeltas(
+        glyphData = glyphData,
+        metricsGlyphId = metricsGlyphId,
+        location = location,
+        variationTableDeltas = vvar?.let { vvarDeltas(it, metricsGlyphId, location.orderedAxes) },
+        phantomAdvanceDelta = { it.verticalAdvanceDelta },
+    )
+
+    /**
+     * Resolves a TrueType glyph's variation advance: [variationTableDeltas] when the `HVAR`/`VVAR`
+     * table supplied them, otherwise [phantomAdvanceDelta] applied to the glyph's `gvar` phantom
+     * points. A malformed `gvar` fails the varied metric read, while a glyph with no `gvar` entry
+     * yields a zero advance delta.
+     */
+    private fun trueTypeVariationDeltas(
+        glyphData: PreparedGlyphData,
+        metricsGlyphId: GlyphId,
+        location: MetricLocation,
+        variationTableDeltas: MetricVariationDeltas?,
+        phantomAdvanceDelta: (GlyphVariationPhantoms) -> Double,
+    ): FontOperationResult<MetricVariationDeltas> {
+        if (variationTableDeltas != null) return FontOperationResult.Success(variationTableDeltas)
+        val outline = when (
+            val result = GlyfReader.readGlyphOutline(
+                glyphData,
+                metricsGlyphId,
+                metricsOutlineProfile(),
+                CancellationToken.none,
+                axisCoordinates(location),
+            )
+        ) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return FontOperationResult.Success(
+            MetricVariationDeltas(advance = outline.variationPhantoms?.let(phantomAdvanceDelta) ?: 0.0),
+        )
+    }
+
+    /** Rebuilds a tag-keyed coordinate list from a resolved [MetricLocation] for a `gvar`/CFF2 read. */
+    private fun axisCoordinates(location: MetricLocation): List<FontAxisCoordinate> =
+        location.axisTags.mapIndexed { index, tag -> FontAxisCoordinate(tag, location.orderedAxes[index].toFloat()) }
+
+    /** The face's `fvar` axis tags and the location's coordinates in that axis order. */
+    private data class MetricLocation(
+        val axisTags: List<String>,
+        val orderedAxes: List<Double>,
+    )
 
     /**
      * Reads one OpenType `vhea`/`vmtx` metric record scaled to [layoutSize].
      *
      * Missing vertical tables, malformed data, and unknown glyph identifiers are reported as
      * typed failures. The cache is immutable and shared across concurrent callers.
+     *
+     * @param glyphId glyph identifier in the parsed face.
+     * @param layoutSize requested positive layout size in the public unit.
+     * @param normalizedAxes instance location in `fvar` axis order; an empty list is the default
+     * instance and adds no table parsing.
      */
     public fun readVerticalGlyphMetrics(
         glyphId: GlyphId,
         layoutSize: Float,
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
     ): FontOperationResult<VerticalGlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -300,7 +535,60 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return VerticalMetricsReader.readGlyphMetrics(metrics, glyphId, layoutSize)
+        val location = metricLocation(normalizedAxes)
+        if (location == null || location.orderedAxes.all { it == 0.0 }) {
+            return VerticalMetricsReader.readGlyphMetrics(metrics, glyphId, layoutSize)
+        }
+        val vvar = when (val result = vvarResult) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val deltas = if (parsedFont.flavor != FontFlavor.TRUETYPE) {
+            vvarDeltas(vvar, glyphId, location.orderedAxes)
+        } else {
+            val glyphData = when (val result = glyphData(CancellationToken.none)) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+            when (val result = trueTypeVerticalDeltas(glyphData, vvar, glyphId, location)) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+        }
+        return VerticalMetricsReader.readGlyphMetrics(metrics, glyphId, layoutSize, deltas)
+    }
+
+    /**
+     * Reads the instance's font-wide metrics in design units.
+     *
+     * The defaults come from `OS/2` (falling back to `hhea` for the vertical extents and `post` for
+     * the underline) and the `MVAR` deltas are applied afterwards. An empty [normalizedAxes] list is
+     * the default instance and adds no `MVAR` parsing.
+     *
+     * @param normalizedAxes instance location in `fvar` axis order.
+     * @return font-wide metrics, or a typed table failure.
+     */
+    public fun readFontMetrics(
+        normalizedAxes: List<FontAxisCoordinate> = emptyList(),
+    ): FontOperationResult<FontMetrics> {
+        val orderedAxes = if (normalizedAxes.isEmpty()) {
+            emptyList()
+        } else {
+            metricLocation(normalizedAxes)?.orderedAxes ?: emptyList()
+        }
+        val mvar = if (orderedAxes.isEmpty() || orderedAxes.all { it == 0.0 }) {
+            null
+        } else {
+            when (val result = mvarResult) {
+                is FontOperationResult.Success -> result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
+            }
+        }
+        return FontMetricsReader.read(sourceBytes, parsedFont, mvar, orderedAxes)
     }
 
     /**

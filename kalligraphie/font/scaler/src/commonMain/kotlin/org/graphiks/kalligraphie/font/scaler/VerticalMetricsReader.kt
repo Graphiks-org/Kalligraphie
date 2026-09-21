@@ -51,6 +51,7 @@ internal object VerticalMetricsReader {
         prepared: PreparedVerticalMetricsData,
         glyphId: GlyphId,
         layoutSize: Float,
+        deltas: MetricVariationDeltas = MetricVariationDeltas(),
     ): FontOperationResult<VerticalGlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -95,9 +96,11 @@ internal object VerticalMetricsReader {
                     ?: return failure(FontError.OutOfBounds("vmtx trailing topSideBearing is truncated.", tableLocation("vmtx"))),
             )
         }
-        val advanceHeight = scale(metrics.advanceHeight, layoutSize, prepared.unitsPerEm)
+        val advanceHeightDesignUnits = roundMetric(metrics.advanceHeight.toDouble() + deltas.advance)
+        val tsbDesignUnits = roundMetric(metrics.topSideBearing.toDouble() + deltas.sideBearing)
+        val advanceHeight = scale(advanceHeightDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceHeight could not be represented as a finite LayoutUnit."))
-        val topSideBearing = scale(metrics.topSideBearing, layoutSize, prepared.unitsPerEm)
+        val topSideBearing = scale(tsbDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("topSideBearing could not be represented as a finite LayoutUnit."))
         return FontOperationResult.Success(VerticalGlyphMetrics(advanceHeight, topSideBearing))
     }

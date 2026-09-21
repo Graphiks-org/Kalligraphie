@@ -971,10 +971,9 @@ components, matching the OpenType `gvar` composite rules. The four
 phantom-point deltas that follow the outline or component points are decoded
 alongside the outline and exposed through the scaler's internal
 `GlyphVariationPhantoms` (right-minus-left advance-width and top-minus-bottom
-advance-height deltas), and are `null` at the default instance. A later metrics
-step will consume them, so metrics are still returned at the default instance
-and a non-default selection still does not change the metrics a portable
-provider returns.
+advance-height deltas), and are `null` at the default instance. The metric route
+consumes them as a fallback when `HVAR`/`VVAR` are absent, so a non-default
+selection now changes the metrics a portable provider returns.
 
 The portable CFF2 outline route now varies too. Each charstring's `blend`
 operands are evaluated at the instance's normalized axes, with the region
@@ -1001,20 +1000,42 @@ takes the same call path as before. The shared evaluator corrects the region
 rule, though, so a store that contains a zero-crossing region or an invalid
 bound ordering changes at the default instance (a deliberate fix, not a
 regression), and a store that declares zero item-data entries is now accepted
-rather than rejected. `HVAR`/`VVAR`/`MVAR` metric variation, variable colour
-and synthetic bold/italic geometry remain unimplemented, and CFF2 metrics stay
-at the default instance. Malformed `gvar` data fails with
+rather than rejected. `HVAR`/`VVAR`/`MVAR` metric variation is implemented: a
+non-default instance now varies horizontal advances through `HVAR`, vertical
+advances through `VVAR`, font-wide metrics through `MVAR`, and falls back to the
+`gvar` phantom-point deltas when `HVAR`/`VVAR` are absent; variable colour and
+synthetic bold/italic geometry remain unimplemented. Malformed `gvar` data fails with
 `font.variation.invalid-gvar`, an unsupported table version fails with
 `font.variation.unsupported-gvar-version`, and `gvar` resource bounds reuse
 `font.resource-limit-exceeded` with the `gvar` table location.
 
-Two added surfaces are defaulted placeholders rather than implemented reads:
-`FontFace.stat()` returns `Success(null)` and `FontInstance.fontMetrics()`
-remains unsupported because the portable provider does not yet read `STAT` or
-apply `HVAR`/`VVAR`/`MVAR` metric variation (deferred). The axis selection is
-retained as given: an axis explicitly set to its default value is kept,
+`FontFace.stat()` remains a defaulted placeholder that returns `Success(null)`:
+portable `STAT` reading is a separate concern and is deferred, alongside native
+metric bridges (default-only), `avar` version 2, `cvar`, `VARC`, variable colour,
+synthetic bold/italic geometry, the fingerprint-regenerating profile limit fields,
+the shaping sub-plan's HarfBuzz metric cross-check (the `metrics() == HarfBuzz`
+exit criterion is not bound by this metric-variation sub-plan), and the §8
+`maxVariationTableBytes`/`retainedBytes` cache-budget billing of the decoded
+metric tables. `FontInstance.fontMetrics()`
+is implemented: it returns the instance's `OS/2` (with `hhea` fallback), `post` and
+`MVAR` font-wide metrics in design units. Horizontal metrics use the priority
+`HVAR` then `gvar` phantom-point deltas then `hmtx`; vertical metrics use `VVAR`
+then `gvar` phantom-point deltas then `vmtx`. Side bearings are adjusted only when
+the `HVAR`/`VVAR` side-bearing mapping is present; with no mapping the `hmtx`/`vmtx`
+value is retained, which follows the specification but differs from fontTools
+`varLib.instancer`, which recomputes the left side bearing from the varied outline.
+Ink bounds remain the unvaried `glyf` header bounds on the TrueType route. The axis
+selection is retained as given: an axis explicitly set to its default value is kept,
 normalizes to `0`, and produces a distinct `FontInstanceKey` from omitting that
-axis (there is no default-value pruning).
+axis (there is no default-value pruning). Metric-variation coverage remains
+partial: `VVAR` and `MVAR` are exercised only against synthetic bytes because no
+real fixture carries them, the composite metrics-source plus `gvar`-phantom
+(no-`HVAR`) horizontal fallback path is code-correct but untested, and the `HVAR`
+`lsb`/`rsb` and `VVAR` `tsb`/`bsb` mapping-present paths are reader-level only, so
+the scaler's non-zero side-bearing delta path is untested. The synthetic variable
+CFF2 fixture carries an `HVAR` whose store declares no regions and no item deltas,
+so fontTools confirms its glyph `A` advance stays `1000` at `wght = 1.0` and there
+is no varied advance to assert through the CFF2 metric route.
 
 ## Exact editable Unicode lines
 

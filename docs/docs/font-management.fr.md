@@ -1086,10 +1086,9 @@ Les quatre deltas de points fantômes qui suivent les points de contour ou de
 composant sont décodés en même temps que le contour et exposés via
 `GlyphVariationPhantoms` du module scaler (delta d’avance horizontale
 droite moins gauche, delta d’avance verticale haut moins bas) ; ils valent
-`null` à l’instance par défaut. Une étape ultérieure de métriques les
-consommera ; les métriques restent donc renvoyées à l’instance par défaut et
-une sélection non par défaut ne change toujours pas les métriques renvoyées par
-un fournisseur portable.
+`null` à l’instance par défaut. La route des métriques les consomme en repli
+lorsque `HVAR`/`VVAR` sont absents ; une sélection non par défaut change
+désormais les métriques renvoyées par un fournisseur portable.
 
 La route portable de contours CFF2 varie elle aussi désormais. Les opérandes
 `blend` de chaque charstring sont évaluées aux axes normalisés de l’instance,
@@ -1120,22 +1119,48 @@ de région : un store qui contient une région traversant zéro ou un ordre de
 bornes invalide change donc à l’instance par défaut (un correctif délibéré, et
 non une régression), et un store déclarant zéro entrée de données d’item est
 désormais accepté au lieu d’être rejeté.
-La variation des métriques `HVAR`/`VVAR`/`MVAR`, la couleur variable et la
-géométrie synthétique (gras/italique) restent non implémentées ; les métriques
-CFF2 restent à l’instance par défaut. Les données `gvar` malformées échouent
+La variation des métriques `HVAR`/`VVAR`/`MVAR` est implémentée : une instance non
+par défaut fait varier les avances horizontales via `HVAR`, les avances verticales
+via `VVAR`, les métriques de fonte via `MVAR`, et retombe sur les deltas de points
+fantômes `gvar` lorsque `HVAR`/`VVAR` sont absents ; la couleur variable et la
+géométrie synthétique (gras/italique) restent non implémentées. Les données `gvar` malformées échouent
 avec `font.variation.invalid-gvar`, une version de table non prise en charge
 échoue avec `font.variation.unsupported-gvar-version`, et les bornes de
 ressources `gvar` réutilisent `font.resource-limit-exceeded` avec
 l’emplacement de table `gvar`.
 
-Deux surfaces ajoutées sont des espaces réservés avec valeur par défaut plutôt
-que des lectures implémentées : `FontFace.stat()` renvoie `Success(null)` et
-`FontInstance.fontMetrics()` reste non pris en charge, car le fournisseur
-portable ne lit pas encore `STAT` et n’applique pas la variation des métriques
-`HVAR`/`VVAR`/`MVAR` (différée). La sélection d’axes est conservée telle quelle :
-un axe explicitement réglé à sa valeur par défaut est gardé, se normalise à `0`
-et produit une `FontInstanceKey` distincte de l’omission de cet axe (aucun
-élagage, ou pruning, des valeurs par défaut).
+`FontFace.stat()` reste un espace réservé avec valeur par défaut qui renvoie
+`Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
+différée, au même titre que les ponts natifs de métriques (limités au cas par
+défaut), `avar` version 2, `cvar`, `VARC`, la couleur variable, la géométrie
+synthétique (gras/italique), les champs de limite de profil qui régénèrent les
+empreintes, la vérification croisée des métriques HarfBuzz du sous-plan de
+composition (`metrics() == HarfBuzz` n’est pas un critère de sortie lié à ce
+sous-plan de variation des métriques) et la facturation de budget de cache §8
+`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées.
+`FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
+de fonte de l’instance issues de `OS/2` (avec repli sur `hhea`), `post` et `MVAR`,
+en unités de design. Les métriques horizontales suivent la priorité `HVAR` puis
+deltas de points fantômes `gvar` puis `hmtx` ; les métriques verticales suivent
+`VVAR` puis deltas de points fantômes `gvar` puis `vmtx`. Les demi-approches
+(side bearings) ne sont ajustées que si la table de correspondance `HVAR`/`VVAR`
+est présente ; sans correspondance, la valeur `hmtx`/`vmtx` est conservée, ce qui
+suit la spécification mais diffère de fontTools `varLib.instancer`, qui recalcule
+la demi-approche gauche à partir du contour varié. Les bornes d’encre restent les
+bornes d’en-tête `glyf` non variées sur la route TrueType. La sélection d’axes est
+conservée telle quelle : un axe explicitement réglé à sa valeur par défaut est
+gardé, se normalise à `0` et produit une `FontInstanceKey` distincte de l’omission
+de cet axe (aucun élagage, ou pruning, des valeurs par défaut). La couverture de
+la variation des métriques reste partielle : `VVAR` et `MVAR` ne sont exercés que
+sur des octets synthétiques, aucune fixture réelle ne les portant ; le chemin de
+repli horizontal composite + points fantômes `gvar` (sans `HVAR`) est correct dans
+le code mais non testé ; et les chemins de correspondance présents `lsb`/`rsb` de
+`HVAR` et `tsb`/`bsb` de `VVAR` ne sont couverts qu’au niveau du lecteur, de sorte
+que le chemin de delta non nul des demi-approches du scaler n’est pas testé. La
+fixture CFF2 variable synthétique porte un `HVAR` dont le store ne déclare ni
+région ni delta d’item ; fontTools confirme donc que l’avance du glyphe `A` reste
+`1000` à `wght = 1.0`, et aucune avance variée ne peut être affirmée via la route
+de métriques CFF2.
 
 ## Lignes Unicode éditables exactes
 
