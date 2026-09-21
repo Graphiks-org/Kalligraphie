@@ -608,6 +608,124 @@ class GvarReaderTest {
         )
     }
 
+    @Test
+    fun compositeGlyphDeltasReturnNullForZeroComponents() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(10, -5, 0, 7, 0, 0)) +
+                        packedDeltas(intArrayOf(20, 30, 0, 0, 9, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        assertNull(success(data.compositeGlyphDeltas(0, componentCount = 0, normalizedAxes = listOf(1.0))))
+    }
+
+    @Test
+    fun rejectsNegativeCompositeComponentCount() {
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.compositeGlyphDeltas(0, componentCount = -1, normalizedAxes = listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun compositeGlyphDeltasHonourCancellationBeforeCountChecks() {
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        assertIs<FontOperationResult.Cancelled>(
+            data.compositeGlyphDeltas(
+                0,
+                componentCount = 0,
+                normalizedAxes = listOf(1.0),
+                cancellationToken = CancellationToken.cancelled,
+            ),
+        )
+        assertIs<FontOperationResult.Cancelled>(
+            data.compositeGlyphDeltas(
+                0,
+                componentCount = -1,
+                normalizedAxes = listOf(1.0),
+                cancellationToken = CancellationToken.cancelled,
+            ),
+        )
+    }
+
+    @Test
+    fun rejectsCompositePointNumberAboveCompositeRange() {
+        // A composite point number must address a component (< 2) or a phantom slot, never beyond 5.
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    privatePointNumbers = true,
+                    data = packedPoints(intArrayOf(6)) +
+                        packedDeltas(intArrayOf(10)) +
+                        packedDeltas(intArrayOf(0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val failure = assertIs<FontOperationResult.Failure>(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )
+        assertEquals("font.variation.invalid-gvar", failure.error.code)
+    }
+
+    @Test
+    fun compositeGlyphDeltasIgnoreCrossAxisPhantomDeltas() {
+        // X deltas land only on left/right phantoms and Y deltas only on top/bottom; cross-axis
+        // values on the wrong phantom slots are not surfaced.
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(0, 0, 0, 0, 111, 222)) +
+                        packedDeltas(intArrayOf(0, 0, 333, 444, 0, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )!!
+        assertEquals(0.0, deltas.phantomDeltas.leftX)
+        assertEquals(0.0, deltas.phantomDeltas.rightX)
+        assertEquals(0.0, deltas.phantomDeltas.topY)
+        assertEquals(0.0, deltas.phantomDeltas.bottomY)
+    }
+
+    @Test
+    fun compositeGlyphDeltasDoNotInterpolateSharedOnlyComponents() {
+        // An explicit shared point list naming only component 0 must not interpolate component 1.
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = intArrayOf(0),
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    data = packedDeltas(intArrayOf(40)) + packedDeltas(intArrayOf(0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(
+            data.compositeGlyphDeltas(0, componentCount = 2, normalizedAxes = listOf(1.0)),
+        )!!
+        assertEquals(40.0, deltas.xDelta(0))
+        assertEquals(0.0, deltas.xDelta(1))
+    }
+
     private fun <T> success(result: FontOperationResult<T>): T = when (result) {
         is FontOperationResult.Success -> result.value
         is FontOperationResult.Failure -> error("Unexpected failure: ${result.error}")

@@ -39,10 +39,10 @@ public class GvarGlyphDeltas internal constructor(
         bottomY = yDeltas[pointCount + GVAR_PHANTOM_BOTTOM_INDEX],
     )
 
-    /** Horizontal delta for outline [pointIndex], or `0.0` when out of range; phantoms are excluded. */
+    /** Horizontal delta for outline or component [pointIndex], or `0.0` when out of range; phantom slots are excluded. */
     public fun xDelta(pointIndex: Int): Double = if (pointIndex in 0 until pointCount) xDeltas[pointIndex] else 0.0
 
-    /** Vertical delta for outline [pointIndex], or `0.0` when out of range; phantoms are excluded. */
+    /** Vertical delta for outline or component [pointIndex], or `0.0` when out of range; phantom slots are excluded. */
     public fun yDelta(pointIndex: Int): Double = if (pointIndex in 0 until pointCount) yDeltas[pointIndex] else 0.0
 }
 
@@ -111,7 +111,6 @@ public class GvarData internal constructor(
         normalizedAxes: List<Double>,
         cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<GvarGlyphDeltas?> {
-        if (baseX.size != baseY.size) return invalid("gvar base coordinates are inconsistent.")
         return decodeDeltas(
             glyphId = glyphId,
             pointCount = baseX.size,
@@ -130,8 +129,9 @@ public class GvarData internal constructor(
      * the four phantom points: point numbers refer to component indices and no interpolation is
      * performed for un-referenced components. The caller applies each component delta to that
      * component's placement offset only when the component selects `ARGS_ARE_XY_VALUES`. Returns
-     * `null` when the glyph has no variation record. Malformed records fail closed; cancellation
-     * returns [FontOperationResult.Cancelled] with no partial output.
+     * `null` when [componentCount] is `0` or the glyph has no variation record; a negative count
+     * fails closed. Malformed records fail closed; cancellation returns
+     * [FontOperationResult.Cancelled] with no partial output.
      *
      * @param glyphId numeric glyph identifier.
      * @param componentCount number of components in the composite glyph.
@@ -144,6 +144,7 @@ public class GvarData internal constructor(
         normalizedAxes: List<Double>,
         cancellationToken: CancellationToken = CancellationToken.none,
     ): FontOperationResult<GvarGlyphDeltas?> {
+        if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (componentCount < 0) return invalid("gvar component count must not be negative.")
         if (componentCount == 0) return FontOperationResult.Success(null)
         return decodeDeltas(
@@ -168,6 +169,7 @@ public class GvarData internal constructor(
     ): FontOperationResult<GvarGlyphDeltas?> {
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId !in 0 until glyphCount) return FontOperationResult.Success(null)
+        if (baseX.size != baseY.size) return invalid("gvar base coordinates are inconsistent.")
         val start = glyphDataStart + glyphOffsets[glyphId]
         val end = glyphDataStart + glyphOffsets[glyphId + 1]
         if (start == end) return FontOperationResult.Success(null)
