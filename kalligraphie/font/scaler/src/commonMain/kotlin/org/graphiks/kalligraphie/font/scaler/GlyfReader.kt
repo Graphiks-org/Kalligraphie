@@ -417,10 +417,7 @@ private class GlyphResolver(
         if (gvar == null) {
             emptyList()
         } else {
-            List(variationAxisTags.size) { index ->
-                val tag = variationAxisTags[index]
-                normalizedAxes.firstOrNull { it.tag == tag }?.value?.toDouble() ?: 0.0
-            }
+            orderedNormalizedAxes(axisTags = variationAxisTags, normalizedAxes = normalizedAxes)
         }
 
     fun resolveRoot(glyphId: GlyphId): FontOperationResult<ScalerGlyphOutline> =

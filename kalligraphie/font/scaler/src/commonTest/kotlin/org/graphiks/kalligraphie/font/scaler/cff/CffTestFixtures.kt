@@ -189,8 +189,8 @@ internal fun testCff2VariationStore(
 }
 
 /**
- * `0 hmoveto 100 hlineto -100 200 100 1 blend rlineto`: the third vertex's y is `200 + 100` times
- * the active region scalar.
+ * `0 hmoveto 100 hlineto -100 200 100 1 blend rlineto`: the third vertex's y is
+ * `200 + 100×scalar`, where `scalar` is the active region scalar.
  */
 internal fun blendTriangleCharString(): ByteArray = byteArrayOf(
     139.toByte(), 22, 239.toByte(), 6, 39, 247.toByte(), 92, 239.toByte(), 140.toByte(), 16, 5,

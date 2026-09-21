@@ -8,6 +8,7 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.font.scaler.ScalerGlyphOutline
+import org.graphiks.kalligraphie.font.scaler.orderedNormalizedAxes
 import org.graphiks.kalligraphie.font.sfnt.variation.VariationStoreLimits
 
 /**
@@ -37,7 +38,7 @@ internal object Cff2Reader {
         val variationSource: CffVariationSource? = if (table.variationStoreOffset == null) {
             null
         } else {
-            val orderedAxes = orderAxes(axisTags, normalizedAxes)
+            val orderedAxes = orderedNormalizedAxes(axisTags = axisTags, normalizedAxes = normalizedAxes)
             when (
                 val result = CffVarStore.read(
                     bytes = bytes,
@@ -82,13 +83,6 @@ internal object Cff2Reader {
             is FontOperationResult.Cancelled -> result
         }
     }
-
-    /** Maps tag-keyed [normalizedAxes] into [axisTags] (`fvar`) order, defaulting absent axes to zero. */
-    internal fun orderAxes(axisTags: List<String>, normalizedAxes: List<FontAxisCoordinate>): List<Double> =
-        List(axisTags.size) { index ->
-            val tag = axisTags[index]
-            normalizedAxes.firstOrNull { it.tag == tag }?.value?.toDouble() ?: 0.0
-        }
 
     private fun CffIndex?.toItems(): List<ByteArray> =
         if (this == null) emptyList() else (0 until itemCount).map { item(it) }

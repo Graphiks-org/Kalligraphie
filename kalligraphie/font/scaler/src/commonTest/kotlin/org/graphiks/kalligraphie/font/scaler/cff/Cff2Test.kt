@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.font.scaler.orderedNormalizedAxes
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -81,7 +82,7 @@ class Cff2Test {
 
     @Test
     fun ordersNormalizedAxesByFvarTag() {
-        val ordered = Cff2Reader.orderAxes(
+        val ordered = orderedNormalizedAxes(
             axisTags = listOf("wght", "wdth"),
             normalizedAxes = listOf(FontAxisCoordinate("wdth", 0.5f)),
         )
