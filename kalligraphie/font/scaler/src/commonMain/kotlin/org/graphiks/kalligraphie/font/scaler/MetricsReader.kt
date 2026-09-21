@@ -19,6 +19,7 @@ import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
+import kotlin.math.roundToInt
 
 /**
  * Reads horizontal metrics and glyph bounds from a TrueType font.
@@ -92,6 +93,8 @@ internal object MetricsReader {
         glyphData: PreparedGlyphData,
         glyphId: GlyphId,
         layoutSize: Float,
+        advanceWidthDelta: Double = 0.0,
+        leftSideBearingDelta: Double = 0.0,
     ): FontOperationResult<GlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -116,7 +119,7 @@ internal object MetricsReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return finishMetrics(prepared, metrics, bounds, layoutSize)
+        return finishMetrics(prepared, metrics, bounds, layoutSize, advanceWidthDelta, leftSideBearingDelta)
     }
 
     /**
@@ -129,6 +132,8 @@ internal object MetricsReader {
         bounds: DesignBounds,
         glyphId: GlyphId,
         layoutSize: Float,
+        advanceWidthDelta: Double = 0.0,
+        leftSideBearingDelta: Double = 0.0,
     ): FontOperationResult<GlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -141,7 +146,7 @@ internal object MetricsReader {
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return finishMetrics(prepared, metrics, bounds, layoutSize)
+        return finishMetrics(prepared, metrics, bounds, layoutSize, advanceWidthDelta, leftSideBearingDelta)
     }
 
     private fun readHorizontalMetrics(
@@ -196,18 +201,22 @@ internal object MetricsReader {
         metrics: HorizontalMetrics,
         bounds: DesignBounds,
         layoutSize: Float,
+        advanceWidthDelta: Double,
+        leftSideBearingDelta: Double,
     ): FontOperationResult<GlyphMetrics> {
-        val advanceWidth = scaleDesignUnit(metrics.advanceWidth, layoutSize, prepared.unitsPerEm)
+        val advanceDesignUnits = roundMetric(metrics.advanceWidth.toDouble() + advanceWidthDelta)
+        val lsbDesignUnits = roundMetric(metrics.leftSideBearing.toDouble() + leftSideBearingDelta)
+        val advanceWidth = scaleDesignUnit(advanceDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceWidth could not be represented as a finite LayoutUnit."))
-        val leftSideBearing = scaleDesignUnit(metrics.leftSideBearing, layoutSize, prepared.unitsPerEm)
+        val leftSideBearing = scaleDesignUnit(lsbDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("leftSideBearing could not be represented as a finite LayoutUnit."))
         val scaledBounds = scaleBounds(bounds, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("Glyph bounds could not be represented as finite LayoutUnit values."))
 
         return FontOperationResult.Success(
             GlyphMetrics(
-                advanceWidthDesignUnits = metrics.advanceWidth,
-                leftSideBearingDesignUnits = metrics.leftSideBearing,
+                advanceWidthDesignUnits = advanceDesignUnits,
+                leftSideBearingDesignUnits = lsbDesignUnits,
                 advanceWidth = advanceWidth,
                 leftSideBearing = leftSideBearing,
                 bounds = bounds,
@@ -215,6 +224,9 @@ internal object MetricsReader {
             ),
         )
     }
+
+    /** Rounds an interpolated metric to a design unit; ties round toward positive infinity. */
+    private fun roundMetric(value: Double): Int = value.roundToInt()
 
     private fun scaleDesignUnit(value: Int, layoutSize: Float, unitsPerEm: Int): LayoutUnit? {
         val scaled = value.toDouble() * layoutSize.toDouble() / unitsPerEm.toDouble()

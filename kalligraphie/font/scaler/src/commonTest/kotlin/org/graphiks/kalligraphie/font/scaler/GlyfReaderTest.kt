@@ -964,7 +964,7 @@ private data class ParsedFont(
     val font: ParsedTrueTypeFont,
 )
 
-private fun minimalTrueTypeFont(
+internal fun minimalTrueTypeFont(
     glyphCount: Int,
     indexToLocFormat: Int = 0,
     maxPoints: Int = 128,
@@ -1019,7 +1019,7 @@ private fun minimalTrueTypeFont(
     return fontBytes
 }
 
-private fun locaFormat0(vararg offsets: Int): ByteArray =
+internal fun locaFormat0(vararg offsets: Int): ByteArray =
     ByteArray(offsets.size * 2).also { bytes ->
         offsets.forEachIndexed { index, offset -> bytes.writeUInt16(index * 2, offset / 2) }
     }
@@ -1238,7 +1238,7 @@ private fun ByteArray.writeUInt32(offset: Int, value: Int) {
     this[offset + 3] = value.toByte()
 }
 
-private fun singlePointGlyph(x: Int, y: Int): ByteArray =
+internal fun singlePointGlyph(x: Int, y: Int): ByteArray =
     ByteArray(20).also { bytes ->
         bytes.writeInt16(0, 1)
         bytes.writeInt16(2, x)
@@ -1252,7 +1252,7 @@ private fun singlePointGlyph(x: Int, y: Int): ByteArray =
         bytes.writeInt16(17, y)
     }
 
-private fun singleAxisFvarTable(): ByteArray =
+internal fun singleAxisFvarTable(): ByteArray =
     ByteArray(36).also { bytes ->
         bytes.writeUInt16(0, 1)
         bytes.writeUInt16(2, 0)

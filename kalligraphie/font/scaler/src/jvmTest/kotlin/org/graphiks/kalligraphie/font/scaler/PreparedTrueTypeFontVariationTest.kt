@@ -12,8 +12,10 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 import org.graphiks.kalligraphie.api.GlyphId
+import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.OutlineProfile
+import org.graphiks.kalligraphie.api.VerticalGlyphMetrics
 import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 
@@ -39,6 +41,47 @@ class PreparedTrueTypeFontVariationTest {
     fun defaultInstanceCarriesNoPhantomDeltas() {
         assertNull(outlineForGraphemeA(normalizedWght = null).variationPhantoms)
         assertNull(outlineForGraphemeA(normalizedWght = 0f).variationPhantoms)
+    }
+
+    /**
+     * The fixture's `HVAR` carries no LSB mapping, so the `hmtx` lsb is retained even though
+     * fontTools' instancer recomputes it to -8 from the varied outline.
+     */
+    @Test
+    fun appliesTheHvarAdvanceDeltaToPortableMetrics() {
+        val default = horizontalMetricsForGraphemeA(normalizedWght = null)
+        assertEquals(574, default.advanceWidthDesignUnits)
+        assertEquals(11, default.leftSideBearingDesignUnits)
+
+        val varied = horizontalMetricsForGraphemeA(normalizedWght = 1f)
+        assertEquals(660, varied.advanceWidthDesignUnits)
+        assertEquals(11, varied.leftSideBearingDesignUnits)
+    }
+
+    @Test
+    fun leavesTheVerticalAdvanceUnchangedWithoutVvar() {
+        assertEquals(1000f, verticalMetricsForGraphemeA(normalizedWght = null).advanceHeight.value)
+        assertEquals(1000f, verticalMetricsForGraphemeA(normalizedWght = 1f).advanceHeight.value)
+    }
+
+    private fun horizontalMetricsForGraphemeA(normalizedWght: Float?): GlyphMetrics =
+        assertIs<FontOperationResult.Success<GlyphMetrics>>(
+            preparedFontFixture().readGlyphMetrics(GlyphId(1), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
+        ).value
+
+    private fun verticalMetricsForGraphemeA(normalizedWght: Float?): VerticalGlyphMetrics =
+        assertIs<FontOperationResult.Success<VerticalGlyphMetrics>>(
+            preparedFontFixture().readVerticalGlyphMetrics(GlyphId(1), LAYOUT_SIZE, fixtureAxes(normalizedWght)),
+        ).value
+
+    private fun fixtureAxes(normalizedWght: Float?): List<FontAxisCoordinate> =
+        normalizedWght?.let { listOf(FontAxisCoordinate("wght", it)) } ?: emptyList()
+
+    private fun preparedFontFixture(): PreparedTrueTypeFont {
+        val parsed = assertIs<FontOperationResult.Success<ParsedTrueTypeFont>>(
+            SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture"))),
+        ).value
+        return PreparedTrueTypeFont(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture")), parsed)
     }
 
     private fun outlineForGraphemeA(normalizedWght: Float?): ScalerGlyphOutline {
@@ -106,5 +149,10 @@ class PreparedTrueTypeFontVariationTest {
         val third = assertIs<GlyphOutlineCommand.LineTo>(outline.contours.single().commands[2])
         assertEquals(0.0, third.x)
         return third.y
+    }
+
+    private companion object {
+        /** The fixture's `head.unitsPerEm`, so a scaled metric equals its design-unit value. */
+        const val LAYOUT_SIZE = 1000f
     }
 }

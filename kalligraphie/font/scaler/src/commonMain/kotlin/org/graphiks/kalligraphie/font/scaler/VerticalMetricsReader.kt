@@ -17,6 +17,7 @@ import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
+import kotlin.math.roundToInt
 
 /** Decodes OpenType `vhea` and `vmtx` metrics without retaining mutable font storage. */
 internal object VerticalMetricsReader {
@@ -51,6 +52,8 @@ internal object VerticalMetricsReader {
         prepared: PreparedVerticalMetricsData,
         glyphId: GlyphId,
         layoutSize: Float,
+        advanceHeightDelta: Double = 0.0,
+        topSideBearingDelta: Double = 0.0,
     ): FontOperationResult<VerticalGlyphMetrics> {
         if (!layoutSize.isFinite()) {
             return failure(FontError.InvalidInstanceDescriptor("layoutSize must be finite."))
@@ -95,9 +98,11 @@ internal object VerticalMetricsReader {
                     ?: return failure(FontError.OutOfBounds("vmtx trailing topSideBearing is truncated.", tableLocation("vmtx"))),
             )
         }
-        val advanceHeight = scale(metrics.advanceHeight, layoutSize, prepared.unitsPerEm)
+        val advanceHeightDesignUnits = (metrics.advanceHeight.toDouble() + advanceHeightDelta).roundToInt()
+        val tsbDesignUnits = (metrics.topSideBearing.toDouble() + topSideBearingDelta).roundToInt()
+        val advanceHeight = scale(advanceHeightDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceHeight could not be represented as a finite LayoutUnit."))
-        val topSideBearing = scale(metrics.topSideBearing, layoutSize, prepared.unitsPerEm)
+        val topSideBearing = scale(tsbDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("topSideBearing could not be represented as a finite LayoutUnit."))
         return FontOperationResult.Success(VerticalGlyphMetrics(advanceHeight, topSideBearing))
     }
