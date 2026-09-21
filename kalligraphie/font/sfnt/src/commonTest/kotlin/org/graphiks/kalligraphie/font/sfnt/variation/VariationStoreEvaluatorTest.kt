@@ -42,6 +42,22 @@ class VariationStoreEvaluatorTest {
     }
 
     @Test
+    fun treatsAnInvalidBoundOrderingAsNoEffect() {
+        val startAfterPeak = success(
+            VariationStoreEvaluator.read(storeBytes(listOf(intArrayOf(0x4000, 0x2000, 0x4000))), 0, "CFF2"),
+        )
+        val peakAfterEnd = success(
+            VariationStoreEvaluator.read(storeBytes(listOf(intArrayOf(0x0000, 0x4000, 0x2000))), 0, "CFF2"),
+        )
+
+        assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(startAfterPeak, 0, listOf(-1.0)))
+        assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(startAfterPeak, 0, listOf(0.0)))
+        assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(startAfterPeak, 0, listOf(1.0)))
+        assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(peakAfterEnd, 0, listOf(0.0)))
+        assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(peakAfterEnd, 0, listOf(0.5)))
+    }
+
+    @Test
     fun treatsAPeakOfZeroAsNoEffect() {
         val store = success(
             VariationStoreEvaluator.read(storeBytes(listOf(intArrayOf(0x0000, 0x0000, 0x0000))), 0, "CFF2"),
