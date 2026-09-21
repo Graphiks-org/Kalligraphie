@@ -1,4 +1,8 @@
-package org.graphiks.kalligraphie.raster
+package org.graphiks.kalligraphie.e2e.golden
+
+import org.graphiks.kalligraphie.e2e.GoldenImage
+import org.graphiks.kalligraphie.raster.A8Image
+import org.graphiks.kalligraphie.raster.Rgba8Image
 
 /**
  * Encodes one eight-bit coverage image as a raw P5 PGM without flipping.
@@ -77,6 +81,9 @@ internal class A8Canvas(val width: Int, val height: Int) {
         val header = "P5\n$width $height\n255\n".toByteArray(Charsets.US_ASCII)
         return header + pixels.copyOf()
     }
+
+    /** Wraps the canvas pixels as a canonical golden image without flipping them again. */
+    fun toGoldenImage(): GoldenImage = GoldenImage.alpha8(width, height, pixels.copyOf())
 }
 
 /**
@@ -157,10 +164,7 @@ internal class RgbaCanvas(val width: Int, val height: Int) {
         }
         return header + rgb
     }
-}
 
-/** One rendered demonstration artifact: the encoded bytes plus a human-readable note. */
-internal class Dump(
-    val bytes: ByteArray,
-    val note: String = "",
-)
+    /** Wraps the canvas pixels as a canonical golden image without compositing them again. */
+    fun toGoldenImage(): GoldenImage = GoldenImage.rgba8(width, height, pixels.copyOf())
+}

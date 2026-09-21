@@ -1,92 +1,65 @@
-package org.graphiks.kalligraphie.raster
+package org.graphiks.kalligraphie.e2e.golden
 
-import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.api.GlyphRepresentation
+import org.graphiks.kalligraphie.e2e.GoldenImage
+import org.graphiks.kalligraphie.raster.A8Image
+import org.graphiks.kalligraphie.raster.GlyphRasterizer
+import org.graphiks.kalligraphie.raster.OutlineRasterRequest
+import org.graphiks.kalligraphie.raster.PaintRasterRequest
+import org.graphiks.kalligraphie.raster.RasterDiagnostic
+import org.graphiks.kalligraphie.raster.RasterResult
+import org.graphiks.kalligraphie.raster.Rgba8Image
 import kotlin.test.assertIs
 
 /**
- * Renders per-font alphabet sheets into demonstration dumps.
+ * Renders per-font alphabet sheets as canonical golden images.
  *
  * The sheet functions require every listed code point to resolve to a real
  * glyph with ink: an unassigned or unmapped code point fails the sheet instead
  * of leaving a silent hole. Each glyph is drawn left-aligned on a shared row
- * baseline inside a uniform cell. [bitmapDump] renders one normalized bitmap
- * strike instead.
+ * baseline inside a uniform cell. The composed canvas is the canonical image:
+ * canonicalization never flips again.
  */
-internal object GlyphSheetDumps {
+internal object GlyphSheetScenes {
     private const val COLUMNS = 16
     private const val PADDING = 2
 
-    /** Renders an outline sheet as a flipped P5 PGM (white ink on black). */
+    /** Renders an outline sheet as a coverage canvas. */
     fun outlineSheet(
         fontPath: String,
         codepoints: List<Int>,
         pixelsPerEm: Double,
-    ): Dump {
+    ): GoldenImage {
         require(codepoints.isNotEmpty()) { "a sheet needs at least one code point." }
-        return openRasterFixture(fixtureBytes(fontPath), outlineRequirements()).use { fixture ->
+        return openOutlineFixture(fixtureBytes(fontPath)).use { fixture ->
             val images = codepoints.map { codepoint -> resolveOutline(fixture, codepoint, pixelsPerEm) }
-            Dump(
-                bytes = renderCoverageSheet(images),
-                note = "$COLUMNS columns, ${pixelsPerEm.toInt()} pixels per em, flipped vertically",
-            )
+            renderCoverageSheet(images)
         }
     }
 
-    /** Renders a color sheet as a flipped P6 PPM (glyph colors over white). */
+    /** Renders a color sheet as an RGBA canvas (glyph colors already composited over white). */
     fun paintSheet(
         fontPath: String,
         codepoints: List<Int>,
         pixelsPerEm: Double,
         paletteIndex: Int,
-    ): Dump {
+    ): GoldenImage {
         require(codepoints.isNotEmpty()) { "a sheet needs at least one code point." }
-        return openRasterFixture(
-            fixtureBytes(fontPath),
-            FontAccessRequirementsSnapshot.renderable(listOf(paintProfile())),
+        return openRenderableFixture(
+            bytes = fixtureBytes(fontPath),
+            requirements = paintRequirements(),
             renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = paletteIndex),
         ).use { fixture ->
             val images = codepoints.map { codepoint -> resolvePaint(fixture, codepoint, pixelsPerEm) }
-            Dump(
-                bytes = renderColorSheet(images),
-                note = "$COLUMNS columns, ${pixelsPerEm.toInt()} pixels per em, palette $paletteIndex, flipped vertically",
-            )
+            renderColorSheet(images)
         }
     }
 
-    /** Renders one normalized bitmap strike as a P6 PPM (black ink over white). */
-    fun bitmapDump(
-        fontPath: String,
-        codepoint: Int,
-    ): Dump = openRasterFixture(
-        fixtureBytes(fontPath),
-        FontAccessRequirementsSnapshot.renderable(listOf(bitmapProfile())),
-    ).use { fixture ->
-        val glyph = resolveGlyph(fixture, codepoint)
-        val bitmap = assertIs<GlyphRepresentation.Bitmap>(
-            requireSuccess(codepoint, "materialization", fixture.asset.resolveGlyph(FontGlyphRequest(glyph))),
-            "${label(codepoint)} is not a bitmap representation",
-        ).bitmap
-        val image = requireRasterized(
-            codepoint,
-            GlyphRasterizer.rasterizeBitmap(
-                bitmap,
-                BitmapRasterRequest(org.graphiks.kalligraphie.api.GlyphColor(0, 0, 0, 255)),
-            ),
-        )
-        val canvas = RgbaCanvas(image.width + 2 * PADDING, image.height + 2 * PADDING)
-        canvas.drawBitmap(image, PADDING, PADDING)
-        Dump(
-            bytes = canvas.toPpm(),
-            note = "strike ${bitmap.strike.pixelsPerEmX}x${bitmap.strike.pixelsPerEmY}, black ink over white",
-        )
-    }
-
-    private fun resolveOutline(fixture: RasterFixture, codepoint: Int, pixelsPerEm: Double): A8Image {
+    private fun resolveOutline(fixture: E2eFontFixture, codepoint: Int, pixelsPerEm: Double): A8Image {
         val glyph = resolveGlyph(fixture, codepoint)
         val representation = requireSuccess(
             codepoint,
@@ -105,7 +78,7 @@ internal object GlyphSheetDumps {
         return image
     }
 
-    private fun resolvePaint(fixture: RasterFixture, codepoint: Int, pixelsPerEm: Double): Rgba8Image {
+    private fun resolvePaint(fixture: E2eFontFixture, codepoint: Int, pixelsPerEm: Double): Rgba8Image {
         val glyph = resolveGlyph(fixture, codepoint)
         val representation = requireSuccess(
             codepoint,
@@ -128,7 +101,7 @@ internal object GlyphSheetDumps {
         return image
     }
 
-    private fun resolveGlyph(fixture: RasterFixture, codepoint: Int): Int {
+    private fun resolveGlyph(fixture: E2eFontFixture, codepoint: Int): Int {
         val resolution = requireSuccess(
             codepoint,
             "resolution",
@@ -164,7 +137,7 @@ internal object GlyphSheetDumps {
             )
         }
 
-    private fun renderCoverageSheet(images: List<A8Image>): ByteArray {
+    private fun renderCoverageSheet(images: List<A8Image>): GoldenImage {
         val metrics = sheetMetrics(
             lefts = images.map { image -> image.left },
             widths = images.map { image -> image.width },
@@ -182,10 +155,10 @@ internal object GlyphSheetDumps {
                 baselineY = cellTop + PADDING + metrics.maxAscent,
             )
         }
-        return canvas.toPgm()
+        return canvas.toGoldenImage()
     }
 
-    private fun renderColorSheet(images: List<Rgba8Image>): ByteArray {
+    private fun renderColorSheet(images: List<Rgba8Image>): GoldenImage {
         val metrics = sheetMetrics(
             lefts = images.map { image -> image.left },
             widths = images.map { image -> image.width },
@@ -203,7 +176,7 @@ internal object GlyphSheetDumps {
                 baselineY = cellTop + PADDING + metrics.maxAscent,
             )
         }
-        return canvas.toPpm()
+        return canvas.toGoldenImage()
     }
 
     private class SheetMetrics(

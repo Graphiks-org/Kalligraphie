@@ -1,9 +1,11 @@
-package org.graphiks.kalligraphie.raster
+package org.graphiks.kalligraphie.e2e.golden
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.graphiks.kalligraphie.raster.A8Image
+import org.graphiks.kalligraphie.raster.Rgba8Image
 
-class DumpImageTest {
+class CompositionCanvasTest {
     @Test
     fun a8CanvasEncodesAnEmptyPgm() {
         val canvas = A8Canvas(width = 2, height = 2)
@@ -77,6 +79,22 @@ class DumpImageTest {
         val drawn = RgbaCanvas(width = 1, height = 1)
         drawn.drawBitmap(Rgba8Image(1, 1, 0, 0, byteArrayOf(10, 20, 30, -1)), x = 0, y = 0)
         assertEquals("P6\n1 1\n255\n\u000A\u0014\u001E", drawn.toPpm().toString(Charsets.ISO_8859_1))
+    }
+
+    @Test
+    fun canvasConvertsToACanonicalGoldenImage() {
+        val coverage = A8Canvas(width = 1, height = 1)
+        coverage.drawCoverage(A8Image(1, 1, 0, 0, byteArrayOf(-1)), penX = 0, baselineY = 1)
+        val coverageImage = coverage.toGoldenImage()
+        assertEquals(1, coverageImage.width)
+        assertEquals(1, coverageImage.height)
+        assertEquals(255, coverageImage.copyCanonicalBytes()[0].toInt() and 0xFF)
+
+        val color = RgbaCanvas(width = 1, height = 1)
+        color.drawBitmap(Rgba8Image(1, 1, 0, 0, byteArrayOf(10, 20, 30, -1)), x = 0, y = 0)
+        val colorImage = color.toGoldenImage()
+        val rgba = colorImage.copyCanonicalBytes()
+        assertEquals(listOf(10, 20, 30, 255), rgba.map { byte -> byte.toInt() and 0xFF })
     }
 
     @Test

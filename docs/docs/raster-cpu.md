@@ -19,27 +19,31 @@ are flattened with a fixed tolerance, coverage uses sixteen fixed sub-pixel
 samples, and composition uses integer arithmetic, so identical inputs produce
 identical bytes on every platform.
 
-The opt-in demonstration runner writes PGM and PPM images plus a manifest. Each
-run publishes the raw single-glyph reference dumps, alphabet sheets for Latin,
-Greek, Cyrillic, Arabic and Devanagari, color sheets (Bungee Color and
-EmojiTwo), a normalized EBDT bitmap strike, and real text lines composed
-through the paragraph facade — including a mixed multi-script line resolved by
-three-font fallback. Composed sheets and lines are flipped vertically for
-readability; the raw single-glyph dumps keep the rasterizer's source
-orientation; the EBDT strike keeps its image orientation. The dedicated task
-always executes when invoked explicitly:
+The conformance fingerprints that seal those bytes live in the end-to-end module
+(`:kalligraphie:e2e`), not here: its golden manifest records a SHA-256 for
+isolated glyphs (outline, paint, bitmap), for alphabet sheets across Latin,
+Greek, Cyrillic, Arabic and Devanagari, and for real text lines composed through
+the paragraph facade — including a mixed multi-script line resolved by
+three-font fallback.
+
+That module also hosts the opt-in demonstration runner, which writes one PGM or
+PPM image per golden scene. Composed sheets and lines are flipped vertically for
+readability; the raw single-glyph dumps keep the rasterizer's source orientation;
+the EBDT strike keeps its image orientation. The dedicated task always executes
+when invoked explicitly:
 
 ```bash
-env KALLIGRAPHIE_RASTER_DUMPS=true \
-    KALLIGRAPHIE_RASTER_DUMPS_OUTPUT=/tmp/kalligraphie-raster \
-    ./gradlew :kalligraphie:raster-cpu:rasterDumps
+env KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
+    ./gradlew :kalligraphie:e2e:e2eGoldenDumps
 ```
 
-Without `KALLIGRAPHIE_RASTER_DUMPS=true`, the task still runs but writes nothing.
+The task enables the runner itself; without `KALLIGRAPHIE_E2E_DUMPS_OUTPUT` it
+fails rather than writing inside the repository.
 
-`KALLIGRAPHIE_RASTER_DUMPS_OUTPUT` must be an absolute path outside the
-repository. The runner is excluded from `check`; it contains no performance
-threshold.
+`KALLIGRAPHIE_E2E_DUMPS_OUTPUT` must be an absolute path outside the repository.
+The runner is excluded from `check`; it contains no performance threshold.
+Regenerating the committed fingerprints is a separate opt-in task,
+`./gradlew :kalligraphie:e2e:updateE2eGolden`.
 
 The repository logo assets are produced by the same module as two separate
 artefacts. The badge composes a filled rounded square with the Amiri `K` knocked

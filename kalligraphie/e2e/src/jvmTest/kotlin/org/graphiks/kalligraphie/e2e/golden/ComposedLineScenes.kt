@@ -1,4 +1,4 @@
-package org.graphiks.kalligraphie.raster
+package org.graphiks.kalligraphie.e2e.golden
 
 import kotlin.math.roundToInt
 import kotlin.test.assertIs
@@ -10,7 +10,6 @@ import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.CoverageStatus
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditorOperationProfile
-import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontAssetResolverHandle
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFace
@@ -34,15 +33,21 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.e2e.GoldenImage
+import org.graphiks.kalligraphie.raster.A8Image
+import org.graphiks.kalligraphie.raster.GlyphRasterizer
+import org.graphiks.kalligraphie.raster.OutlineRasterRequest
+import org.graphiks.kalligraphie.raster.RasterResult
 
 /**
  * Composes real text lines through the paragraph facade and rasterizes them.
  *
  * The three fixture fonts form one ordered fallback catalog, so a mixed line
  * exercises shaping, BiDi, and multi-face fallback before every positioned
- * glyph is rasterized and flipped onto the canvas.
+ * glyph is rasterized and flipped onto the canvas. The composed canvas is the
+ * canonical golden image: canonicalization never flips again.
  */
-internal object ComposedLineDumps {
+internal object ComposedLineScenes {
     private const val PIXELS_PER_EM = 48f
     private const val PADDING = 2
 
@@ -52,10 +57,8 @@ internal object ComposedLineDumps {
         "/fonts/noto-devanagari/NotoSansDevanagari-Regular.ttf",
     )
 
-    private val OUTLINE_REQUIREMENTS = FontAccessRequirementsSnapshot.renderable(listOf(outlineProfile()))
-
     /**
-     * Renders [text] as a flipped P5 PGM using the ordered fallback catalog.
+     * Renders [text] as a composed coverage canvas using the ordered fallback catalog.
      *
      * @param language Unicode and shaping language tag applied to the paragraph.
      * @param baseDirection explicit paragraph base direction.
@@ -67,16 +70,12 @@ internal object ComposedLineDumps {
         language: String,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         requiredFaces: Int = 0,
-    ): Dump {
+    ): GoldenImage {
         require(text.isNotEmpty()) { "line text must not be empty." }
         require(language.isNotBlank()) { "line language must not be blank." }
         return openMultiFaceFixture().use { fixture ->
             val line = layoutLine(fixture, text, language, baseDirection)
-            val rendered = renderLine(fixture, line, requiredFaces, text)
-            Dump(
-                bytes = rendered,
-                note = "composed by the paragraph facade, ${PIXELS_PER_EM.toInt()} pixels per em, flipped vertically",
-            )
+            renderLine(fixture, line, requiredFaces, text)
         }
     }
 
@@ -110,13 +109,13 @@ internal object ComposedLineDumps {
             sources.forEach { source ->
                 val faceId = FontFaceId(source.id, 0)
                 val face = assertIs<FontOperationResult.Success<FontFace>>(
-                    catalog.resolveFace(faceId, OUTLINE_REQUIREMENTS),
+                    catalog.resolveFace(faceId, outlineRequirements()),
                 ).value
                 val instance = assertIs<FontOperationResult.Success<FontInstance>>(
                     face.instantiate(FontInstanceDescriptor(LayoutUnit(PIXELS_PER_EM))),
                 ).value
                 assets[faceId] = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
-                    instance.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, OUTLINE_REQUIREMENTS),
+                    instance.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, outlineRequirements()),
                 ).value
             }
             return MultiFaceFixture(catalog, resolver, assets)
@@ -136,7 +135,7 @@ internal object ComposedLineDumps {
         val faces = fixture.assets.keys.toList()
         val policy = FontResolutionPolicySnapshot(
             generation = fixture.catalog.generation,
-            policyId = "raster-dump-lines",
+            policyId = "e2e-composed-lines",
             version = "1",
             candidates = faces.map(::FontResolutionCandidate),
             lastResortFace = faces.last(),
@@ -161,7 +160,7 @@ internal object ComposedLineDumps {
             materialization = EditableLineMaterialization.Renderable(
                 fixture.resolver,
                 FontRenderVariantSnapshot.default,
-                OUTLINE_REQUIREMENTS,
+                outlineRequirements(),
             ),
             continuation = null,
             cancellationToken = CancellationToken.none,
@@ -185,7 +184,7 @@ internal object ComposedLineDumps {
         return result.layout.lines.single()
     }
 
-    private fun renderLine(fixture: MultiFaceFixture, line: LineLayout, requiredFaces: Int, text: String): ByteArray {
+    private fun renderLine(fixture: MultiFaceFixture, line: LineLayout, requiredFaces: Int, text: String): GoldenImage {
         class Placed(val image: A8Image, val penX: Int, val baselineY: Int)
 
         val placed = ArrayList<Placed>()
@@ -239,6 +238,6 @@ internal object ComposedLineDumps {
                 baselineY = item.baselineY - minY + PADDING,
             )
         }
-        return canvas.toPgm()
+        return canvas.toGoldenImage()
     }
 }
