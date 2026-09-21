@@ -28,8 +28,9 @@ import org.graphiks.kalligraphie.api.toDiagnostic
 /**
  * Opens the pinned HarfBuzz reference backend for the current JVM platform.
  *
- * The backend loads only the published kffi HarfBuzz binding for this module. It is
- * available on Linux and macOS for x64 and arm64 JVMs; other platforms return a typed failure.
+ * The backend loads only the published kffi HarfBuzz binding for this module. It ships
+ * for Linux and macOS on x64 and arm64 JVMs and for Windows on x64 JVMs; unsupported
+ * platform or architecture combinations return a typed failure.
  * No JNI type, native handle, or platform dependency escapes through [ShapingBackend].
  * JVM launchers must enable native access with `--enable-native-access=ALL-UNNAMED`.
  */
