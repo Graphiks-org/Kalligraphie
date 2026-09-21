@@ -864,49 +864,51 @@ class HarfBuzzJvmBackendTest {
     private fun <T> FontOperationResult<T>.successValue(): T =
         assertIs<FontOperationResult.Success<T>>(this).value
 
-    private fun expectedNativeArtifactId(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
-        "Mac OS X" to "aarch64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:macos-arm64/libharfbuzz.dylib"
-        "Mac OS X" to "x86_64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:macos-x64/libharfbuzz.dylib"
-        "Linux" to "aarch64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:linux-arm64/libharfbuzz.so"
-        "Linux" to "amd64" -> "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:linux-x64/libharfbuzz.so"
+    private fun osFamily(): String = when {
+        System.getProperty("os.name").startsWith("Mac") -> "macos"
+        System.getProperty("os.name").startsWith("Linux") -> "linux"
+        System.getProperty("os.name").startsWith("Windows") -> "windows"
         else -> error("Unexpected shaping test platform.")
     }
 
-    private fun expectedOperatingSystem(): String = when (System.getProperty("os.name")) {
-        "Mac OS X" -> "macos"
-        "Linux" -> "linux"
-        else -> error("Unexpected shaping test platform.")
-    }
-
-    private fun expectedArchitecture(): String = when (System.getProperty("os.arch")) {
-        "aarch64" -> "arm64"
+    private fun archName(): String = when (System.getProperty("os.arch")) {
+        "aarch64", "arm64" -> "arm64"
         "x86_64", "amd64" -> "x64"
         else -> error("Unexpected shaping test architecture.")
     }
 
-    private fun expectedBuildChainIdentity(): String = when (System.getProperty("os.name")) {
-        "Mac OS X" -> "cmake-4.4.3;appleclang-21.0.0;macos-sdk-26.5;deployment-target-11.0"
-        "Linux" -> "lwjgl-harfbuzz-3.4.3"
+    private fun expectedNativeArtifactId(): String =
+        "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:${osFamily()}-${archName()}/${nativeFileName()}"
+
+    private fun nativeFileName(): String = when (osFamily()) {
+        "macos" -> "libharfbuzz.dylib"
+        "linux" -> "libharfbuzz.so"
+        "windows" -> "libharfbuzz.dll"
         else -> error("Unexpected shaping test platform.")
     }
 
-    private fun expectedNativeSourceRevision(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
-        "Mac OS X" to "aarch64",
-        "Mac OS X" to "x86_64",
-        -> "4c2aa804671d7276e8a0eb95da07202ead05c843"
+    private fun expectedOperatingSystem(): String = osFamily()
 
-        "Linux" to "aarch64",
-        "Linux" to "amd64",
-        -> "9f2f03173b7fee860cc00d999857d09fa4a362e2"
+    private fun expectedArchitecture(): String = archName()
 
+    private fun expectedBuildChainIdentity(): String = when (osFamily()) {
+        "macos" -> "cmake-4.4.3;appleclang-21.0.0;macos-sdk-26.5;deployment-target-11.0"
+        "linux", "windows" -> "lwjgl-harfbuzz-3.4.3"
         else -> error("Unexpected shaping test platform.")
     }
 
-    private fun expectedNativeArtifactSha256(): String = when (System.getProperty("os.name") to System.getProperty("os.arch")) {
-        "Mac OS X" to "aarch64" -> "504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22"
-        "Mac OS X" to "x86_64" -> "9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c"
-        "Linux" to "aarch64" -> "b1c7c67034297763e0ce46f3749c4da33a4bb4064929868446cb5a3d81dc26bc"
-        "Linux" to "amd64" -> "9a5e3576912c2f8c8b2533d4a264fec1eac9667adfd64f7e71e80179ba118614"
+    private fun expectedNativeSourceRevision(): String = when (osFamily()) {
+        "macos" -> "4c2aa804671d7276e8a0eb95da07202ead05c843"
+        "linux", "windows" -> "9f2f03173b7fee860cc00d999857d09fa4a362e2"
+        else -> error("Unexpected shaping test platform.")
+    }
+
+    private fun expectedNativeArtifactSha256(): String = when (osFamily() to archName()) {
+        "macos" to "arm64" -> "504948a7301dc70b1bf9c2f8dc02171c7b7bf35b14d4d5590a8af2a813d73e22"
+        "macos" to "x64" -> "9d1ee85a217d781f91c00627248c8f9611058796f49aaf146dc88c1a1439776c"
+        "linux" to "arm64" -> "b1c7c67034297763e0ce46f3749c4da33a4bb4064929868446cb5a3d81dc26bc"
+        "linux" to "x64" -> "9a5e3576912c2f8c8b2533d4a264fec1eac9667adfd64f7e71e80179ba118614"
+        "windows" to "x64" -> "40214afd46cb9e657ebccf88fde2a0e1fa298751c43121c9bdc06f94fdeab9ca"
         else -> error("Unexpected shaping test platform.")
     }
 
