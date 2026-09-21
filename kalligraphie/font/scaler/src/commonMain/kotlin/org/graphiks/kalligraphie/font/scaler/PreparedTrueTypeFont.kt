@@ -351,7 +351,12 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        val deltas = when (val result = trueTypeHorizontalDeltas(glyphData, hvar, glyphId, checkNotNull(location))) {
+        val metricsGlyphId = when (val result = GlyfReader.horizontalMetricsGlyphId(glyphData, glyphId)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        val deltas = when (val result = trueTypeHorizontalDeltas(glyphData, hvar, metricsGlyphId, checkNotNull(location))) {
             is FontOperationResult.Success -> result.value
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
@@ -379,9 +384,27 @@ public class PreparedTrueTypeFont internal constructor(
         )
     }
 
+    /** `VVAR` advance-height and top side-bearing deltas for [metricsGlyphId], zero without `VVAR`. */
+    private fun vvarDeltas(
+        vvar: VvarData?,
+        metricsGlyphId: GlyphId,
+        orderedAxes: List<Double>,
+    ): MetricVariationDeltas {
+        if (vvar == null) return MetricVariationDeltas()
+        return MetricVariationDeltas(
+            advance = vvar.advanceHeightDelta(metricsGlyphId.value, orderedAxes),
+            sideBearing = vvar.topSideBearingDelta(metricsGlyphId.value, orderedAxes),
+        )
+    }
+
     /**
      * Horizontal variation deltas for a TrueType glyph: `HVAR` when present, otherwise the
      * metrics-source glyph's `gvar` phantom-point deltas.
+     *
+     * [metricsGlyphId] is the glyph returned by [GlyfReader.horizontalMetricsGlyphId], i.e. the
+     * component that supplies a composite's `hmtx` base when its `USE_MY_METRICS` flag is set. Both
+     * the `HVAR` row and the phantom fallback are read for that same glyph, so a redirected
+     * composite never mixes a component's base advance with its own variation delta.
      *
      * The left phantom point is `xMin - lsb` and the right is `xMin - lsb + advanceWidth`, so only
      * the advance is recoverable from the phantom deltas; the side bearing stays at its `hmtx` value
@@ -392,10 +415,49 @@ public class PreparedTrueTypeFont internal constructor(
         hvar: HvarData?,
         metricsGlyphId: GlyphId,
         location: MetricLocation,
+    ): FontOperationResult<MetricVariationDeltas> = trueTypeVariationDeltas(
+        glyphData = glyphData,
+        metricsGlyphId = metricsGlyphId,
+        location = location,
+        variationTableDeltas = hvar?.let { hvarDeltas(it, metricsGlyphId, location.orderedAxes) },
+        phantomAdvanceDelta = { it.horizontalAdvanceDelta },
+    )
+
+    /**
+     * Vertical variation deltas for a TrueType glyph: `VVAR` when present, otherwise the glyph's
+     * `gvar` phantom-point deltas (`verticalAdvanceDelta = topY - bottomY`).
+     *
+     * `USE_MY_METRICS` is horizontal-only, and no vertical metrics-glyph redirect exists in this
+     * codebase ([GlyfReader] exposes only `horizontalMetricsGlyphId`), so [metricsGlyphId] is the
+     * requested glyph on this path and no composite redirect is applied.
+     */
+    private fun trueTypeVerticalDeltas(
+        glyphData: PreparedGlyphData,
+        vvar: VvarData?,
+        metricsGlyphId: GlyphId,
+        location: MetricLocation,
+    ): FontOperationResult<MetricVariationDeltas> = trueTypeVariationDeltas(
+        glyphData = glyphData,
+        metricsGlyphId = metricsGlyphId,
+        location = location,
+        variationTableDeltas = vvar?.let { vvarDeltas(it, metricsGlyphId, location.orderedAxes) },
+        phantomAdvanceDelta = { it.verticalAdvanceDelta },
+    )
+
+    /**
+     * Resolves a TrueType glyph's variation advance: [variationTableDeltas] when the `HVAR`/`VVAR`
+     * table supplied them, otherwise [phantomAdvanceDelta] applied to the glyph's `gvar` phantom
+     * points. A malformed `gvar` fails the varied metric read, while a glyph with no `gvar` entry
+     * yields a zero advance delta.
+     */
+    private fun trueTypeVariationDeltas(
+        glyphData: PreparedGlyphData,
+        metricsGlyphId: GlyphId,
+        location: MetricLocation,
+        variationTableDeltas: MetricVariationDeltas?,
+        phantomAdvanceDelta: (GlyphVariationPhantoms) -> Double,
     ): FontOperationResult<MetricVariationDeltas> {
-        if (hvar != null) {
-            return FontOperationResult.Success(hvarDeltas(hvar, metricsGlyphId, location.orderedAxes))
-        }
+        if (variationTableDeltas != null) return FontOperationResult.Success(variationTableDeltas)
         val outline = when (
             val result = GlyfReader.readGlyphOutline(
                 glyphData,
@@ -410,43 +472,7 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Cancelled -> return result
         }
         return FontOperationResult.Success(
-            MetricVariationDeltas(advance = outline.variationPhantoms?.horizontalAdvanceDelta ?: 0.0),
-        )
-    }
-
-    /**
-     * Vertical variation deltas for a TrueType glyph: `VVAR` when present, otherwise the glyph's
-     * `gvar` phantom-point deltas (`verticalAdvanceDelta = topY - bottomY`).
-     */
-    private fun trueTypeVerticalDeltas(
-        glyphData: PreparedGlyphData,
-        vvar: VvarData?,
-        glyphId: GlyphId,
-        location: MetricLocation,
-    ): FontOperationResult<MetricVariationDeltas> {
-        if (vvar != null) {
-            return FontOperationResult.Success(
-                MetricVariationDeltas(
-                    advance = vvar.advanceHeightDelta(glyphId.value, location.orderedAxes),
-                    sideBearing = vvar.topSideBearingDelta(glyphId.value, location.orderedAxes),
-                ),
-            )
-        }
-        val outline = when (
-            val result = GlyfReader.readGlyphOutline(
-                glyphData,
-                glyphId,
-                metricsOutlineProfile(),
-                CancellationToken.none,
-                axisCoordinates(location),
-            )
-        ) {
-            is FontOperationResult.Success -> result.value
-            is FontOperationResult.Failure -> return result
-            is FontOperationResult.Cancelled -> return result
-        }
-        return FontOperationResult.Success(
-            MetricVariationDeltas(advance = outline.variationPhantoms?.verticalAdvanceDelta ?: 0.0),
+            MetricVariationDeltas(advance = outline.variationPhantoms?.let(phantomAdvanceDelta) ?: 0.0),
         )
     }
 
@@ -497,10 +523,7 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Cancelled -> return result
         }
         val deltas = if (parsedFont.flavor != FontFlavor.TRUETYPE) {
-            MetricVariationDeltas(
-                advance = vvar?.advanceHeightDelta(glyphId.value, location.orderedAxes) ?: 0.0,
-                sideBearing = vvar?.topSideBearingDelta(glyphId.value, location.orderedAxes) ?: 0.0,
-            )
+            vvarDeltas(vvar, glyphId, location.orderedAxes)
         } else {
             val glyphData = when (val result = glyphData(CancellationToken.none)) {
                 is FontOperationResult.Success -> result.value

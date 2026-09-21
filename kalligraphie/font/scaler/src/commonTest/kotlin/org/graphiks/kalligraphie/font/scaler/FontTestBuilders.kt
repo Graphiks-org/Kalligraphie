@@ -82,6 +82,23 @@ internal fun vmtx(longMetrics: List<Pair<Int, Int>>): ByteArray =
         }
     }
 
+/**
+ * A one-component composite whose single component sets `USE_MY_METRICS`, so a metrics consumer
+ * must redirect the composite's `hmtx` entry (and its varied metric) to [componentGlyphId].
+ *
+ * The flags are `ARG_1_AND_2_ARE_WORDS` (0x0001) | `ARGS_ARE_XY_VALUES` (0x0002) |
+ * `USE_MY_METRICS` (0x0200). `ARG_1_AND_2_ARE_WORDS` is required because the offsets below are
+ * written as int16.
+ */
+internal fun compositeGlyphWithMetricsSource(componentGlyphId: Int): ByteArray =
+    ByteArray(18).also { bytes ->
+        bytes.writeInt16(0, -1)
+        bytes.writeUInt16(10, 0x0001 or 0x0002 or 0x0200)
+        bytes.writeUInt16(12, componentGlyphId)
+        bytes.writeInt16(14, 0)
+        bytes.writeInt16(16, 0)
+    }
+
 internal fun singlePointGlyph(x: Int, y: Int): ByteArray =
     ByteArray(20).also { bytes ->
         bytes.writeInt16(0, 1)
@@ -239,6 +256,12 @@ private fun ByteArray.writeTag(offset: Int, tag: String) {
     tag.forEachIndexed { index, char -> this[offset + index] = char.code.toByte() }
 }
 
+/**
+ * The big-endian writers below stay file-private rather than `internal` because `GlyfReaderTest`
+ * and `CmapReaderTest` each declare private writers with the same names; an `internal` declaration
+ * here would collide with those siblings. The table builders above are `internal` because their
+ * names are unique across the test sources.
+ */
 private fun ByteArray.writeUInt16(offset: Int, value: Int) {
     this[offset] = (value ushr 8).toByte()
     this[offset + 1] = value.toByte()

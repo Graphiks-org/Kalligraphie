@@ -19,7 +19,6 @@ import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
-import kotlin.math.roundToInt
 
 /**
  * Reads horizontal metrics and glyph bounds from a TrueType font.
@@ -221,9 +220,6 @@ internal object MetricsReader {
             ),
         )
     }
-
-    /** Rounds an interpolated metric to a design unit; ties round toward positive infinity. */
-    private fun roundMetric(value: Double): Int = value.roundToInt()
 
     private fun scaleDesignUnit(value: Int, layoutSize: Float, unitsPerEm: Int): LayoutUnit? {
         val scaled = value.toDouble() * layoutSize.toDouble() / unitsPerEm.toDouble()

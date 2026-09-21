@@ -17,7 +17,6 @@ import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.slice
-import kotlin.math.roundToInt
 
 /** Decodes OpenType `vhea` and `vmtx` metrics without retaining mutable font storage. */
 internal object VerticalMetricsReader {
@@ -97,8 +96,8 @@ internal object VerticalMetricsReader {
                     ?: return failure(FontError.OutOfBounds("vmtx trailing topSideBearing is truncated.", tableLocation("vmtx"))),
             )
         }
-        val advanceHeightDesignUnits = (metrics.advanceHeight.toDouble() + deltas.advance).roundToInt()
-        val tsbDesignUnits = (metrics.topSideBearing.toDouble() + deltas.sideBearing).roundToInt()
+        val advanceHeightDesignUnits = roundMetric(metrics.advanceHeight.toDouble() + deltas.advance)
+        val tsbDesignUnits = roundMetric(metrics.topSideBearing.toDouble() + deltas.sideBearing)
         val advanceHeight = scale(advanceHeightDesignUnits, layoutSize, prepared.unitsPerEm)
             ?: return failure(FontError.GeometryOverflow("advanceHeight could not be represented as a finite LayoutUnit."))
         val topSideBearing = scale(tsbDesignUnits, layoutSize, prepared.unitsPerEm)

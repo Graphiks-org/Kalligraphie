@@ -138,6 +138,62 @@ class VariationMetricsTest {
         assertEquals(20, varied.leftSideBearingDesignUnits)
     }
 
+    /**
+     * A composite of glyph 1 with `USE_MY_METRICS`: glyph 0's `hmtx` is (900, 5) and the component's
+     * is (600, 20), while the `HVAR` rows are 999 for glyph 0 and 86 for glyph 1. The composite must
+     * take the component's base and the component's delta, giving 686 rather than 1599.
+     */
+    @Test
+    fun usesTheMetricsSourceGlyphHvarDeltaForAComposite() {
+        val composite = compositeGlyphWithMetricsSource(componentGlyphId = 1)
+        val prepared = preparedFont(
+            glyphCount = 2,
+            glyfOverride = composite + singlePointGlyph(0, 0),
+            hmtx = hmtx(listOf(900 to 5, 600 to 20)),
+            hhea = hhea(numberOfHMetrics = 2),
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "HVAR" to hvarTable(advanceDeltas = intArrayOf(999, 86)),
+            ),
+        )
+
+        val varied = metricsFor(prepared, glyphId = 0, wght = 1f)
+        assertEquals(686, varied.advanceWidthDesignUnits)
+        assertEquals(20, varied.leftSideBearingDesignUnits)
+    }
+
+    /**
+     * A glyph carries both an `HVAR` row (86) and a `gvar` phantom delta (40). The `HVAR` value must
+     * win and the phantom must not be added, so the advance is 600 + 86, not 600 + 86 + 40.
+     */
+    @Test
+    fun prefersTheHvarDeltaOverThePhantomDelta() {
+        val prepared = preparedFont(
+            glyphCount = 2,
+            hmtx = hmtx(listOf(500 to 10, 600 to 20)),
+            hhea = hhea(numberOfHMetrics = 2),
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "HVAR" to hvarTable(advanceDeltas = intArrayOf(0, 86)),
+                "gvar" to gvarTable(
+                    axisCount = 1,
+                    glyphRecords = listOf(
+                        ByteArray(0),
+                        gvarGlyphRecord(
+                            peak = listOf(1.0),
+                            xDeltas = intArrayOf(0, 0, 40, 0, 0),
+                            yDeltas = intArrayOf(0, 0, 0, 0, 0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val varied = metricsFor(prepared, glyphId = 1, wght = 1f)
+        assertEquals(686, varied.advanceWidthDesignUnits)
+        assertEquals(20, varied.leftSideBearingDesignUnits)
+    }
+
     private fun metricsFor(prepared: PreparedTrueTypeFont, glyphId: Int, wght: Float?): GlyphMetrics =
         assertIs<FontOperationResult.Success<GlyphMetrics>>(
             prepared.readGlyphMetrics(GlyphId(glyphId), LAYOUT_SIZE, axes(wght)),
@@ -162,11 +218,18 @@ class VariationMetricsTest {
         vmtx: ByteArray? = null,
         vhea: ByteArray? = null,
         extraTables: Map<String, ByteArray> = emptyMap(),
+        glyfOverride: ByteArray? = null,
     ): PreparedTrueTypeFont {
         val glyph = singlePointGlyph(0, 0)
-        val glyf = ByteArray(glyph.size * glyphCount)
-        repeat(glyphCount) { index -> glyph.copyInto(glyf, index * glyph.size) }
-        val loca = locaFormat0(*IntArray(glyphCount + 1) { it * glyph.size })
+        val glyf = glyfOverride ?: ByteArray(glyph.size * glyphCount).also { bytes ->
+            repeat(glyphCount) { index -> glyph.copyInto(bytes, index * glyph.size) }
+        }
+        val loca = if (glyfOverride == null) {
+            locaFormat0(*IntArray(glyphCount + 1) { it * glyph.size })
+        } else {
+            val composite = compositeGlyphWithMetricsSource(1)
+            locaFormat0(0, composite.size, glyfOverride.size)
+        }
         val bytes = minimalTrueTypeFont(
             glyphCount = glyphCount,
             tables = mapOf("loca" to loca, "glyf" to glyf),

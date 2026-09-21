@@ -1,5 +1,14 @@
 package org.graphiks.kalligraphie.font.scaler
 
+import kotlin.math.roundToInt
+
+/**
+ * Rounds an interpolated metric to a design unit; ties round toward positive infinity, matching
+ * fontTools `otRound`. Shared by the horizontal and vertical metric readers so both round the same
+ * way.
+ */
+internal fun roundMetric(value: Double): Int = value.roundToInt()
+
 /**
  * Additive advance and side-bearing deltas applied to a glyph's base metric at a variation instance.
  *
