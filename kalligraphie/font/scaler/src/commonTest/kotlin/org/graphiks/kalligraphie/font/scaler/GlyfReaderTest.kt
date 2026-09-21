@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 
 class GlyfReaderTest {
     @Test
@@ -781,6 +782,159 @@ class GlyfReaderTest {
         assertEquals(3L, failure.diagnostics.single().data.observedValue)
         assertEquals(2L, failure.diagnostics.single().data.limit)
         assertEquals(FontDiagnosticLocation.Glyph(1), error.location)
+    }
+
+    @Test
+    fun exposesSimpleGlyphPhantomDeltasAtNonDefaultInstance() {
+        val glyph = singlePointGlyph(x = 100, y = 200)
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 1,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, glyph.size),
+                    "glyf" to glyph,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    // 0 outline, 1 left, 2 right, 3 top, 4 bottom.
+                    "gvar" to gvarTable(
+                        axisCount = 1,
+                        glyphRecords = listOf(
+                            gvarGlyphRecord(
+                                peak = listOf(1.0),
+                                xDeltas = intArrayOf(0, 0, 42, 0, 0),
+                                yDeltas = intArrayOf(0, 0, 0, 99, 0),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        ).value
+        val phantoms = outline.variationPhantoms!!
+        assertEquals(0.0, phantoms.leftX)
+        assertEquals(42.0, phantoms.rightX)
+        assertEquals(42.0, phantoms.horizontalAdvanceDelta)
+        assertEquals(99.0, phantoms.topY)
+        assertEquals(0.0, phantoms.bottomY)
+        assertEquals(99.0, phantoms.verticalAdvanceDelta)
+    }
+
+    @Test
+    fun exposesCompositePhantomDeltasAtNonDefaultInstance() {
+        val composite = compositeGlyph(componentGlyphIds = listOf(1))
+        val child = singlePointGlyph(x = 0, y = 0)
+        val glyf = composite + child
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 2,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, composite.size, glyf.size),
+                    "glyf" to glyf,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    // 1 component + 4 phantom: 0 component, 1 left, 2 right, 3 top, 4 bottom.
+                    "gvar" to gvarTable(
+                        axisCount = 1,
+                        glyphRecords = listOf(
+                            gvarGlyphRecord(
+                                peak = listOf(1.0),
+                                xDeltas = intArrayOf(0, 0, 7, 0, 0),
+                                yDeltas = intArrayOf(0, 0, 0, 9, 0),
+                            ),
+                            ByteArray(0),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+        val outline = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        ).value
+        assertEquals(7.0, outline.variationPhantoms!!.rightX)
+        assertEquals(9.0, outline.variationPhantoms!!.topY)
+    }
+
+    @Test
+    fun defaultInstanceCarriesNoVariationPhantoms() {
+        val glyph = singlePointGlyph(x = 100, y = 200)
+        val parsed = parseFont(
+            minimalTrueTypeFont(
+                glyphCount = 1,
+                tables = mapOf(
+                    "loca" to locaFormat0(0, glyph.size),
+                    "glyf" to glyph,
+                ),
+                extraTables = mapOf(
+                    "fvar" to singleAxisFvarTable(),
+                    "gvar" to gvarTable(
+                        axisCount = 1,
+                        glyphRecords = listOf(
+                            gvarGlyphRecord(
+                                peak = listOf(1.0),
+                                xDeltas = intArrayOf(0, 0, 42, 0, 0),
+                                yDeltas = intArrayOf(0, 0, 0, 99, 0),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        val prepared = assertIs<FontOperationResult.Success<PreparedGlyphData>>(
+            GlyfReader.prepare(parsed.bytes, parsed.font),
+        ).value
+        val noAxes = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(prepared, GlyphId(0), outlineProfile(), CancellationToken.none),
+        ).value
+        assertNull(noAxes.variationPhantoms)
+        val zeroAxes = assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            GlyfReader.readGlyphOutline(
+                prepared,
+                GlyphId(0),
+                outlineProfile(),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 0f)),
+            ),
+        ).value
+        assertNull(zeroAxes.variationPhantoms)
+    }
+
+    @Test
+    fun scalerOutlineCopyAndEqualityIncludeVariationPhantoms() {
+        val base = ScalerGlyphOutline(
+            glyphId = 1,
+            unitsPerEm = 2_048,
+            bounds = DesignBounds(0, 0, 0, 0),
+            contours = emptyList(),
+            pointCount = 0,
+            components = emptyList(),
+        )
+        val withPhantoms = base.copy(variationPhantoms = GlyphVariationPhantoms(0.0, 42.0, 99.0, 0.0))
+        assertEquals(0.0, withPhantoms.variationPhantoms!!.leftX)
+        assertEquals(42.0, withPhantoms.variationPhantoms!!.rightX)
+        assertNull(base.variationPhantoms)
+        assert(base != withPhantoms)
     }
 
     private fun parseFont(bytes: ByteArray): ParsedFont =

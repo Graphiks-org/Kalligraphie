@@ -300,11 +300,19 @@ public class ScalerGlyphOutline(
     public val pointCount: Int,
     /** Direct composite component references. */
     components: List<GlyphComponentReference>,
+    /** Variation deltas for this glyph's phantom points, or `null` at the default instance.
+     * For a composite whose component sets `COMPOSITE_USE_MY_METRICS`, a metrics consumer must
+     * instead use `GlyfReader.horizontalMetricsGlyphId(prepared, glyphId)` and read that glyph's
+     * phantoms. */
+    variationPhantoms: GlyphVariationPhantoms? = null,
 ) {
     /** Immutable contour snapshot. */
     public val contours: List<GlyphContour> = contours.immutableListSnapshot()
     /** Immutable component snapshot. */
     public val components: List<GlyphComponentReference> = components.immutableListSnapshot()
+    /** Immutable variation-phantom snapshot, or `null` at the default instance; see the
+     * constructor parameter for the `USE_MY_METRICS` redirect. */
+    public val variationPhantoms: GlyphVariationPhantoms? = variationPhantoms
 
     /** Returns the glyph identifier. */
     public operator fun component1(): Int = glyphId
@@ -324,6 +332,9 @@ public class ScalerGlyphOutline(
     /** Returns the component references. */
     public operator fun component6(): List<GlyphComponentReference> = components
 
+    /** Returns the variation-phantom snapshot. */
+    public operator fun component7(): GlyphVariationPhantoms? = variationPhantoms
+
     /** Copies this scaler outline with selected fields changed. */
     public fun copy(
         glyphId: Int = this.glyphId,
@@ -332,6 +343,7 @@ public class ScalerGlyphOutline(
         contours: List<GlyphContour> = this.contours,
         pointCount: Int = this.pointCount,
         components: List<GlyphComponentReference> = this.components,
+        variationPhantoms: GlyphVariationPhantoms? = this.variationPhantoms,
     ): ScalerGlyphOutline = ScalerGlyphOutline(
         glyphId,
         unitsPerEm,
@@ -339,6 +351,7 @@ public class ScalerGlyphOutline(
         contours,
         pointCount,
         components,
+        variationPhantoms,
     )
 
     /** Compares all immutable outline fields and their ordered contents. */
@@ -350,7 +363,8 @@ public class ScalerGlyphOutline(
             bounds == other.bounds &&
             contours == other.contours &&
             pointCount == other.pointCount &&
-            components == other.components
+            components == other.components &&
+            variationPhantoms == other.variationPhantoms
 
     /** Returns a hash derived from all immutable outline fields. */
     override fun hashCode(): Int {
@@ -360,12 +374,13 @@ public class ScalerGlyphOutline(
         result = 31 * result + contours.hashCode()
         result = 31 * result + pointCount
         result = 31 * result + components.hashCode()
+        result = 31 * result + variationPhantoms.hashCode()
         return result
     }
 
     /** Returns a diagnostic representation containing all outline fields. */
     override fun toString(): String =
-        "ScalerGlyphOutline(glyphId=$glyphId, unitsPerEm=$unitsPerEm, bounds=$bounds, contours=$contours, pointCount=$pointCount, components=$components)"
+        "ScalerGlyphOutline(glyphId=$glyphId, unitsPerEm=$unitsPerEm, bounds=$bounds, contours=$contours, pointCount=$pointCount, components=$components, variationPhantoms=$variationPhantoms)"
 }
 
 internal data class PreparedGlyphData(
@@ -597,6 +612,14 @@ private class GlyphResolver(
                 )
             }
         }
+        val variationPhantoms = variationDeltas?.let { deltas ->
+            GlyphVariationPhantoms(
+                leftX = deltas.phantomDeltas.leftX,
+                rightX = deltas.phantomDeltas.rightX,
+                topY = deltas.phantomDeltas.topY,
+                bottomY = deltas.phantomDeltas.bottomY,
+            )
+        }
         return FontOperationResult.Success(
             ResolvedGlyph(
                 glyphId = glyphId,
@@ -604,6 +627,7 @@ private class GlyphResolver(
                 points = variedPoints,
                 contourEndPoints = endPoints,
                 components = emptyList(),
+                variationPhantoms = variationPhantoms,
             ),
         )
     }
@@ -745,6 +769,14 @@ private class GlyphResolver(
         } else {
             null
         }
+        val variationPhantoms = compositeDeltas?.let { deltas ->
+            GlyphVariationPhantoms(
+                leftX = deltas.phantomDeltas.leftX,
+                rightX = deltas.phantomDeltas.rightX,
+                topY = deltas.phantomDeltas.topY,
+                bottomY = deltas.phantomDeltas.bottomY,
+            )
+        }
 
         // Phase 3: resolve children and assemble the outline with delta-adjusted transforms.
         val points = mutableListOf<GlyphPoint>()
@@ -873,6 +905,7 @@ private class GlyphResolver(
                 points = points,
                 contourEndPoints = contourEndPoints,
                 components = directComponents,
+                variationPhantoms = variationPhantoms,
             ),
         )
     }
@@ -1183,6 +1216,7 @@ private data class ResolvedGlyph(
     val points: List<GlyphPoint>,
     val contourEndPoints: List<Int>,
     val components: List<GlyphComponentReference>,
+    val variationPhantoms: GlyphVariationPhantoms? = null,
 ) {
     fun toOutline(unitsPerEm: Int): ScalerGlyphOutline {
         val contours = ArrayList<GlyphContour>(contourEndPoints.size)
@@ -1198,6 +1232,7 @@ private data class ResolvedGlyph(
             contours = contours,
             pointCount = points.size,
             components = components,
+            variationPhantoms = variationPhantoms,
         )
     }
 }
