@@ -958,20 +958,28 @@ at different levels. Malformed variation tables fail with the typed codes
 (`avar` version 2 is not supported), and a face without a usable `fvar` table
 fails with `font.variation.not-variable`.
 
-A non-default selection now contributes both instance identity and simple-glyph
-outline variation: the portable TrueType outline route reads the face's `gvar`
+A non-default selection now contributes both instance identity and glyph
+outline variation. The portable TrueType outline route reads the face's `gvar`
 table, evaluates each tuple's region scalar at the instance's normalized axes,
-interpolates untouched points through TrueType IUP, and applies the resolved
-per-point deltas to simple-glyph coordinates and their recomputed bounds. The
-selection therefore changes the outline a portable provider returns, while
-composite-glyph `gvar` deltas, CFF2 non-default instancing, `HVAR`/`VVAR`/`MVAR`
-metric variation, variable colour and synthetic bold/italic geometry remain
-unimplemented; metrics are still returned at the default instance, so a
-non-default selection still does not change the metrics a portable provider
-returns. Malformed `gvar` data fails with `font.variation.invalid-gvar`, an
-unsupported table version fails with `font.variation.unsupported-gvar-version`,
-and `gvar` resource bounds reuse `font.resource-limit-exceeded` with the `gvar`
-table location.
+interpolates untouched simple-glyph points through TrueType IUP, applies the
+resolved per-point deltas to simple-glyph coordinates and their recomputed
+bounds, and applies composite glyph deltas to the component placement offsets
+of composite glyphs. Component deltas apply only when the component selects
+`ARGS_ARE_XY_VALUES`, are added to the raw offset before the optional
+scaled-component-offset transform, and are ignored for point-matched
+components, matching the OpenType `gvar` composite rules. The four
+phantom-point deltas that follow the outline or component points are decoded
+alongside the outline and exposed through the scaler's internal
+`GlyphVariationPhantoms` (right-minus-left advance-width and top-minus-bottom
+advance-height deltas), and are `null` at the default instance. A later metrics
+step will consume them, so metrics are still returned at the default instance
+and a non-default selection still does not change the metrics a portable
+provider returns. CFF2 non-default instancing, `HVAR`/`VVAR`/`MVAR` metric
+variation, variable colour and synthetic bold/italic geometry remain
+unimplemented. Malformed `gvar` data fails with `font.variation.invalid-gvar`,
+an unsupported table version fails with
+`font.variation.unsupported-gvar-version`, and `gvar` resource bounds reuse
+`font.resource-limit-exceeded` with the `gvar` table location.
 
 Two added surfaces are defaulted placeholders rather than implemented reads:
 `FontFace.stat()` returns `Success(null)` and `FontInstance.fontMetrics()`
