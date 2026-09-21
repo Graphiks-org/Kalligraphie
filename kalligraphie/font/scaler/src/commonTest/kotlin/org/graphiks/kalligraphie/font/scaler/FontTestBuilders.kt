@@ -60,8 +60,18 @@ internal fun locaFormat0(vararg offsets: Int): ByteArray =
         offsets.forEachIndexed { index, offset -> bytes.writeUInt16(index * 2, offset / 2) }
     }
 
-internal fun hhea(numberOfHMetrics: Int): ByteArray =
-    ByteArray(36).also { bytes -> bytes.writeUInt16(34, numberOfHMetrics) }
+internal fun hhea(
+    numberOfHMetrics: Int,
+    ascender: Int = 1160,
+    descender: Int = -288,
+    lineGap: Int = 0,
+): ByteArray =
+    ByteArray(36).also { bytes ->
+        bytes.writeInt16(4, ascender)
+        bytes.writeInt16(6, descender)
+        bytes.writeInt16(8, lineGap)
+        bytes.writeUInt16(34, numberOfHMetrics)
+    }
 
 internal fun hmtx(longMetrics: List<Pair<Int, Int>>): ByteArray =
     ByteArray(longMetrics.size * 4).also { bytes ->

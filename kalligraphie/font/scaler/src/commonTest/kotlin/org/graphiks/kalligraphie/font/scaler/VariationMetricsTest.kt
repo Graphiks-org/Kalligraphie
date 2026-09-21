@@ -220,6 +220,86 @@ class VariationMetricsTest {
         assertEquals(733f, varied.capHeight)
     }
 
+    @Test
+    fun fallsBackToHheaForFontMetricsWithoutOs2() {
+        val prepared = preparedFont(glyphCount = 1)
+
+        val metrics = fontMetricsFor(prepared, wght = null)
+        assertEquals(1160f, metrics.ascender)
+        assertEquals(-288f, metrics.descender)
+        assertEquals(0f, metrics.lineGap)
+        assertEquals(0f, metrics.xHeight)
+        assertEquals(0f, metrics.capHeight)
+        assertEquals(0f, metrics.underlinePosition)
+        assertEquals(0f, metrics.underlineThickness)
+    }
+
+    @Test
+    fun zeroesXHeightAndCapHeightForAnOs2Version1() {
+        val prepared = preparedFont(
+            glyphCount = 1,
+            extraTables = mapOf(
+                "OS/2" to os2Table(
+                    ascender = 880,
+                    descender = -120,
+                    lineGap = 0,
+                    xHeight = 543,
+                    capHeight = 733,
+                    version = 1,
+                ),
+                "post" to postTable(underlinePosition = -125, underlineThickness = 50),
+            ),
+        )
+
+        val metrics = fontMetricsFor(prepared, wght = null)
+        assertEquals(880f, metrics.ascender)
+        assertEquals(-120f, metrics.descender)
+        assertEquals(0f, metrics.xHeight)
+        assertEquals(0f, metrics.capHeight)
+        assertEquals(-125f, metrics.underlinePosition)
+        assertEquals(50f, metrics.underlineThickness)
+    }
+
+    @Test
+    fun ignoresAnUnknownMvarValueTag() {
+        val prepared = preparedFont(
+            glyphCount = 1,
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "OS/2" to os2Table(ascender = 880, descender = -120, lineGap = 0, xHeight = 543, capHeight = 733),
+                "post" to postTable(underlinePosition = -125, underlineThickness = 50),
+                "MVAR" to mvarTable("hasc" to 200, "xhgt" to -43, "zzzz" to 999),
+            ),
+        )
+
+        val varied = fontMetricsFor(prepared, wght = 1f)
+        assertEquals(1080f, varied.ascender)
+        assertEquals(-120f, varied.descender)
+        assertEquals(0f, varied.lineGap)
+        assertEquals(-125f, varied.underlinePosition)
+        assertEquals(50f, varied.underlineThickness)
+        assertEquals(500f, varied.xHeight)
+        assertEquals(733f, varied.capHeight)
+    }
+
+    @Test
+    fun failsOnAMalformedMvarAtANonDefaultLocation() {
+        val prepared = preparedFont(
+            glyphCount = 1,
+            extraTables = mapOf(
+                "fvar" to singleAxisFvarTable(),
+                "OS/2" to os2Table(ascender = 880, descender = -120, lineGap = 0, xHeight = 543, capHeight = 733),
+                "MVAR" to mvarTable("hasc" to 200).also { bytes ->
+                    bytes[6] = 0
+                    bytes[7] = 4
+                },
+            ),
+        )
+
+        val failure = assertIs<FontOperationResult.Failure>(prepared.readFontMetrics(axes(1f)))
+        assertEquals("font.variation.invalid-mvar", failure.error.code)
+    }
+
     private fun fontMetricsFor(prepared: PreparedTrueTypeFont, wght: Float?) =
         assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontMetrics>>(
             prepared.readFontMetrics(axes(wght)),
@@ -359,9 +439,10 @@ private fun os2Table(
     lineGap: Int,
     xHeight: Int,
     capHeight: Int,
+    version: Int = 4,
 ): ByteArray {
     val bytes = ByteArray(96)
-    bytes.writeUInt16(0, 4)
+    bytes.writeUInt16(0, version)
     bytes.writeInt16(62, 0x0040)
     bytes.writeInt16(68, ascender)
     bytes.writeInt16(70, descender)
