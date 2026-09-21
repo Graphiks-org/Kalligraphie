@@ -9,23 +9,25 @@ package org.graphiks.kalligraphie.shaping
  * `JvmHarfBuzzShapingBackend` (`@Volatile`, `@Synchronized` and
  * `synchronized(lock)`) with portable equivalents. The chosen layer is:
  *
- * 1. **Mutual exclusion** — this `expect`/`actual` lock. Both the `jvmMain` and
+ * 1. **Mutual exclusion** — this `expect`/`actual` lock. The `jvmMain` and
  *    `androidMain` actuals delegate to the object monitor
  *    (`synchronized(monitor) { block() }`), preserving the exact reentrant
  *    monitor semantics of the `@Synchronized`/`synchronized` blocks it replaces
- *    without adding a dependency.
+ *    without adding a dependency. The `iosMain` actual delegates to
+ *    `kotlinx.atomicfu.locks.reentrantLock`, the portable reentrant lock
+ *    available to Kotlin/Native (which has no object monitor); that is the only
+ *    reason the `atomicfu` runtime artifact sits on the iOS classpath.
  * 2. **Atomicity for the `closed` flag** — `kotlin.concurrent.atomics`
- *    (`AtomicBoolean`), which replaces the `@Volatile var closed` field. No
- *    `kotlinx-atomicfu` dependency is introduced.
+ *    (`AtomicBoolean`), which replaces the `@Volatile var closed` field.
  *
  * The lock is reentrant, matching the JVM/ART object monitor it wraps.
  */
-public expect class PortableLock() {
+internal expect class PortableLock() {
     /**
      * Runs [block] while holding this lock and returns its result.
      *
      * The lock is reentrant: a lock holder may call [withLock] again on the same
      * instance without deadlocking.
      */
-    public fun <T> withLock(block: () -> T): T
+    internal fun <T> withLock(block: () -> T): T
 }

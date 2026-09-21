@@ -6,6 +6,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
@@ -79,6 +80,46 @@ class PortableLockTest {
         repeat(POST_CLOSE_ATTEMPTS) { if (!tryAccept()) rejectedAfterClose += 1 }
         assertEquals(POST_CLOSE_ATTEMPTS, rejectedAfterClose)
         assertEquals(acceptedByWorkers, accepted)
+    }
+
+    @Test
+    fun closeLandingBetweenOuterReadAndLockEntryRejectsInFlightAcquirers() = runTest {
+        val lock = PortableLock()
+        val closed = AtomicBoolean(false)
+
+        fun tryAccept(): Boolean {
+            if (closed.load()) return false
+            return lock.withLock { if (closed.load()) false else true }
+        }
+
+        val leftOuterRead = Channel<Unit>(WORKER_COUNT)
+        val enterLock = Channel<Unit>(WORKER_COUNT)
+
+        val acceptedInFlight = coroutineScope {
+            val acquirers = (0 until WORKER_COUNT).map { worker ->
+                async(Dispatchers.Default) {
+                    check(!closed.load()) { "worker $worker observed a closed lock before the transition" }
+                    leftOuterRead.send(Unit)
+                    enterLock.receive()
+                    lock.withLock { !closed.load() }
+                }
+            }
+
+            val closer = launch(Dispatchers.Default) {
+                repeat(WORKER_COUNT) { leftOuterRead.receive() }
+                closed.store(true)
+                repeat(WORKER_COUNT) { enterLock.send(Unit) }
+            }
+
+            closer.join()
+            acquirers.awaitAll().count { it }
+        }
+
+        assertEquals(0, acceptedInFlight, "the close transition must reject every in-flight acquirer")
+
+        var acceptedAfterClose = 0
+        repeat(POST_CLOSE_ATTEMPTS) { if (tryAccept()) acceptedAfterClose += 1 }
+        assertEquals(0, acceptedAfterClose, "the post-close invariant must hold")
     }
 
     @Test

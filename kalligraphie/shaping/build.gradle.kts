@@ -15,6 +15,9 @@ kotlin {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
         }
+        iosMain.dependencies {
+            implementation(libs.kotlinx.atomicfu)
+        }
         jvmMain.dependencies {
             implementation(libs.kffi.harfbuzz.jvm)
         }
