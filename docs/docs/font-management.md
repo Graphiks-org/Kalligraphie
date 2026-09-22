@@ -919,8 +919,9 @@ A variable face exposes its `fvar` axes and named instances through
 `FontFace.variationAxes()` and `FontFace.namedInstances()`, and maps a design
 selection to normalized coordinates through `FontFace.normalize(design)`. Both
 metadata calls return immutable snapshots and are empty for a static face.
-`FontFace.stat()` optionally returns a read-only `STAT` surface, reporting
-`Success(null)` when the face has no usable `STAT` table.
+`FontFace.stat()` optionally returns a read-only `STAT` surface. Portable `STAT`
+reading is not implemented yet, so the placeholder returns `Success(null)`; that
+value also covers a face with no usable `STAT` table.
 
 Pass design coordinates to an instance with the optional
 `FontInstanceDescriptor.variation` field:

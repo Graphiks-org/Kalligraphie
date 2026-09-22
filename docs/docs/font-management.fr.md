@@ -1031,8 +1031,9 @@ Une face variable expose ses axes `fvar` et ses instances nommées via
 sélection en coordonnées de conception vers des coordonnées normalisées via
 `FontFace.normalize(design)`. Les deux appels de métadonnées renvoient des
 instantanés immuables et sont vides pour une face statique. `FontFace.stat()`
-renvoie facultativement une surface `STAT` en lecture seule, avec
-`Success(null)` lorsque la face n’a pas de table `STAT` utilisable.
+renvoie facultativement une surface `STAT` en lecture seule. La lecture portable
+de `STAT` n’est pas encore implémentée : l’espace réservé renvoie `Success(null)`,
+valeur qui couvre aussi une face sans table `STAT` utilisable.
 
 Passez des coordonnées de conception à une instance avec le champ facultatif
 `FontInstanceDescriptor.variation` :
