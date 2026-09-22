@@ -28,7 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Kotlin 2.4.0 → 2.4.10
 - Gradle 9.5.0 → 9.6.1
 - Added blocking pull request policy checks aligned with `CONTRIBUTING.md`.
-- Legacy `font/` sources are retained for reference but excluded from Gradle project aggregation, API documentation, and CI.
 - The documentation site now embeds the API reference for the Kalligraphie modules.
 
 ### Added
