@@ -16,6 +16,7 @@ import org.graphiks.kffi.harfbuzz.HarfBuzzFont
 import org.graphiks.kffi.harfbuzz.HarfBuzzTag
 import org.graphiks.kffi.harfbuzz.HarfBuzzBindingException as KffiHarfBuzzBindingException
 import org.graphiks.kffi.harfbuzz.HarfBuzzBindingFailure as KffiHarfBuzzBindingFailure
+import kotlin.math.roundToInt
 
 /**
  * JVM actual for [openHarfBuzzPlatformBinding], delegating to the published kffi HarfBuzz binding.
@@ -41,7 +42,7 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
 
     override fun createBuffer(): PlatformHarfBuzzBuffer = JvmHarfBuzzBuffer(hb, hb.createBuffer())
 
-    override val supportsVariationLocation: Boolean = false
+    override val supportsVariationLocation: Boolean = true
 
     override fun prepare(fontBytes: ByteArray, faceIndex: Int, variationLocation: FloatArray): PlatformPreparedFont {
         val blob = hb.createBlob(fontBytes)
@@ -53,6 +54,13 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
             font = face.createFont()
             font.useOpenTypeFunctions()
             font.setScale(unitsPerEm, unitsPerEm)
+            if (variationLocation.isNotEmpty()) {
+                font.setVarCoordsNormalized(
+                    IntArray(variationLocation.size) { index ->
+                        (variationLocation[index] * HB_NORMALIZED_COORDINATE_SCALE).roundToInt()
+                    },
+                )
+            }
             face.makeImmutable()
             font.makeImmutable()
             return JvmPreparedFont(blob, face, font, unitsPerEm)
@@ -181,3 +189,6 @@ private fun ShapingDirection.toKffiDirection(): HarfBuzzDirection = when (this) 
     ShapingDirection.RIGHT_TO_LEFT -> HarfBuzzDirection.RIGHT_TO_LEFT
     ShapingDirection.TOP_TO_BOTTOM -> HarfBuzzDirection.TOP_TO_BOTTOM
 }
+
+/** `hb_font_set_var_coords_normalized` coordinates are normalized `[-1, 1]` in 2.14 fixed point. */
+private const val HB_NORMALIZED_COORDINATE_SCALE = 16384
