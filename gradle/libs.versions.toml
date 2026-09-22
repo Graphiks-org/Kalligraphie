@@ -48,6 +48,7 @@ okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 kffi-coretext-jvm = { module = "org.graphiks:kffi-coretext-jvm", version.ref = "kffi" }
 kffi-fontconfig-jvm = { module = "org.graphiks:kffi-fontconfig-jvm", version.ref = "kffi" }
 kffi-directwrite-jvm = { module = "org.graphiks:kffi-directwrite-jvm", version.ref = "kffi" }
+kffi-harfbuzz = { module = "org.graphiks:kffi-harfbuzz", version.ref = "kffi" }
 kffi-harfbuzz-jvm = { module = "org.graphiks:kffi-harfbuzz-jvm", version.ref = "kffi" }
 kffi-harfbuzz-android = { module = "org.graphiks:kffi-harfbuzz-android", version.ref = "kffi" }
 

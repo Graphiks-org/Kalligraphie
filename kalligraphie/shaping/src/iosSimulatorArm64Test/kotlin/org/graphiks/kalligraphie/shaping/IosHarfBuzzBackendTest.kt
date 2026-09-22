@@ -1,54 +1,50 @@
 package org.graphiks.kalligraphie.shaping
 
-import android.os.Build
-import java.util.Collections
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
-import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.test.runTest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
-import org.graphiks.kalligraphie.api.FontGeometryParameters
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
-import org.graphiks.kalligraphie.api.FontVariationCoordinate
-import org.graphiks.kalligraphie.api.FontVariationCoordinates
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.GlyphId
-import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapingBackend
 import org.graphiks.kalligraphie.api.ShapingDirection
+import org.graphiks.kalligraphie.api.TextRange
 
 /**
- * Proves the Android `:kalligraphie:shaping` target loads the real bundled HarfBuzz binding rather
- * than the removed stub, reports the from-source Android provenance, and reproduces the frozen
- * oracle output (glyph ids, clusters, advances/positions and GDEF ligature carets) byte-exactly.
+ * B4: proves the iOS simulator target loads the real bundled HarfBuzz binding rather than the
+ * removed stub and reproduces the frozen JVM-oracle output (glyph ids, clusters, advances/positions
+ * and GDEF ligature carets) byte-exactly through the shared [canonicalShapingGolden] serializer.
  *
- * The host JVM suite cannot load an Android `.so`; this device suite is the Android validation
- * path. The shared fixture corpus in `test-fixtures/` is packaged into this APK as Java resources
- * (see `build.gradle.kts`), so the same `/fonts/...` entries the JVM suite reads resolve here too.
+ * The host JVM cannot load an iOS `.a`; this simulator suite is the iOS validation path. The shared
+ * fixture corpus is embedded into the test binary at build time (see `IosFixtureLoader`), so the
+ * suite resolves the same `/fonts/...` entries the JVM and Android suites read.
  */
-class AndroidHarfBuzzDeviceTest {
+class IosHarfBuzzBackendTest {
     private val backends = mutableListOf<ShapingBackend>()
 
     @Test
-    fun opensTheBundledAndroidBindingInsteadOfTheRemovedStub() {
+    fun opensTheBundledIosBindingInsteadOfTheRemovedStub() {
         val opened = HarfBuzzShapingBackend.open()
         // The removed stub returned Failure(font.shaping-native-platform-unsupported); the real
-        // bundled binding must open successfully on Android.
+        // bundled binding must open successfully on iOS.
         assertIs<FontOperationResult.Success<*>>(opened)
         val backend = (opened as FontOperationResult.Success<ShapingBackend>).value
         backends += backend
@@ -59,24 +55,6 @@ class AndroidHarfBuzzDeviceTest {
         assertEquals("ot", backend.identity.semantic.shaperId)
         assertEquals(HarfBuzzShapingBackend.pinnedFeaturePolicy, backend.identity.semantic.featurePolicy)
         assertTrue(backend.identity.semantic.configurationFingerprint.contains("monotone-characters"))
-    }
-
-    @Test
-    fun reportsTheBundledAndroidProvenance() {
-        val provenance = backend().identity.provenance
-
-        assertEquals("android", provenance.operatingSystem)
-        // The API 35 emulator is x86_64; the portable identity normalizes the ABI to "x64".
-        assertEquals("x86_64", Build.SUPPORTED_ABIS.first())
-        assertEquals("x64", provenance.architecture)
-        assertEquals("4c2aa804671d7276e8a0eb95da07202ead05c843", provenance.sourceRevision)
-        assertEquals("harfbuzz", provenance.sourceProject)
-        assertTrue(provenance.artifactId.startsWith("org.graphiks:kffi-harfbuzz-android:"))
-        assertTrue(provenance.artifactId.contains("x86_64/libharfbuzz.so"))
-        assertTrue(provenance.artifactSha256.isNotEmpty(), "the bundled library digest must be observable")
-        assertEquals(64, provenance.artifactSha256.length)
-        assertTrue(provenance.artifactSha256.all { character -> character in "0123456789abcdef" })
-        assertTrue(provenance.buildChainIdentity.contains("ndk-30.0.15729638"))
     }
 
     @Test
@@ -96,15 +74,41 @@ class AndroidHarfBuzzDeviceTest {
 
         assertEquals(listOf(GlyphId(5042)), run.glyphs.map { glyph -> glyph.glyphId })
         assertEquals(listOf(LayoutUnit(1290f)), run.glyphs.map { glyph -> glyph.xAdvance })
-        assertEquals(listOf(LayoutUnit(0f)), run.glyphs.map { glyph -> glyph.yAdvance })
-        assertEquals(listOf(LayoutUnit(0f)), run.glyphs.map { glyph -> glyph.xOffset })
-        assertEquals(listOf(LayoutUnit(0f)), run.glyphs.map { glyph -> glyph.yOffset })
         assertEquals(listOf(ShaperClusterToken(0)), run.glyphs.map { glyph -> glyph.clusterToken })
         assertEquals(1, run.clusters.size)
         assertEquals(2, run.clusters.single().scalarRanges.size)
-        assertEquals(prepared.snapshot.range, run.clusters.single().sourceRange)
         assertEquals(GdefLigatureCaretState.ABSENT, run.ligatureCaretFacts.single().state)
         assertEquals(LATIN_LIGATURE_GOLDEN, canonicalShapingGolden(prepared.snapshot, run))
+    }
+
+    @Test
+    fun shapesAnArabicItemWithItsParagraphContextLikeTheJvmOracle() {
+        val prepared = text("ببب")
+        val font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
+        val item = range(prepared, 1, 2)
+        fun shapeItem(itemRange: TextRange, contextRange: TextRange) = backend().shape(
+            request(
+                prepared, font, ShapingDirection.RIGHT_TO_LEFT, OpenTypeScript("Arab"), "ar", 1,
+                itemRange = itemRange, contextRange = contextRange,
+                graphemeRanges = prepared.scalarRanges()
+                    .filter { it.start >= itemRange.start && it.endExclusive <= itemRange.endExclusive },
+            ),
+        ).successValue()
+
+        val full = shapeItem(prepared.snapshot.range, prepared.snapshot.range)
+        val isolated = shapeItem(item, item)
+        val contextual = shapeItem(item, prepared.snapshot.range)
+        val fullToken = full.clusters.single { it.sourceRange == item }.token
+        val medial = full.glyphs.single { fullToken in it.clusterTokens }
+
+        assertEquals(GlyphId(5260), medial.glyphId)
+        assertEquals(medial.glyphId, contextual.glyphs.single().glyphId)
+        assertTrue(isolated.glyphs.single().glyphId != contextual.glyphs.single().glyphId)
+        assertTrue(medial.safetyFlags.unsafeToConcat)
+        assertEquals(medial.safetyFlags.unsafeToConcat, contextual.glyphs.single().safetyFlags.unsafeToConcat)
+        assertEquals(item, contextual.range)
+        assertEquals(listOf(item), contextual.clusters.map { it.sourceRange })
+        assertEquals(listOf(ShaperClusterToken(0)), contextual.glyphs.single().clusterTokens)
     }
 
     @Test
@@ -174,6 +178,32 @@ class AndroidHarfBuzzDeviceTest {
     }
 
     @Test
+    fun rejectsUnadjustedGdefCaretsForTheKernedLigatureFixtureLikeTheJvmOracle() {
+        val prepared = text("fiV")
+        val run = backend().shape(
+            request(
+                prepared,
+                fontInstance(
+                    "/fonts/gdef-kern/GdefKerningFixture.ttf",
+                    "Kalligraphie GDEF Kerning Fixture",
+                    LayoutUnit(1000f),
+                ),
+                ShapingDirection.LEFT_TO_RIGHT,
+                OpenTypeScript("Latn"),
+                "en",
+                0,
+            ),
+        ).successValue()
+
+        assertEquals(listOf(GlyphId(3), GlyphId(4)), run.glyphs.map { glyph -> glyph.glyphId })
+        assertEquals(listOf(LayoutUnit(800f), LayoutUnit(600f)), run.glyphs.map { glyph -> glyph.xAdvance })
+        val fact = run.ligatureCaretFacts.single()
+        assertEquals(GdefLigatureCaretState.INCONSISTENT, fact.state)
+        assertEquals(listOf(index(prepared, 1)), fact.logicalSourceBoundaries)
+        assertEquals(emptyList(), fact.positions)
+    }
+
+    @Test
     fun releasesEveryPreparedFontAcrossAlternatingCycles() {
         // A one-entry budget alternating two real fonts forces a native font→face→blob release on
         // every shape. A wrong close order surfaces the kffi blob error
@@ -233,78 +263,53 @@ class AndroidHarfBuzzDeviceTest {
     }
 
     @Test
-    fun concurrentShapingCallsPublishOneCompleteAuditedRun() {
-        val backend = backend()
+    fun concurrentShapingPublishesOneCompleteAuditedRunAcrossTwoPrepareReleaseCycles() = runTest {
         val font = fontInstance("/fonts/liberation/LiberationSans-Regular.ttf", "Liberation Sans")
         val prepared = text("שלום")
-        val ready = CountDownLatch(8)
-        val start = CountDownLatch(1)
-        val observations = Collections.synchronizedList(mutableListOf<String>())
-        val failures = Collections.synchronizedList(mutableListOf<Throwable>())
 
-        val workers = List(8) { index ->
-            thread(name = "android-harfbuzz-shaping-$index") {
-                try {
-                    ready.countDown()
-                    start.await()
-                    val run = backend.shape(
-                        request(
-                            prepared,
-                            font,
-                            ShapingDirection.RIGHT_TO_LEFT,
-                            OpenTypeScript("Hebr"),
-                            "he",
-                            1,
-                        ),
-                    ).successValue()
-                    observations += canonicalShapingGolden(prepared.snapshot, run)
-                } catch (error: Throwable) {
-                    failures += error
-                }
+        // Two open/prepare → concurrent shape → close/release cycles prove the backend's native
+        // lifecycle is correct and repeatable under real contention (Dispatchers.Default is a
+        // genuine multi-worker pool on Kotlin/Native under the new memory model).
+        repeat(2) {
+            val backend = backend()
+            val observations = coroutineScope {
+                (0 until WORKER_COUNT).map {
+                    async(Dispatchers.Default) {
+                        canonicalShapingGolden(
+                            prepared.snapshot,
+                            backend.shape(
+                                request(
+                                    prepared,
+                                    font,
+                                    ShapingDirection.RIGHT_TO_LEFT,
+                                    OpenTypeScript("Hebr"),
+                                    "he",
+                                    1,
+                                ),
+                            ).successValue(),
+                        )
+                    }
+                }.awaitAll()
             }
+
+            assertEquals(List(WORKER_COUNT) { HEBREW_RTL_GOLDEN }, observations)
+            assertIs<FontOperationResult.Success<Unit>>(backend.close())
         }
-        assertTrue(ready.await(10, TimeUnit.SECONDS))
-        start.countDown()
-        workers.forEach { worker ->
-            worker.join(20_000)
-            assertTrue(!worker.isAlive, "A real concurrent shaping call did not complete.")
-        }
-
-        assertEquals(emptyList(), failures)
-        assertEquals(List(8) { HEBREW_RTL_GOLDEN }, observations)
     }
 
     @Test
-    fun harfBuzzAdvanceAtTheInstanceEqualsOurMetricsAtTheSameLocation() {
-        val instance = instanceAtWght(1.0f)
-        val run = backend().shape(request(text("A"), instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
-        assertEquals(listOf(660f), run.glyphs.map { it.xAdvance.value })
-        assertEquals(660, instance.advanceWidthOf(GlyphId(1)))
-    }
+    fun reportsTheBundledIosSimulatorProvenance() {
+        val provenance = backend().identity.provenance
 
-    @Test
-    fun theDefaultInstanceStillShapesAtTheDesignDefault() {
-        val instance = instanceAtWght(null)
-        val run = backend().shape(request(text("A"), instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
-        assertEquals(listOf(574f), run.glyphs.map { it.xAdvance.value })
-        assertEquals(574, instance.advanceWidthOf(GlyphId(1)))
-    }
-
-    @Test
-    fun gposKerningVariesWithTheLocation() {
-        val backend = backend()
-        val low = backend.shape(request(text("AA"), instanceAtWght(0.0f), ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
-        val high = backend.shape(request(text("AA"), instanceAtWght(1.0f), ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
-        assertEquals(listOf(563f, 574f), low.glyphs.map { it.xAdvance.value })
-        assertEquals(listOf(653f, 660f), high.glyphs.map { it.xAdvance.value })
-    }
-
-    @Test
-    fun avarTransportReachesHarfBuzzAtANonEndpointLocation() {
-        val instance = instanceAtDesignWght(500f)
-        val run = backend().shape(request(text("A"), instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
-        assertEquals(listOf(622f), run.glyphs.map { it.xAdvance.value })
-        assertEquals(622, instance.advanceWidthOf(GlyphId(1)))
+        assertEquals("ios", provenance.operatingSystem)
+        // The simulator test process runs the iosSimulatorArm64 slice; the portable identity
+        // normalizes the Kotlin/Native target architecture to "arm64".
+        assertEquals("arm64", provenance.architecture)
+        assertEquals("harfbuzz", provenance.sourceProject)
+        assertEquals(IOS_SOURCE_REVISION, provenance.sourceRevision)
+        assertEquals(IOS_SIMULATOR_ARTIFACT_ID, provenance.artifactId)
+        assertEquals(IOS_SIMULATOR_ARTIFACT_SHA256, provenance.artifactSha256)
+        assertEquals(IOS_SIMULATOR_BUILD_CHAIN_IDENTITY, provenance.buildChainIdentity)
     }
 
     @AfterTest
@@ -321,46 +326,32 @@ class AndroidHarfBuzzDeviceTest {
         declaredName: String,
         layoutSize: LayoutUnit = LayoutUnit(2048f),
     ): FontInstance {
-        val source = FontSource(fixtureBytes(resource), FontSourceProvenance(declaredName))
+        val source = FontSource(IosFixtureLoader.fixtureBytes(resource), FontSourceProvenance(declaredName))
         val catalog = Kalligraphie.embedded(listOf(source)).successValue()
         val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return face.instantiate(FontInstanceDescriptor(layoutSize = layoutSize)).successValue()
     }
 
-    private fun instanceAtWght(normalized: Float?): FontInstance {
-        val source = FontSource(
-            fixtureBytes("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
-            FontSourceProvenance("Noto Sans JP vertical fixture"),
-        )
-        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
-        val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
-        val geometry = normalized?.let {
-            FontGeometryParameters(normalizedAxes = listOf(FontAxisCoordinate("wght", it)))
-        } ?: FontGeometryParameters()
-        return face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(1000f), geometry = geometry)).successValue()
+    private companion object {
+        const val WORKER_COUNT = 8
+
+        /**
+         * Frozen kffi-harfbuzz iOS **simulator** (`iosSimulatorArm64`) slice provenance.
+         *
+         * These values are pinned by the published `org.graphiks:kffi-harfbuzz-iossimulatorarm64`
+         * snapshot and the Xcode/CMake build chain that produced it. Re-publishing that snapshot —
+         * or moving to a new Xcode toolchain — changes [IOS_SIMULATOR_ARTIFACT_SHA256] (and
+         * possibly the artifactId/build chain), so refresh all of these constants together with the
+         * binding upgrade. The device slice (`kffi-harfbuzz-iosarm64`, sha256
+         * `d3393c61a7276578f203e6b7115d2ea549311d5d0be0d302963652c70e0a18b7`) is not addressable
+         * from the simulator test process.
+         */
+        const val IOS_SOURCE_REVISION = "4c2aa804671d7276e8a0eb95da07202ead05c843"
+        const val IOS_SIMULATOR_ARTIFACT_ID =
+            "org.graphiks:kffi-harfbuzz-iossimulatorarm64:1.0.0-SNAPSHOT:iosSimulatorArm64/libharfbuzz.a"
+        const val IOS_SIMULATOR_ARTIFACT_SHA256 =
+            "f3c5e805c72362362e1b8f467dbd4f27ba07fb4f1f68619858c76de662764cb2"
+        const val IOS_SIMULATOR_BUILD_CHAIN_IDENTITY =
+            "cmake-4.4.3;xcode-26.6;appleclang-21.0.0;iphonesimulator-sdk-26.5;deployment-target-15.0"
     }
-
-    private fun instanceAtDesignWght(design: Float): FontInstance {
-        val source = FontSource(
-            fixtureBytes("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
-            FontSourceProvenance("Noto Sans JP vertical fixture"),
-        )
-        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
-        val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
-        return face.instantiate(
-            FontInstanceDescriptor(
-                layoutSize = LayoutUnit(1000f),
-                variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", design))),
-            ),
-        ).successValue()
-    }
-
-    private fun FontInstance.advanceWidthOf(glyphId: GlyphId): Int =
-        assertIs<FontOperationResult.Success<GlyphMetrics>>(metrics(glyphId)).value.advanceWidthDesignUnits
-
-    private fun fixtureBytes(resource: String): ByteArray =
-        checkNotNull(javaClass.getResourceAsStream(resource)) {
-            "The shared fixture corpus is missing $resource from the device-test APK."
-        }.use { input -> input.readBytes() }
-
 }

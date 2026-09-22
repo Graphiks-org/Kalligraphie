@@ -43,7 +43,7 @@ consommateurs.
 | Adaptateur CoreText facultatif sur JVM macOS | Octets exacts d’un catalogue portable ; TrueType statique monochrome à face unique éligible uniquement | Conserve le shaping portable ; aucune substitution par une mise en page CoreText | Handle de plateforme explicitement accepté, ou routes portables sous-jacentes ; collections exclues de la route de plateforme |
 | JVM Windows `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Collection de fontes système DirectWrite activée via `kffi-directwrite`, pas une liste de répertoires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine | HarfBuzz embarqué sur Windows x64 | Mêmes routes portables ; un nouvel `open` observe une installation/suppression contrôlée et crée une nouvelle génération `directwrite-registry` |
 | JVM Android `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Collection de fontes système de la plateforme via `android.graphics.fonts.SystemFonts` (Android 10+), pas un parcours de chemins arbitraires ; octets `.ttf`/`.ttc`/`.otf` capturés avec les indices de face d’origine ; les noms de famille et de face proviennent de l’analyse des octets capturés | Backend HarfBuzz embarqué (API 28+) | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `android-platform-fonts` |
-| iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | Registre CoreText via les bindings CoreText de la plateforme, pas une liste de répertoires ; iOS isole (sandbox) les fichiers de fontes système, donc le contenu `.ttf`/`.ttc`/`.otf` est reconstruit à partir des tables copiées de chaque fonte | Aucun backend HarfBuzz embarqué dans ce module ; la pile texte de la plateforme s’applique | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `ios-coretext-registry` |
+| iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | Registre CoreText via les bindings CoreText de la plateforme, pas une liste de répertoires ; iOS isole (sandbox) les fichiers de fontes système, donc le contenu `.ttf`/`.ttc`/`.otf` est reconstruit à partir des tables copiées de chaque fonte | Backend HarfBuzz embarqué (`iosArm64` et `iosSimulatorArm64`, lié statiquement via cinterop) | Mêmes routes portables ; un nouvel `open` observe un changement contrôlé et crée une nouvelle génération `ios-coretext-registry` |
 | Kotlin Native (autres cibles) | Aucun fournisseur de fontes système sur ces cibles | Aucun parcours de shaping complet implémenté | Contrats communs portables ; ces parcours exécutables ne sont pas implémentés |
 | Données CFF/CFF2 sur toute cible | Les contours CFF1 `.otf` isolés et CFF2 sont lus ; les collections portant des faces CFF sont capturées | Shaping CFF1 par le shaper portable ; `blend`/`vsindex` CFF2 évalués aux axes normalisés de l’instance | Route portable de contours cubiques pour CFF1 et CFF2 (variation appliquée à l’emplacement de l’instance) ; variation des métriques portable (`HVAR`/`VVAR`/`MVAR`) sur les routes TrueType et CFF2, couleur variable (COLR v1 `VarIndexBase`/`VarStore` et clip box variable) sur la route portable, géométrie synthétique honorée sur la route de contour portable (les routes couleur et bitmap échouent de façon typée), et aucune route CFF CoreText |
 
@@ -70,10 +70,13 @@ JVM Linux/macOS/Windows à cinq cibles exécute les tests complets du shaper
 (moteur de shaping) et l’audit des dépendances natives sur chaque cible, et les
 vrais parcours de découverte, shaping et glyphes sur Linux et macOS ; une tâche
 Android dédiée exécute les tests de shaping et de conformance sur appareil, sur
-un émulateur `x86_64` API 35, à partir des mêmes polices auditées. Android
-embarque désormais le backend HarfBuzz (API 28+), tandis qu’iOS n’en embarque
-toujours aucun : le parcours iOS s’arrête donc avant le shaping et s’appuie sur
-la pile texte de la plateforme ; chaque parcours
+un émulateur `x86_64` API 35, à partir des mêmes polices auditées, et une tâche
+iOS-simulateur exécute les suites de shaping et de conformance sur la tranche
+`iosSimulatorArm64`. Chaque cible actuelle embarque désormais un backend HarfBuzz
+embarqué : Android via `org.graphiks:kffi-harfbuzz-android` (API 28+), iOS via
+les artefacts cinterop liés statiquement `org.graphiks:kffi-harfbuzz-iosarm64` et
+`org.graphiks:kffi-harfbuzz-iossimulatorarm64`, et Linux/macOS/Windows via la
+liaison multiplateforme `org.graphiks:kffi-harfbuzz`. Chaque parcours
 s’exécute sur une frontière de fournisseur contrôlée avec des polices
 auditées, et les vérifications sur les polices installées restent des
 contrôles optionnels, non l’oracle.
@@ -143,10 +146,13 @@ Android.
 
 Les dépendances kffi internes utilisent
 `org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` (module Apple) et
-`org.graphiks:kffi-harfbuzz:1.0.0-SNAPSHOT` (shaping multiplateforme) et suivent la
+`org.graphiks:kffi-harfbuzz:1.0.0-SNAPSHOT` (shaping multiplateforme), plus les
+artefacts liés statiquement `org.graphiks:kffi-harfbuzz-iosarm64` et
+`org.graphiks:kffi-harfbuzz-iossimulatorarm64` sur les cibles appareil et
+simulateur iOS, et suivent la
 dernière publication de la ligne de développement actuelle. Un snapshot est une
 version de développement dont le contenu peut changer. Leur résolution exige le
-dépôt de snapshots Central Portal, filtré pour les artefacts racines/JVM/Android
+dépôt de snapshots Central Portal, filtré pour les artefacts racines/JVM/Android/iOS
 CoreText, HarfBuzz et du runtime (moteur d’exécution) générique requis par les
 métadonnées de publication. Les modules consommateurs revérifient les artefacts
 modifiables à chaque résolution en ligne ; ils n’épinglent pas d’artefact
@@ -170,6 +176,8 @@ dependencyResolutionManagement {
                 includeModule("org.graphiks", "kffi-harfbuzz-jvm")
                 includeModule("org.graphiks", "kffi-harfbuzz-android")
                 includeModule("org.graphiks", "kffi-harfbuzz-android-native")
+                includeModule("org.graphiks", "kffi-harfbuzz-iosarm64")
+                includeModule("org.graphiks", "kffi-harfbuzz-iossimulatorarm64")
                 includeModule("org.graphiks", "kffi")
                 includeModule("org.graphiks", "kffi-jvm")
             }

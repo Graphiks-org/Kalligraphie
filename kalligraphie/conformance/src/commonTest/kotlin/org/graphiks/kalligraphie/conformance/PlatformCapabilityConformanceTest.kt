@@ -9,9 +9,10 @@ import kotlin.test.assertEquals
 class PlatformCapabilityConformanceTest {
     private fun expectedAvailability(platformId: String): Map<PortableCapability, Boolean> = when (platformId) {
         "jvm" -> PortableCapability.entries.associateWith { true }
+        // iOS ships the bundled HarfBuzz shaping backend; analysis and layout stay absent.
         "ios" -> mapOf(
             PortableCapability.UNICODE_ANALYSIS to false,
-            PortableCapability.SHAPING to false,
+            PortableCapability.SHAPING to true,
             PortableCapability.END_TO_END_LAYOUT to false,
             PortableCapability.GLYPH_REPRESENTATION_VARIANTS to true,
         )

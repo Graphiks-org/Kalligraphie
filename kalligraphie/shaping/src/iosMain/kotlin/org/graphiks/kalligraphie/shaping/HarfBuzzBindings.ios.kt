@@ -3,13 +3,9 @@ package org.graphiks.kalligraphie.shaping
 /**
  * iOS actual for [openHarfBuzzPlatformBinding].
  *
- * TODO(Phase 3): replace this graceful-degradation stub with the real kffi-iOS HarfBuzz binding.
- * The kffi HarfBuzz binding has no Kotlin/Native target yet, so iOS reports the typed graceful
- * degradation failure (`font.shaping-native-platform-unsupported`) through [HarfBuzzBindings.open].
- * A real `iosMain` backend replaces this when a native binding lands.
+ * Delegates to [openIosHarfBuzzPlatformBinding], which loads the published kffi HarfBuzz
+ * binding backed by the per-target `libharfbuzz` shipped in the `kffi-harfbuzz-iosarm64` and
+ * `kffi-harfbuzz-iossimulatorarm64` klibs. Only the iOS source set references the native kffi
+ * surface; `commonMain` stays binding-free so the module keeps compiling for every target.
  */
-internal actual fun openHarfBuzzPlatformBinding(): HarfBuzzPlatformBinding =
-    throw HarfBuzzBindingException(
-        HarfBuzzBindingFailure.UNSUPPORTED_PLATFORM,
-        "The HarfBuzz shaping backend is not available on this platform.",
-    )
+internal actual fun openHarfBuzzPlatformBinding(): HarfBuzzPlatformBinding = openIosHarfBuzzPlatformBinding()

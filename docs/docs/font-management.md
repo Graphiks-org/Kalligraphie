@@ -1249,15 +1249,17 @@ atlas, platform-rendering, or rendering policy.
 The embedded HarfBuzz 14.3.0 backend is the reference implementation. Its
 Linux and macOS x64/arm64 and Windows x64 resources are delivered by the
 published `org.graphiks:kffi-harfbuzz` binding, and Android ships the same
-engine through the `org.graphiks:kffi-harfbuzz-android` artifact; the library
+engine through the `org.graphiks:kffi-harfbuzz-android` artifact. iOS ships the
+same engine, statically linked through cinterop, as
+`org.graphiks:kffi-harfbuzz-iosarm64` (device) and
+`org.graphiks:kffi-harfbuzz-iossimulatorarm64` (simulator); the library
 is hash-verified when it is loaded and never found through a system-library
 search. The shared Android floor is API 28, raised from API 24 — a deliberate
 breaking change for API 24–27 consumers. Public contracts contain no JNI or
-native types. Apple does not yet provide an executable shaping adapter, so this
-route must not be treated as conformant on Apple platforms.
+native types, and no platform is left without a bundled shaping backend.
 
-A non-default variation location descends to the prepared HarfBuzz font on JVM and
-Android through the republished `org.graphiks:kffi-harfbuzz` binding's
+A non-default variation location descends to the prepared HarfBuzz font on JVM,
+Android and iOS through the republished `org.graphiks:kffi-harfbuzz` binding's
 `setVarCoordsNormalized`, applied in the face's `fvar` axis order as 2.14 fixed
 point. An empty or explicitly design-default location (a non-variable face, the
 default instance, or `[0.0]`) never changes the render, so the default path is

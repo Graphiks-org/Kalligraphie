@@ -33,15 +33,14 @@ retourné lorsque — et seulement lorsque — la capacité est indisponible.
 | Plateforme | Analyse Unicode | Shaping (façonnage) | Mise en page de bout en bout (end-to-end layout) | Variantes de représentation des glyphes | Profil |
 | --- | --- | --- | --- | --- | --- |
 | JVM | Présente | Présent | Présente | Présentes | `jvm-reference` |
-| iOS | Absente | Absent | Absente | Présentes | `absent` / `portable-glyph` |
+| iOS | Absente | Présent | Absente | Présentes | `absent` / `bundled-harfbuzz` / `portable-glyph` |
 | Android | Absente | Présent | Absente | Présentes | `absent` / `bundled-harfbuzz` / `portable-glyph` |
 
 Le JVM déclare la surface de capacités de référence complète. Android déclare le
-façonnage (shaping) présent via le backend HarfBuzz embarqué (API 28+), et
-déclare l'analyse Unicode et la mise en page de bout en bout `absent` ; iOS
-déclare l'analyse Unicode, le façonnage (shaping) et la mise en page de bout en
-bout `absent`. Les deux cibles mobiles déclarent la route de représentation des
-glyphes présente. Le diagnostic
+façonnage (shaping) présent via le backend HarfBuzz embarqué (API 28+), et iOS
+déclare le façonnage (shaping) présent via le backend HarfBuzz embarqué ; les deux
+cibles mobiles déclarent l'analyse Unicode et la mise en page de bout en bout
+`absent` ainsi que la route de représentation des glyphes présente. Le diagnostic
 d'absence est émis pour chaque capacité absente, indépendamment du fait qu'un
 appelant la requière (requires).
 
@@ -58,11 +57,14 @@ sont invariants d'une plateforme à l'autre.
 | `CancellationConformanceTest` (`commonTest`) | Annulation préalable et en cours de parcours (traversal) → `Cancelled` ; limites de scalaires et d'unités source → `LimitExceeded` ; les issues non réussies ne portent aucun instantané (snapshot) partiel. | JVM, iOS |
 | `PlatformCapabilityConformanceTest` (`commonTest`) | La matrice de capacités déclarée par plateforme ; le diagnostic d'absence exactement lorsqu'une capacité est indisponible ; le décodage s'exécute indépendamment des capacités. | JVM, iOS |
 | `AndroidPortableConformanceTest` (`androidDeviceTest`) | Le même décodage de façade et la même annulation, ainsi que l'identité de capacités Android, sur un environnement d'exécution Android réel. | Android |
+| `IosPortableConformanceTest` (`iosSimulatorArm64Test`) | Le même décodage de façade et la même annulation, ainsi que l'identité de capacités du simulateur iOS, sur l'environnement d'exécution du simulateur iOS. | iOS |
 
 La suite partagée s'exécute depuis `commonTest` sur JVM et iOS.
 `androidDeviceTest` n'hérite pas de `commonTest`, donc
 `AndroidPortableConformanceTest` exerce directement la façade publique sur
-Android plutôt que de réutiliser les tests partagés.
+Android plutôt que de réutiliser les tests partagés ; `iosSimulatorArm64Test`
+hérite de `commonTest` et exécute en plus `IosPortableConformanceTest` sur
+l'environnement d'exécution du simulateur.
 
 ### Commandes de vérification
 
@@ -92,8 +94,8 @@ géométrie portable existera à comparer.
   des chantiers distincts. Android déclare le façonnage (shaping) présent via le
   backend HarfBuzz embarqué, qui exige l'API 28 ou ultérieure ; le socle Android
   partagé a été relevé de l'API 24 à l'API 28, un changement cassant délibéré
-  pour les consommateurs API 24–27. iOS déclare toujours l'analyse et le
-  façonnage absents.
+  pour les consommateurs API 24–27. iOS déclare le façonnage (shaping) présent
+  via le backend HarfBuzz embarqué et l'analyse absente.
 - La lecture et la rastérisation des polices ne font pas partie de ce module.
 - `iosArm64` est compilé mais les tests s'exécutent sur `iosSimulatorArm64` ;
   l'exécution sur appareil physique n'est pas effectuée sur les runners

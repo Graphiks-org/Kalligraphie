@@ -31,15 +31,15 @@ diagnostic returned when — and only when — the capability is unavailable.
 | Platform | Unicode analysis | Shaping | End-to-end layout | Glyph representation variants | Profile |
 | --- | --- | --- | --- | --- | --- |
 | JVM | Present | Present | Present | Present | `jvm-reference` |
-| iOS | Absent | Absent | Absent | Present | `absent` / `portable-glyph` |
+| iOS | Absent | Present | Absent | Present | `absent` / `bundled-harfbuzz` / `portable-glyph` |
 | Android | Absent | Present | Absent | Present | `absent` / `bundled-harfbuzz` / `portable-glyph` |
 
 The JVM declares the complete reference capability surface. Android declares
-shaping present through the bundled HarfBuzz backend (API 28+), and declares
-Unicode analysis and end-to-end layout `absent`; iOS declares Unicode analysis,
-shaping, and end-to-end layout `absent`. Both mobile targets declare the glyph
-representation route present. The absence diagnostic is emitted for every absent
-capability, independently of whether a caller requires it.
+shaping present through the bundled HarfBuzz backend (API 28+), and iOS declares
+shaping present through the bundled HarfBuzz backend; both mobile targets declare
+Unicode analysis and end-to-end layout `absent` and the glyph representation
+route present. The absence diagnostic is emitted for every absent capability,
+independently of whether a caller requires it.
 
 ## Test coverage
 
@@ -53,10 +53,13 @@ suite executes them, and the observable results are platform-invariant.
 | `CancellationConformanceTest` (`commonTest`) | Pre-cancelled and mid-traversal cancellation → `Cancelled`; scalar and source-unit limits → `LimitExceeded`; non-success outcomes carry no partial snapshot. | JVM, iOS |
 | `PlatformCapabilityConformanceTest` (`commonTest`) | The declared capability matrix per platform; the absence diagnostic exactly when a capability is unavailable; decoding runs regardless of capabilities. | JVM, iOS |
 | `AndroidPortableConformanceTest` (`androidDeviceTest`) | The same facade decoding and cancellation, and the Android capability identity, on a real Android runtime. | Android |
+| `IosPortableConformanceTest` (`iosSimulatorArm64Test`) | The same facade decoding and cancellation, and the iOS simulator capability identity, on the iOS simulator runtime. | iOS |
 
 The shared suite runs from `commonTest` on JVM and iOS. `androidDeviceTest` does
 not inherit `commonTest`, so `AndroidPortableConformanceTest` exercises the
-public facade directly on Android rather than reusing the shared tests.
+public facade directly on Android rather than reusing the shared tests;
+`iosSimulatorArm64Test` inherits `commonTest` and additionally runs
+`IosPortableConformanceTest` on the simulator runtime.
 
 ### Verification commands
 
@@ -84,7 +87,8 @@ only when portable geometry exists to compare.
   workstreams. Android declares shaping present through the bundled HarfBuzz
   backend, which requires API 28 or later; the shared Android library floor was
   raised from API 24 to API 28, a deliberate breaking change for API 24–27
-  consumers. iOS still declares analysis and shaping absent.
+  consumers. iOS declares shaping present through the bundled HarfBuzz backend
+  and analysis absent.
 - Reading and rasterizing fonts is not part of this module.
 - `iosArm64` is compiled but tests execute on `iosSimulatorArm64`; device
   execution is not performed on hosted runners.
