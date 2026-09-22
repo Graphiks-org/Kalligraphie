@@ -90,7 +90,8 @@ public object SyntheticGeometry {
      * (a multi-subpath contour that this single-subpath offset does not support) and any transformed
      * coordinate that is non-finite or outside the `Int` design range all return
      * `font.geometry-overflow`. Cancellation is observed between contours and returns
-     * [FontOperationResult.Cancelled].
+     * [FontOperationResult.Cancelled]. Rejecting a multi-`MoveTo` contour is a deliberate behaviour
+     * change: an earlier revision silently offset such a contour at its first subpath only.
      */
     public fun apply(
         outline: ScalerGlyphOutline,
@@ -227,6 +228,12 @@ public object SyntheticGeometry {
      * counter-clockwise outer boundary ([outwardSign] `-1.0`). Returning a single sign is what makes
      * [anchorOffsets] treat every contour relative to the filled region. When every contour is
      * degenerate (all areas zero) the default `-1.0` is harmless because no meaningful normal exists.
+     *
+     * This rule assumes the largest absolute area belongs to the true outer boundary. For a malformed
+     * glyph — self-intersecting or otherwise invalid input whose largest absolute area belongs to a
+     * contour that is not the outer boundary — the single derived sign is inverted, so every contour
+     * shrinks instead of growing. The transform neither validates winding nor rejects such input: one
+     * sign is fixed for the whole glyph, so a wrong outer boundary cannot be recovered from.
      */
     private fun outwardSignOf(contours: List<GlyphContour>): Double {
         var largestAbsoluteArea = -1.0
