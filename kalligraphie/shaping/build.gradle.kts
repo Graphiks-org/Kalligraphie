@@ -31,12 +31,7 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.kotlinx.atomicfu)
-        }
-        iosArm64Main.dependencies {
-            implementation(libs.kffi.harfbuzz.iosarm64)
-        }
-        iosSimulatorArm64Main.dependencies {
-            implementation(libs.kffi.harfbuzz.iossimulatorarm64)
+            implementation(libs.kffi.harfbuzz)
         }
         jvmMain.dependencies {
             implementation(libs.kffi.harfbuzz.jvm)
