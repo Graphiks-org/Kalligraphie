@@ -73,7 +73,16 @@ public class PreparedTrueTypeFont internal constructor(
             return faces.map { PreparedTrueTypeFont(capturedBytes, it) }
         }
 
-        /** Upper bound on the total number of `(glyphId, orderedAxes)` instanced-bound pairs retained. */
+        /**
+         * Upper bound on the total number of `(glyphId, orderedAxes)` instanced-bound pairs retained
+         * per face.
+         *
+         * A total-per-face bound rather than a per-glyph count: 512 keeps the retained [DesignBounds]
+         * bounded on a long-lived shared face while staying large enough that the paragraph projection
+         * path's rereads of one line's glyphs at one location stay hot. A face read at many instances
+         * (or a large CJK face at one instance) can exceed it, which only causes recomputation — see
+         * `InstancedInkBoundsCache` for the eviction policy.
+         */
         private const val INSTANCED_INK_BOUNDS_CAPACITY = 512
     }
 
@@ -406,6 +415,10 @@ public class PreparedTrueTypeFont internal constructor(
      * per `(glyphId, orderedAxes)` because the paragraph projection path reads glyph metrics once per
      * glyph per candidate line; the cache is bounded and holds only immutable [DesignBounds].
      *
+     * The metric route asks for these bounds on every non-default read, so an advance-only caller pays
+     * one outline decode per unique `(glyphId, ordered normalized location)` pair on a cache miss: the
+     * memo amortizes repeated glyphs at one location but does not make the first read of each pair free.
+     *
      * Feeding these bounds into the metric route is what makes a non-default `metrics()` materialize
      * the outline under [metricsOutlineProfile]; that read can now fail for a glyph whose outline
      * exceeds the profile even when its `glyf` header is readable. This is the accepted trade-off of
@@ -732,6 +745,14 @@ private data class InstancedInkBoundsKey(
  * `kotlin.concurrent.atomics` idiom as `PreparedTrueTypeFont.glyphDataCache`). Each [put] publishes a
  * fresh snapshot and evicts the eldest entry once the total number of stored `(glyphId, orderedAxes)`
  * pairs exceeds [capacity]; keying on the pair means one glyph at many locations still counts.
+ *
+ * The eviction is insertion-ordered, not access-ordered, so a [get] never refreshes an entry: a pair
+ * touched on every line is still retired once [capacity] newer pairs have been inserted. That is a
+ * real thrash risk for a face read at many instances (or a large CJK face at a single instance), where
+ * the working set of `(glyphId, location)` pairs exceeds the cap and pairs are recomputed after every
+ * eviction. It is performance-only: an evicted pair is recomputed to the same [DesignBounds] on the
+ * next read, and the bound is what keeps a long-lived shared face from retaining an unbounded number
+ * of decoded bounds whatever the glyph and location mix.
  */
 @OptIn(ExperimentalAtomicApi::class)
 private class InstancedInkBoundsCache(private val capacity: Int) {

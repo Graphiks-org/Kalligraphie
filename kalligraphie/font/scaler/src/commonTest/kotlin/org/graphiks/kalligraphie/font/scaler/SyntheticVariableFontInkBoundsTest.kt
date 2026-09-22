@@ -5,6 +5,7 @@ package org.graphiks.kalligraphie.font.scaler
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
@@ -55,6 +56,25 @@ class SyntheticVariableFontInkBoundsTest {
     fun theInstancedBoundsAreMemoizedPerGlyphAndLocation() {
         val prepared = syntheticVariableFont()
         assertSame(metricsFor(prepared, wght = 1f).bounds, metricsFor(prepared, wght = 1f).bounds)
+    }
+
+    /**
+     * The memo is capped at 512 `(glyphId, ordered location)` pairs per face and evicts the eldest
+     * insertion once the cap is exceeded. At exactly the cap the eldest pair survives, and the entry
+     * past it evicts that pair, so a re-read returns value-equal but not identity-equal bounds — the
+     * black-box signature of the cap, since an unbounded cache would keep the original instance.
+     */
+    @Test
+    fun theInstancedBoundsCacheEvictsItsEldestPairBeyondTheCap() {
+        val prepared = syntheticVariableFont()
+        val locations = (1..513).map { it.toFloat() / 1024f }
+        val firstBounds = metricsFor(prepared, wght = locations.first()).bounds
+        locations.subList(1, 512).forEach { metricsFor(prepared, wght = it) }
+        assertSame(firstBounds, metricsFor(prepared, wght = locations.first()).bounds)
+        metricsFor(prepared, wght = locations[512])
+        val recomputed = metricsFor(prepared, wght = locations.first()).bounds
+        assertEquals(firstBounds, recomputed)
+        assertNotSame(firstBounds, recomputed)
     }
 
     /**

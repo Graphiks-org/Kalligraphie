@@ -25,8 +25,9 @@ import org.graphiks.kalligraphie.font.sfnt.SfntReader
  * `(11, 0, 563, 726)` at the default, `(0, 0, 622, 737)` at normalized `wght = 0.55999755859375`
  * (design `wght = 500`, post-`avar`) and `(-8, 0, 668, 745)` at normalized `wght = 1.0`. These numbers
  * were re-derived outside the implementation with fontTools 4.65.0 (`TTFont.getGlyphSet(normalized=
- * True)` + `BoundsPen`) and match HarfBuzz 14.4.0's `hb_font_get_glyph_extents` at `scale = upem`
- * (which are the same control-point envelope the engine's `boundsForPoints` floor/ceil produces).
+ * True)` + `BoundsPen`). The oracle is fontTools-derived: this test does not cross-check HarfBuzz
+ * (`hb_font_get_glyph_extents` is not bound), so exit criterion 2 stays `Partiel` and the ink-bounds
+ * cross-check is sequenced separately.
  *
  * The CFF2 fixture is the regression guard: its route already fed `outline.bounds` before this change,
  * so its bounds must not move.
