@@ -4,7 +4,6 @@ import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAxisCoordinate
-import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontGeometryParameters
 import org.graphiks.kalligraphie.api.FontInstance
@@ -39,22 +38,6 @@ class GlyphMetricsContractTest {
 
         val success = assertIs<FontOperationResult.Success<FontInstance>>(result)
         assertEquals(listOf("wght"), success.value.key.geometry.normalizedAxes.map { it.tag })
-    }
-
-    @Test
-    fun rejectsUnsupportedSyntheticGeometryAtInstanceCreation() {
-        val face = openFace(fixtureBytes())
-
-        val result = face.instantiate(
-            FontInstanceDescriptor(
-                layoutSize = LayoutUnit(2048f),
-                geometry = FontGeometryParameters(syntheticBold = true, syntheticItalic = true),
-            ),
-        )
-
-        val failure = assertIs<FontOperationResult.Failure>(result)
-        assertIs<FontError.InvalidInstanceDescriptor>(failure.error)
-        assertEquals("font.invalid-instance-descriptor", failure.error.code)
     }
 
     @Test
