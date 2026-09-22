@@ -413,7 +413,7 @@ class EditableParagraphCompositionTest {
             run.sourceRun.clusters.any { cluster -> cluster.sourceRange == softHyphen }
         }
         assertEquals(1, retainedBnRun.sourceRun.bidiLevel)
-        // UAX #9 16.0 L1 plus §5.2: retained BN/X9 controls participate in the
+        // UAX #9 16.0 L1 plus the retained-X9 rule: BN/X9 controls participate in the
         // trailing reset sequence; U+00AD must therefore use the RTL base level 1.
     }
 

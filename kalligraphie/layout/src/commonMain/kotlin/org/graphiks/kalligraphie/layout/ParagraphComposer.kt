@@ -1508,7 +1508,7 @@ public object ParagraphComposer : ParagraphLayouter {
             MutableSourceLevel(scalarRange, paragraphLevel, bidiClass(request.snapshot.scalarValues(scalarRange).single()))
         }.toMutableList()
 
-        // UAX #9 §5.2 retained-X9 model, before applying the per-line L1 reset.
+        // UAX #9 retained-X9 model, before applying the per-line L1 reset.
         levels.forEachIndexed { index, item ->
             if (item.bidiClass.isRetainedX9()) item.level = levels.getOrNull(index - 1)?.level ?: baseLevel
         }
