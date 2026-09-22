@@ -7,9 +7,18 @@ internal class CoreTextFontFace(private val delegate: FontFace, private val gene
     private val source: CoreTextCapturedSource?, private val runtime: CoreTextRuntimeIdentity) : FontFace {
     override val id: FontFaceId get() = delegate.id
     override val metadata: FontFaceMetadata get() = delegate.metadata
-    override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> = adaptCoreTextResult(delegate.instantiate(descriptor)) { instance ->
-        CoreTextFontInstance(instance, generation, source, runtime)
-    }
+    override fun instantiate(descriptor: FontInstanceDescriptor): FontOperationResult<FontInstance> =
+        if (descriptor.geometry.syntheticBold || descriptor.geometry.syntheticItalic) {
+            FontOperationResult.Failure(
+                FontError.InvalidInstanceDescriptor(
+                    message = "Synthetic geometry is not supported by the CoreText platform bridge, which remains default-only.",
+                ),
+            )
+        } else {
+            adaptCoreTextResult(delegate.instantiate(descriptor)) { instance ->
+                CoreTextFontInstance(instance, generation, source, runtime)
+            }
+        }
     override fun variationAxes(): List<FontVariationAxis> = delegate.variationAxes()
     override fun namedInstances(): List<FontNamedInstance> = delegate.namedInstances()
     override fun normalize(design: FontVariationCoordinates): FontOperationResult<List<FontAxisCoordinate>> = delegate.normalize(design)
