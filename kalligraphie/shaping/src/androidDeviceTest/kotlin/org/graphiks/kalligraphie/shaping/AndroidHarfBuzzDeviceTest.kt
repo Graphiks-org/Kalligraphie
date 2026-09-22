@@ -12,14 +12,19 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontGeometryParameters
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.FontVariationCoordinate
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.GlyphId
+import org.graphiks.kalligraphie.api.GlyphMetrics
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
@@ -277,6 +282,39 @@ class AndroidHarfBuzzDeviceTest {
         assertEquals(List(8) { HEBREW_RTL_GOLDEN }, observations)
     }
 
+    @Test
+    fun harfBuzzAdvanceAtTheInstanceEqualsOurMetricsAtTheSameLocation() {
+        val instance = instanceAtWght(1.0f)
+        val run = backend().shape(request(text("A"), instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
+        assertEquals(listOf(660f), run.glyphs.map { it.xAdvance.value })
+        assertEquals(660, instance.advanceWidthOf(GlyphId(1)))
+    }
+
+    @Test
+    fun theDefaultInstanceStillShapesAtTheDesignDefault() {
+        val instance = instanceAtWght(null)
+        val run = backend().shape(request(text("A"), instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
+        assertEquals(listOf(574f), run.glyphs.map { it.xAdvance.value })
+        assertEquals(574, instance.advanceWidthOf(GlyphId(1)))
+    }
+
+    @Test
+    fun gposKerningVariesWithTheLocation() {
+        val backend = backend()
+        val low = backend.shape(request(text("AA"), instanceAtWght(0.0f), ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
+        val high = backend.shape(request(text("AA"), instanceAtWght(1.0f), ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
+        assertEquals(listOf(563f, 574f), low.glyphs.map { it.xAdvance.value })
+        assertEquals(listOf(653f, 660f), high.glyphs.map { it.xAdvance.value })
+    }
+
+    @Test
+    fun avarTransportReachesHarfBuzzAtANonEndpointLocation() {
+        val instance = instanceAtDesignWght(500f)
+        val run = backend().shape(request(text("A"), instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)).successValue()
+        assertEquals(listOf(622f), run.glyphs.map { it.xAdvance.value })
+        assertEquals(622, instance.advanceWidthOf(GlyphId(1)))
+    }
+
     @AfterTest
     fun closeOpenedBackends() {
         backends.asReversed().forEach { backend ->
@@ -334,6 +372,37 @@ class AndroidHarfBuzzDeviceTest {
         val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return face.instantiate(FontInstanceDescriptor(layoutSize = layoutSize)).successValue()
     }
+
+    private fun instanceAtWght(normalized: Float?): FontInstance {
+        val source = FontSource(
+            fixtureBytes("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
+            FontSourceProvenance("Noto Sans JP vertical fixture"),
+        )
+        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
+        val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
+        val geometry = normalized?.let {
+            FontGeometryParameters(normalizedAxes = listOf(FontAxisCoordinate("wght", it)))
+        } ?: FontGeometryParameters()
+        return face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(1000f), geometry = geometry)).successValue()
+    }
+
+    private fun instanceAtDesignWght(design: Float): FontInstance {
+        val source = FontSource(
+            fixtureBytes("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
+            FontSourceProvenance("Noto Sans JP vertical fixture"),
+        )
+        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
+        val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
+        return face.instantiate(
+            FontInstanceDescriptor(
+                layoutSize = LayoutUnit(1000f),
+                variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", design))),
+            ),
+        ).successValue()
+    }
+
+    private fun FontInstance.advanceWidthOf(glyphId: GlyphId): Int =
+        assertIs<FontOperationResult.Success<GlyphMetrics>>(metrics(glyphId)).value.advanceWidthDesignUnits
 
     private fun fixtureBytes(resource: String): ByteArray =
         checkNotNull(javaClass.getResourceAsStream(resource)) {
