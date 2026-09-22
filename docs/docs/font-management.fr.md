@@ -1131,8 +1131,9 @@ par défaut fait varier les avances horizontales via `HVAR`, les avances vertica
 via `VVAR`, les métriques de fonte via `MVAR`, et retombe sur les deltas de points
 fantômes `gvar` lorsque `HVAR`/`VVAR` sont absents ; la couleur variable est
 implémentée sur la route portable COLR v1 : une instance non par défaut fait
-varier le graphe de peinture de couleur résolu, tandis que la géométrie
-synthétique (gras/italique) reste non implémentée. Les données `gvar` malformées échouent
+varier le graphe de peinture de couleur résolu ; et la géométrie synthétique
+gras/italique est implémentée sur la route de contour portable. Les données `gvar`
+malformées échouent
 avec `font.variation.invalid-gvar`, une version de table non prise en charge
 échoue avec `font.variation.unsupported-gvar-version`, et les bornes de
 ressources `gvar` réutilisent `font.resource-limit-exceeded` avec
@@ -1141,8 +1142,7 @@ l’emplacement de table `gvar`.
 `FontFace.stat()` reste un espace réservé avec valeur par défaut qui renvoie
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
 différée, au même titre que les ponts natifs de métriques (limités au cas par
-défaut), `avar` version 2, `cvar`, `VARC`, la géométrie
-synthétique (gras/italique), les champs de limite de profil qui régénèrent les
+défaut), `avar` version 2, `cvar`, `VARC`, les champs de limite de profil qui régénèrent les
 empreintes, la vérification croisée des métriques HarfBuzz du sous-plan de
 composition (`metrics() == HarfBuzz` n’est pas un critère de sortie lié à ce
 sous-plan de variation des métriques) et la facturation de budget de cache §8
@@ -1170,6 +1170,62 @@ fixture CFF2 variable synthétique porte un `HVAR` dont le store ne déclare ni
 région ni delta d’item ; fontTools confirme donc que l’avance du glyphe `A` reste
 `1000` à `wght = 1.0`, et aucune avance variée ne peut être affirmée via la route
 de métriques CFF2.
+
+### Gras et italique synthétiques
+
+`FontGeometryParameters.syntheticBold` et `syntheticItalic` appliquent un style
+géométrique fixe et versionné sur la route de contour portable. Le gras synthétique
+décale chaque contour vers l’extérieur de `0,02 em` par côté (`unitsPerEm * 0,02`
+unités de design) par un décalage à onglet signé qui épaissit les contours
+extérieurs et rétrécit les trous ; l’italique synthétique cisaille chaque point
+autour de la ligne de base avec la tangente de `14°`
+(`tan 14° = 0,2493280028431807`). L’italique est appliqué d’abord, donc le gras est
+calculé sur la géométrie déjà inclinée. La transformation préserve chaque contour,
+point et commande : elle ne peut donc pas dépasser une limite d’`OutlineProfile` et
+ne recalcule que l’enveloppe entière `DesignBounds`. `SyntheticGeometry.VERSION`
+marque les montants épinglés ; changer un montant modifie la géométrie rendue et
+exige d’incrémenter cette version et la version d’interprétation TrueType.
+`FontInstanceKey.geometry` porte déjà les deux drapeaux, donc une instance
+synthétique a une identité de cache et de certificat distincte.
+
+Conformément au §7 du design parapluie, la géométrie synthétique ne modifie ni les
+avances, ni les side bearings, ni `GlyphMetrics.bounds`, ni `VerticalGlyphMetrics`,
+ni `FontMetrics` : la transformation s’exécute uniquement dans la matérialisation de
+contour, et les lecteurs de métriques ne la voient jamais. Un contour gras peut donc
+chevaucher les glyphes voisins ; c’est le comportement CSS `synthetic` et une
+limitation assumée. Une sélection de variation non-défaut se compose comme
+`synthetic(instance(outline))` — les deltas `gvar`/CFF2 sont appliqués avant le
+style, et les points fantômes `gvar` qui alimentent le repli de variation
+métrique sont transmis inchangés.
+
+La géométrie synthétique n’est honorée que par la route de contour portable.
+Acquérir une ressource pour une route couleur (`COLR` v0, `COLR` v1 ou
+SVG-in-OpenType `PaintGraphProfile`) ou bitmap (`BitmapProfile`) sur une instance
+synthétique échoue avec `font.geometry.synthetic-unsupported-route` ; ces routes
+transforment un graphe de peinture, un document ou un bitmap déjà rastérisé que
+cette capacité ne restyle pas, donc un glyphe non transformé n’est jamais renvoyé
+silencieusement. Lorsque le gras synthétique est combiné à une face qui déclare un
+axe `wght`, `instantiate` applique quand même le style demandé et attache le
+diagnostic informatif `font.geometry.synthetic-over-axis`, y compris lorsque le
+descripteur est par ailleurs à l’instance par défaut (la condition est littéralement
+`syntheticBold` et la présence d’un axe `wght` déclaré). Une coordonnée
+transformée hors de la plage de design `Int` échoue avec `font.geometry-overflow`.
+
+Trois notes pour finir. Les deux nouveaux diagnostics utilisent l’espace de noms
+pointé `font.geometry.synthetic-*` imposé par la spécification, tandis que l’échec
+de dépassement préexistant reste à trait d’union (`font.geometry-overflow`) :
+l’espace de noms est incohérent, mais les deux graphies sont épinglées.
+`estimateRenderAssetBytes` n’est pas conditionné par le mode synthétique : il peut
+donc rapporter une taille pour un profil couleur ou bitmap qu’`acquireRenderAsset`
+refusera sur une instance synthétique — une asymétrie, et non un chemin d’asset
+silencieux. La latéralité du gras est dérivée une fois par glyphe à partir du
+contour dont l’aire absolue est la plus grande, de sorte qu’un contour extérieur
+s’épaissit et qu’un trou de sens opposé se rétrécit (un signe par contour ferait
+grossir les trous) ; un contour contenant plus d’un `MoveTo` échoue avec
+`font.geometry-overflow` au lieu d’être silencieusement décalé sur son premier
+sous-chemin. Les ponts natifs restent limités au cas par défaut : seul le pont
+CoreText enveloppe une face portable, et il rejette un descripteur synthétique à son
+propre `instantiate`.
 
 ## Lignes Unicode éditables exactes
 
