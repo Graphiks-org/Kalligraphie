@@ -2,6 +2,7 @@
 
 package org.graphiks.kalligraphie.font.glyph
 
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.hypot
@@ -24,6 +25,13 @@ import org.graphiks.kalligraphie.font.scaler.ScalerGlyphOutline
  * every contour, point and command, and recomputes only the integer [DesignBounds] envelope; it
  * never adds geometry, so it cannot push an outline over a byte, contour, point or component limit.
  *
+ * Bold offsets every contour relative to the **filled region**, not the individual contour: a single
+ * outward handedness is derived for the whole glyph from the signed area of the contour with the
+ * largest absolute area (the outer boundary) and applied to every contour. An outer contour grows, an
+ * opposite-wound hole shrinks, and a same-wound nested contour grows. See [anchorOffsets] for why a
+ * per-contour sign would be wrong. Curve control points are offset by the mean of their segment-end
+ * offsets, which either pushes or flips a sharp curve; see [transformControl].
+ *
  * This is the fixed geometric interpretation of `FontGeometryParameters.syntheticBold` /
  * `syntheticItalic`; the default instance (both flags false) is returned by identity, so the
  * pre-existing path is unchanged. Changing either amount is a breaking change for persisted
@@ -40,19 +48,49 @@ public object SyntheticGeometry {
     /** Synthetic italic shear tangent, pinning the CSS `oblique` 14-degree default. */
     public const val ITALIC_SHEAR_TANGENT: Double = 0.2493280028431807
 
-    /** Below this cosine the miter length is clamped to twice the offset to avoid spikes. */
+    /**
+     * Miter-limit floor expressed as the cosine of the half-angle between the two edge normals.
+     *
+     * The miter extension is `1 / cos(half-angle)`; clamping the divisor to `0.5` (a 60-degree
+     * half-angle) caps the extension at `2 * delta`, so a near-cusp vertex cannot shoot an
+     * arbitrarily long spike. This is the standard miter-limit behaviour with a limit ratio of 2.
+     */
     private const val MIN_MITER_COS: Double = 0.5
 
-    /** Edges shorter than this are treated as degenerate and contribute no normal. */
+    /**
+     * Numerical guard below which an edge or a summed miter direction is treated as degenerate.
+     *
+     * `hypot` lengths and normalised sums at or below this magnitude are discarded: a zero-length
+     * edge contributes no normal, and two opposed normals (a straight vertex) fall back to the
+     * incoming normal instead of a near-zero, numerically unstable bisector.
+     */
     private const val EDGE_EPSILON: Double = 1e-9
+
+    /** Failure message for a contour that contains an interior `MoveTo` (multiple subpaths). */
+    private const val MULTI_SUBPATH_MESSAGE = "Synthetic geometry requires exactly one MoveTo per contour."
+
+    /** Failure message for a transformed coordinate that is not finite. */
+    private const val NON_FINITE_MESSAGE = "Synthetic geometry produced a non-finite coordinate."
+
+    /** Failure message for a transformed coordinate envelope outside the `Int` design range. */
+    private const val OVERFLOW_MESSAGE = "Synthetic geometry exceeds the design-coordinate range."
 
     /**
      * Applies the requested synthetic styles to [outline].
      *
      * Returns [outline] unchanged (same instance) when no style is requested or the outline has no
-     * contours. Every contour/point/command is preserved; only coordinates and [DesignBounds] change.
-     * A transformed coordinate outside the `Int` design range fails with `font.geometry-overflow`.
-     * Cancellation is observed between contours and returns [FontOperationResult.Cancelled].
+     * contours. Every contour/point/command is preserved; only coordinates and [DesignBounds] change,
+     * so the transform cannot introduce a contour, point, byte or component limit breach. Bold derives
+     * one outward handedness for the whole glyph from the contour with the largest absolute area and
+     * applies it to every contour, so an outer contour grows and an opposite-wound hole shrinks (see
+     * [anchorOffsets]); the returned bounds are the `floor`/`ceil` envelope of all transformed
+     * coordinates, including control points.
+     *
+     * This method returns a typed failure instead of throwing: a contour with more than one `MoveTo`
+     * (a multi-subpath contour that this single-subpath offset does not support) and any transformed
+     * coordinate that is non-finite or outside the `Int` design range all return
+     * `font.geometry-overflow`. Cancellation is observed between contours and returns
+     * [FontOperationResult.Cancelled].
      */
     public fun apply(
         outline: ScalerGlyphOutline,
@@ -63,14 +101,20 @@ public object SyntheticGeometry {
         if (!bold && !italic) return FontOperationResult.Success(outline)
         if (outline.contours.isEmpty()) return FontOperationResult.Success(outline)
         val delta = outline.unitsPerEm.toDouble() * BOLD_EM_FRACTION_PER_SIDE
+        val outwardSign = outwardSignOf(outline.contours)
         val transformed = ArrayList<GlyphContour>(outline.contours.size)
         val points = ArrayList<Pair<Double, Double>>()
         for (contour in outline.contours) {
             if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
+            if (contour.moveToCount() > 1) return geometryOverflow(outline, MULTI_SUBPATH_MESSAGE)
             val anchors = contour.anchors()
             if (anchors.isEmpty()) return FontOperationResult.Success(outline)
             val shearedAnchors = if (italic) anchors.map { (x, y) -> (x + ITALIC_SHEAR_TANGENT * y) to y } else anchors
-            val offsets = if (bold) anchorOffsets(shearedAnchors, delta) else List(anchors.size) { 0.0 to 0.0 }
+            val offsets = if (bold) {
+                anchorOffsets(shearedAnchors, delta, outwardSign)
+            } else {
+                List(anchors.size) { 0.0 to 0.0 }
+            }
             val commands = ArrayList<GlyphOutlineCommand>(contour.commands.size)
             var startOffset = offsets.first()
             var anchorIndex = 0
@@ -78,6 +122,7 @@ public object SyntheticGeometry {
                 when (command) {
                     is GlyphOutlineCommand.MoveTo -> {
                         val point = transformPoint(command.x, command.y, offsets[0], bold, italic)
+                        if (!point.isFiniteCoordinate()) return geometryOverflow(outline, NON_FINITE_MESSAGE)
                         commands += GlyphOutlineCommand.MoveTo(point.first, point.second)
                         points += point
                         startOffset = offsets[0]
@@ -86,6 +131,7 @@ public object SyntheticGeometry {
                     is GlyphOutlineCommand.LineTo -> {
                         anchorIndex += 1
                         val point = transformPoint(command.x, command.y, offsets[anchorIndex], bold, italic)
+                        if (!point.isFiniteCoordinate()) return geometryOverflow(outline, NON_FINITE_MESSAGE)
                         commands += GlyphOutlineCommand.LineTo(point.first, point.second)
                         points += point
                         startOffset = offsets[anchorIndex]
@@ -102,6 +148,9 @@ public object SyntheticGeometry {
                             bold,
                             italic,
                         )
+                        if (!control.isFiniteCoordinate() || !end.isFiniteCoordinate()) {
+                            return geometryOverflow(outline, NON_FINITE_MESSAGE)
+                        }
                         commands += GlyphOutlineCommand.QuadraticTo(control.first, control.second, end.first, end.second)
                         points += control
                         points += end
@@ -127,6 +176,9 @@ public object SyntheticGeometry {
                             bold,
                             italic,
                         )
+                        if (!first.isFiniteCoordinate() || !second.isFiniteCoordinate() || !end.isFiniteCoordinate()) {
+                            return geometryOverflow(outline, NON_FINITE_MESSAGE)
+                        }
                         commands += GlyphOutlineCommand.CubicTo(
                             first.first,
                             first.second,
@@ -148,12 +200,7 @@ public object SyntheticGeometry {
         }
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         val bounds = boundsOf(points, outline.bounds)
-            ?: return FontOperationResult.Failure(
-                FontError.GeometryOverflow(
-                    "Synthetic geometry exceeds the design-coordinate range.",
-                    FontDiagnosticLocation.Glyph(outline.glyphId),
-                ),
-            )
+            ?: return geometryOverflow(outline, OVERFLOW_MESSAGE)
         return FontOperationResult.Success(
             outline.copy(contours = transformed, pointCount = outline.pointCount, bounds = bounds),
         )
@@ -169,21 +216,67 @@ public object SyntheticGeometry {
         }
     }
 
+    private fun GlyphContour.moveToCount(): Int = commands.count { it is GlyphOutlineCommand.MoveTo }
+
     /**
-     * Outward miter offset per anchor. The sign uses the closed-polygon shoelace area so an outer
-     * contour grows and a hole shrinks under the non-zero fill rule; the miter factor is clamped so
-     * a sharp spike cannot produce an unbounded offset.
+     * Outward handedness for the whole glyph, shared by every contour.
+     *
+     * The contour with the largest absolute shoelace area is the outer boundary; its signed area
+     * fixes the glyph's orientation. A negative signed area means a clockwise outer boundary, so the
+     * outward normal is rotated one way ([outwardSign] `1.0`), and a non-negative area means a
+     * counter-clockwise outer boundary ([outwardSign] `-1.0`). Returning a single sign is what makes
+     * [anchorOffsets] treat every contour relative to the filled region. When every contour is
+     * degenerate (all areas zero) the default `-1.0` is harmless because no meaningful normal exists.
      */
-    private fun anchorOffsets(anchors: List<Pair<Double, Double>>, delta: Double): List<Pair<Double, Double>> {
-        val count = anchors.size
-        if (count < 2 || delta == 0.0) return List(count) { 0.0 to 0.0 }
+    private fun outwardSignOf(contours: List<GlyphContour>): Double {
+        var largestAbsoluteArea = -1.0
+        var sign = -1.0
+        for (contour in contours) {
+            val anchors = contour.anchors()
+            if (anchors.size < 3) continue
+            val twiceArea = twiceSignedArea(anchors)
+            val absoluteArea = abs(twiceArea)
+            if (absoluteArea > largestAbsoluteArea) {
+                largestAbsoluteArea = absoluteArea
+                sign = if (twiceArea < 0.0) 1.0 else -1.0
+            }
+        }
+        return sign
+    }
+
+    private fun twiceSignedArea(anchors: List<Pair<Double, Double>>): Double {
         var twiceArea = 0.0
-        for (index in 0 until count) {
+        for (index in anchors.indices) {
             val (x1, y1) = anchors[index]
-            val (x2, y2) = anchors[(index + 1) % count]
+            val (x2, y2) = anchors[(index + 1) % anchors.size]
             twiceArea += x1 * y2 - x2 * y1
         }
-        val outwardSign = if (twiceArea < 0.0) 1.0 else -1.0
+        return twiceArea
+    }
+
+    /**
+     * Outward miter offset per anchor, using the glyph-wide [outwardSign].
+     *
+     * [outwardSign] is derived once per glyph by [outwardSignOf] from the signed area of the contour
+     * with the largest absolute area — the outer boundary — and applied to every contour. This makes
+     * the offset relative to the **filled** region rather than to each contour's own interior: with
+     * one sign an outer contour moves away from its interior and grows, an opposite-wound hole moves
+     * toward its own interior (away from the filled region) and shrinks, and a same-wound nested
+     * contour grows. A per-contour sign instead cancels orientation: reversing a hole flips both its
+     * normals and its area sign, so the hole would grow. The rule holds for both conventions because
+     * non-zero filling fixes only the relative winding; the largest contour supplies the sense of
+     * "outward" without assuming TrueType's clockwise or CFF's counter-clockwise outer direction.
+     *
+     * The miter factor `1 / max(dot, [MIN_MITER_COS])` clamps a sharp vertex so its offset cannot
+     * grow without bound.
+     */
+    private fun anchorOffsets(
+        anchors: List<Pair<Double, Double>>,
+        delta: Double,
+        outwardSign: Double,
+    ): List<Pair<Double, Double>> {
+        val count = anchors.size
+        if (count < 2 || delta == 0.0) return List(count) { 0.0 to 0.0 }
         return List(count) { index ->
             val (x, y) = anchors[index]
             val (previousX, previousY) = anchors[(index - 1 + count) % count]
@@ -213,6 +306,13 @@ public object SyntheticGeometry {
         return (-dy / length) * outwardSign to (dx / length) * outwardSign
     }
 
+    private fun Pair<Double, Double>.isFiniteCoordinate(): Boolean = first.isFinite() && second.isFinite()
+
+    private fun geometryOverflow(outline: ScalerGlyphOutline, message: String): FontOperationResult.Failure =
+        FontOperationResult.Failure(
+            FontError.GeometryOverflow(message, FontDiagnosticLocation.Glyph(outline.glyphId)),
+        )
+
     private fun transformPoint(
         x: Double,
         y: Double,
@@ -224,6 +324,14 @@ public object SyntheticGeometry {
         return if (bold) (sheared + offset.first) to (y + offset.second) else sheared to y
     }
 
+    /**
+     * Offsets a Bézier control point by the mean of its segment-end offsets.
+     *
+     * Offsetting a control point by the average of the two endpoint offset vectors is an approximation
+     * of a true curve offset; it keeps the curve close to the offset outline for gentle turns but can
+     * push or invert the curve where consecutive segments meet at a sharp angle or cusp. The exact
+     * offset of a quadratic or cubic is not attempted here.
+     */
     private fun transformControl(
         x: Double,
         y: Double,
