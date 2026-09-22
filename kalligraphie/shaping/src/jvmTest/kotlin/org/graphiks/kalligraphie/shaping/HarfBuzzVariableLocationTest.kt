@@ -112,8 +112,9 @@ class HarfBuzzVariableLocationTest {
      *   hb-shape NotoSansJP-VerticalFixture.ttf 'A' --direction=ttb --variations=wght=900   -> ay -1000
      *   hb-shape NotoSansJP-VerticalFixture.ttf 'A' --direction=ttb --variations=wght=500   -> ay -1000
      * This fixture has `vmtx['A'].advanceHeight = 1000` and no `VVAR`, so the advance is constant; the
-     * cross-check pins route agreement, not variation. A shaped `yAdvance` is faithful here because the
-     * single glyph has no GPOS vertical kern pair (the fixture carries only a horizontal `kern`).
+     * cross-check pins route agreement, not variation. A shaped `yAdvance` equals the raw metric here
+     * because the fixture's GPOS has no vertical kern pair (`vkrn`) and glyph `A` has no vertical
+     * partner, so no vertical positioning adjustment applies.
      */
     @Test
     fun harfBuzzVerticalAdvanceAtTheInstanceEqualsOurMetricsAtTheSameLocation() {
@@ -139,7 +140,9 @@ class HarfBuzzVariableLocationTest {
      * region scalar. Independently audited (fontTools 4.65.0 `VarStoreInstancer`; HarfBuzz 14.4.0):
      *   normalized 0.0 -> 1000 (hb ay -1000); 0.5 -> 1100 (hb ay -1100); 1.0 -> 1200 (hb ay -1200).
      * The advance therefore genuinely moves with the location; design equals normalized here
-     * (`wght` 0/0/1000, no `avar`).
+     * (`wght` 0/0/1000, no `avar`). Having no `avar`, this fixture cannot distinguish design- from
+     * normalized-transport on the vertical route; `avar` transport on the horizontal route is pinned
+     * by `avarTransportReachesHarfBuzzAtANonEndpointLocation`.
      */
     @Test
     fun theVerticalAdvanceVariesWithTheLocation() {
