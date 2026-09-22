@@ -141,6 +141,19 @@ internal fun singleAxisFvarTable(): ByteArray =
         bytes.writeUInt16(34, 1)
     }
 
+/**
+ * A minimal `VARC` 1.0 header: major/minor version followed by the five offset fields
+ * (`Coverage`, `MultiVarStore`, `ConditionList`, `AxisIndicesList`, `VarCompositeGlyphs`).
+ *
+ * The portable outline route never decodes the table — it detects the tag and reports the typed
+ * `font.variation.varc-unsupported` failure — so the offsets are deliberately left at zero.
+ */
+internal fun varcTable(): ByteArray =
+    ByteArray(24).also { bytes ->
+        bytes.writeUInt16(0, 1)
+        bytes.writeUInt16(2, 0)
+    }
+
 internal fun gvarTable(axisCount: Int, glyphRecords: List<ByteArray>): ByteArray {
     val headerSize = 20
     val offsetsSize = (glyphRecords.size + 1) * 2

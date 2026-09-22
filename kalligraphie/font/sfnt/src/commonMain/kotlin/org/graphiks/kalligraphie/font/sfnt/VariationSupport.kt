@@ -29,10 +29,11 @@ public data class VariationLimits(
  *
  * [code] must be a `font.`-prefixed machine-readable code and [message] must not be blank; both
  * constraints are enforced by [FontError.FontDataFailure], which throws [IllegalArgumentException]
- * when either is violated. [tag] is the SFNT table the failure originates from (`fvar`, `avar`, or
- * `head` for face-level failures).
+ * when either is violated. [tag] is the SFNT table the failure originates from (`fvar`, `avar`,
+ * `gvar`, `VARC`, or `head` for face-level failures).
  */
-internal fun variationFailure(code: String, message: String, tag: String): FontOperationResult.Failure {
+@org.graphiks.kalligraphie.api.KalligraphieInternalApi
+public fun variationFailure(code: String, message: String, tag: String): FontOperationResult.Failure {
     val error = FontError.FontDataFailure(code = code, message = message, location = FontDiagnosticLocation.Table(tag))
     return FontOperationResult.Failure(error, listOf(error.toDiagnostic()))
 }

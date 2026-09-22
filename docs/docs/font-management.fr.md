@@ -1149,9 +1149,13 @@ l’emplacement de table `gvar`.
 `FontFace.stat()` reste un espace réservé avec valeur par défaut qui renvoie
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
 différée, au même titre que les ponts natifs de métriques (limités au cas par
-défaut), `avar` version 2, `cvar`, `VARC`, les champs de limite de profil qui régénèrent les
+défaut), `avar` version 2, `cvar`, les champs de limite de profil qui régénèrent les
 empreintes et la facturation de budget de cache §8
-`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Le
+`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Une
+fonte dont les composites variables vivent dans une table `VARC` est détectée
+plutôt que rendue silencieusement : sur la route de contour portable, une instance
+non-défaut échoue avec `font.variation.varc-unsupported`, tandis que l’instance par
+défaut reste sur le composite `glyf` statique. Le
 sous-plan « composition à l’instance » lie désormais la vérification croisée
 **horizontale** des métriques HarfBuzz sur JVM et Android : la location normalisée
 de l’instance atteint la fonte HarfBuzz préparée (ordonnée selon l’ordre des axes

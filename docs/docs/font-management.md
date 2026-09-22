@@ -1025,10 +1025,14 @@ on the portable outline route. Malformed `gvar` data fails with
 
 `FontFace.stat()` remains a defaulted placeholder that returns `Success(null)`:
 portable `STAT` reading is a separate concern and is deferred, alongside native
-metric bridges (default-only), `avar` version 2, `cvar`, `VARC`,
+metric bridges (default-only), `avar` version 2, `cvar`,
 the fingerprint-regenerating profile limit fields,
 and the §8 `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the
-decoded metric tables. The shaping-at-instance sub-plan now binds the HarfBuzz
+decoded metric tables. A font whose variable composites live in a `VARC` table is
+detected rather than rendered silently: on the portable outline route a
+non-default instance fails with `font.variation.varc-unsupported`, while the
+default instance stays on the static `glyf` composite. The shaping-at-instance
+sub-plan now binds the HarfBuzz
 **horizontal** metric cross-check on JVM and Android: the instance's normalized
 location reaches the prepared HarfBuzz font (ordered into `fvar` axis order) and
 our `metrics()` advance is asserted equal to HarfBuzz's advance at the same
