@@ -106,7 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - The `:shared` KMP template and its CI workflow.
-- The legacy unbuilt top-level `font/` prototype tree — the `colr`, `core`, `glyph`, `scaler`, `sfnt`, `text` and `src` sources — is removed. It was never part of the Gradle build — `settings.gradle.kts` aggregates only the KMP `:kalligraphie:font:*` modules since commit `53ac9c29` — no CI job built it, and no built code, documentation, README or CHANGELOG referenced it; its concepts are superseded in `kalligraphie/**`. The GPU/SDF/mask-blur/glyph-atlas prototype pieces it contained, which had no receiving module, remain recoverable from git history if that work resumes.
 
 ### Built with
 - Kotlin 2.4.10, Gradle 9.6.1, AGP 9.0.0
