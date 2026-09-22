@@ -22,7 +22,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class GlyphMetricsContractTest {
-    // Sub-plan 1 accepts a normalized selection as low-level identity input; outlines are not varied yet.
+    // The engine accepts a normalized selection as low-level identity input; outlines are not varied yet.
     @Test
     fun acceptsNormalizedVariationAxesAsLowLevelIdentityInput() {
         val face = openFace(fixtureBytes())

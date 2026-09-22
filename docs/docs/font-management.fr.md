@@ -1151,7 +1151,7 @@ l’emplacement de table `gvar`.
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
 différée, au même titre que les ponts natifs de métriques (limités au cas par
 défaut), `avar` version 2, `cvar`, les champs de limite de profil qui régénèrent les
-empreintes et la facturation de budget de cache §8
+empreintes et la facturation de budget de cache
 `maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Une
 fonte dont les composites variables vivent dans une table `VARC` est détectée
 plutôt que rendue silencieusement : sur les routes de contour portables, une
@@ -1160,7 +1160,7 @@ le format de contour (`glyf` ou CFF2), tandis que l’instance par défaut reste
 le composite statique. Les lectures de métriques horizontales, verticales et de
 fonte ne sont pas affectées car `VARC` ne porte aucune donnée d’avance (les avances
 proviennent de `hmtx`/`HVAR`). Le
-sous-plan « composition à l’instance » lie désormais la vérification croisée
+volet « composition à l’instance » lie désormais la vérification croisée
 **horizontale** des métriques HarfBuzz sur JVM et Android : la location normalisée
 de l’instance atteint la fonte HarfBuzz préparée (ordonnée selon l’ordre des axes
 `fvar`) et notre `metrics()` est égale à l’avance HarfBuzz à la même location sur
@@ -1170,8 +1170,7 @@ l’avance verticale de HarfBuzz à la même location via le chemin de shaping (
 haut-en-bas, dont la convention négative est inversée par notre moteur en un
 `advanceHeight` positif) ; la fixture auditée `NotoSansJP-VerticalFixture.ttf` a une
 avance verticale constante (`1000`), tandis que la fixture synthétique
-`KalligraphieVarVVAR.ttf` la fait varier (`1000`/`1100`/`1200`). Les bornes de la
-spécification ne sont pas vérifiées (aucun `hb_font_get_glyph_extents`).
+`KalligraphieVarVVAR.ttf` la fait varier (`1000`/`1100`/`1200`). Les bornes d’encre sont vérifiées à la même location via `hb_font_get_glyph_extents` (bornes d’encre variées de la fonte HarfBuzz préparée), reconstruites en `minX = x_bearing`, `maxX = x_bearing + width`, `maxY = y_bearing`, `minY = y_bearing + height`, sur les glyphes non composites (les bornes d’encre des composites instanciés restent non croisées).
 `FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
 de fonte de l’instance issues de `OS/2` (avec repli sur `hhea`), `post` et `MVAR`,
 en unités de design. Les métriques horizontales suivent la priorité `HVAR` puis
@@ -1219,7 +1218,7 @@ exige d’incrémenter cette version et la version d’interprétation TrueType.
 `FontInstanceKey.geometry` porte déjà les deux drapeaux, donc une instance
 synthétique a une identité de cache et de certificat distincte.
 
-Conformément au §7 du design parapluie, la géométrie synthétique ne modifie ni les
+La géométrie synthétique ne modifie ni les
 avances, ni les side bearings, ni `GlyphMetrics.bounds`, ni `VerticalGlyphMetrics`,
 ni `FontMetrics` : la transformation s’exécute uniquement dans la matérialisation de
 contour, et les lecteurs de métriques ne la voient jamais. Un contour gras peut donc
@@ -1243,7 +1242,7 @@ descripteur est par ailleurs à l’instance par défaut (la condition est litt�
 transformée hors de la plage de design `Int` échoue avec `font.geometry-overflow`.
 
 Trois notes pour finir. Les deux nouveaux diagnostics utilisent l’espace de noms
-pointé `font.geometry.synthetic-*` imposé par la spécification, tandis que l’échec
+pointé `font.geometry.synthetic-*`, tandis que l’échec
 de dépassement préexistant reste à trait d’union (`font.geometry-overflow`) :
 l’espace de noms est incohérent, mais les deux graphies sont épinglées.
 `estimateRenderAssetBytes` n’est pas conditionné par le mode synthétique : il peut
@@ -1441,8 +1440,9 @@ fixe 2.14. Une location vide ou explicitement au défaut (face non-variable,
 instance par défaut, ou `[0.0]`) ne change pas le rendu : le chemin par défaut
 reste identique au bit près. L’avance verticale est vérifiée à la même location via le
 chemin de shaping (`yAdvance` haut-en-bas), sur une fixture constante et une fixture
-synthétique dont le delta d’avance verticale `VVAR` varie ; les bornes de la
-spécification restent non vérifiées.
+synthétique dont le delta d’avance verticale `VVAR` varie ; les bornes
+d’encre sont vérifiées par rapport aux bornes d’encre variées de HarfBuzz à
+la même location (glyphes non composites).
 
 ## Repli déterministe entre fontes
 

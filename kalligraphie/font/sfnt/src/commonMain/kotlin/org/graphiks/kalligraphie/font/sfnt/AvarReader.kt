@@ -25,7 +25,7 @@ public class AvarData(axisSegmentMaps: List<List<AvarSegment>>) {
 
 /**
  * Decodes the OpenType `avar` table version 1. Version 2 (variable segment maps) is rejected with
- * `font.variation.unsupported-avar-version` until a later sub-plan implements it.
+ * `font.variation.unsupported-avar-version` until it is implemented.
  */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public object AvarReader {
