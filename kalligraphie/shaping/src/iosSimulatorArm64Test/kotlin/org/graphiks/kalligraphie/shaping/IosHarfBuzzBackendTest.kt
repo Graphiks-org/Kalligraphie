@@ -304,6 +304,21 @@ class IosHarfBuzzBackendTest {
         }
     }
 
+    @Test
+    fun reportsTheBundledIosSimulatorProvenance() {
+        val provenance = backend().identity.provenance
+
+        assertEquals("ios", provenance.operatingSystem)
+        // The simulator test process runs the iosSimulatorArm64 slice; the portable identity
+        // normalizes the Kotlin/Native target architecture to "arm64".
+        assertEquals("arm64", provenance.architecture)
+        assertEquals("harfbuzz", provenance.sourceProject)
+        assertEquals(IOS_SOURCE_REVISION, provenance.sourceRevision)
+        assertEquals(IOS_SIMULATOR_ARTIFACT_ID, provenance.artifactId)
+        assertEquals(IOS_SIMULATOR_ARTIFACT_SHA256, provenance.artifactSha256)
+        assertEquals(IOS_SIMULATOR_BUILD_CHAIN_IDENTITY, provenance.buildChainIdentity)
+    }
+
     @AfterTest
     fun closeOpenedBackends() {
         backends.asReversed().forEach { backend ->
@@ -381,6 +396,25 @@ class IosHarfBuzzBackendTest {
 
     private companion object {
         const val WORKER_COUNT = 8
+
+        /**
+         * Frozen kffi-harfbuzz iOS **simulator** (`iosSimulatorArm64`) slice provenance.
+         *
+         * These values are pinned by the published `org.graphiks:kffi-harfbuzz-iossimulatorarm64`
+         * snapshot and the Xcode/CMake build chain that produced it. Re-publishing that snapshot —
+         * or moving to a new Xcode toolchain — changes [IOS_SIMULATOR_ARTIFACT_SHA256] (and
+         * possibly the artifactId/build chain), so refresh all of these constants together with the
+         * binding upgrade. The device slice (`kffi-harfbuzz-iosarm64`, sha256
+         * `d3393c61a7276578f203e6b7115d2ea549311d5d0be0d302963652c70e0a18b7`) is not addressable
+         * from the simulator test process.
+         */
+        const val IOS_SOURCE_REVISION = "4c2aa804671d7276e8a0eb95da07202ead05c843"
+        const val IOS_SIMULATOR_ARTIFACT_ID =
+            "org.graphiks:kffi-harfbuzz-iossimulatorarm64:1.0.0-SNAPSHOT:iosSimulatorArm64/libharfbuzz.a"
+        const val IOS_SIMULATOR_ARTIFACT_SHA256 =
+            "f3c5e805c72362362e1b8f467dbd4f27ba07fb4f1f68619858c76de662764cb2"
+        const val IOS_SIMULATOR_BUILD_CHAIN_IDENTITY =
+            "cmake-4.4.3;xcode-26.6;appleclang-21.0.0;iphonesimulator-sdk-26.5;deployment-target-15.0"
 
         /**
          * Frozen goldens produced by the JVM reference backend (the spec §9.3 oracle). They are
