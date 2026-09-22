@@ -1030,9 +1030,11 @@ metric bridges (default-only), `avar` version 2, `cvar`,
 the fingerprint-regenerating profile limit fields,
 and the §8 `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the
 decoded metric tables. A font whose variable composites live in a `VARC` table is
-detected rather than rendered silently: on the portable outline route a
-non-default instance fails with `font.variation.varc-unsupported`, while the
-default instance stays on the static `glyf` composite. The shaping-at-instance
+detected rather than rendered silently: on the portable outline routes a
+non-default instance fails with `font.variation.varc-unsupported` whatever the
+outline flavour (`glyf` or CFF2), while the default instance stays on the static
+composite. Metric, vertical-metric and font-metric reads are unaffected because
+`VARC` carries no advance data (advances come from `hmtx`/`HVAR`). The shaping-at-instance
 sub-plan now binds the HarfBuzz
 **horizontal** metric cross-check on JVM and Android: the instance's normalized
 location reaches the prepared HarfBuzz font (ordered into `fvar` axis order) and

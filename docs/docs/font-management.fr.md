@@ -1154,9 +1154,12 @@ défaut), `avar` version 2, `cvar`, les champs de limite de profil qui régénè
 empreintes et la facturation de budget de cache §8
 `maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Une
 fonte dont les composites variables vivent dans une table `VARC` est détectée
-plutôt que rendue silencieusement : sur la route de contour portable, une instance
-non-défaut échoue avec `font.variation.varc-unsupported`, tandis que l’instance par
-défaut reste sur le composite `glyf` statique. Le
+plutôt que rendue silencieusement : sur les routes de contour portables, une
+instance non-défaut échoue avec `font.variation.varc-unsupported` quel que soit
+le format de contour (`glyf` ou CFF2), tandis que l’instance par défaut reste sur
+le composite statique. Les lectures de métriques horizontales, verticales et de
+fonte ne sont pas affectées car `VARC` ne porte aucune donnée d’avance (les avances
+proviennent de `hmtx`/`HVAR`). Le
 sous-plan « composition à l’instance » lie désormais la vérification croisée
 **horizontale** des métriques HarfBuzz sur JVM et Android : la location normalisée
 de l’instance atteint la fonte HarfBuzz préparée (ordonnée selon l’ordre des axes
