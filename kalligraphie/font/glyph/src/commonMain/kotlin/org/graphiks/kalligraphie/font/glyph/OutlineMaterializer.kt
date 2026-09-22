@@ -35,45 +35,64 @@ public object OutlineMaterializer {
      * @param outline scaler output in design units.
      * @param profile limits and schema accepted by the consumer.
      * @param cancellationToken cooperative cancellation signal.
+     * @param syntheticBold applies the pinned synthetic bold geometry before the limits are enforced.
+     * @param syntheticItalic applies the pinned synthetic italic geometry before the limits are enforced.
      * @return a complete representation, a typed limit failure, or cancellation.
+     *
+     * When [syntheticBold] or [syntheticItalic] is set, [SyntheticGeometry] transforms [outline]
+     * before the profile limits are enforced: the transform preserves every contour, point and
+     * command, so it cannot introduce a limit breach, and only the bounds envelope is recomputed.
+     * The default (`false`, `false`) takes the unchanged path and returns [outline] by identity.
+     * A transform failure (only `font.geometry-overflow`) or cancellation is returned unchanged.
      */
     public fun materialize(
         outline: ScalerGlyphOutline,
         profile: OutlineProfile,
         cancellationToken: CancellationToken = CancellationToken.none,
+        syntheticBold: Boolean = false,
+        syntheticItalic: Boolean = false,
     ): FontOperationResult<GlyphRepresentation> {
         if (cancellationToken.isCancellationRequested()) {
             return FontOperationResult.Cancelled()
         }
-        if (outline.contours.isEmpty() || outline.pointCount == 0) {
+        val source = if (syntheticBold || syntheticItalic) {
+            when (val styled = SyntheticGeometry.apply(outline, syntheticBold, syntheticItalic, cancellationToken)) {
+                is FontOperationResult.Success -> styled.value
+                is FontOperationResult.Failure -> return styled
+                is FontOperationResult.Cancelled -> return styled
+            }
+        } else {
+            outline
+        }
+        if (source.contours.isEmpty() || source.pointCount == 0) {
             return FontOperationResult.Success(GlyphRepresentation.Empty)
         }
-        if (outline.contours.size > profile.maxContours) {
+        if (source.contours.size > profile.maxContours) {
             return limitFailure(
                 "Outline contour limit exceeded.",
-                outline.glyphId,
-                outline.contours.size.toLong(),
+                source.glyphId,
+                source.contours.size.toLong(),
                 profile.maxContours.toLong(),
             )
         }
-        if (outline.pointCount > profile.maxPoints) {
+        if (source.pointCount > profile.maxPoints) {
             return limitFailure(
                 "Outline point limit exceeded.",
-                outline.glyphId,
-                outline.pointCount.toLong(),
+                source.glyphId,
+                source.pointCount.toLong(),
                 profile.maxPoints.toLong(),
             )
         }
-        if (outline.components.size > profile.maxCompositeComponents) {
+        if (source.components.size > profile.maxCompositeComponents) {
             return limitFailure(
                 "Outline component limit exceeded.",
-                outline.glyphId,
-                outline.components.size.toLong(),
+                source.glyphId,
+                source.components.size.toLong(),
                 profile.maxCompositeComponents.toLong(),
             )
         }
         var commandBytes = 0L
-        for (contour in outline.contours) {
+        for (contour in source.contours) {
             for (command in contour.commands) {
                 val encodedBytes = when (command) {
                     is org.graphiks.kalligraphie.api.GlyphOutlineCommand.QuadraticTo -> BYTES_PER_QUADRATIC_COMMAND
@@ -83,16 +102,16 @@ public object OutlineMaterializer {
                 commandBytes = checkedAdd(commandBytes, encodedBytes)
                     ?: return limitFailure(
                         "Outline command byte budget overflowed.",
-                        outline.glyphId,
+                        source.glyphId,
                         Long.MAX_VALUE,
                         profile.maxBytes.toLong(),
                     )
             }
         }
-        val componentBytes = checkedMultiply(outline.components.size.toLong(), BYTES_PER_COMPONENT)
+        val componentBytes = checkedMultiply(source.components.size.toLong(), BYTES_PER_COMPONENT)
             ?: return limitFailure(
                 "Outline component byte budget overflowed.",
-                outline.glyphId,
+                source.glyphId,
                 Long.MAX_VALUE,
                 profile.maxBytes.toLong(),
             )
@@ -100,14 +119,14 @@ public object OutlineMaterializer {
         val byteBudget = contentBytes?.let { checkedAdd(it, OUTLINE_OVERHEAD_BYTES) }
             ?: return limitFailure(
                 "Outline byte budget overflowed.",
-                outline.glyphId,
+                source.glyphId,
                 Long.MAX_VALUE,
                 profile.maxBytes.toLong(),
             )
         if (byteBudget > profile.maxBytes.toLong()) {
             return limitFailure(
                 "Outline byte limit exceeded.",
-                outline.glyphId,
+                source.glyphId,
                 byteBudget,
                 profile.maxBytes.toLong(),
             )
@@ -118,12 +137,12 @@ public object OutlineMaterializer {
         return FontOperationResult.Success(
             GlyphRepresentation.Outline(
                 GlyphOutlineIR(
-                    glyphId = outline.glyphId,
-                    unitsPerEm = outline.unitsPerEm,
-                    bounds = outline.bounds,
-                    contours = outline.contours.map { contour -> contour.copy(commands = contour.commands.toList()) },
-                    pointCount = outline.pointCount,
-                    components = outline.components.toList(),
+                    glyphId = source.glyphId,
+                    unitsPerEm = source.unitsPerEm,
+                    bounds = source.bounds,
+                    contours = source.contours.map { contour -> contour.copy(commands = contour.commands.toList()) },
+                    pointCount = source.pointCount,
+                    components = source.components.toList(),
                     limits = profile.toGlyphOutlineLimits(),
                 ),
             ),

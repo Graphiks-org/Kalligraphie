@@ -1011,8 +1011,8 @@ non-default instance now varies horizontal advances through `HVAR`, vertical
 advances through `VVAR`, font-wide metrics through `MVAR`, and falls back to the
 `gvar` phantom-point deltas when `HVAR`/`VVAR` are absent; variable colour is
 implemented on the portable COLR v1 route (a non-default instance varies the
-resolved colour paint graph), while synthetic bold/italic geometry remains
-unimplemented. Malformed `gvar` data fails with
+resolved colour paint graph); and synthetic bold/italic geometry is implemented
+on the portable outline route. Malformed `gvar` data fails with
 `font.variation.invalid-gvar`, an unsupported table version fails with
 `font.variation.unsupported-gvar-version`, and `gvar` resource bounds reuse
 `font.resource-limit-exceeded` with the `gvar` table location.
@@ -1020,7 +1020,7 @@ unimplemented. Malformed `gvar` data fails with
 `FontFace.stat()` remains a defaulted placeholder that returns `Success(null)`:
 portable `STAT` reading is a separate concern and is deferred, alongside native
 metric bridges (default-only), `avar` version 2, `cvar`, `VARC`,
-synthetic bold/italic geometry, the fingerprint-regenerating profile limit fields,
+the fingerprint-regenerating profile limit fields,
 the shaping sub-plan's HarfBuzz metric cross-check (the `metrics() == HarfBuzz`
 exit criterion is not bound by this metric-variation sub-plan), and the §8
 `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the decoded
@@ -1044,6 +1044,57 @@ the scaler's non-zero side-bearing delta path is untested. The synthetic variabl
 CFF2 fixture carries an `HVAR` whose store declares no regions and no item deltas,
 so fontTools confirms its glyph `A` advance stays `1000` at `wght = 1.0` and there
 is no varied advance to assert through the CFF2 metric route.
+
+### Synthetic bold and italic
+
+`FontGeometryParameters.syntheticBold` and `syntheticItalic` apply a fixed,
+versioned geometric style to the portable outline route. Synthetic bold offsets
+each contour outward by `0.02 em` per side (`unitsPerEm * 0.02` design units)
+using a signed miter offset that grows outer contours and shrinks holes; synthetic
+italic shears every point about the baseline with the tangent of `14°`
+(`tan 14° = 0.2493280028431807`). Italic is applied first, so bold is computed on
+the sheared geometry. The transform preserves every contour, point and command, so
+it cannot exceed an `OutlineProfile` limit; only the integer `DesignBounds`
+envelope is recomputed. `SyntheticGeometry.VERSION` marks the pinned amounts;
+changing either amount changes rendered geometry and must bump that version and the
+TrueType interpretation version. `FontInstanceKey.geometry` already carries the two
+flags, so a synthetic instance is a distinct cache and certificate identity.
+
+Per §7 of the umbrella design, synthetic geometry does **not** modify advances,
+side bearings, `GlyphMetrics.bounds`, `VerticalGlyphMetrics` or `FontMetrics`: the
+transform runs only in outline materialization, and the metric readers never see
+it. A bold outline can therefore overlap neighbouring glyphs; this matches CSS
+`synthetic` behaviour and is a deliberate limitation. A non-default variation
+location composes as `synthetic(instance(outline))` — the `gvar`/CFF2 deltas are
+applied before the style, and the `gvar` phantom deltas that feed metric-variation
+fallback are passed through unchanged.
+
+Synthetic geometry is honoured only by the portable outline route. Acquiring an
+asset for a colour (`COLR` v0, `COLR` v1 or SVG-in-OpenType `PaintGraphProfile`) or
+bitmap (`BitmapProfile`) route on a synthetic instance fails with the typed
+`font.geometry.synthetic-unsupported-route`; those routes transform a paint graph,
+document or pre-rasterized bitmap that this capability does not restyle, so an
+untransformed glyph is never silently returned. When synthetic bold is combined
+with a face that declares a `wght` axis, `instantiate` still applies the requested
+style and attaches the informational `font.geometry.synthetic-over-axis`
+diagnostic, including when the descriptor is otherwise at the default instance
+(the condition is literally `syntheticBold` and a declared `wght` axis). A
+transformed coordinate outside the `Int` design range fails with the existing
+`font.geometry-overflow`.
+
+Three closing notes. The two new diagnostics use the dotted
+`font.geometry.synthetic-*` namespace the specification dictates, while the
+pre-existing overflow failure stays hyphenated (`font.geometry-overflow`); the
+namespace is inconsistent but both spellings are pinned.
+`estimateRenderAssetBytes` is not synthetic-gated, so it can report a size for a
+colour or bitmap profile that `acquireRenderAsset` will refuse on a synthetic
+instance — an asymmetry, not a silent-asset path. The bold handedness is derived
+once per glyph from the contour with the largest absolute area, so an outer contour
+grows and an opposite-wound hole shrinks (a per-contour sign would grow holes); a
+contour containing more than one `MoveTo` fails with `font.geometry-overflow`
+rather than being silently offset at its first subpath. Native bridges remain
+default-only: only the CoreText bridge wraps a portable face, and it rejects a
+synthetic descriptor at its own `instantiate`.
 
 ## Exact editable Unicode lines
 

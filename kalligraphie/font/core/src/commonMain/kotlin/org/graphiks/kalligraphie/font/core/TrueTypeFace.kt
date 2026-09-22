@@ -10,6 +10,7 @@ import org.graphiks.kalligraphie.api.FontCatalogGeneration
 import org.graphiks.kalligraphie.api.FontDataInterpretationVersion
 import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
+import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFaceId
@@ -130,13 +131,17 @@ internal class TrueTypeFace(
             effectiveGeometry = descriptor.geometry
             successDiagnostics = emptyList()
         }
-        if (effectiveGeometry.syntheticBold || effectiveGeometry.syntheticItalic) {
-            return failure(
-                FontError.InvalidInstanceDescriptor(
-                    message = "Synthetic geometry is not supported by this TrueType face.",
+        val syntheticDiagnostics = if (effectiveGeometry.syntheticBold && variationAxes().any { axis -> axis.tag == "wght" }) {
+            listOf(
+                FontDiagnostic(
+                    code = "font.geometry.synthetic-over-axis",
+                    severity = FontDiagnosticSeverity.INFO,
                     location = FontDiagnosticLocation.FaceId(id),
+                    message = "Synthetic bold is applied even though the face declares a wght axis.",
                 ),
             )
+        } else {
+            emptyList()
         }
         return FontOperationResult.Success(
             TrueTypeFontInstance(
@@ -154,7 +159,7 @@ internal class TrueTypeFace(
                 cbdtCblcRouteSupported = cbdtCblcRouteSupported,
                 sbixRouteSupported = sbixRouteSupported,
             ),
-            successDiagnostics,
+            successDiagnostics + syntheticDiagnostics,
         )
     }
 
@@ -337,6 +342,7 @@ internal data class TrueTypeFontInstance(
         return try {
             var firstFailure: FontOperationResult.Failure? = null
             for (profile in profiles) {
+                val syntheticRequested = key.geometry.syntheticBold || key.geometry.syntheticItalic
                 val outcome = when (profile) {
                 is org.graphiks.kalligraphie.api.OutlineProfile -> {
                     if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 1) {
@@ -358,7 +364,15 @@ internal data class TrueTypeFontInstance(
                 }
 
                 is PaintGraphProfile -> {
-                    if (profile.schemaVersion in 2..3 && colrV1Supported) {
+                    if (syntheticRequested) {
+                        failure(
+                            FontError.FontDataFailure(
+                                code = "font.geometry.synthetic-unsupported-route",
+                                message = "Synthetic bold/italic geometry is supported only by the outline render route.",
+                                location = FontDiagnosticLocation.FaceId(faceId),
+                            ),
+                        )
+                    } else if (profile.schemaVersion in 2..3 && colrV1Supported) {
                         when (val colorData = readColrV1(profile, renderVariant)) {
                             is FontOperationResult.Success -> {
                                 val svgResult = if (svgRouteSupported) readMixedSvgSource(profile)
@@ -477,7 +491,15 @@ internal data class TrueTypeFontInstance(
                 }
 
                 is BitmapProfile -> {
-                    if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 2) {
+                    if (syntheticRequested) {
+                        failure(
+                            FontError.FontDataFailure(
+                                code = "font.geometry.synthetic-unsupported-route",
+                                message = "Synthetic bold/italic geometry is supported only by the outline render route.",
+                                location = FontDiagnosticLocation.FaceId(faceId),
+                            ),
+                        )
+                    } else if (renderVariant != FontRenderVariantSnapshot.default || profile.schemaVersion != 2) {
                         failure(
                             FontError.UnsupportedRepresentationProfile(
                                 "Bitmap assets require schema version 2 and the default render variant.",
@@ -805,7 +827,16 @@ internal class TrueTypeRenderAssetHandle(
             if (cancellationToken.isCancellationRequested()) {
                 return FontOperationResult.Cancelled()
             }
-            when (val materialized = OutlineMaterializer.materialize(outline, profile, cancellationToken)) {
+            val geometry = key.fontInstanceKey.geometry
+            when (
+                val materialized = OutlineMaterializer.materialize(
+                    outline,
+                    profile,
+                    cancellationToken,
+                    geometry.syntheticBold,
+                    geometry.syntheticItalic,
+                )
+            ) {
                 is FontOperationResult.Success -> {
                     if (cancellationToken.isCancellationRequested()) FontOperationResult.Cancelled()
                     else materialized.also { success -> resource.cacheRepresentation(representationKey, success) }

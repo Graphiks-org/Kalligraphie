@@ -43,7 +43,7 @@ generation.
 | Android JVM `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Platform system font collection through `android.graphics.fonts.SystemFonts` (Android 10+), not arbitrary path scanning; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices; family and face names come from parsing the captured bytes | Bundled HarfBuzz backend (API 28+) | Same portable routes; a new `open` observes a controlled change and mints a new `android-platform-fonts` generation |
 | iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | CoreText registry through the platform CoreText bindings, not a directory listing; iOS sandboxes system font files, so the `.ttf`/`.ttc`/`.otf` content is rebuilt from each font's copied tables | No bundled HarfBuzz backend in this module; the platform text stack applies | Same portable routes; a new `open` observes a controlled change and mints a new `ios-coretext-registry` generation |
 | Kotlin Native (other targets) | No system-font provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
-| CFF/CFF2 data on any target | Standalone CFF1 `.otf` and CFF2 outlines are read; collections carrying CFF faces are captured | CFF1 shaping through the portable shaper; CFF2 `blend`/`vsindex` evaluated at the instance's normalized axes | Portable cubic outline route for CFF1 and CFF2 (variation at the instance location); portable metric variation (`HVAR`/`VVAR`/`MVAR`) on the TrueType and CFF2 routes, variable colour (COLR v1 `VarIndexBase`/`VarStore` and the variable clip box) on the portable route, synthetic geometry remains unimplemented, and no CoreText CFF route |
+| CFF/CFF2 data on any target | Standalone CFF1 `.otf` and CFF2 outlines are read; collections carrying CFF faces are captured | CFF1 shaping through the portable shaper; CFF2 `blend`/`vsindex` evaluated at the instance's normalized axes | Portable cubic outline route for CFF1 and CFF2 (variation at the instance location); portable metric variation (`HVAR`/`VVAR`/`MVAR`) on the TrueType and CFF2 routes, variable colour (COLR v1 `VarIndexBase`/`VarStore` and the variable clip box) on the portable route, synthetic geometry is honoured on the portable outline route (colour and bitmap routes fail typed), and no CoreText CFF route |
 
 The standalone embedded route remains available on the JVM. File extensions do
 not establish outline support: `.otf` may contain TrueType, CFF1 or CFF2
@@ -51,7 +51,7 @@ outlines. CFF1 cubic outlines are delivered end to end; CFF2 cubic outlines are
 evaluated at the instance's normalized axes, so a non-default variation instance
 now changes the outline a portable provider returns. Portable metric variation
 (`HVAR`/`VVAR`/`MVAR`) now varies advances and font-wide metrics at the instance
-location; variable colour (COLR v1) is evaluated at the instance location and synthetic geometry remains unimplemented. Directory admission is bounded: a TTC/OTC source whose complete face count
+location; variable colour (COLR v1) is evaluated at the instance location and synthetic geometry is honoured on the portable outline route. Directory admission is bounded: a TTC/OTC source whose complete face count
 exceeds the remaining examination budget is rejected whole, with a typed limit
 diagnostic, before examining any of its directories. No partially examined
 collection prefix is published. Separate completely examined sources can still
@@ -177,8 +177,10 @@ matching, hidden fallback or new character-to-glyph mapping is authorized.
 
 Platform eligibility is deliberately conservative: static monochrome
 single-face TrueType, default geometry and default render variant only.
-Collections, CFF/CFF2, variation data, synthetic bold/italic, color/bitmap
-tables and non-default visual variants are outside this route. Unsupported
+Collections, CFF/CFF2, variation data, color/bitmap
+tables and non-default visual variants are outside this route, as is synthetic
+bold/italic: this native bridge is default-only and rejects a synthetic descriptor
+explicitly, while the portable outline route honours the style. Unsupported
 platform faces retain the portable capabilities of their underlying provider.
 
 The factory requires explicit `CoreTextFontAccessPolicy` limits; there is no
