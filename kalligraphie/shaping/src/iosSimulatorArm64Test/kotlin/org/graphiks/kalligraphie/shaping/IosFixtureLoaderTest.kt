@@ -20,6 +20,7 @@ class IosFixtureLoaderTest {
             "/fonts/liberation/LiberationSans-Regular.ttf" to 410_712,
             "/fonts/amiri/Amiri-Regular.ttf" to 431_116,
             "/fonts/gdef-kern/GdefKerningFixture.ttf" to 1_772,
+            "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf" to 3_408,
         )
 
         assertEquals(expectedLengths.keys, IosFixtureCorpus.paths)
@@ -27,7 +28,7 @@ class IosFixtureLoaderTest {
         expectedLengths.forEach { (resourcePath, expectedLength) ->
             val bytes = IosFixtureLoader.fixtureBytes(resourcePath)
             assertEquals(expectedLength, bytes.size, "length mismatch for $resourcePath")
-            // sfnt scaler type 0x00010000 big-endian: all four fixtures carry TrueType outlines.
+            // sfnt scaler type 0x00010000 big-endian: every fixture carries TrueType outlines.
             assertContentEquals(
                 byteArrayOf(0x00, 0x01, 0x00, 0x00),
                 bytes.copyOfRange(0, 4),

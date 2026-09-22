@@ -53,6 +53,9 @@ val iosFixtureCorpus by tasks.registering {
         "/fonts/liberation/LiberationSans-Regular.ttf" to fixturesRoot.file("fonts/liberation/LiberationSans-Regular.ttf").asFile,
         "/fonts/amiri/Amiri-Regular.ttf" to fixturesRoot.file("fonts/amiri/Amiri-Regular.ttf").asFile,
         "/fonts/gdef-kern/GdefKerningFixture.ttf" to fixturesRoot.file("fonts/gdef-kern/GdefKerningFixture.ttf").asFile,
+        // The variable face the iOS variation suite shapes at a non-default location
+        // (`wght`) to pin `hb_font_set_var_coords_normalized` on iOS.
+        "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf" to fixturesRoot.file("fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf").asFile,
     )
     inputs.files(entries.map { (_, file) -> file }).withPropertyName("fixtureFiles")
     val outputDirectory = layout.buildDirectory.dir("generated/ios-fixture-corpus/kotlin")

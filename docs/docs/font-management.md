@@ -1258,8 +1258,8 @@ search. The shared Android floor is API 28, raised from API 24 — a deliberate
 breaking change for API 24–27 consumers. Public contracts contain no JNI or
 native types, and no platform is left without a bundled shaping backend.
 
-A non-default variation location descends to the prepared HarfBuzz font on JVM and
-Android through the republished `org.graphiks:kffi-harfbuzz` binding's
+A non-default variation location descends to the prepared HarfBuzz font on JVM,
+Android and iOS through the republished `org.graphiks:kffi-harfbuzz` binding's
 `setVarCoordsNormalized`, applied in the face's `fvar` axis order as 2.14 fixed
 point. An empty or explicitly design-default location (a non-variable face, the
 default instance, or `[0.0]`) never changes the render, so the default path is
