@@ -108,6 +108,16 @@ jobs:
       - name: Exercise the CoreText registry capture and materialization
         run: ./gradlew --no-daemon :kalligraphie:platform:ios:iosSimulatorArm64Test
 
+  shaping-ios:
+    name: Bundled HarfBuzz (ios-simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: zulu, java-version: '25', cache: gradle }
+      - run: chmod +x gradlew
+      - run: ./gradlew --no-daemon :kalligraphie:shaping:iosSimulatorArm64Test :kalligraphie:conformance:iosSimulatorArm64Test
+
   windows-platform-fonts:
     name: DirectWrite font journeys (windows)
     runs-on: windows-latest
