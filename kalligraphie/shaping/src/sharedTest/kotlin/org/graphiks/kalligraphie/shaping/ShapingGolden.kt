@@ -99,7 +99,7 @@ internal fun canonicalShapingGolden(snapshot: TextSnapshot, run: ShapedGlyphRun)
 }
 
 /**
- * Frozen goldens produced by the JVM reference backend (the spec §9.3 oracle); their individual
+ * Frozen goldens produced by the JVM reference backend; their individual
  * metrics are the values frozen in `HarfBuzzPortableBackendTest`. The Android and iOS bundled
  * bindings must reproduce them byte for byte. Every metric is the exact IEEE-754 bit pattern, so
  * there is no numeric tolerance.
