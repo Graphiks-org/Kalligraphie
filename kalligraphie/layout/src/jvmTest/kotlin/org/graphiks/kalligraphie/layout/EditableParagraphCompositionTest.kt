@@ -55,7 +55,7 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TabStop
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.WritingMode
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
@@ -1015,7 +1015,7 @@ class EditableParagraphCompositionTest {
             candidates = faces.map(::FontResolutionCandidate),
             lastResortFace = faces.last(),
         )
-        val nativeBackend = JvmHarfBuzzShapingBackend.open().successValue()
+        val nativeBackend = HarfBuzzShapingBackend.open().successValue()
         val recordingBackend = if (recordShapingRequests) RecordingShapingBackend(nativeBackend) else null
         val backend = (recordingBackend ?: nativeBackend).also(openedBackends::add)
         val metrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f))

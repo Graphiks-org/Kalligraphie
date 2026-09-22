@@ -60,7 +60,7 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 class JvmEditableParagraphFacadeTest {
     @Test
@@ -605,7 +605,7 @@ class JvmEditableParagraphFacadeTest {
     fun emptyFacadeSuppliesCanonicalLanguageToParagraphLayoutRequest() {
         val emptyFixture = multiFaceFixture("")
         val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         var suppliedRequest: ParagraphLayoutRequest? = null
 
@@ -1087,7 +1087,7 @@ class JvmEditableParagraphFacadeTest {
     fun ownedBackendCloseFailureCannotPublishAParagraphSuccess() {
         val fixture = multiFaceFixture("fi")
         val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         try {
             val result = JvmEditableParagraphFacade.layout(
@@ -1108,7 +1108,7 @@ class JvmEditableParagraphFacadeTest {
     fun borrowedBackendIsNotClosedByTheFacadeSeam() {
         val fixture = multiFaceFixture("fi")
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = CloseTrackingBackend(delegate)
 

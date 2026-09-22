@@ -27,8 +27,6 @@ import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.GdefLigatureCaretState
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.unicode.TextSnapshots
-import org.graphiks.kffi.harfbuzz.HarfBuzzBindingException
-import org.graphiks.kffi.harfbuzz.HarfBuzzBindingFailure
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -40,7 +38,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class HarfBuzzJvmBackendTest {
+class HarfBuzzPortableBackendTest {
     private val backends = mutableListOf<ShapingBackend>()
 
     @Test
@@ -186,15 +184,15 @@ class HarfBuzzJvmBackendTest {
     @Test
     fun eachPreparedFontBudgetRejectsARealLigatureWithoutPublishingPartialGlyphs() {
         val policies = listOf(
-            JvmPreparedFontCachePolicy.default.copy(maxEntries = 0),
-            JvmPreparedFontCachePolicy.default.copy(maxSourceBytes = 1),
-            JvmPreparedFontCachePolicy.default.copy(maxEstimatedNativeBytes = 1),
-            JvmPreparedFontCachePolicy.default.copy(maxTotalBytes = 1),
+            PreparedFontCachePolicy.default.copy(maxEntries = 0),
+            PreparedFontCachePolicy.default.copy(maxSourceBytes = 1),
+            PreparedFontCachePolicy.default.copy(maxEstimatedNativeBytes = 1),
+            PreparedFontCachePolicy.default.copy(maxTotalBytes = 1),
         )
         val prepared = text("fi")
         val font = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
         for (policy in policies) {
-            val backend = JvmHarfBuzzShapingBackend.open(policy).successValue()
+            val backend = HarfBuzzShapingBackend.open(policy).successValue()
             try {
                 val failure = assertIs<FontOperationResult.Failure>(backend.shape(
                     request(prepared, font, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0),
@@ -209,8 +207,8 @@ class HarfBuzzJvmBackendTest {
 
     @Test
     fun aOneFontBudgetStillShapesAlternatingRealSizesWithCompleteGeometry() {
-        val backend = JvmHarfBuzzShapingBackend.open(
-            JvmPreparedFontCachePolicy.default.copy(maxEntries = 1),
+        val backend = HarfBuzzShapingBackend.open(
+            PreparedFontCachePolicy.default.copy(maxEntries = 1),
         ).successValue()
         val large = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans")
         val small = fontInstance("/fonts/dejavu/DejaVuSans.ttf", "DejaVu Sans", LayoutUnit(1024f))
@@ -230,7 +228,7 @@ class HarfBuzzJvmBackendTest {
     @Test
     fun explicitPinnedDefaultFeaturePolicyShapesTheAuditedDefaultLigature() {
         val backend = backend()
-        val policy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy
+        val policy = HarfBuzzShapingBackend.pinnedFeaturePolicy
 
         val shaped = shape(
             backend = backend,
@@ -268,7 +266,7 @@ class HarfBuzzJvmBackendTest {
         assertEquals("harfbuzz", shaped.backendIdentity.semantic.engineId)
         assertEquals("14.3.0", shaped.backendIdentity.semantic.engineVersion)
         assertEquals("ot", shaped.backendIdentity.semantic.shaperId)
-        assertEquals(JvmHarfBuzzShapingBackend.pinnedFeaturePolicy, shaped.backendIdentity.semantic.featurePolicy)
+        assertEquals(HarfBuzzShapingBackend.pinnedFeaturePolicy, shaped.backendIdentity.semantic.featurePolicy)
         assertTrue(shaped.backendIdentity.semantic.configurationFingerprint.contains("monotone-characters"))
         assertEquals(expectedOperatingSystem(), shaped.backendIdentity.provenance.operatingSystem)
         assertEquals(expectedArchitecture(), shaped.backendIdentity.provenance.architecture)
@@ -294,7 +292,7 @@ class HarfBuzzJvmBackendTest {
 
     @Test
     fun disabledStandardLigatureUsesTheFrozenSeparateGlyphsAndAdvances() {
-        val policy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy
+        val policy = HarfBuzzShapingBackend.pinnedFeaturePolicy
         val shaped = shape(
             backend = backend(),
             text = "fi",
@@ -521,7 +519,7 @@ class HarfBuzzJvmBackendTest {
                 script = OpenTypeScript("Latn"),
                 language = "en",
                 bidiLevel = 0,
-                featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
             ),
         ).successValue()
 
@@ -750,7 +748,7 @@ class HarfBuzzJvmBackendTest {
                 bidiLevel = 0,
                 bot = true,
                 eot = true,
-                featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                 features = emptyList(),
                 graphemeClusters = listOf(prepared.snapshot.range),
             )
@@ -774,7 +772,7 @@ class HarfBuzzJvmBackendTest {
         assertEquals("font.shaping-native-platform-unsupported", failure.error.code)
     }
 
-    private fun backend(): ShapingBackend = JvmHarfBuzzShapingBackend.open().successValue().also(backends::add)
+    private fun backend(): ShapingBackend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
 
     private fun shape(
         backend: ShapingBackend,
@@ -784,7 +782,7 @@ class HarfBuzzJvmBackendTest {
         script: OpenTypeScript,
         language: String,
         bidiLevel: Int,
-        featurePolicy: ShapingFeaturePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        featurePolicy: ShapingFeaturePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
         features: List<OpenTypeFeature> = emptyList(),
     ) = backend.shape(
         request(text(text), font, direction, script, language, bidiLevel, featurePolicy, features),
@@ -797,7 +795,7 @@ class HarfBuzzJvmBackendTest {
         script: OpenTypeScript,
         language: String,
         bidiLevel: Int,
-        featurePolicy: ShapingFeaturePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        featurePolicy: ShapingFeaturePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
         features: List<OpenTypeFeature> = emptyList(),
         graphemeRanges: List<TextRange> = prepared.scalarRanges(),
         resourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,

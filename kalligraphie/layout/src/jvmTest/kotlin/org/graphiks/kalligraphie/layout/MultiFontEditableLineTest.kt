@@ -34,7 +34,7 @@ import org.graphiks.kalligraphie.api.GlyphId
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TextRange
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.AfterTest
@@ -673,7 +673,7 @@ class MultiFontEditableLineTest {
     private fun <T> FontOperationResult<T>.successValue(): T =
         assertIs<FontOperationResult.Success<T>>(this).value
 
-    private fun backend(): ShapingBackend = JvmHarfBuzzShapingBackend.open().successValue().also(backends::add)
+    private fun backend(): ShapingBackend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
 
     private fun text(value: String) = TextSnapshots.decodeUtf16(
         version = TextVersion.create(),

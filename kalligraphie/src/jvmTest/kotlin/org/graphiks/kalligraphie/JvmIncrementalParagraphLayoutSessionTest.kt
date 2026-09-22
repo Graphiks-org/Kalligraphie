@@ -55,23 +55,23 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TypographySnapshot
 import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
-import org.graphiks.kalligraphie.shaping.JvmPreparedFontCachePolicy
-import org.graphiks.kalligraphie.shaping.JvmPreparedFontCacheUsage
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.PreparedFontCachePolicy
+import org.graphiks.kalligraphie.shaping.PreparedFontCacheUsage
 
 class JvmIncrementalParagraphLayoutSessionTest {
     @Test
     fun reusesPreparedFontsAcrossRealMultifontEditsWithinTheDeclaredBudget() {
         val source = fixture("fi سلام")
         val target = source.withText("fi سلام fi")
-        val policy = JvmPreparedFontCachePolicy(2, 4_000_000, 20_000_000, 24_000_000)
+        val policy = PreparedFontCachePolicy(2, 4_000_000, 20_000_000, 24_000_000)
         val session = assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
             JvmIncrementalParagraphLayoutSession.open(4_000_000, policy),
         ).value
         val resolver = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontAssetResolverHandle>>(
             source.catalog.openAssetResolver(),
         ).value
-        assertEquals(JvmPreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
+        assertEquals(PreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
         val materialization = EditableLineMaterialization.Renderable(
             resolver, org.graphiks.kalligraphie.api.FontRenderVariantKey.default,
             org.graphiks.kalligraphie.api.OutlineProfile(maxBytes = 1_000_000, maxContours = 2_048, maxPoints = 16_384, maxCompositeDepth = 8, maxCompositeComponents = 256),
@@ -109,7 +109,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             session.close()
         }
         session.close()
-        assertEquals(JvmPreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
+        assertEquals(PreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
         assertTrue(checkNotNull(session.currentLayout()).layout.lines.isNotEmpty())
         assertFailsWith<IllegalStateException> { session.layout(request(target)) }
     }
@@ -117,7 +117,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
     @Test
     fun rejectsASecondPreparedFontBeforeItsNativeAllocationExceedsTheBudget() {
         val source = fixture("fi")
-        val policy = JvmPreparedFontCachePolicy(2, 4_000_000, 500_000, 4_500_000)
+        val policy = PreparedFontCachePolicy(2, 4_000_000, 500_000, 4_500_000)
         val session = assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
             JvmIncrementalParagraphLayoutSession.open(preparedFontCachePolicy = policy),
         ).value
@@ -133,17 +133,17 @@ class JvmIncrementalParagraphLayoutSessionTest {
             assertPreparedUsageWithin(policy, session.preparedFontCacheUsage)
         } finally { session.close() }
         session.close()
-        assertEquals(JvmPreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
+        assertEquals(PreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
     }
 
     @Test
     fun boundedSessionRetainsCompleteMultifontGeometryWhileReplacingIdleFonts() {
         val source = fixture("fi سلام")
         val policies = listOf(
-            JvmPreparedFontCachePolicy.default.copy(maxEntries = 1),
-            JvmPreparedFontCachePolicy.default.copy(maxSourceBytes = 432_000),
-            JvmPreparedFontCachePolicy.default.copy(maxEstimatedNativeBytes = 2_100_000),
-            JvmPreparedFontCachePolicy.default.copy(maxTotalBytes = 2_600_000),
+            PreparedFontCachePolicy.default.copy(maxEntries = 1),
+            PreparedFontCachePolicy.default.copy(maxSourceBytes = 432_000),
+            PreparedFontCachePolicy.default.copy(maxEstimatedNativeBytes = 2_100_000),
+            PreparedFontCachePolicy.default.copy(maxTotalBytes = 2_600_000),
         )
         val resolver = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontAssetResolverHandle>>(
             source.catalog.openAssetResolver(),
@@ -168,12 +168,12 @@ class JvmIncrementalParagraphLayoutSessionTest {
                         assertPreparedUsageWithin(policy, session.preparedFontCacheUsage)
                     }
                 }
-                assertEquals(JvmPreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
+                assertEquals(PreparedFontCacheUsage(0, 0, 0, 0, 0, 0), session.preparedFontCacheUsage)
             }
         } finally { resolver.close() }
     }
 
-    private fun assertPreparedUsageWithin(policy: JvmPreparedFontCachePolicy, usage: JvmPreparedFontCacheUsage) {
+    private fun assertPreparedUsageWithin(policy: PreparedFontCachePolicy, usage: PreparedFontCacheUsage) {
         assertTrue(usage.idleEntries <= policy.maxEntries)
         assertTrue(usage.idleSourceBytes >= 0 && usage.activeSourceBytes >= 0)
         assertTrue(usage.idleEstimatedNativeBytes >= 0 && usage.activeEstimatedNativeBytes >= 0)
@@ -479,7 +479,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
     @Test
     fun oneBackendServesSuccessiveLayoutsAndSessionCloseIsIdempotent() {
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
@@ -512,7 +512,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             ),
         ).value
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
@@ -562,7 +562,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             ),
         ).layout.lines.single()
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
@@ -610,7 +610,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             ),
         ).layout.lines.single()
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
@@ -639,11 +639,11 @@ class JvmIncrementalParagraphLayoutSessionTest {
         val fixture = fixture("fi ".repeat(4))
         val signedSuffixStart = fixture.snapshot.textIndexAtScalarBoundary(8)
         val referenceDelegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val referenceBackend = ThresholdSignedAdvanceBackend(referenceDelegate, signedSuffixStart)
         val sessionDelegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(
             ThresholdSignedAdvanceBackend(sessionDelegate, signedSuffixStart),
@@ -689,7 +689,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
     fun cancellationAfterFirstFallbackFragmentStartsNoSecondShapeAndKeepsPublication() {
         val token = SwitchableCancellationToken()
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = CancellingAfterFirstShapeBackend(delegate, token)
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
@@ -723,7 +723,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             ),
         ).value
         val delegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
         val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)

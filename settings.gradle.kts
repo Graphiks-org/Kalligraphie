@@ -29,6 +29,10 @@ dependencyResolutionManagement {
                 includeModule("org.graphiks", "kffi-directwrite-jvm")
                 includeModule("org.graphiks", "kffi-harfbuzz")
                 includeModule("org.graphiks", "kffi-harfbuzz-jvm")
+                includeModule("org.graphiks", "kffi-harfbuzz-android")
+                includeModule("org.graphiks", "kffi-harfbuzz-android-native")
+                includeModule("org.graphiks", "kffi-android")
+                includeModule("org.graphiks", "kffi-android-native")
                 includeModule("org.graphiks", "kffi")
                 includeModule("org.graphiks", "kffi-jvm")
             }

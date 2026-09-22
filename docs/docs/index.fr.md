@@ -13,7 +13,7 @@ l’accès aux glyphes.
 - `:kalligraphie` est la façade publique utilisée par les applications.
 - `:kalligraphie:api` contient les contrats publics portables et les types de valeur immuables.
 - `:kalligraphie:unicode` fournit le décodage canonique du texte et l’analyse Unicode de référence sur la JVM.
-- `:kalligraphie:shaping` fournit l’adaptateur HarfBuzz de référence sur la JVM derrière des contrats de composition portables.
+- `:kalligraphie:shaping` fournit l’adaptateur HarfBuzz de référence multiplateforme derrière des contrats de composition portables.
 - `:kalligraphie:layout` positionne les séquences composées et fournit la géométrie exacte des lignes, paragraphes, régions de composition et résultats incrémentaux.
 
 Les modules `:kalligraphie:font:core`, `:kalligraphie:font:sfnt`,

@@ -34,11 +34,14 @@ retourné lorsque — et seulement lorsque — la capacité est indisponible.
 | --- | --- | --- | --- | --- | --- |
 | JVM | Présente | Présent | Présente | Présentes | `jvm-reference` |
 | iOS | Absente | Absent | Absente | Présentes | `absent` / `portable-glyph` |
-| Android | Absente | Absent | Absente | Présentes | `absent` / `portable-glyph` |
+| Android | Absente | Présent | Absente | Présentes | `absent` / `bundled-harfbuzz` / `portable-glyph` |
 
-Le JVM déclare la surface de capacités de référence complète. iOS et Android
-déclarent l'analyse Unicode, le façonnage (shaping) et la mise en page de bout en
-bout `absent`, et la route de représentation des glyphes présente. Le diagnostic
+Le JVM déclare la surface de capacités de référence complète. Android déclare le
+façonnage (shaping) présent via le backend HarfBuzz embarqué (API 28+), et
+déclare l'analyse Unicode et la mise en page de bout en bout `absent` ; iOS
+déclare l'analyse Unicode, le façonnage (shaping) et la mise en page de bout en
+bout `absent`. Les deux cibles mobiles déclarent la route de représentation des
+glyphes présente. Le diagnostic
 d'absence est émis pour chaque capacité absente, indépendamment du fait qu'un
 appelant la requière (requires).
 
@@ -85,10 +88,12 @@ géométrie portable existera à comparer.
 
 ## Limites connues
 
-- L'analyse Unicode portable et le façonnage (shaping) appartiennent à des
-  chantiers distincts : le fournisseur de polices système (system-font-provider)
-  et les liaisons (bindings) HarfBuzz/kffi. Tant qu'ils n'ont pas abouti, iOS et
-  Android déclarent l'analyse et le façonnage absents.
+- L'analyse Unicode portable et la mise en page de bout en bout appartiennent à
+  des chantiers distincts. Android déclare le façonnage (shaping) présent via le
+  backend HarfBuzz embarqué, qui exige l'API 28 ou ultérieure ; le socle Android
+  partagé a été relevé de l'API 24 à l'API 28, un changement cassant délibéré
+  pour les consommateurs API 24–27. iOS déclare toujours l'analyse et le
+  façonnage absents.
 - La lecture et la rastérisation des polices ne font pas partie de ce module.
 - `iosArm64` est compilé mais les tests s'exécutent sur `iosSimulatorArm64` ;
   l'exécution sur appareil physique n'est pas effectuée sur les runners

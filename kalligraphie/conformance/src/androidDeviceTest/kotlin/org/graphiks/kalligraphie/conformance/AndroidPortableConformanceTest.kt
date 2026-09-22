@@ -8,8 +8,9 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AndroidPortableConformanceTest {
     @Test
@@ -34,13 +35,10 @@ class AndroidPortableConformanceTest {
     }
 
     @Test
-    fun declaresAndroidCapabilitiesAndReportsTheAbsenceDiagnostic() {
+    fun declaresAndroidCapabilitiesAndReportsNoShapingAbsence() {
         val identity = currentPortableCapabilityIdentity()
         assertEquals("android", identity.platformId)
-        assertFalse(identity.presenceOf(PortableCapability.SHAPING))
-        assertEquals(
-            CAPABILITY_ABSENCE_DIAGNOSTIC_CODE,
-            identity.absenceDiagnostic(PortableCapability.SHAPING)?.code,
-        )
+        assertTrue(identity.presenceOf(PortableCapability.SHAPING))
+        assertNull(identity.absenceDiagnostic(PortableCapability.SHAPING))
     }
 }

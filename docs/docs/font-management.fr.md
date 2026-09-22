@@ -1248,7 +1248,7 @@ val result = JvmEditableLineFacade.layout(
         font = instance,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en",
-        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
         features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
         materialization = EditableLineMaterialization.LayoutOnly,
@@ -1390,15 +1390,17 @@ opérations ne font pas partie de l’abstraction `LayoutHandle`. Cette API
 n’attribue pas ces ressources à une session de composition et n’introduit
 aucune politique de GPU, d’atlas, de rendu de plateforme ou de rendu.
 
-Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence JVM. Ses
+Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence. Ses
 ressources Linux et macOS x64/arm64 et Windows x64 sont fournies par la liaison
-publiée `org.graphiks:kffi-harfbuzz-jvm`, vérifiées par hash (empreinte
-cryptographique) au chargement de la bibliothèque et jamais recherchées dans
-les bibliothèques du système. Les contrats publics ne contiennent ni type JNI
-ni type natif.
-Android et Apple ne possèdent pas encore d’adapter (adaptateur de plateforme)
-de composition exécutable : ce parcours ne doit donc pas être considéré comme
-conforme sur ces plateformes.
+publiée `org.graphiks:kffi-harfbuzz`, et Android embarque le même moteur via
+l’artefact `org.graphiks:kffi-harfbuzz-android` ; la bibliothèque est vérifiée
+par hash (empreinte cryptographique) au chargement et jamais recherchée dans
+les bibliothèques du système. Le socle Android partagé est l’API 28, relevé
+depuis l’API 24 — un changement cassant délibéré pour les consommateurs API
+24–27. Les contrats publics ne contiennent ni type JNI ni type natif.
+Apple ne possède pas encore d’adapter (adaptateur de plateforme) de composition
+exécutable : ce parcours ne doit donc pas être considéré comme conforme sur les
+plateformes Apple.
 
 ## Repli déterministe entre fontes
 

@@ -34,7 +34,7 @@ import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
@@ -132,7 +132,7 @@ class EditableParagraphEditingTest {
             candidates = listOf(FontResolutionCandidate(face)),
             lastResortFace = face,
         )
-        val backend = JvmHarfBuzzShapingBackend.open().successValue().also(openedBackends::add)
+        val backend = HarfBuzzShapingBackend.open().successValue().also(openedBackends::add)
         val request = ParagraphLayoutRequest(
             snapshot = snapshot,
             unicodeAnalysis = unicodeAnalysis,

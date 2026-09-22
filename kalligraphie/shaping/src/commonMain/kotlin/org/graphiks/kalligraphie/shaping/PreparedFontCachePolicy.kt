@@ -1,14 +1,14 @@
 package org.graphiks.kalligraphie.shaping
 
 /**
- * Immutable admission bounds for one JVM HarfBuzz backend, independent of render-asset caches.
+ * Immutable admission bounds for one HarfBuzz backend, independent of render-asset caches.
  *
  * Every bound includes active and idle prepared fonts. Zero disables admission; all bounds must
  * be nonnegative. Only idle fonts may be evicted. An oversized preparation returns
  * `FontError.ResourceLimitExceeded` before allocating its native source copy or HarfBuzz objects.
  * These bounds govern accounted bytes, not process RSS or an instrumented native allocator.
  */
-public data class JvmPreparedFontCachePolicy(
+public data class PreparedFontCachePolicy(
     /** Maximum number of distinct prepared fonts, including active reservations. */
     public val maxEntries: Int,
     /** Maximum bytes copied from OpenType sources into retained native buffers. */
@@ -26,7 +26,7 @@ public data class JvmPreparedFontCachePolicy(
 
     public companion object {
         /** Default session admission policy: 16 fonts, 64 MiB source, 256 MiB estimated native. */
-        public val default: JvmPreparedFontCachePolicy = JvmPreparedFontCachePolicy(
+        public val default: PreparedFontCachePolicy = PreparedFontCachePolicy(
             16, 64L * 1024 * 1024, 256L * 1024 * 1024, 320L * 1024 * 1024,
         )
 
@@ -47,7 +47,7 @@ public data class JvmPreparedFontCachePolicy(
  * Active reservations count before native allocation. Closing drops idle resources immediately;
  * active bytes remain counted until the last lease returns. This is neither JVM heap nor RSS.
  */
-public data class JvmPreparedFontCacheUsage(
+public data class PreparedFontCacheUsage(
     /** Retained fonts with no active lease. */
     public val idleEntries: Int,
     /** Outstanding uses, including reservations; several leases may share one font. */

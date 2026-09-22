@@ -1116,7 +1116,7 @@ val result = JvmEditableLineFacade.layout(
         font = instance,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en",
-        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
         features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
         materialization = EditableLineMaterialization.LayoutOnly,
@@ -1241,13 +1241,15 @@ but those operations are not part of the `LayoutHandle` abstraction. This API
 does not make a layout session own these resources and introduces no GPU,
 atlas, platform-rendering, or rendering policy.
 
-The embedded HarfBuzz 14.3.0 backend is the JVM reference implementation. Its
+The embedded HarfBuzz 14.3.0 backend is the reference implementation. Its
 Linux and macOS x64/arm64 and Windows x64 resources are delivered by the
-published `org.graphiks:kffi-harfbuzz-jvm` binding, hash-verified when the
-library is loaded, and never found through a system-library search. Public
-contracts contain no JNI or native types. Android and Apple do not yet provide
-executable shaping adapters, so this route must not be treated as conformant on
-those platforms.
+published `org.graphiks:kffi-harfbuzz` binding, and Android ships the same
+engine through the `org.graphiks:kffi-harfbuzz-android` artifact; the library
+is hash-verified when it is loaded and never found through a system-library
+search. The shared Android floor is API 28, raised from API 24 — a deliberate
+breaking change for API 24–27 consumers. Public contracts contain no JNI or
+native types. Apple does not yet provide an executable shaping adapter, so this
+route must not be treated as conformant on Apple platforms.
 
 ## Deterministic multi-font fallback
 

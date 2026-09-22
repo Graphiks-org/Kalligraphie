@@ -34,7 +34,7 @@ import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 class JvmEditableLineLayoutSessionTest {
     @Test
@@ -352,7 +352,7 @@ class JvmEditableLineLayoutSessionTest {
         font = font,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en",
-        featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+        featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
         features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
         materialization = EditableLineMaterialization.LayoutOnly,

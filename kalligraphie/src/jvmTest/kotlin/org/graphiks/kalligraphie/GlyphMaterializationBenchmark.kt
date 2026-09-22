@@ -52,8 +52,8 @@ import org.graphiks.kalligraphie.api.PaintGraphProfile
 import org.graphiks.kalligraphie.api.ParagraphLayoutResult
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
-import org.graphiks.kalligraphie.shaping.JvmPreparedFontCachePolicy
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.PreparedFontCachePolicy
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 
 class GlyphMaterializationBenchmarkTest {
@@ -1044,7 +1044,7 @@ internal object GlyphMaterializationBenchmark {
                     font = font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
-                    featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                    featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                     features = emptyList(),
                     verticalMetrics = org.graphiks.kalligraphie.api.LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
                     materialization = EditableLineMaterialization.Renderable(
@@ -1484,7 +1484,7 @@ internal object GlyphMaterializationBenchmark {
             assetOpenings = operationMeasurement(samples, Observation::assetOpenings, "distinct operation-owned render assets opened per measured iteration"),
             operationReuses = operationMeasurement(samples, Observation::operationReuses, "final-glyph proofs reused from earlier materialization in the same operation per measured iteration"),
             preparedSourceBytes = operationMeasurement(samples, Observation::preparedSourceBytes, "OpenType bytes copied into the session's native source buffers during this sample; retained seeded fonts need no new copy"),
-            estimatedPreparedNativeBytes = operationMeasurement(samples, Observation::estimatedPreparedNativeBytes, "retained estimate at sample end using ${JvmPreparedFontCachePolicy.nativeEstimatorVersion}; excludes source buffers and is not measured native allocation"),
+            estimatedPreparedNativeBytes = operationMeasurement(samples, Observation::estimatedPreparedNativeBytes, "retained estimate at sample end using ${PreparedFontCachePolicy.nativeEstimatorVersion}; excludes source buffers and is not measured native allocation"),
             backendReuses = operationMeasurement(samples, Observation::backendReuses, "existing session/backend used per sample (0 cold, 1 warm); lifecycle defined by the runner"),
             stages = samples.first().stages.keys.associateWith { stage -> percentiles(samples.map { it.stages.getValue(stage) }) },
             workers = workers,
