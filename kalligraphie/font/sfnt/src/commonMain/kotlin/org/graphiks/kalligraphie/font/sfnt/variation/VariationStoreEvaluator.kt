@@ -4,6 +4,7 @@ package org.graphiks.kalligraphie.font.sfnt.variation
 
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.font.sfnt.VariationRegionAxisFactor
 import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
@@ -365,20 +366,12 @@ public object VariationStoreEvaluator {
     /**
      * Evaluates the factor one region contributes on one axis at [coordinate].
      *
-     * [start]/[peak]/[end] are the region's normalized F2Dot14 bounds on the axis. The factor is
-     * `1.0` for an invalid bound ordering (`start > peak || peak > end`), for a region that spans
-     * zero (`start < 0.0 && end > 0.0` with `peak != 0.0`), and for a zero peak; it is `0.0` when
-     * [coordinate] lies outside `[start, end]`, `1.0` exactly at [peak], and linear between
-     * `start → peak` and `peak → end` otherwise. Factors of all axes are multiplied.
+     * [start]/[peak]/[end] are the region's normalized F2Dot14 bounds on the axis. Delegates to the
+     * shared [VariationRegionAxisFactor] so the `gvar`/`cvar` tuple variation stores and the
+     * `ItemVariationStore` apply one region rule. Factors of all axes are multiplied.
      */
-    private fun regionAxisFactor(start: Double, peak: Double, end: Double, coordinate: Double): Double {
-        if (start > peak || peak > end) return 1.0
-        if (start < 0.0 && end > 0.0 && peak != 0.0) return 1.0
-        if (peak == 0.0) return 1.0
-        if (coordinate < start || coordinate > end) return 0.0
-        if (coordinate == peak) return 1.0
-        return if (coordinate < peak) (coordinate - start) / (peak - start) else (end - coordinate) / (end - peak)
-    }
+    private fun regionAxisFactor(start: Double, peak: Double, end: Double, coordinate: Double): Double =
+        VariationRegionAxisFactor.factor(start, peak, end, coordinate)
 
     private fun truncated(message: String, tag: String): FontOperationResult.Failure =
         variationFailure("font.variation.truncated-store", message, tag)

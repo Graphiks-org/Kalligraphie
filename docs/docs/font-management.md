@@ -979,7 +979,13 @@ alongside the outline and exposed through the scaler's internal
 `GlyphVariationPhantoms` (right-minus-left advance-width and top-minus-bottom
 advance-height deltas), and are `null` at the default instance. The metric route
 consumes them as a fallback when `HVAR`/`VVAR` are absent, so a non-default
-selection now changes the metrics a portable provider returns.
+selection now changes the metrics a portable provider returns. A `gvar` tuple
+region that crosses zero or declares a mis-ordered bound interval now ignores
+that axis (`1.0`) per the OpenType region rule, sharing one region rule — the
+internal `VariationRegionAxisFactor` — with the `ItemVariationStore` route, and
+peak-only and well-formed regions are unchanged. This follows the render-time
+and whole-font rule rather than the partial instancer's drop, because this
+engine is a renderer.
 
 The portable CFF2 outline route now varies too. Each charstring's `blend`
 operands are evaluated at the instance's normalized axes, with the region

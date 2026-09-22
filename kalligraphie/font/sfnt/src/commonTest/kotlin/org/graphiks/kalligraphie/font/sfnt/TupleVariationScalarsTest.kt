@@ -49,6 +49,27 @@ class TupleVariationScalarsTest {
     }
 
     @Test
+    fun ignoresAZeroCrossingIntermediateRegion() {
+        val peak = doubleArrayOf(1.0)
+        val start = doubleArrayOf(-1.0)
+        val end = doubleArrayOf(1.0)
+        assertEquals(1.0, TupleVariationScalars.scalar(listOf(0.0), peak, start, end))
+        assertEquals(1.0, TupleVariationScalars.scalar(listOf(0.5), peak, start, end))
+    }
+
+    @Test
+    fun ignoresAnInvalidIntermediateBoundOrdering() {
+        assertEquals(
+            1.0,
+            TupleVariationScalars.scalar(listOf(0.0), doubleArrayOf(0.2), doubleArrayOf(0.5), doubleArrayOf(1.0)),
+        )
+        assertEquals(
+            1.0,
+            TupleVariationScalars.scalar(listOf(0.0), doubleArrayOf(1.0), doubleArrayOf(0.0), doubleArrayOf(0.5)),
+        )
+    }
+
+    @Test
     fun multiAxisScalarIsTheProductOfAxisFactors() {
         val peak = doubleArrayOf(1.0, 1.0)
         assertEquals(0.5, TupleVariationScalars.scalar(listOf(1.0, 0.5), peak, null, null))
