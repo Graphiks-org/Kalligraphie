@@ -1,10 +1,14 @@
+@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+
 package org.graphiks.kalligraphie.shaping
 
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontAxisCoordinate
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontGeometryParameters
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -772,6 +776,46 @@ class HarfBuzzPortableBackendTest {
         assertEquals("font.shaping-native-platform-unsupported", failure.error.code)
     }
 
+    /**
+     * The prepared-font pool is keyed by the full instance key, so two locations occupy two idle
+     * entries; a key that omitted the location would collapse them into one.
+     */
+    @Test
+    fun thePreparedFontPoolIsKeyedByTheFullInstanceKeyIncludingTheLocation() {
+        val backend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
+        val locationFree = fontInstanceWithWght("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf", null)
+        val locationSet = fontInstanceWithWght("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf", 1.0f)
+        val inspector = HarfBuzzShapingBackend.preparedFontCacheUsageInspector(backend)
+
+        assertTrue(locationFree.key != locationSet.key, "the location must change the instance key")
+        shape(backend, "A", locationFree, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)
+        shape(backend, "A", locationSet, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)
+
+        assertEquals(2, inspector().idleEntries)
+    }
+
+    /**
+     * Two distinct default-location keys — the implicit default (no selection) and the explicit
+     * design default (`wght = 0.0`) — are independent paths, not one shared cache entry, and each
+     * must equal the independently audited design default
+     * (`hb-shape NotoSansJP-VerticalFixture.ttf 'A'` with no `--variations` -> `ax 574`). This is
+     * not a same-instance comparison: a wrong normalized-to-design conversion, a broken default
+     * path, or a mishandled all-zero location would move one of these off `574`.
+     */
+    @Test
+    fun aVariableFaceAtTheDefaultLocationShapesAtTheAuditedDesignDefault() {
+        val backend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
+        val implicitDefault = fontInstanceWithWght("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf", null)
+        val explicitDefault = fontInstanceWithWght("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf", 0.0f)
+        assertTrue(implicitDefault.key != explicitDefault.key, "the explicit design-default must be a distinct key")
+
+        for (instance in listOf(implicitDefault, explicitDefault)) {
+            val advances = shape(backend, "A", instance, ShapingDirection.LEFT_TO_RIGHT, OpenTypeScript("Latn"), "en", 0)
+                .glyphs.map { it.xAdvance.value }
+            assertEquals(listOf(574f), advances)
+        }
+    }
+
     private fun backend(): ShapingBackend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
 
     private fun shape(
@@ -838,6 +882,16 @@ class HarfBuzzPortableBackendTest {
         val catalog = Kalligraphie.embedded(listOf(source)).successValue()
         val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return face.instantiate(FontInstanceDescriptor(layoutSize = layoutSize)).successValue()
+    }
+
+    private fun fontInstanceWithWght(resource: String, normalized: Float?): FontInstance {
+        val source = FontSource(fixtureBytes(resource), FontSourceProvenance("Noto Sans JP vertical fixture"))
+        val catalog = Kalligraphie.embedded(listOf(source)).successValue()
+        val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
+        val geometry = normalized?.let {
+            FontGeometryParameters(normalizedAxes = listOf(FontAxisCoordinate("wght", it)))
+        } ?: FontGeometryParameters()
+        return face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(1000f), geometry = geometry)).successValue()
     }
 
     private fun fixtureBytes(resource: String): ByteArray =
