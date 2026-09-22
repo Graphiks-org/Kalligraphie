@@ -19,17 +19,30 @@ internal interface HarfBuzzPlatformBinding {
     /** Distribution provenance reported by the loaded native library. */
     val identity: PlatformBindingIdentity
 
+    /**
+     * Whether this binding can apply a non-default normalized variation location.
+     *
+     * `false` means a location with any coordinate `!= 0f` must be refused with the typed
+     * `font.shaping-variation-unsupported` failure rather than shaping without it. An empty
+     * location and an explicitly design-default (`[0.0]`) location are admitted either way.
+     */
+    val supportsVariationLocation: Boolean
+
     /** Allocates a shaping buffer owned by the caller; every buffer must be [PlatformHarfBuzzBuffer.close]d. */
     fun createBuffer(): PlatformHarfBuzzBuffer
 
     /**
      * Opens a blob/face/font over [fontBytes] at [faceIndex].
      *
+     * [variationLocation] is the instance's normalized location in the face's `fvar` axis order
+     * (empty means "no variation"); a non-default value (any coordinate `!= 0f`) may be applied
+     * only when [supportsVariationLocation] is `true`, while an all-zero location is a no-op.
+     *
      * The platform font must be scaled by its face [PlatformPreparedFont.unitsPerEm] in design units
      * only: the caller applies the layout size through [DesignToLayoutScale]. Do not pre-apply the
      * layout size here — doing so would double-scale every shaped metric.
      */
-    fun prepare(fontBytes: ByteArray, faceIndex: Int): PlatformPreparedFont
+    fun prepare(fontBytes: ByteArray, faceIndex: Int, variationLocation: FloatArray): PlatformPreparedFont
 
     /** Releases the native objects retained by [prepared]. */
     fun release(prepared: PlatformPreparedFont)

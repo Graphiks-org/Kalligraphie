@@ -41,8 +41,27 @@ internal class HarfBuzzBindings private constructor(private val binding: HarfBuz
         ),
     )
 
-    fun prepare(fontBytes: ByteArray, faceIndex: Int, layoutSize: Float): PreparedHarfBuzzFont {
-        val prepared = binding.prepare(fontBytes, faceIndex)
+    /**
+     * Opens a prepared font, applying [variationLocation] when the binding supports it.
+     *
+     * A location with any non-zero coordinate is "non-default"; an empty or all-zero
+     * (explicit design-default) location is a no-op and is admitted on every binding. A
+     * non-default location on a binding that cannot apply it is a typed failure rather than a
+     * silently unvaried shape.
+     */
+    fun prepare(
+        fontBytes: ByteArray,
+        faceIndex: Int,
+        layoutSize: Float,
+        variationLocation: FloatArray,
+    ): PreparedHarfBuzzFont {
+        if (variationLocation.any { it != 0f } && !binding.supportsVariationLocation) {
+            throw HarfBuzzBindingException(
+                HarfBuzzBindingFailure.VARIATION_UNSUPPORTED,
+                "The pinned HarfBuzz binding cannot apply a non-default variation location.",
+            )
+        }
+        val prepared = binding.prepare(fontBytes, faceIndex, variationLocation)
         val designToLayout = try {
             DesignToLayoutScale.create(layoutSize, prepared.unitsPerEm)
         } catch (error: Throwable) {
@@ -269,6 +288,7 @@ internal enum class HarfBuzzBindingFailure {
     SYMBOL_RESOLUTION,
     VERSION_MISMATCH,
     NATIVE_OPERATION,
+    VARIATION_UNSUPPORTED,
 }
 
 /** Portable binding exception raised by [openHarfBuzzPlatformBinding] and mapped by [bindingFailureError]. */
@@ -287,6 +307,7 @@ internal fun bindingFailureError(failure: HarfBuzzBindingException): FontOperati
         -> "font.shaping-native-load-failed"
         HarfBuzzBindingFailure.VERSION_MISMATCH -> "font.shaping-native-version-mismatch"
         HarfBuzzBindingFailure.NATIVE_OPERATION -> "font.shaping-native-failure"
+        HarfBuzzBindingFailure.VARIATION_UNSUPPORTED -> "font.shaping-variation-unsupported"
     }
     return shapingFailure(code, failure.message ?: "The bundled HarfBuzz binding failed.")
 }

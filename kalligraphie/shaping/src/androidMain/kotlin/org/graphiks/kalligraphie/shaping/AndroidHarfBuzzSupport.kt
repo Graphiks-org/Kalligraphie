@@ -43,7 +43,9 @@ private class AndroidHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuz
 
     override fun createBuffer(): PlatformHarfBuzzBuffer = AndroidHarfBuzzBuffer(hb, hb.createBuffer())
 
-    override fun prepare(fontBytes: ByteArray, faceIndex: Int): PlatformPreparedFont {
+    override val supportsVariationLocation: Boolean = false
+
+    override fun prepare(fontBytes: ByteArray, faceIndex: Int, variationLocation: FloatArray): PlatformPreparedFont {
         val blob = hb.createBlob(fontBytes)
         var face: HarfBuzzFace? = null
         var font: HarfBuzzFont? = null
