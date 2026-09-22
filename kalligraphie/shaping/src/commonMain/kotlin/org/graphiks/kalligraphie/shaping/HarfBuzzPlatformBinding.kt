@@ -78,7 +78,7 @@ internal interface PlatformPreparedFont {
      * of the ink rectangle and the HarfBuzz y axis points up, `width` is `xMax - xMin` and
      * `height` is `yMin - yMax` (negative). The result is the varied outline envelope in the
      * font's design units and excludes `gvar` phantom points, matching the engine's ink bounds.
-     * Consumed by the exit-criterion cross-check in `:kalligraphie:shaping:jvmTest`, which is the
+     * Consumed by the ink-bounds cross-check in `:kalligraphie:shaping:jvmTest`, which is the
      * only caller: no shaping path reads ink extents.
      */
     fun extents(glyphId: Int): PlatformGlyphExtents
