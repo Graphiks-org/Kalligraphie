@@ -618,7 +618,7 @@ public class PreparedTrueTypeFont internal constructor(
      * Whether [normalizedAxes] selects a non-default instance.
      *
      * An empty location and an all-zero location both name the default instance, whose static
-     * `glyf` composite coincides with `VARC`'s default, so neither consults `VARC`.
+     * composite (`glyf` or CFF2) coincides with `VARC`'s default, so neither consults `VARC`.
      */
     private fun usesNonDefaultVariationLocation(normalizedAxes: List<FontAxisCoordinate>): Boolean =
         normalizedAxes.any { it.value != 0f }
@@ -648,9 +648,7 @@ public class PreparedTrueTypeFont internal constructor(
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
         }
-        if (parsedFont.flavor == FontFlavor.TRUETYPE && parsedFont.hasVarcTable &&
-            usesNonDefaultVariationLocation(normalizedAxes)
-        ) {
+        if (parsedFont.hasVarcTable && usesNonDefaultVariationLocation(normalizedAxes)) {
             return variationFailure(
                 code = "font.variation.varc-unsupported",
                 message = "The VARC variable-composite table is not supported; a non-default instance would render the static composite.",
