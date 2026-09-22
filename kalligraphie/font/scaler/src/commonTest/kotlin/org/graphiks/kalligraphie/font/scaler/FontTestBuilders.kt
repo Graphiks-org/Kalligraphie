@@ -11,6 +11,8 @@ internal fun minimalTrueTypeFont(
     maxComponentDepth: Int = 8,
     tables: Map<String, ByteArray>,
     extraTables: Map<String, ByteArray> = emptyMap(),
+    scalerType: Int = 0x00010000,
+    maxpVersion: Int = 0x00010000,
 ): ByteArray {
     val requiredTables = linkedMapOf(
         "head" to headTable(unitsPerEm = 2048, indexToLocFormat = indexToLocFormat),
@@ -22,6 +24,7 @@ internal fun minimalTrueTypeFont(
             maxCompositeContours = maxCompositeContours,
             maxComponentElements = maxComponentElements,
             maxComponentDepth = maxComponentDepth,
+            version = maxpVersion,
         ),
         "name" to nameTable(),
         "cmap" to byteArrayOf(0, 0, 0, 0),
@@ -40,7 +43,7 @@ internal fun minimalTrueTypeFont(
         nextOffset += requiredTables.getValue(tag).size
     }
     val fontBytes = ByteArray(nextOffset)
-    fontBytes.writeUInt32(0, 0x00010000)
+    fontBytes.writeUInt32(0, scalerType)
     fontBytes.writeUInt16(4, tableTags.size)
     var directoryOffset = 12
     for (tag in tableTags) {
@@ -141,6 +144,19 @@ internal fun singleAxisFvarTable(): ByteArray =
         bytes.writeUInt16(34, 1)
     }
 
+/**
+ * A minimal `VARC` 1.0 header: major/minor version followed by the five offset fields
+ * (`Coverage`, `MultiVarStore`, `ConditionList`, `AxisIndicesList`, `VarCompositeGlyphs`).
+ *
+ * The portable outline route never decodes the table — it detects the tag and reports the typed
+ * `font.variation.varc-unsupported` failure — so the offsets are deliberately left at zero.
+ */
+internal fun varcTable(): ByteArray =
+    ByteArray(24).also { bytes ->
+        bytes.writeUInt16(0, 1)
+        bytes.writeUInt16(2, 0)
+    }
+
 internal fun gvarTable(axisCount: Int, glyphRecords: List<ByteArray>): ByteArray {
     val headerSize = 20
     val offsetsSize = (glyphRecords.size + 1) * 2
@@ -218,9 +234,10 @@ private fun maxpTable(
     maxCompositeContours: Int,
     maxComponentElements: Int,
     maxComponentDepth: Int,
+    version: Int,
 ): ByteArray =
     ByteArray(32).also { bytes ->
-        bytes.writeUInt32(0, 0x00010000)
+        bytes.writeUInt32(0, version)
         bytes.writeUInt16(4, glyphCount)
         bytes.writeUInt16(6, maxPoints)
         bytes.writeUInt16(8, maxContours)

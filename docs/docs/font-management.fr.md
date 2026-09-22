@@ -1031,8 +1031,9 @@ Une face variable expose ses axes `fvar` et ses instances nommées via
 sélection en coordonnées de conception vers des coordonnées normalisées via
 `FontFace.normalize(design)`. Les deux appels de métadonnées renvoient des
 instantanés immuables et sont vides pour une face statique. `FontFace.stat()`
-renvoie facultativement une surface `STAT` en lecture seule, avec
-`Success(null)` lorsque la face n’a pas de table `STAT` utilisable.
+renvoie facultativement une surface `STAT` en lecture seule. La lecture portable
+de `STAT` n’est pas encore implémentée : l’espace réservé renvoie `Success(null)`,
+valeur qui couvre aussi une face sans table `STAT` utilisable.
 
 Passez des coordonnées de conception à une instance avec le champ facultatif
 `FontInstanceDescriptor.variation` :
@@ -1149,9 +1150,16 @@ l’emplacement de table `gvar`.
 `FontFace.stat()` reste un espace réservé avec valeur par défaut qui renvoie
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
 différée, au même titre que les ponts natifs de métriques (limités au cas par
-défaut), `avar` version 2, `cvar`, `VARC`, les champs de limite de profil qui régénèrent les
+défaut), `avar` version 2, `cvar`, les champs de limite de profil qui régénèrent les
 empreintes et la facturation de budget de cache §8
-`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Le
+`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Une
+fonte dont les composites variables vivent dans une table `VARC` est détectée
+plutôt que rendue silencieusement : sur les routes de contour portables, une
+instance non-défaut échoue avec `font.variation.varc-unsupported` quel que soit
+le format de contour (`glyf` ou CFF2), tandis que l’instance par défaut reste sur
+le composite statique. Les lectures de métriques horizontales, verticales et de
+fonte ne sont pas affectées car `VARC` ne porte aucune donnée d’avance (les avances
+proviennent de `hmtx`/`HVAR`). Le
 sous-plan « composition à l’instance » lie désormais la vérification croisée
 **horizontale** des métriques HarfBuzz sur JVM et Android : la location normalisée
 de l’instance atteint la fonte HarfBuzz préparée (ordonnée selon l’ordre des axes

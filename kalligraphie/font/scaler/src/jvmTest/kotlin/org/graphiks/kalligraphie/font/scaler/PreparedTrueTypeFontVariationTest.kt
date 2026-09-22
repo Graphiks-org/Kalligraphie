@@ -4,6 +4,7 @@ package org.graphiks.kalligraphie.font.scaler
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -35,6 +36,28 @@ class PreparedTrueTypeFontVariationTest {
         assertEquals(0.0, phantoms.topY)
         assertEquals(0.0, phantoms.bottomY)
         assertEquals(0.0, phantoms.verticalAdvanceDelta)
+    }
+
+    @Test
+    fun doesNotRejectANonDefaultOutlineOnARealVariableFaceWithoutVarc() {
+        val parsed = assertIs<FontOperationResult.Success<ParsedTrueTypeFont>>(
+            SfntReader.readMetadata(FontSource(bytes, FontSourceProvenance("NotoSansJP-VerticalFixture"))),
+        ).value
+        assertFalse(parsed.hasVarcTable)
+        assertIs<FontOperationResult.Success<ScalerGlyphOutline>>(
+            preparedFixture().readGlyphOutline(
+                GlyphId(1),
+                OutlineProfile(
+                    maxBytes = 4_000_000,
+                    maxContours = 256,
+                    maxPoints = 16_384,
+                    maxCompositeDepth = 8,
+                    maxCompositeComponents = 256,
+                ),
+                CancellationToken.none,
+                listOf(FontAxisCoordinate("wght", 1f)),
+            ),
+        )
     }
 
     @Test

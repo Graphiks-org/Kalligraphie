@@ -332,6 +332,16 @@ public class ParsedTrueTypeFont(
     /** Immutable map of SFNT table records keyed by tag. */
     public val tableRecords: Map<String, TableRecord> = ImmutableSnapshotMap(tableRecords)
 
+    /**
+     * Whether the face carries a `VARC` variable-composite table.
+     *
+     * `VARC` is out of scope for the portable outline route, where a non-default instance would
+     * otherwise render the static `glyf` composite silently. The flag is derived from the validated
+     * table directory, so it costs one map lookup and never rescans a glyph.
+     */
+    public val hasVarcTable: Boolean
+        get() = tableRecords.containsKey("VARC")
+
     /** Returns the table records for destructuring. */
     public operator fun component1(): Map<String, TableRecord> = tableRecords
 

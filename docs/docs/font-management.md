@@ -919,8 +919,9 @@ A variable face exposes its `fvar` axes and named instances through
 `FontFace.variationAxes()` and `FontFace.namedInstances()`, and maps a design
 selection to normalized coordinates through `FontFace.normalize(design)`. Both
 metadata calls return immutable snapshots and are empty for a static face.
-`FontFace.stat()` optionally returns a read-only `STAT` surface, reporting
-`Success(null)` when the face has no usable `STAT` table.
+`FontFace.stat()` optionally returns a read-only `STAT` surface. Portable `STAT`
+reading is not implemented yet, so the placeholder returns `Success(null)`; that
+value also covers a face with no usable `STAT` table.
 
 Pass design coordinates to an instance with the optional
 `FontInstanceDescriptor.variation` field:
@@ -1025,10 +1026,16 @@ on the portable outline route. Malformed `gvar` data fails with
 
 `FontFace.stat()` remains a defaulted placeholder that returns `Success(null)`:
 portable `STAT` reading is a separate concern and is deferred, alongside native
-metric bridges (default-only), `avar` version 2, `cvar`, `VARC`,
+metric bridges (default-only), `avar` version 2, `cvar`,
 the fingerprint-regenerating profile limit fields,
 and the §8 `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the
-decoded metric tables. The shaping-at-instance sub-plan now binds the HarfBuzz
+decoded metric tables. A font whose variable composites live in a `VARC` table is
+detected rather than rendered silently: on the portable outline routes a
+non-default instance fails with `font.variation.varc-unsupported` whatever the
+outline flavour (`glyf` or CFF2), while the default instance stays on the static
+composite. Metric, vertical-metric and font-metric reads are unaffected because
+`VARC` carries no advance data (advances come from `hmtx`/`HVAR`). The shaping-at-instance
+sub-plan now binds the HarfBuzz
 **horizontal** metric cross-check on JVM and Android: the instance's normalized
 location reaches the prepared HarfBuzz font (ordered into `fvar` axis order) and
 our `metrics()` advance is asserted equal to HarfBuzz's advance at the same

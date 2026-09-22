@@ -29,6 +29,7 @@ import org.graphiks.kalligraphie.font.sfnt.variation.MvarData
 import org.graphiks.kalligraphie.font.sfnt.variation.MvarReader
 import org.graphiks.kalligraphie.font.sfnt.variation.VvarData
 import org.graphiks.kalligraphie.font.sfnt.variation.VvarReader
+import org.graphiks.kalligraphie.font.sfnt.variationFailure
 import kotlin.concurrent.atomics.AtomicReference
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
 
@@ -614,6 +615,15 @@ public class PreparedTrueTypeFont internal constructor(
     }
 
     /**
+     * Whether [normalizedAxes] selects a non-default instance.
+     *
+     * An empty location and an all-zero location both name the default instance, whose static
+     * composite (`glyf` or CFF2) coincides with `VARC`'s default, so neither consults `VARC`.
+     */
+    private fun usesNonDefaultVariationLocation(normalizedAxes: List<FontAxisCoordinate>): Boolean =
+        normalizedAxes.any { it.value != 0f }
+
+    /**
      * Reads one bounded outline using the face-level cached glyph tables.
      *
      * Cold preparation observes [cancellationToken] while copying and
@@ -637,6 +647,13 @@ public class PreparedTrueTypeFont internal constructor(
         if (cancellationToken.isCancellationRequested()) return FontOperationResult.Cancelled()
         if (glyphId.value !in 0 until parsedFont.metadata.glyphCount) {
             return failure(FontError.GlyphOutOfRange(glyphId.value))
+        }
+        if (parsedFont.hasVarcTable && usesNonDefaultVariationLocation(normalizedAxes)) {
+            return variationFailure(
+                code = "font.variation.varc-unsupported",
+                message = "The VARC variable-composite table is not supported; a non-default instance would render the static composite.",
+                tag = "VARC",
+            )
         }
         if (parsedFont.flavor != FontFlavor.TRUETYPE) {
             return decodePortableOutline(glyphId, profile, cancellationToken, normalizedAxes)
