@@ -10,6 +10,7 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphContour
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
+import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.font.scaler.ScalerGlyphOutline
 
@@ -46,4 +47,57 @@ class OutlineMaterializerTest {
         assertEquals(64L, failure.diagnostics.single().data.observedValue)
         assertEquals(32L, failure.diagnostics.single().data.limit)
     }
+
+    @Test
+    fun appliesSyntheticBoldWhenTheMaterializedOutlineIsBuilt() {
+        val result = OutlineMaterializer.materialize(squareOutline(), squareProfile(), syntheticBold = true)
+
+        val materialized = assertIs<GlyphRepresentation.Outline>(
+            assertIs<FontOperationResult.Success<GlyphRepresentation>>(result).value,
+        ).outline
+
+        assertEquals(DesignBounds(-20, -20, 120, 120), materialized.bounds)
+        assertEquals(4, materialized.pointCount)
+        val move = assertIs<GlyphOutlineCommand.MoveTo>(materialized.contours.single().commands.first())
+        assertEquals(-20.0, move.x, 1e-9)
+        assertEquals(-20.0, move.y, 1e-9)
+    }
+
+    @Test
+    fun leavesTheMaterializedOutlineUnchangedWithoutSyntheticFlags() {
+        val result = OutlineMaterializer.materialize(squareOutline(), squareProfile())
+
+        val materialized = assertIs<GlyphRepresentation.Outline>(
+            assertIs<FontOperationResult.Success<GlyphRepresentation>>(result).value,
+        ).outline
+
+        assertEquals(DesignBounds(0, 0, 100, 100), materialized.bounds)
+    }
+
+    private fun squareOutline(): ScalerGlyphOutline = ScalerGlyphOutline(
+        glyphId = 1,
+        unitsPerEm = 1_000,
+        bounds = DesignBounds(0, 0, 100, 100),
+        contours = listOf(
+            GlyphContour(
+                listOf(
+                    GlyphOutlineCommand.MoveTo(0, 0),
+                    GlyphOutlineCommand.LineTo(100, 0),
+                    GlyphOutlineCommand.LineTo(100, 100),
+                    GlyphOutlineCommand.LineTo(0, 100),
+                    GlyphOutlineCommand.Close,
+                ),
+            ),
+        ),
+        pointCount = 4,
+        components = emptyList(),
+    )
+
+    private fun squareProfile(): OutlineProfile = OutlineProfile(
+        maxBytes = 4_096,
+        maxContours = 1,
+        maxPoints = 4,
+        maxCompositeDepth = 1,
+        maxCompositeComponents = 1,
+    )
 }
