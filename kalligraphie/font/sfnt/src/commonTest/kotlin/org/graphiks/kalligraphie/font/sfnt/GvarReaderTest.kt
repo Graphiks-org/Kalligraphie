@@ -247,6 +247,46 @@ class GvarReaderTest {
     }
 
     @Test
+    fun ignoresAnIntermediateRegionCrossingZero() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(1.0),
+                    intermediate = true,
+                    start = listOf(-1.0),
+                    end = listOf(1.0),
+                    data = packedDeltas(intArrayOf(20, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(data.glyphDeltas(0, listOf(0), listOf(100.0), listOf(200.0), listOf(0.0)))
+        assertEquals(20.0, deltas!!.xDelta(0))
+    }
+
+    @Test
+    fun ignoresAnIntermediateRegionWithInvalidBoundOrdering() {
+        val record = gvarGlyphRecord(
+            sharedPointNumbers = null,
+            tuples = listOf(
+                gvarTuple(
+                    peak = listOf(0.25),
+                    intermediate = true,
+                    start = listOf(0.5),
+                    end = listOf(1.0),
+                    data = packedDeltas(intArrayOf(20, 0, 0, 0, 0)) + packedDeltas(intArrayOf(0, 0, 0, 0, 0)),
+                ),
+            ),
+        )
+        val gvar = gvarTable(1, 1, false, emptyList(), listOf(record))
+        val data = success(GvarReader.read(gvar, 1, 1))
+        val deltas = success(data.glyphDeltas(0, listOf(0), listOf(100.0), listOf(200.0), listOf(0.0)))
+        assertEquals(20.0, deltas!!.xDelta(0))
+    }
+
+    @Test
     fun returnsNullForGlyphIdOutOfRange() {
         val gvar = gvarTable(1, 1, false, emptyList(), listOf(ByteArray(0)))
         val data = success(GvarReader.read(gvar, 1, 1))

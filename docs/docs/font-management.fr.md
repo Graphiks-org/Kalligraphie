@@ -1095,7 +1095,14 @@ composant sont décodés en même temps que le contour et exposés via
 droite moins gauche, delta d’avance verticale haut moins bas) ; ils valent
 `null` à l’instance par défaut. La route des métriques les consomme en repli
 lorsque `HVAR`/`VVAR` sont absents ; une sélection non par défaut change
-désormais les métriques renvoyées par un fournisseur portable.
+désormais les métriques renvoyées par un fournisseur portable. Une région de
+tuple `gvar` qui traverse zéro ou déclare un intervalle de bornes mal ordonné
+ignore désormais cet axe (`1.0`) selon la règle de région OpenType, en
+partageant une règle de région unique — l’interne `VariationRegionAxisFactor` —
+avec la route `ItemVariationStore` ; les régions à pic seul ou bien formées
+restent inchangées. Cela suit la règle du rendu et de l’instanciation de fonte
+entière plutôt que l’abandon de l’instancer partiel, car ce moteur est un moteur
+de rendu.
 
 La route portable de contours CFF2 varie elle aussi désormais. Les opérandes
 `blend` de chaque charstring sont évaluées aux axes normalisés de l’instance,

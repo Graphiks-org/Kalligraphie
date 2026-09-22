@@ -2,8 +2,6 @@
 
 package org.graphiks.kalligraphie.font.sfnt
 
-import kotlin.math.abs
-
 /** Bounds applied while decoding the OpenType `gvar` table. */
 @org.graphiks.kalligraphie.api.KalligraphieInternalApi
 public data class GvarLimits(
@@ -52,10 +50,11 @@ internal const val GVAR_TUPLE_INDEX_MASK: Int = 0x0fff
 /**
  * Evaluates the scalar factor of one `gvar` tuple (a.k.a. region) at normalized coordinates.
  *
- * Without an intermediate region the factor is zero at the origin, linear between the origin and
- * the peak, and zero in the opposite direction or beyond the peak magnitude. With an intermediate
- * region the factor is zero outside `[start, end]`, `1` at the peak, and linearly interpolated on
- * either side. Factors of all axes are multiplied.
+ * The factor is the product over axes of the shared [VariationRegionAxisFactor] rule, so the
+ * `gvar`/`cvar` tuple variation stores and the `ItemVariationStore` agree. Without an intermediate
+ * region each axis is treated as the peak-only tent `start = min(peak, 0.0)` and
+ * `end = max(peak, 0.0)`; with one, the decoded `start`/`end` bounds are used. A zero peak, a
+ * zero-crossing region or an invalid bound ordering ignores that axis (`1.0`).
  */
 internal object TupleVariationScalars {
     fun scalar(
@@ -68,32 +67,20 @@ internal object TupleVariationScalars {
         for (axis in peak.indices) {
             val coordinate = normalizedAxes.getOrElse(axis) { 0.0 }
             val peakValue = peak[axis]
-            if (peakValue == 0.0) continue
-            val axisScalar = if (startTuple != null && endTuple != null) {
-                val start = startTuple.getOrElse(axis) { 0.0 }
-                val end = endTuple.getOrElse(axis) { 0.0 }
-                when {
-                    coordinate < start || coordinate > end || start > peakValue || peakValue > end -> 0.0
-                    coordinate == peakValue -> 1.0
-                    coordinate < peakValue -> (coordinate - start) / (peakValue - start)
-                    else -> (end - coordinate) / (end - peakValue)
-                }
+            val start: Double
+            val end: Double
+            if (startTuple != null && endTuple != null) {
+                start = startTuple.getOrElse(axis) { 0.0 }
+                end = endTuple.getOrElse(axis) { 0.0 }
             } else {
-                when {
-                    coordinate == 0.0 -> 0.0
-                    !sameDirection(coordinate, peakValue) -> 0.0
-                    abs(coordinate) > abs(peakValue) -> 0.0
-                    else -> coordinate / peakValue
-                }
+                start = minOf(peakValue, 0.0)
+                end = maxOf(peakValue, 0.0)
             }
-            scalar *= axisScalar
+            scalar *= VariationRegionAxisFactor.factor(start, peakValue, end, coordinate)
             if (scalar == 0.0) return 0.0
         }
         return scalar
     }
-
-    private fun sameDirection(coordinate: Double, peakValue: Double): Boolean =
-        (coordinate < 0.0 && peakValue < 0.0) || (coordinate > 0.0 && peakValue > 0.0)
 }
 
 /**

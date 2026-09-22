@@ -9,6 +9,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import org.graphiks.kalligraphie.api.CancellationToken
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.font.sfnt.TupleVariationScalars
+import org.graphiks.kalligraphie.font.sfnt.VariationRegionAxisFactor
 
 class VariationStoreEvaluatorTest {
     @Test
@@ -56,6 +58,40 @@ class VariationStoreEvaluatorTest {
         assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(startAfterPeak, 0, listOf(1.0)))
         assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(peakAfterEnd, 0, listOf(0.0)))
         assertContentEquals(doubleArrayOf(1.0), VariationStoreEvaluator.scalars(peakAfterEnd, 0, listOf(0.5)))
+    }
+
+    @Test
+    fun sharesTheRegionRuleWithTheSharedFactorAndTheTupleStores() {
+        val regions = listOf(
+            Triple(0.0, 0.5, 1.0),
+            Triple(-1.0, 1.0, 1.0),
+            Triple(0.0, 1.0, 1.0),
+            Triple(1.0, 0.5, 1.0),
+            Triple(0.0, 1.0, 0.5),
+        )
+        val coordinates = listOf(-1.0, -0.5, 0.0, 0.25, 0.5, 0.75, 1.0, 1.5)
+        for ((start, peak, end) in regions) {
+            val store = success(
+                VariationStoreEvaluator.read(
+                    storeBytes(listOf(intArrayOf(f2dot14(start), f2dot14(peak), f2dot14(end)))),
+                    0,
+                    "CFF2",
+                ),
+            )
+            for (coordinate in coordinates) {
+                val shared = VariationRegionAxisFactor.factor(start, peak, end, coordinate)
+                assertEquals(
+                    shared,
+                    TupleVariationScalars.scalar(
+                        listOf(coordinate),
+                        doubleArrayOf(peak),
+                        doubleArrayOf(start),
+                        doubleArrayOf(end),
+                    ),
+                )
+                assertContentEquals(doubleArrayOf(shared), VariationStoreEvaluator.scalars(store, 0, listOf(coordinate)))
+            }
+        }
     }
 
     @Test
@@ -333,6 +369,8 @@ class VariationStoreEvaluatorTest {
         assertContentEquals(intArrayOf(-70_000), store.deltaRow(0, 0))
         assertEquals(-70_000.0, VariationStoreEvaluator.delta(store, 0, 0, listOf(1.0)))
     }
+
+    private fun f2dot14(value: Double): Int = (value * 16_384.0).toInt()
 
     private fun <T> success(result: FontOperationResult<T>): T =
         assertIs<FontOperationResult.Success<T>>(result).value
