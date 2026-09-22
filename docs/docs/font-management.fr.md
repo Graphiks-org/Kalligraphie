@@ -1165,9 +1165,13 @@ sous-plan « composition à l’instance » lie désormais la vérification croi
 de l’instance atteint la fonte HarfBuzz préparée (ordonnée selon l’ordre des axes
 `fvar`) et notre `metrics()` est égale à l’avance HarfBuzz à la même location sur
 la fixture auditée `NotoSansJP-VerticalFixture.ttf` (`A` = `660` à `wght = 900`,
-`622` à `wght = 500`, `574` au défaut). L’avance verticale et les bornes de la
-spécification ne sont pas vérifiées (la liaison n’expose aucun
-`hb_font_get_glyph_v_advance`).
+`622` à `wght = 500`, `574` au défaut). L’avance verticale est vérifiée par rapport à
+l’avance verticale de HarfBuzz à la même location via le chemin de shaping (`yAdvance`
+haut-en-bas, dont la convention négative est inversée par notre moteur en un
+`advanceHeight` positif) ; la fixture auditée `NotoSansJP-VerticalFixture.ttf` a une
+avance verticale constante (`1000`), tandis que la fixture synthétique
+`KalligraphieVarVVAR.ttf` la fait varier (`1000`/`1100`/`1200`). Les bornes de la
+spécification ne sont pas vérifiées (aucun `hb_font_get_glyph_extents`).
 `FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
 de fonte de l’instance issues de `OS/2` (avec repli sur `hhea`), `post` et `MVAR`,
 en unités de design. Les métriques horizontales suivent la priorité `HVAR` puis
@@ -1431,9 +1435,10 @@ JVM, Android et iOS via `setVarCoordsNormalized` de la liaison republiée
 `org.graphiks:kffi-harfbuzz`, appliquée selon l’ordre des axes `fvar` en virgule
 fixe 2.14. Une location vide ou explicitement au défaut (face non-variable,
 instance par défaut, ou `[0.0]`) ne change pas le rendu : le chemin par défaut
-reste identique au bit près. L’avance verticale (et les bornes de la
-spécification) ne sont pas vérifiées : la requête d’avance verticale n’est pas
-exposée par la liaison.
+reste identique au bit près. L’avance verticale est vérifiée à la même location via le
+chemin de shaping (`yAdvance` haut-en-bas), sur une fixture constante et une fixture
+synthétique dont le delta d’avance verticale `VVAR` varie ; les bornes de la
+spécification restent non vérifiées.
 
 ## Repli déterministe entre fontes
 
