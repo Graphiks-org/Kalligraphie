@@ -273,6 +273,13 @@ internal data class TrueTypeFontInstance(
     override fun fontMetrics(): FontOperationResult<FontMetrics> =
         resource.preparedFont.readFontMetrics(key.geometry.normalizedAxes)
 
+    override fun normalizedVariationLocation(): FontOperationResult<List<Float>> =
+        when (val ordered = resource.preparedFont.orderedVariationAxes(key.geometry.normalizedAxes)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(ordered.value.map { it.toFloat() })
+            is FontOperationResult.Failure -> ordered
+            is FontOperationResult.Cancelled -> ordered
+        }
+
     override fun copyOpenTypeData(): FontOperationResult<OpenTypeFontData> =
         FontOperationResult.Success(OpenTypeFontData(faceId, resource.preparedFont.copySourceBytes()))
 
