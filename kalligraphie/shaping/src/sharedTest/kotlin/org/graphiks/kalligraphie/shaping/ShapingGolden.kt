@@ -13,6 +13,11 @@ import org.graphiks.kalligraphie.api.TextSnapshot
  * tolerance. This reuses the `:kalligraphie:e2e` golden pattern — the JVM reference backend
  * freezes the golden and every target asserts the same bytes — without depending on image types.
  *
+ * This file lives in a neutral `sharedTest/` directory added to both `androidDeviceTest` and
+ * `iosSimulatorArm64Test` (see `build.gradle.kts`): the Android device-test compilation cannot see
+ * `commonTest` in this module, so a shared directory is the single-serializer option that compiles
+ * for both device targets without duplicating the serializer.
+ *
  * [snapshot] must be the snapshot the [run] was shaped from; it resolves the opaque cluster
  * boundaries back to scalar ordinals.
  */

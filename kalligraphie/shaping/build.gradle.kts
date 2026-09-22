@@ -122,12 +122,27 @@ kotlin {
             // resource directory into the device-test APK, so the suite resolves the same
             // `/fonts/...` entries through the class loader as `jvmTest`.
             resources.srcDir(rootProject.file("test-fixtures"))
+            // B4: `androidDeviceTest` cannot see `commonTest` in this module (verified: hoisting
+            // `ShapingGolden.kt` into `commonTest` fails `compileAndroidDeviceTest` with an
+            // unresolved `canonicalShapingGolden`). A neutral directory added to both device-test
+            // source sets keeps exactly one serializer without duplication.
+            kotlin.srcDir("src/sharedTest/kotlin")
         }
         val iosSimulatorArm64Test by getting {
             // B3: the shared fixture corpus is embedded as generated Kotlin source because
             // Kotlin/Native has no resource classpath and the simctl-spawned test process cannot
             // receive the Gradle `environment(...)` path (see iosFixtureCorpus above).
             kotlin.srcDir(iosFixtureCorpus)
+            // B4: the same neutral directory the Android device test compiles.
+            kotlin.srcDir("src/sharedTest/kotlin")
+            dependencies {
+                implementation(project(":kalligraphie"))
+                implementation(project(":kalligraphie:unicode"))
+                implementation(project(":kalligraphie:font:core"))
+                implementation(project(":kalligraphie:font:sfnt"))
+                implementation(libs.kotlinx.coroutines.core)
+                implementation(kotlin("test"))
+            }
         }
     }
 }
