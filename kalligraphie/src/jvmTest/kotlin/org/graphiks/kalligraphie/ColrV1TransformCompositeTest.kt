@@ -2,7 +2,7 @@ package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.api.*
 import org.graphiks.kalligraphie.layout.openLayoutHandle
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import java.util.Base64
 import kotlin.test.*
 
@@ -163,7 +163,7 @@ internal class ColrV1Fixture(
 
     fun layout(snapshot: TextSnapshot): EditableLineResult = session.layout(JvmEditableLineFacadeRequest(
         snapshot = snapshot, font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
-        language = "en", featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
+        language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(1000f), LayoutUnit(250f)),
         materialization = EditableLineMaterialization.Renderable(resolver, variant, requirements),
     ))

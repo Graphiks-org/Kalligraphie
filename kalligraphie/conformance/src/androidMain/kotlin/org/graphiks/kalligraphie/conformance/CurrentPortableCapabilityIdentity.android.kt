@@ -1,15 +1,16 @@
 package org.graphiks.kalligraphie.conformance
 
 /**
- * Android declares the portable glyph representation route only: Unicode analysis, shaping and
- * end-to-end layout are absent until the portable analysis and shaping backends land.
+ * Android declares shaping through the bundled HarfBuzz backend shipped in the native artifact.
+ * Unicode analysis and end-to-end layout stay absent until the portable analysis and layout
+ * backends land; the portable glyph representation route remains available.
  */
 public actual fun currentPortableCapabilityIdentity(): PortableCapabilityIdentity =
     PortableCapabilityIdentity(
         platformId = "android",
         declarations = listOf(
             CapabilityDeclaration(PortableCapability.UNICODE_ANALYSIS, available = false, profileId = "absent"),
-            CapabilityDeclaration(PortableCapability.SHAPING, available = false, profileId = "absent"),
+            CapabilityDeclaration(PortableCapability.SHAPING, available = true, profileId = "bundled-harfbuzz"),
             CapabilityDeclaration(PortableCapability.END_TO_END_LAYOUT, available = false, profileId = "absent"),
             CapabilityDeclaration(
                 PortableCapability.GLYPH_REPRESENTATION_VARIANTS,

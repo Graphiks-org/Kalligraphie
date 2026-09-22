@@ -32,7 +32,7 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.Utf16Storage
 import org.graphiks.kalligraphie.api.Utf8Storage
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 
 class EditableLineMeasurementTest {
@@ -684,7 +684,7 @@ internal object EditableLineMeasurement {
             font = font,
             baseDirection = BaseDirection.LEFT_TO_RIGHT,
             language = "en",
-            featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+            featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
             features = emptyList(),
             verticalMetrics = LineVerticalMetrics(LayoutUnit(1900f), LayoutUnit(500f)),
             materialization = EditableLineMaterialization.LayoutOnly,
@@ -753,7 +753,7 @@ internal object EditableLineMeasurement {
         }.also { check(start == storage.length) }
     }
 
-    private fun openedHarfBuzzVersion(): String = when (val opened = JvmHarfBuzzShapingBackend.open()) {
+    private fun openedHarfBuzzVersion(): String = when (val opened = HarfBuzzShapingBackend.open()) {
         is FontOperationResult.Success -> try {
             opened.value.identity.semantic.engineVersion
         } finally {

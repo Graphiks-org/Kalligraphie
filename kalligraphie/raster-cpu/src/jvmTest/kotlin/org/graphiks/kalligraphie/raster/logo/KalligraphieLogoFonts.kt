@@ -21,7 +21,7 @@ import org.graphiks.kalligraphie.raster.RasterFixture
 import org.graphiks.kalligraphie.raster.fixtureBytes
 import org.graphiks.kalligraphie.raster.openRasterFixture
 import org.graphiks.kalligraphie.raster.outlineRequirements
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.assertIs
 
@@ -109,7 +109,7 @@ internal class KalligraphieLogoFonts private constructor(
             bidiLevel = 0,
             bot = true,
             eot = true,
-            featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+            featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
             features = emptyList(),
             graphemeClusters = snapshot.scalars.indices.map { scalar ->
                 TextRange(snapshot.textIndexAtScalarBoundary(scalar), snapshot.textIndexAtScalarBoundary(scalar + 1))
@@ -158,7 +158,7 @@ internal class KalligraphieLogoFonts private constructor(
                 throw error
             }
             val backend = try {
-                assertIs<FontOperationResult.Success<ShapingBackend>>(JvmHarfBuzzShapingBackend.open()).value
+                assertIs<FontOperationResult.Success<ShapingBackend>>(HarfBuzzShapingBackend.open()).value
             } catch (error: Throwable) {
                 try {
                     wordmark.close()

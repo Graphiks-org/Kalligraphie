@@ -83,7 +83,7 @@ inactifs de la session : ces petites fixtures tiennent dans la politique par
 défaut sans éviction. Les échantillons chauds ne demandent aucune nouvelle copie.
 Ce champ est distinct des octets source fournis au catalogue.
 
-`JvmPreparedFontCachePolicy` borne les entrées, les octets source, les octets
+`PreparedFontCachePolicy` borne les entrées, les octets source, les octets
 natifs estimés et leur somme, fontes actives et inactives comprises. L’admission
 est réservée sous verrou avant l’allocation native ; seules les fontes inactives
 sont évincées. Une admission impossible retourne `FontError.ResourceLimitExceeded`

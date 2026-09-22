@@ -1,4 +1,7 @@
-@file:OptIn(org.graphiks.kalligraphie.api.KalligraphieInternalApi::class)
+@file:OptIn(
+    org.graphiks.kalligraphie.api.KalligraphieInternalApi::class,
+    kotlin.concurrent.atomics.ExperimentalAtomicApi::class,
+)
 
 package org.graphiks.kalligraphie.shaping
 
@@ -24,17 +27,19 @@ import org.graphiks.kalligraphie.api.ShapingSemanticIdentity
 import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.toDiagnostic
+import kotlin.concurrent.atomics.AtomicBoolean
 
 /**
- * Opens the pinned HarfBuzz reference backend for the current JVM platform.
+ * Opens the pinned HarfBuzz reference backend for the current platform.
  *
- * The backend loads only the published kffi HarfBuzz binding for this module. It ships
- * for Linux and macOS on x64 and arm64 JVMs and for Windows on x64 JVMs; unsupported
- * platform or architecture combinations return a typed failure.
+ * The backend loads only the native HarfBuzz binding available to this module. On the JVM it ships
+ * for Linux and macOS on x64 and arm64 JVMs and for Windows on x64 JVMs; unsupported platform or
+ * architecture combinations return a typed failure. Targets with no native binding return
+ * `font.shaping-native-platform-unsupported` through [open].
  * No JNI type, native handle, or platform dependency escapes through [ShapingBackend].
  * JVM launchers must enable native access with `--enable-native-access=ALL-UNNAMED`.
  */
-public object JvmHarfBuzzShapingBackend {
+public object HarfBuzzShapingBackend {
     /**
      * Explicit baseline feature policy implemented by the pinned HarfBuzz reference backend.
      *
@@ -46,16 +51,21 @@ public object JvmHarfBuzzShapingBackend {
     public val pinnedFeaturePolicy: ShapingFeaturePolicy = PINNED_FEATURE_POLICY
 
     /**
+     * Opens the pinned library with the [PreparedFontCachePolicy.default] admission bounds.
+     * The owner must close the returned backend.
+     */
+    public fun open(): FontOperationResult<ShapingBackend> = open(PreparedFontCachePolicy.default)
+
+    /**
      * Opens the pinned library with independent prepared-font admission bounds.
      * [preparedFontCachePolicy] counts active and idle resources; a rejected preparation is a
      * typed resource-limit failure. The owner must close the returned backend.
      */
-    @JvmOverloads
     public fun open(
-        preparedFontCachePolicy: JvmPreparedFontCachePolicy = JvmPreparedFontCachePolicy.default,
+        preparedFontCachePolicy: PreparedFontCachePolicy,
     ): FontOperationResult<ShapingBackend> =
         when (val loaded = HarfBuzzBindings.open()) {
-            is FontOperationResult.Success -> FontOperationResult.Success(HarfBuzzJvmBackend(loaded.value, preparedFontCachePolicy))
+            is FontOperationResult.Success -> FontOperationResult.Success(HarfBuzzPortableBackend(loaded.value, preparedFontCachePolicy))
             is FontOperationResult.Failure -> loaded
             is FontOperationResult.Cancelled -> loaded
         }
@@ -65,26 +75,34 @@ public object JvmHarfBuzzShapingBackend {
      * Other backend implementations report an immutable empty usage.
      */
     @org.graphiks.kalligraphie.api.KalligraphieInternalApi
-    public fun preparedFontCacheUsageInspector(backend: ShapingBackend): () -> JvmPreparedFontCacheUsage =
-        if (backend is HarfBuzzJvmBackend) {
+    public fun preparedFontCacheUsageInspector(backend: ShapingBackend): () -> PreparedFontCacheUsage =
+        if (backend is HarfBuzzPortableBackend) {
             { backend.preparedFontCacheUsage }
         } else {
-            { JvmPreparedFontCacheUsage(0, 0, 0, 0, 0, 0) }
+            { PreparedFontCacheUsage(0, 0, 0, 0, 0, 0) }
         }
 }
 
-private class HarfBuzzJvmBackend(
+private class HarfBuzzPortableBackend(
     private val bindings: HarfBuzzBindings,
-    policy: JvmPreparedFontCachePolicy,
+    policy: PreparedFontCachePolicy,
 ) : ShapingBackend {
     override val identity: ShapingBackendIdentity = bindings.identity
     private val preparedFonts = PreparedFontCache(policy)
-    val preparedFontCacheUsage: JvmPreparedFontCacheUsage get() = preparedFonts.usage
-    @Volatile
-    private var closed: Boolean = false
+    val preparedFontCacheUsage: PreparedFontCacheUsage get() = preparedFonts.usage
+
+    /**
+     * Dedicated monitor for [close], distinct from the prepared-font cache lock.
+     *
+     * The `closed` flag is read lock-free on the [shape] fast path; [close] publishes it under this
+     * lock. It is never routed through the cache monitor, so a suspended provider can never deadlock
+     * the fast path.
+     */
+    private val closeLock = PortableLock()
+    private val closed = AtomicBoolean(false)
 
     override fun shape(request: ShapingRequest): FontOperationResult<ShapedGlyphRun> {
-        if (closed) {
+        if (closed.load()) {
             return FontOperationResult.Failure(
                 FontError.ResourceClosed("The pinned HarfBuzz backend is closed."),
             )
@@ -143,11 +161,10 @@ private class HarfBuzzJvmBackend(
         }
     }
 
-    @Synchronized
-    override fun close(): FontOperationResult<Unit> {
-        if (closed) return FontOperationResult.Success(Unit)
-        closed = true
-        return aggregateFailures(preparedFonts.close())?.let { error ->
+    override fun close(): FontOperationResult<Unit> = closeLock.withLock {
+        if (closed.load()) return@withLock FontOperationResult.Success(Unit)
+        closed.store(true)
+        aggregateFailures(preparedFonts.close())?.let { error ->
             FontOperationResult.Failure(
                 FontError.FontDataFailure(
                     code = "font.shaping-native-release-failed",
@@ -188,11 +205,11 @@ private data class PreparedFontFootprint(
     val totalBytes: Long get() = saturatedAdd(sourceBytes, estimatedNativeBytes)
 }
 
-/** See JvmPreparedFontCachePolicy.nativeEstimatorVersion for scope and limitations. */
+/** See PreparedFontCachePolicy.nativeEstimatorVersion for scope and limitations. */
 private fun preparedFontFootprint(sourceBytes: Long): PreparedFontFootprint = PreparedFontFootprint(
     sourceBytes,
     saturatedAdd(256L * 1024, if (sourceBytes > Long.MAX_VALUE / 4) Long.MAX_VALUE else sourceBytes * 4),
-    JvmPreparedFontCachePolicy.nativeEstimatorVersion,
+    PreparedFontCachePolicy.nativeEstimatorVersion,
 )
 
 private fun saturatedAdd(left: Long, right: Long): Long =
@@ -203,17 +220,20 @@ private fun saturatedAdd(left: Long, right: Long): Long =
  * and release share one lock; after copying, acquisition rechecks closure and an existing font
  * before reserving any native allocation. Keeping destruction under the lock prevents another
  * allocation from racing an idle eviction.
+ *
+ * [entries] preserves insertion order explicitly, so oldest-idle-first eviction is identical on
+ * every target instead of relying on the JVM `LinkedHashMap` iteration order.
  */
-private class PreparedFontCache(private val policy: JvmPreparedFontCachePolicy) {
-    private val lock = Any()
-    private val entries = LinkedHashMap<FontInstanceKey, Entry>()
+private class PreparedFontCache(private val policy: PreparedFontCachePolicy) {
+    private val lock = PortableLock()
+    private val entries = InsertionOrderedMap<FontInstanceKey, Entry>()
     private var closed = false
     private var releaseFailed = false
 
-    val usage: JvmPreparedFontCacheUsage get() = synchronized(lock) {
+    val usage: PreparedFontCacheUsage get() = lock.withLock {
         val idle = entries.values.filter { it.activeLeases == 0 }
         val active = entries.values.filter { it.activeLeases > 0 }
-        JvmPreparedFontCacheUsage(
+        PreparedFontCacheUsage(
             idle.size, active.sumOf { it.activeLeases },
             idle.sumOf { it.footprint.sourceBytes }, active.sumOf { it.footprint.sourceBytes },
             idle.sumOf { it.footprint.estimatedNativeBytes }, active.sumOf { it.footprint.estimatedNativeBytes },
@@ -225,31 +245,33 @@ private class PreparedFontCache(private val policy: JvmPreparedFontCachePolicy) 
         source: () -> ByteArray,
         create: (ByteArray) -> PreparedHarfBuzzFont,
     ): Lease {
-        synchronized(lock) {
+        val existingLease = lock.withLock {
             if (closed || releaseFailed) throw PreparedFontFailure(FontOperationResult.Failure(
                 FontError.ResourceClosed("The pinned HarfBuzz backend is closed."),
             ))
             entries[key]?.let { entry ->
                 entry.activeLeases += 1
-                return Lease(checkNotNull(entry.value)) { releaseLease(key, entry) }
+                Lease(checkNotNull(entry.value)) { releaseLease(key, entry) }
             }
         }
+        if (existingLease != null) return existingLease
 
         // Font providers and cancellation tokens may reenter this backend or close it.
         val bytes = source()
         val footprint = preparedFontFootprint(bytes.size.toLong())
-        return synchronized(lock) {
+        return lock.withLock {
             if (closed || releaseFailed) throw PreparedFontFailure(FontOperationResult.Failure(
                 FontError.ResourceClosed("The pinned HarfBuzz backend is closed."),
             ))
             // A concurrent or nested acquisition may have prepared this key while copying.
-            entries[key]?.let { entry ->
-                entry.activeLeases += 1
-                return@synchronized Lease(checkNotNull(entry.value)) { releaseLease(key, entry) }
+            val prepared = entries[key]
+            if (prepared != null) {
+                prepared.activeLeases += 1
+                return@withLock Lease(checkNotNull(prepared.value)) { releaseLease(key, prepared) }
             }
             if (!fits(footprint, emptyList())) reject()
             while (!fits(footprint, entries.values)) {
-                val idle = entries.entries.firstOrNull { it.value.activeLeases == 0 } ?: reject()
+                val idle = entries.firstIdle { it.activeLeases == 0 } ?: reject()
                 // Release before subtracting accounting or admitting new native memory.
                 try {
                     checkNotNull(idle.value.value).close()
@@ -290,27 +312,26 @@ private class PreparedFontCache(private val policy: JvmPreparedFontCachePolicy) 
         ),
     ))
 
-    fun close(): List<Throwable> = synchronized(lock) {
-        if (closed) return@synchronized emptyList()
+    fun close(): List<Throwable> = lock.withLock {
+        if (closed) return@withLock emptyList()
         closed = true
         val failures = mutableListOf<Throwable>()
-        val iterator = entries.iterator()
-        while (iterator.hasNext()) {
-            val entry = iterator.next().value
+        for (key in entries.keysInInsertionOrder()) {
+            val entry = entries[key] ?: continue
             if (entry.activeLeases == 0) {
                 try {
                     checkNotNull(entry.value).close()
                 } catch (error: Throwable) {
                     failures += error
                 } finally {
-                    iterator.remove()
+                    entries.remove(key)
                 }
             }
         }
         failures
     }
 
-    private fun releaseLease(key: FontInstanceKey, entry: Entry) = synchronized(lock) {
+    private fun releaseLease(key: FontInstanceKey, entry: Entry): Unit = lock.withLock {
         check(entry.activeLeases > 0)
         entry.activeLeases -= 1
         if (closed && entry.activeLeases == 0) {
@@ -329,15 +350,51 @@ private class PreparedFontCache(private val policy: JvmPreparedFontCachePolicy) 
     )
 
     class Lease(val value: PreparedHarfBuzzFont, private val release: () -> Unit) : AutoCloseable {
+        private val lock = PortableLock()
         private var closed = false
 
-        @Synchronized
-        override fun close() {
-            if (closed) return
+        override fun close() = lock.withLock {
+            if (closed) return@withLock
             closed = true
             release()
         }
     }
+}
+
+/**
+ * Insertion-ordered map used for the prepared-font cache.
+ *
+ * `commonMain` cannot use the JVM `LinkedHashMap`, and common `mutableMapOf` iteration order is
+ * unspecified. Order is therefore tracked separately from the lookup map: keys iterate in
+ * insertion order, preserving oldest-idle-first eviction on every target.
+ */
+private class InsertionOrderedMap<K, V> {
+    private val order = mutableListOf<K>()
+    private val valuesByKey = mutableMapOf<K, V>()
+
+    val values: Collection<V> get() = valuesByKey.values
+
+    operator fun get(key: K): V? = valuesByKey[key]
+
+    operator fun set(key: K, value: V) {
+        if (valuesByKey.put(key, value) == null) order += key
+    }
+
+    fun remove(key: K): V? = valuesByKey.remove(key)?.also { order.remove(key) }
+
+    /** Snapshot of the keys in insertion order; safe to remove entries while iterating. */
+    fun keysInInsertionOrder(): List<K> = order.toList()
+
+    /** First entry, in insertion order, whose value satisfies [isIdle]. */
+    fun firstIdle(isIdle: (V) -> Boolean): IdleEntry<K, V>? {
+        for (key in order) {
+            val value = valuesByKey.getValue(key)
+            if (isIdle(value)) return IdleEntry(key, value)
+        }
+        return null
+    }
+
+    class IdleEntry<K, V>(val key: K, val value: V)
 }
 
 private class PreparedFontFailure(
@@ -594,6 +651,10 @@ private const val CONFIGURATION_FINGERPRINT: String =
     "harfbuzz-14.3.0;shaper=ot;ot-font-funcs;scale=face-upem;layout-conversion=layout-size-over-upem;explicit-direction-script-language-bot-eot;" +
         "cluster-level=monotone-characters;flags=produce-unsafe-to-concat;feature-policy=harfbuzz-defaults@14.3.0;feature-overrides=explicit"
 internal val HARFBUZZ_SEMANTIC_IDENTITY: ShapingSemanticIdentity = ShapingSemanticIdentity(
+    // Legacy semantic literal shared by every target: ShapingSemanticIdentity is the portable
+    // semantic identity, invariant across OS/arch/artifact, so it must be byte-identical on JVM,
+    // Android and iOS. Do not rename it to "harfbuzz-android" — that would break cross-target
+    // semantic equality.
     backendId = "harfbuzz-jvm",
     engineId = "harfbuzz",
     engineVersion = HARFBUZZ_VERSION,

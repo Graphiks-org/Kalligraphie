@@ -66,7 +66,7 @@ import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.WritingMode
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
@@ -1729,7 +1729,7 @@ class FlowParagraphCompositionTest {
             candidates = listOf(FontResolutionCandidate(face)),
             lastResortFace = face,
         )
-        val backend = JvmHarfBuzzShapingBackend.open().successValue().also(openedBackends::add)
+        val backend = HarfBuzzShapingBackend.open().successValue().also(openedBackends::add)
         val constraints = if (writingMode == WritingMode.HORIZONTAL_TB) {
             HorizontalParagraphConstraints(bounds, lineMetrics)
         } else {

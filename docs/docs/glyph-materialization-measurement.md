@@ -73,7 +73,7 @@ Cold source-copy counts come from the session's idle-byte accounting: these
 small fixtures fit the default policy without eviction. Warm samples need no
 new source copy. This is separate from the existing catalog-input source field.
 
-`JvmPreparedFontCachePolicy` limits entries, source bytes, estimated native
+`PreparedFontCachePolicy` limits entries, source bytes, estimated native
 bytes, and their sum across both active and idle fonts. Admission is reserved
 under one lock before native allocation; only idle fonts can be evicted, and
 an impossible admission returns `FontError.ResourceLimitExceeded` without a

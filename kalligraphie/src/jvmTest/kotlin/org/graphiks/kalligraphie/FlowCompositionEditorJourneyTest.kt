@@ -60,7 +60,7 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.WritingMode
 import org.graphiks.kalligraphie.api.createIncrementalFlowLayoutRequest
 import org.graphiks.kalligraphie.layout.IncrementalFlowLayoutEngine
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 class FlowCompositionEditorJourneyTest {
     @Test
@@ -140,7 +140,7 @@ class FlowCompositionEditorJourneyTest {
         val chain = horizontalChain(count = 2, queries = queries, inlineExtent = 1_600f)
         val initialRequest = request(fixture, chain)
         val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         try {
             val prepared = prepareParagraph(initialRequest, backend)
@@ -243,7 +243,7 @@ class FlowCompositionEditorJourneyTest {
         )
         val chain = horizontalChain(count = 1, inlineExtent = 4_000f)
         val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(
-            JvmHarfBuzzShapingBackend.open(),
+            HarfBuzzShapingBackend.open(),
         ).value
         val recording = RecordingShapingBackend(backend)
         try {

@@ -39,7 +39,7 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.UnicodeAnalysis
 import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.Test
@@ -315,7 +315,7 @@ class EbdtFormatOneGlyphRepresentationTest {
             UnicodeAnalysisRequest(BaseDirection.LEFT_TO_RIGHT, "en"),
         )
         val resolver = success(catalog.openAssetResolver())
-        val backend = success(JvmHarfBuzzShapingBackend.open())
+        val backend = success(HarfBuzzShapingBackend.open())
         try {
             val fallbackCapable = layout(
                 snapshot, analysis, catalog, policy, backend, resolver, listOf(outlineProfile()),

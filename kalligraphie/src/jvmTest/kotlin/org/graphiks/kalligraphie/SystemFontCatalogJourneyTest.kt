@@ -2,7 +2,7 @@ package org.graphiks.kalligraphie
 
 import java.nio.file.Files
 import org.graphiks.kalligraphie.api.*
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 import org.junit.Assume.assumeTrue
 import kotlin.test.*
@@ -51,7 +51,7 @@ internal fun assertCollectionJourney(catalog: FontCatalogSnapshot, family: Strin
         val snapshot = Kalligraphie.decodeUtf8(TextVersion.create(), listOf(TextSlice.Utf8("Affi".encodeToByteArray()))).snapshot
         val line = assertIs<EditableLineResult.Success>(session.layout(JvmEditableLineFacadeRequest(
             snapshot = snapshot, font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
-            language = "en", featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
+            language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
             verticalMetrics = LineVerticalMetrics(LayoutUnit(size), LayoutUnit(size / 4)),
             materialization = EditableLineMaterialization.Renderable(resolver, FontRenderVariantSnapshot.default, requirements),
         ))).line

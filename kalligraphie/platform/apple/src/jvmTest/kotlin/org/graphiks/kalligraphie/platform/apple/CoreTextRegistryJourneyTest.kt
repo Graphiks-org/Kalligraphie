@@ -25,7 +25,7 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.JvmEditableLineFacadeRequest
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
  * The complete consumer journey for the CoreText registry provider, on a
@@ -58,7 +58,7 @@ class CoreTextRegistryJourneyTest {
                             font = font,
                             baseDirection = BaseDirection.LEFT_TO_RIGHT,
                             language = "en",
-                            featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                            featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                             features = emptyList(),
                             verticalMetrics = LineVerticalMetrics(LayoutUnit(1000f), LayoutUnit(250f)),
                             materialization = EditableLineMaterialization.Renderable(resolver, FontRenderVariantSnapshot.default, requirements),

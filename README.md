@@ -55,6 +55,11 @@ The JVM reference route includes:
 - identity-attested continuations and bounded forward rematerialization with an
   explicit unmaterialized suffix.
 
+Android builds on the same portable contracts and now ships the bundled HarfBuzz
+14.3.0 shaping backend as `org.graphiks:kffi-harfbuzz-android`. The shared
+Android library floor is API 28, raised from API 24 — a deliberate breaking
+change for API 24–27 consumers.
+
 ## Consumer route
 
 Applications consume the JVM facade from `org.graphiks:kalligraphie`.
@@ -106,8 +111,8 @@ consumer route.
 - `:kalligraphie` — public application facade;
 - `:kalligraphie:api` — portable immutable contracts;
 - `:kalligraphie:unicode` — canonical decoding and JVM Unicode analysis;
-- `:kalligraphie:shaping` — portable shaping contracts and the JVM HarfBuzz
-  adapter;
+- `:kalligraphie:shaping` — portable shaping contracts and the multiplatform
+  HarfBuzz adapter;
 - `:kalligraphie:layout` — editable line, paragraph, flow, and incremental
   composition;
 - `:kalligraphie:font:*` — font sources, SFNT/OpenType parsing, metrics,

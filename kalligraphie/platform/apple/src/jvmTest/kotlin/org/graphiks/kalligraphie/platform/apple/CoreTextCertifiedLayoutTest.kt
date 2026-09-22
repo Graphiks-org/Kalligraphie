@@ -2,7 +2,7 @@ package org.graphiks.kalligraphie.platform.apple
 
 import org.graphiks.kalligraphie.*
 import org.graphiks.kalligraphie.api.*
-import org.graphiks.kalligraphie.shaping.JvmHarfBuzzShapingBackend
+import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -204,7 +204,7 @@ class CoreTextCertifiedLayoutTest {
         val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
         return JvmEditableLineFacade.layout(JvmEditableLineFacadeRequest(
             snapshot = snapshot("A"), font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
-            language = "en", featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
+            language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
             verticalMetrics = LineVerticalMetrics(LayoutUnit(1500f), LayoutUnit(500f)),
             materialization = EditableLineMaterialization.Renderable(resolver, FontRenderVariantSnapshot.default, requirements),
             cancellationToken = token,
@@ -333,7 +333,7 @@ class CoreTextCertifiedLayoutTest {
         try {
             val result = JvmEditableLineFacade.layout(JvmEditableLineFacadeRequest(
                 snapshot = snapshot, font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
-                language = "en", featurePolicy = JvmHarfBuzzShapingBackend.pinnedFeaturePolicy,
+                language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                 features = emptyList(), verticalMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
                 materialization = EditableLineMaterialization.Renderable(resolver, FontRenderVariantSnapshot.default, requirements),
             ))
