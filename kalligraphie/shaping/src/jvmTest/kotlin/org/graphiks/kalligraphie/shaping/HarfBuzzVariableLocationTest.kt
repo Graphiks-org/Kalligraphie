@@ -25,6 +25,7 @@ import org.graphiks.kalligraphie.api.ShapingRequest
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
+import org.graphiks.kalligraphie.api.VerticalGlyphMetrics
 import org.graphiks.kalligraphie.unicode.TextSnapshots
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -102,9 +103,73 @@ class HarfBuzzVariableLocationTest {
         assertEquals(622, instance.metricsOf(GlyphId(1)).advanceWidthDesignUnits)
     }
 
+    /**
+     * The exit criterion's vertical half, advance only: a top-to-bottom-shaped `A`'s `yAdvance` equals
+     * our `verticalMetrics()` advance at the same location. The engine normalizes HarfBuzz's negative
+     * upward-positive advance through `toPhysicalVerticalCoordinate`, so both quantities are positive
+     * downward-positive layout units. Audited outside the implementation (HarfBuzz 14.4.0):
+     *   hb-shape NotoSansJP-VerticalFixture.ttf 'A' --direction=ttb                        -> ay -1000
+     *   hb-shape NotoSansJP-VerticalFixture.ttf 'A' --direction=ttb --variations=wght=900   -> ay -1000
+     *   hb-shape NotoSansJP-VerticalFixture.ttf 'A' --direction=ttb --variations=wght=500   -> ay -1000
+     * This fixture has `vmtx['A'].advanceHeight = 1000` and no `VVAR`, so the advance is constant; the
+     * cross-check pins route agreement, not variation. A shaped `yAdvance` equals the raw metric here
+     * because the fixture's GPOS has no vertical kern pair (`vkrn`) and glyph `A` has no vertical
+     * partner, so no vertical positioning adjustment applies.
+     */
+    @Test
+    fun harfBuzzVerticalAdvanceAtTheInstanceEqualsOurMetricsAtTheSameLocation() {
+        val backend = backend()
+
+        val default = instanceAtWght(null)
+        assertEquals(1000f, shape(backend, "A", default, ShapingDirection.TOP_TO_BOTTOM).glyphs.single().yAdvance.value)
+        assertEquals(1000f, default.verticalMetricsOf(GlyphId(1)).advanceHeight.value)
+
+        val heavy = instanceAtWght(1.0f)
+        assertEquals(1000f, shape(backend, "A", heavy, ShapingDirection.TOP_TO_BOTTOM).glyphs.single().yAdvance.value)
+        assertEquals(1000f, heavy.verticalMetricsOf(GlyphId(1)).advanceHeight.value)
+
+        val mid = instanceAtDesignWght(500f)
+        assertEquals(listOf(0.55999755859375f), mid.normalizedWghtLocation())
+        assertEquals(1000f, shape(backend, "A", mid, ShapingDirection.TOP_TO_BOTTOM).glyphs.single().yAdvance.value)
+        assertEquals(1000f, mid.verticalMetricsOf(GlyphId(1)).advanceHeight.value)
+    }
+
+    /**
+     * The vertical location transport. `KalligraphieVarVVAR.ttf` has `vmtx['A'].advanceHeight = 1000`
+     * and a `VVAR` advance-height delta of `+200` at the axis maximum, interpolated by the `(0,1,1)`
+     * region scalar. Independently audited (fontTools 4.65.0 `VarStoreInstancer`; HarfBuzz 14.4.0):
+     *   normalized 0.0 -> 1000 (hb ay -1000); 0.5 -> 1100 (hb ay -1100); 1.0 -> 1200 (hb ay -1200).
+     * The advance therefore genuinely moves with the location; design equals normalized here
+     * (`wght` 0/0/1000, no `avar`). Having no `avar`, this fixture cannot distinguish design- from
+     * normalized-transport on the vertical route; `avar` transport on the horizontal route is pinned
+     * by `avarTransportReachesHarfBuzzAtANonEndpointLocation`.
+     */
+    @Test
+    fun theVerticalAdvanceVariesWithTheLocation() {
+        val backend = backend()
+        val fixture = "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf"
+
+        val default = instanceAtNormalized(fixture, null)
+        assertEquals(1000f, shape(backend, "A", default, ShapingDirection.TOP_TO_BOTTOM).glyphs.single().yAdvance.value)
+        assertEquals(1000f, default.verticalMetricsOf(GlyphId(1)).advanceHeight.value)
+
+        val half = instanceAtNormalized(fixture, 0.5f)
+        assertEquals(1100f, shape(backend, "A", half, ShapingDirection.TOP_TO_BOTTOM).glyphs.single().yAdvance.value)
+        assertEquals(1100f, half.verticalMetricsOf(GlyphId(1)).advanceHeight.value)
+
+        val full = instanceAtNormalized(fixture, 1.0f)
+        assertEquals(1200f, shape(backend, "A", full, ShapingDirection.TOP_TO_BOTTOM).glyphs.single().yAdvance.value)
+        assertEquals(1200f, full.verticalMetricsOf(GlyphId(1)).advanceHeight.value)
+    }
+
     private fun backend(): ShapingBackend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
 
-    private fun shape(backend: ShapingBackend, text: String, font: FontInstance): ShapedGlyphRun {
+    private fun shape(
+        backend: ShapingBackend,
+        text: String,
+        font: FontInstance,
+        direction: ShapingDirection = ShapingDirection.LEFT_TO_RIGHT,
+    ): ShapedGlyphRun {
         val snapshot = TextSnapshots.decodeUtf16(
             version = TextVersion.create(),
             slices = listOf(TextSlice.Utf16(text.toCharArray())),
@@ -119,7 +184,7 @@ class HarfBuzzVariableLocationTest {
                 itemRange = range,
                 contextRange = range,
                 font = font,
-                direction = ShapingDirection.LEFT_TO_RIGHT,
+                direction = direction,
                 script = OpenTypeScript("Latn"),
                 language = "en",
                 bidiLevel = 0,
@@ -132,11 +197,8 @@ class HarfBuzzVariableLocationTest {
         ).successValue()
     }
 
-    private fun instanceAtWght(normalized: Float?): FontInstance {
-        val source = FontSource(
-            fixtureBytes("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
-            FontSourceProvenance("Noto Sans JP vertical fixture"),
-        )
+    private fun instanceAtNormalized(fixture: String, normalized: Float?): FontInstance {
+        val source = FontSource(fixtureBytes(fixture), FontSourceProvenance(fixture))
         val catalog = Kalligraphie.embedded(listOf(source)).successValue()
         val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         val geometry = normalized?.let {
@@ -147,11 +209,8 @@ class HarfBuzzVariableLocationTest {
         ).successValue()
     }
 
-    private fun instanceAtDesignWght(design: Float): FontInstance {
-        val source = FontSource(
-            fixtureBytes("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"),
-            FontSourceProvenance("Noto Sans JP vertical fixture"),
-        )
+    private fun instanceAtDesign(fixture: String, design: Float): FontInstance {
+        val source = FontSource(fixtureBytes(fixture), FontSourceProvenance(fixture))
         val catalog = Kalligraphie.embedded(listOf(source)).successValue()
         val face = catalog.resolveFace(catalog.faces.single().id, FontAccessRequirementsSnapshot.layoutOnly()).successValue()
         return face.instantiate(
@@ -162,11 +221,20 @@ class HarfBuzzVariableLocationTest {
         ).successValue()
     }
 
+    private fun instanceAtWght(normalized: Float?): FontInstance =
+        instanceAtNormalized("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf", normalized)
+
+    private fun instanceAtDesignWght(design: Float): FontInstance =
+        instanceAtDesign("/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf", design)
+
     private fun FontInstance.normalizedWghtLocation(): List<Float> =
         assertIs<FontOperationResult.Success<List<Float>>>(normalizedVariationLocation()).value
 
     private fun FontInstance.metricsOf(glyphId: GlyphId): GlyphMetrics =
         assertIs<FontOperationResult.Success<GlyphMetrics>>(metrics(glyphId)).value
+
+    private fun FontInstance.verticalMetricsOf(glyphId: GlyphId): VerticalGlyphMetrics =
+        assertIs<FontOperationResult.Success<VerticalGlyphMetrics>>(verticalMetrics(glyphId)).value
 
     private fun fixtureBytes(resource: String): ByteArray =
         checkNotNull(javaClass.getResourceAsStream(resource)).use { it.readBytes() }

@@ -1040,9 +1040,13 @@ sub-plan now binds the HarfBuzz
 location reaches the prepared HarfBuzz font (ordered into `fvar` axis order) and
 our `metrics()` advance is asserted equal to HarfBuzz's advance at the same
 location on the audited `NotoSansJP-VerticalFixture.ttf` (`A` = `660` at
-`wght = 900`, `622` at `wght = 500`, `574` at the default). The vertical advance
-and the spec's bounds are not cross-checked (the binding exposes no
-`hb_font_get_glyph_v_advance`). `FontInstance.fontMetrics()`
+`wght = 900`, `622` at `wght = 500`, `574` at the default). The vertical
+advance is cross-checked against HarfBuzz's vertical advance at the same location
+through the shaping path (HarfBuzz's top-to-bottom `yAdvance`, whose negative
+convention our engine flips to a positive `advanceHeight`); the audited
+`NotoSansJP-VerticalFixture.ttf` has a constant vertical advance (`1000`), while the
+synthetic `KalligraphieVarVVAR.ttf` varies it (`1000`/`1100`/`1200`). The spec's
+bounds are still not cross-checked (no `hb_font_get_glyph_extents`). `FontInstance.fontMetrics()`
 is implemented: it returns the instance's `OS/2` (with `hhea` fallback), `post` and
 `MVAR` font-wide metrics in design units. Horizontal metrics use the priority
 `HVAR` then `gvar` phantom-point deltas then `hmtx`; vertical metrics use `VVAR`
@@ -1276,8 +1280,10 @@ Android and iOS through the republished `org.graphiks:kffi-harfbuzz` binding's
 `setVarCoordsNormalized`, applied in the face's `fvar` axis order as 2.14 fixed
 point. An empty or explicitly design-default location (a non-variable face, the
 default instance, or `[0.0]`) never changes the render, so the default path is
-byte-identical. The vertical advance (and the spec's bounds) are not cross-checked:
-HarfBuzz's vertical-advance query is not exposed by the binding.
+byte-identical. The vertical advance is cross-checked at the same location through the
+shaping path (top-to-bottom `yAdvance`) on both a constant fixture and a synthetic
+fixture whose `VVAR` advance-height delta varies; the spec's bounds remain
+uncross-checked.
 
 ## Deterministic multi-font fallback
 
