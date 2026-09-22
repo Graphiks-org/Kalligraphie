@@ -16,7 +16,6 @@ import org.graphiks.kffi.harfbuzz.HarfBuzzFont
 import org.graphiks.kffi.harfbuzz.HarfBuzzTag
 import org.graphiks.kffi.harfbuzz.HarfBuzzBindingException as KffiHarfBuzzBindingException
 import org.graphiks.kffi.harfbuzz.HarfBuzzBindingFailure as KffiHarfBuzzBindingFailure
-import kotlin.math.roundToInt
 
 /**
  * Opens the real Android HarfBuzz platform binding over the published kffi Android artifact.
@@ -57,11 +56,7 @@ private class AndroidHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuz
             font.useOpenTypeFunctions()
             font.setScale(unitsPerEm, unitsPerEm)
             if (variationLocation.any { it != 0f }) {
-                font.setVarCoordsNormalized(
-                    IntArray(variationLocation.size) { index ->
-                        (variationLocation[index] * HB_NORMALIZED_COORDINATE_SCALE).roundToInt()
-                    },
-                )
+                font.setVarCoordsNormalized(variationLocation.toNormalizedVarCoords())
             }
             face.makeImmutable()
             font.makeImmutable()
@@ -199,5 +194,3 @@ private fun ShapingDirection.toKffiDirection(): HarfBuzzDirection = when (this) 
     ShapingDirection.TOP_TO_BOTTOM -> HarfBuzzDirection.TOP_TO_BOTTOM
 }
 
-/** `hb_font_set_var_coords_normalized` coordinates are normalized `[-1, 1]` in 2.14 fixed point. */
-private const val HB_NORMALIZED_COORDINATE_SCALE = 16384

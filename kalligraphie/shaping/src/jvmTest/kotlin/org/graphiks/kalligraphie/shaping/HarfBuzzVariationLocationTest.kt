@@ -23,7 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
-class HarfBuzzVariationUnsupportedTest {
+class HarfBuzzVariationLocationTest {
     private val backends = mutableListOf<ShapingBackend>()
 
     @AfterTest
@@ -32,13 +32,18 @@ class HarfBuzzVariationUnsupportedTest {
     }
 
     /**
-     * The fail-closed invariant: a non-default instance must never shape silently unvaried.
-     * On the pinned binding (Branch B) `shape()` returns the typed
-     * `font.shaping-variation-unsupported`; on a republished binding (Branch A) it returns the
-     * applied `660` at `wght = 1.0`. A silently-unvaried `574` fails both arms.
+     * A non-default instance either applies its location or fails closed — it never shapes silently
+     * unvaried. With the republished binding (Branch A) `shape()` returns the applied `660` at
+     * `wght = 1.0`; against a binding that cannot apply the location it returns the typed
+     * `font.shaping-variation-unsupported`. A silently-unvaried `574` fails either arm.
+     *
+     * Branch A cannot reach the failure arm through this native binding, so that half of the
+     * invariant is pinned branch-independently by the `false`-flag double in
+     * [VariableLocationPlumbingTest] (`anUnsupportedBindingRejectsANonDefaultLocation`), which never
+     * loads a native binding.
      */
     @Test
-    fun aNonDefaultInstanceNeverShapesSilentlyUnvaried() {
+    fun aNonDefaultInstanceAppliesItsLocationOrFailsClosed() {
         val backend = HarfBuzzShapingBackend.open().successValue().also(backends::add)
         when (val result = backend.shape(request(nonDefaultInstance()))) {
             is FontOperationResult.Failure ->
