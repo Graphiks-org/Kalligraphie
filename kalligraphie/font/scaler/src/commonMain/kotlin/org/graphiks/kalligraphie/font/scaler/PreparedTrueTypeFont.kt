@@ -72,6 +72,18 @@ public class PreparedTrueTypeFont internal constructor(
             val capturedBytes = source.copyBytes()
             return faces.map { PreparedTrueTypeFont(capturedBytes, it) }
         }
+
+        /**
+         * Upper bound on the total number of `(glyphId, orderedAxes)` instanced-bound pairs retained
+         * per face.
+         *
+         * A total-per-face bound rather than a per-glyph count: 512 keeps the retained [DesignBounds]
+         * bounded on a long-lived shared face while staying large enough that the paragraph projection
+         * path's rereads of one line's glyphs at one location stay hot. A face read at many instances
+         * (or a large CJK face at one instance) can exceed it, which only causes recomputation — see
+         * `InstancedInkBoundsCache` for the eviction policy.
+         */
+        private const val INSTANCED_INK_BOUNDS_CAPACITY = 512
     }
 
     private val glyphDataCache = AtomicReference<FontOperationResult<PreparedGlyphData>?>(null)
@@ -384,7 +396,59 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Failure -> return result
             is FontOperationResult.Cancelled -> return result
         }
-        return MetricsReader.readGlyphMetrics(metrics, glyphData, glyphId, layoutSize, deltas)
+        val bounds = when (val result = instancedInkBounds(glyphData, glyphId, normalizedAxes, location)) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        return MetricsReader.readGlyphMetrics(metrics, bounds, metricsGlyphId, layoutSize, deltas)
+    }
+
+    private val instancedInkBoundsCache = InstancedInkBoundsCache(capacity = INSTANCED_INK_BOUNDS_CAPACITY)
+
+    /**
+     * Returns the requested glyph's instanced ink bounds on the TrueType route.
+     *
+     * The bounds come from the varied outline points (`GlyfReader.readGlyphOutline`), which are the
+     * same points the render route certifies; `gvar` phantom points are carried separately and are
+     * never part of the ink bbox, matching the static `glyf` header semantics. The value is memoized
+     * per `(glyphId, orderedAxes)` because the paragraph projection path reads glyph metrics once per
+     * glyph per candidate line; the cache is bounded and holds only immutable [DesignBounds].
+     *
+     * The metric route asks for these bounds on every non-default read, so an advance-only caller pays
+     * one outline decode per unique `(glyphId, ordered normalized location)` pair on a cache miss: the
+     * memo amortizes repeated glyphs at one location but does not make the first read of each pair free.
+     *
+     * Feeding these bounds into the metric route is what makes a non-default `metrics()` materialize
+     * the outline under [metricsOutlineProfile]; that read can now fail for a glyph whose outline
+     * exceeds the profile even when its `glyf` header is readable. This is the accepted trade-off of
+     * replacing the static header bbox on the varied path.
+     */
+    private fun instancedInkBounds(
+        glyphData: PreparedGlyphData,
+        glyphId: GlyphId,
+        normalizedAxes: List<FontAxisCoordinate>,
+        location: MetricLocation,
+    ): FontOperationResult<DesignBounds> {
+        val cacheKey = InstancedInkBoundsKey(glyphId.value, location.orderedAxes)
+        instancedInkBoundsCache.get(cacheKey)?.let {
+            return FontOperationResult.Success(it)
+        }
+        val outline = when (
+            val result = GlyfReader.readGlyphOutline(
+                glyphData,
+                glyphId,
+                metricsOutlineProfile(),
+                CancellationToken.none,
+                normalizedAxes,
+            )
+        ) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        instancedInkBoundsCache.put(cacheKey, outline.bounds)
+        return FontOperationResult.Success(outline.bounds)
     }
 
     /** Returns the face's axis tags and the location's coordinates in that order, or `null` for the default. */
@@ -664,5 +728,49 @@ public class PreparedTrueTypeFont internal constructor(
             is FontOperationResult.Cancelled -> return result
         }
         return GlyfReader.readGlyphOutline(glyphData, glyphId, profile, cancellationToken, normalizedAxes)
+    }
+}
+
+/** Immutable memo key: one `(glyphId, ordered normalized location)` pair. */
+private data class InstancedInkBoundsKey(
+    val glyphId: Int,
+    val orderedAxes: List<Double>,
+)
+
+/**
+ * Bounded copy-on-write memo for instanced ink bounds.
+ *
+ * `commonMain` has no `synchronized` and no access-ordered `LinkedHashMap` constructor, so this is an
+ * [AtomicReference] over an immutable insertion-ordered [LinkedHashMap] snapshot (the same
+ * `kotlin.concurrent.atomics` idiom as `PreparedTrueTypeFont.glyphDataCache`). Each [put] publishes a
+ * fresh snapshot and evicts the eldest entry once the total number of stored `(glyphId, orderedAxes)`
+ * pairs exceeds [capacity]; keying on the pair means one glyph at many locations still counts.
+ *
+ * The eviction is insertion-ordered, not access-ordered, so a [get] never refreshes an entry: a pair
+ * touched on every line is still retired once [capacity] newer pairs have been inserted. That is a
+ * real thrash risk for a face read at many instances (or a large CJK face at a single instance), where
+ * the working set of `(glyphId, location)` pairs exceeds the cap and pairs are recomputed after every
+ * eviction. It is performance-only: an evicted pair is recomputed to the same [DesignBounds] on the
+ * next read, and the bound is what keeps a long-lived shared face from retaining an unbounded number
+ * of decoded bounds whatever the glyph and location mix.
+ */
+@OptIn(ExperimentalAtomicApi::class)
+private class InstancedInkBoundsCache(private val capacity: Int) {
+    private val entries = AtomicReference<Map<InstancedInkBoundsKey, DesignBounds>>(emptyMap())
+
+    fun get(key: InstancedInkBoundsKey): DesignBounds? = entries.load()[key]
+
+    fun put(key: InstancedInkBoundsKey, bounds: DesignBounds) {
+        while (true) {
+            val current = entries.load()
+            val next = LinkedHashMap(current)
+            next.remove(key)
+            next[key] = bounds
+            while (next.size > capacity) {
+                val eldest = next.entries.iterator()
+                if (eldest.hasNext()) { eldest.next(); eldest.remove() } else break
+            }
+            if (entries.compareAndSet(current, next)) return
+        }
     }
 }

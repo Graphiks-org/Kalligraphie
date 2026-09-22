@@ -121,9 +121,13 @@ internal object MetricsReader {
     }
 
     /**
-     * Reads metrics for a face without a `glyf` table (CFF), where the metrics
-     * glyph index equals [glyphId] and the ink bounds come from the decoded
-     * outline rather than a glyph header.
+     * Reads metrics with caller-supplied ink [bounds], where the metrics glyph
+     * index equals [glyphId].
+     *
+     * This is the shared overload for both routes that cannot use the static
+     * `glyf` header bbox: a face without a `glyf` table (CFF/CFF2), and the
+     * TrueType route at a non-default variable location, where the bounds come
+     * from the decoded, instanced outline.
      */
     internal fun readGlyphMetrics(
         prepared: PreparedMetricsData,

@@ -1054,7 +1054,13 @@ then `gvar` phantom-point deltas then `vmtx`. Side bearings are adjusted only wh
 the `HVAR`/`VVAR` side-bearing mapping is present; with no mapping the `hmtx`/`vmtx`
 value is retained, which follows the specification but differs from fontTools
 `varLib.instancer`, which recomputes the left side bearing from the varied outline.
-Ink bounds remain the unvaried `glyf` header bounds on the TrueType route. The axis
+Ink bounds come from the instanced outline bbox on both portable routes. The CFF/CFF2 route
+already fed the decoded outline bbox and is unchanged; only the TrueType metric route changed,
+where the static `glyf` header bbox is replaced by the varied outline points (phantom points
+excluded, exactly as the header excludes them) — the default instance still reads the static
+header. Because a non-default read materializes the outline, an advance-only `metrics()` caller
+also pays one outline decode per unique `(glyphId, location)` pair on a cache miss, amortized by
+the bounded per-face memo. The axis
 selection is retained as given: an axis explicitly set to its default value is kept,
 normalizes to `0`, and produces a distinct `FontInstanceKey` from omitting that
 axis (there is no default-value pruning). Metric-variation coverage remains
