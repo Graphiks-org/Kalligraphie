@@ -1180,10 +1180,14 @@ deltas de points fantômes `gvar` puis `hmtx` ; les métriques verticales suiven
 (side bearings) ne sont ajustées que si la table de correspondance `HVAR`/`VVAR`
 est présente ; sans correspondance, la valeur `hmtx`/`vmtx` est conservée, ce qui
 suit la spécification mais diffère de fontTools `varLib.instancer`, qui recalcule
-la demi-approche gauche à partir du contour varié. Les bornes d’encre sont la bbox du contour
-instancié sur les deux routes : sur la route TrueType, l’en-tête `glyf` est remplacé par les points
-de contour variés (hors points fantômes, exactement comme l’en-tête les exclut), tandis que
-l’instance par défaut et la route CFF/CFF2 restent inchangées. La sélection d’axes est
+la demi-approche gauche à partir du contour varié. Les bornes d’encre proviennent de la bbox du
+contour instancié sur les deux routes portables. La route CFF/CFF2 fournissait déjà la bbox du
+contour décodé et reste inchangée ; seule la route métrique TrueType change, l’en-tête `glyf`
+statique étant remplacé par les points de contour variés (hors points fantômes, exactement comme
+l’en-tête les exclut) — l’instance par défaut lit toujours l’en-tête statique. Comme une lecture
+non défaut matérialise le contour, un appelant qui ne lit que l’avance paie aussi un décodage de
+contour par paire `(glyphId, location)` unique en cas de défaut de cache, amorti par le mémo borné
+par face. La sélection d’axes est
 conservée telle quelle : un axe explicitement réglé à sa valeur par défaut est
 gardé, se normalise à `0` et produit une `FontInstanceKey` distincte de l’omission
 de cet axe (aucun élagage, ou pruning, des valeurs par défaut). La couverture de
