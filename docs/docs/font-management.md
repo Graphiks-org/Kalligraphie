@@ -1028,14 +1028,14 @@ on the portable outline route. Malformed `gvar` data fails with
 portable `STAT` reading is a separate concern and is deferred, alongside native
 metric bridges (default-only), `avar` version 2, `cvar`,
 the fingerprint-regenerating profile limit fields,
-and the §8 `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the
+and the `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the
 decoded metric tables. A font whose variable composites live in a `VARC` table is
 detected rather than rendered silently: on the portable outline routes a
 non-default instance fails with `font.variation.varc-unsupported` whatever the
 outline flavour (`glyf` or CFF2), while the default instance stays on the static
 composite. Metric, vertical-metric and font-metric reads are unaffected because
 `VARC` carries no advance data (advances come from `hmtx`/`HVAR`). The shaping-at-instance
-sub-plan now binds the HarfBuzz
+work now binds the HarfBuzz
 **horizontal** metric cross-check on JVM and Android: the instance's normalized
 location reaches the prepared HarfBuzz font (ordered into `fvar` axis order) and
 our `metrics()` advance is asserted equal to HarfBuzz's advance at the same
@@ -1045,8 +1045,11 @@ advance is cross-checked against HarfBuzz's vertical advance at the same locatio
 through the shaping path (HarfBuzz's top-to-bottom `yAdvance`, whose negative
 convention our engine flips to a positive `advanceHeight`); the audited
 `NotoSansJP-VerticalFixture.ttf` has a constant vertical advance (`1000`), while the
-synthetic `KalligraphieVarVVAR.ttf` varies it (`1000`/`1100`/`1200`). The spec's
-bounds are still not cross-checked (no `hb_font_get_glyph_extents`). `FontInstance.fontMetrics()`
+synthetic `KalligraphieVarVVAR.ttf` varies it (`1000`/`1100`/`1200`). The ink
+bounds are cross-checked at the same location through `hb_font_get_glyph_extents`
+(the prepared HarfBuzz font's varied ink extents), reconstructed as `minX = x_bearing`,
+`maxX = x_bearing + width`, `maxY = y_bearing`, `minY = y_bearing + height`, on
+non-composite glyphs (instanced composite ink bounds remain un-cross-checked). `FontInstance.fontMetrics()`
 is implemented: it returns the instance's `OS/2` (with `hhea` fallback), `post` and
 `MVAR` font-wide metrics in design units. Horizontal metrics use the priority
 `HVAR` then `gvar` phantom-point deltas then `hmtx`; vertical metrics use `VVAR`
@@ -1088,7 +1091,7 @@ changing either amount changes rendered geometry and must bump that version and 
 TrueType interpretation version. `FontInstanceKey.geometry` already carries the two
 flags, so a synthetic instance is a distinct cache and certificate identity.
 
-Per §7 of the umbrella design, synthetic geometry does **not** modify advances,
+Synthetic geometry does **not** modify advances,
 side bearings, `GlyphMetrics.bounds`, `VerticalGlyphMetrics` or `FontMetrics`: the
 transform runs only in outline materialization, and the metric readers never see
 it. A bold outline can therefore overlap neighbouring glyphs; this matches CSS
@@ -1111,7 +1114,7 @@ transformed coordinate outside the `Int` design range fails with the existing
 `font.geometry-overflow`.
 
 Three closing notes. The two new diagnostics use the dotted
-`font.geometry.synthetic-*` namespace the specification dictates, while the
+`font.geometry.synthetic-*` namespace, while the
 pre-existing overflow failure stays hyphenated (`font.geometry-overflow`); the
 namespace is inconsistent but both spellings are pinned.
 `estimateRenderAssetBytes` is not synthetic-gated, so it can report a size for a
@@ -1288,8 +1291,8 @@ point. An empty or explicitly design-default location (a non-variable face, the
 default instance, or `[0.0]`) never changes the render, so the default path is
 byte-identical. The vertical advance is cross-checked at the same location through the
 shaping path (top-to-bottom `yAdvance`) on both a constant fixture and a synthetic
-fixture whose `VVAR` advance-height delta varies; the spec's bounds remain
-uncross-checked.
+fixture whose `VVAR` advance-height delta varies; the ink bounds are cross-checked against HarfBuzz's varied ink extents
+at the same location (non-composite glyphs).
 
 ## Deterministic multi-font fallback
 

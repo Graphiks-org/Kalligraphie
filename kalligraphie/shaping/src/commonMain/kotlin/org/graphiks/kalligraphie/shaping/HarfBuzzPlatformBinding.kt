@@ -70,6 +70,19 @@ internal interface PlatformPreparedFont {
     /** Unshaped horizontal advance of [glyphId], used to audit ligature-carets against kerning. */
     fun horizontalAdvance(glyphId: Int): Int
 
+    /**
+     * Native `hb_font_get_glyph_extents` of [glyphId] at the prepared font's variation location,
+     * in design units.
+     *
+     * The fields are `hb_glyph_extents_t` verbatim: `xBearing`/`yBearing` are the top-left corner
+     * of the ink rectangle and the HarfBuzz y axis points up, `width` is `xMax - xMin` and
+     * `height` is `yMin - yMax` (negative). The result is the varied outline envelope in the
+     * font's design units and excludes `gvar` phantom points, matching the engine's ink bounds.
+     * Consumed by the ink-bounds cross-check in `:kalligraphie:shaping:jvmTest`, which is the
+     * only caller: no shaping path reads ink extents.
+     */
+    fun extents(glyphId: Int): PlatformGlyphExtents
+
     /** Reads the GDEF ligature carets of [glyphId] for [direction]. */
     fun ligatureCarets(
         direction: ShapingDirection,
@@ -100,6 +113,14 @@ internal class PlatformLigatureCarets(
     val totalCount: Int,
     val copiedCount: Int,
     val positions: List<Int>,
+)
+
+/** Direct result of the native `hb_font_get_glyph_extents` call at the platform boundary. */
+internal class PlatformGlyphExtents(
+    val xBearing: Int,
+    val yBearing: Int,
+    val width: Int,
+    val height: Int,
 )
 
 /** A native shaping buffer. */

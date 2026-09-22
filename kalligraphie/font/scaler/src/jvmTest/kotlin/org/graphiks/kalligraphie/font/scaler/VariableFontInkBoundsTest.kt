@@ -16,7 +16,7 @@ import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 
 /**
- * The engine half of the exit criterion `2. Avances/bornes = HarfBuzz à même location`: on the TrueType
+ * The engine half of the HarfBuzz metric cross-check: on the TrueType
  * route `GlyphMetrics.bounds`/`scaledBounds` must be the **instanced** ink bounds (the varied outline
  * bbox, phantom points excluded), not the static `glyf` header bbox.
  *
@@ -26,8 +26,7 @@ import org.graphiks.kalligraphie.font.sfnt.SfntReader
  * (design `wght = 500`, post-`avar`) and `(-8, 0, 668, 745)` at normalized `wght = 1.0`. These numbers
  * were re-derived outside the implementation with fontTools 4.65.0 (`TTFont.getGlyphSet(normalized=
  * True)` + `BoundsPen`). The oracle is fontTools-derived: this test does not cross-check HarfBuzz
- * (`hb_font_get_glyph_extents` is not bound), so exit criterion 2 stays `Partiel` and the ink-bounds
- * cross-check is sequenced separately.
+ * (`hb_font_get_glyph_extents` is not bound), so the ink-bounds cross-check is sequenced separately.
  *
  * The CFF2 fixture is the regression guard: its route already fed `outline.bounds` before this change,
  * so its bounds must not move.

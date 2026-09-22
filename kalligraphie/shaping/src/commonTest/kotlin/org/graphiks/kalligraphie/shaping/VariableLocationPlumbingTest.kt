@@ -93,6 +93,9 @@ class VariableLocationPlumbingTest {
 
     private class FakePreparedFont(override val unitsPerEm: Int) : PlatformPreparedFont {
         override fun horizontalAdvance(glyphId: Int): Int = 0
+
+        override fun extents(glyphId: Int): PlatformGlyphExtents = error("This test never reads extents.")
+
         override fun ligatureCarets(
             direction: ShapingDirection,
             glyphId: Int,

@@ -89,6 +89,16 @@ private class JvmPreparedFont(
 ) : PlatformPreparedFont {
     override fun horizontalAdvance(glyphId: Int): Int = font.glyphHorizontalAdvance(glyphId)
 
+    override fun extents(glyphId: Int): PlatformGlyphExtents {
+        val extents = font.glyphExtents(glyphId)
+        return PlatformGlyphExtents(
+            xBearing = extents.xBearing,
+            yBearing = extents.yBearing,
+            width = extents.width,
+            height = extents.height,
+        )
+    }
+
     override fun ligatureCarets(
         direction: ShapingDirection,
         glyphId: Int,
