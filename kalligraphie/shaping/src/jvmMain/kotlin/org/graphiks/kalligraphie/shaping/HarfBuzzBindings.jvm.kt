@@ -54,7 +54,7 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
             font = face.createFont()
             font.useOpenTypeFunctions()
             font.setScale(unitsPerEm, unitsPerEm)
-            if (variationLocation.isNotEmpty()) {
+            if (variationLocation.any { it != 0f }) {
                 font.setVarCoordsNormalized(
                     IntArray(variationLocation.size) { index ->
                         (variationLocation[index] * HB_NORMALIZED_COORDINATE_SCALE).roundToInt()
