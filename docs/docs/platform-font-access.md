@@ -41,7 +41,7 @@ generation.
 | macOS JVM optional CoreText adapter | Exact bytes from a portable catalogue; eligible standalone static monochrome TrueType only | Preserves portable shaping; no CoreText layout substitution | Explicitly accepted platform handle, or underlying portable routes; collections excluded from the platform route |
 | Windows JVM `DirectWriteSystemFontCatalog` (`:kalligraphie:platform:windows`) | Activated DirectWrite system font collection through `kffi-directwrite`, not a directory listing; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices | Bundled HarfBuzz on Windows x64 | Same portable routes; a new `open` observes controlled install/removal and mints a new `directwrite-registry` generation |
 | Android JVM `AndroidSystemFontCatalog` (`:kalligraphie:platform:android`) | Platform system font collection through `android.graphics.fonts.SystemFonts` (Android 10+), not arbitrary path scanning; captured `.ttf`/`.ttc`/`.otf` bytes with original face indices; family and face names come from parsing the captured bytes | Bundled HarfBuzz backend (API 28+) | Same portable routes; a new `open` observes a controlled change and mints a new `android-platform-fonts` generation |
-| iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | CoreText registry through the platform CoreText bindings, not a directory listing; iOS sandboxes system font files, so the `.ttf`/`.ttc`/`.otf` content is rebuilt from each font's copied tables | No bundled HarfBuzz backend in this module; the platform text stack applies | Same portable routes; a new `open` observes a controlled change and mints a new `ios-coretext-registry` generation |
+| iOS `IosSystemFontCatalog` (`:kalligraphie:platform:ios`) | CoreText registry through the platform CoreText bindings, not a directory listing; iOS sandboxes system font files, so the `.ttf`/`.ttc`/`.otf` content is rebuilt from each font's copied tables | Bundled HarfBuzz backend (`iosArm64` and `iosSimulatorArm64`, statically linked through cinterop) | Same portable routes; a new `open` observes a controlled change and mints a new `ios-coretext-registry` generation |
 | Kotlin Native (other targets) | No system-font provider in these targets | No implemented end-to-end shaping route | Common contracts are portable; these executable font journeys are not implemented |
 | CFF/CFF2 data on any target | Standalone CFF1 `.otf` and CFF2 outlines are read; collections carrying CFF faces are captured | CFF1 shaping through the portable shaper; CFF2 `blend`/`vsindex` evaluated at the instance's normalized axes | Portable cubic outline route for CFF1 and CFF2 (variation at the instance location); portable metric variation (`HVAR`/`VVAR`/`MVAR`) on the TrueType and CFF2 routes, variable colour (COLR v1 `VarIndexBase`/`VarStore` and the variable clip box) on the portable route, synthetic geometry is honoured on the portable outline route (colour and bitmap routes fail typed), and no CoreText CFF route |
 
@@ -63,9 +63,13 @@ five-target Linux/macOS/Windows JVM CI matrix runs the full shaper tests and
 native dependency audit on every target, and the actual directory and
 system-catalog shaping/glyph journeys on Linux and macOS; a dedicated Android
 job runs the shaping and conformance device tests on an API 35 `x86_64` emulator
-over the same audited fonts. Android now carries the bundled HarfBuzz backend
-(API 28+), while iOS still carries none, so the iOS journey stops before shaping
-and uses the platform text stack; every provider journey runs on a controlled
+over the same audited fonts, and an iOS-simulator job runs the shaping and
+conformance suites on the `iosSimulatorArm64` slice. Every current target now
+carries a bundled HarfBuzz backend: Android through
+`org.graphiks:kffi-harfbuzz-android` (API 28+), iOS through the statically linked
+`org.graphiks:kffi-harfbuzz-iosarm64` and `org.graphiks:kffi-harfbuzz-iossimulatorarm64`
+cinterop artifacts, and Linux/macOS/Windows through the multiplatform
+`org.graphiks:kffi-harfbuzz` binding. Every provider journey runs on a controlled
 provider boundary over audited fonts, and installed-font checks remain optional
 smoke tests rather than the oracle.
 
@@ -125,10 +129,13 @@ raised from API 24 when the Android HarfBuzz backend landed.
 
 The internal kffi dependencies use
 `org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` (Apple module) and
-`org.graphiks:kffi-harfbuzz:1.0.0-SNAPSHOT` (multiplatform shaping), following the
-latest publication of the current development line. Projects resolving them
+`org.graphiks:kffi-harfbuzz:1.0.0-SNAPSHOT` (multiplatform shaping), plus the
+statically linked `org.graphiks:kffi-harfbuzz-iosarm64` and
+`org.graphiks:kffi-harfbuzz-iossimulatorarm64` artifacts on the iOS device and
+simulator targets, following the latest publication of the current development
+line. Projects resolving them
 need the Central Portal snapshot repository, narrowly filtered to the CoreText,
-HarfBuzz and generic runtime root/JVM/Android artifacts required by their
+HarfBuzz and generic runtime root/JVM/Android/iOS artifacts required by their
 publication metadata. The consuming modules recheck changing artifacts on every online
 dependency resolution; they do not pin a timestamped artifact or enforce a
 global dependency-checksum policy. A newer publication can change between
@@ -150,6 +157,8 @@ dependencyResolutionManagement {
                 includeModule("org.graphiks", "kffi-harfbuzz-jvm")
                 includeModule("org.graphiks", "kffi-harfbuzz-android")
                 includeModule("org.graphiks", "kffi-harfbuzz-android-native")
+                includeModule("org.graphiks", "kffi-harfbuzz-iosarm64")
+                includeModule("org.graphiks", "kffi-harfbuzz-iossimulatorarm64")
                 includeModule("org.graphiks", "kffi")
                 includeModule("org.graphiks", "kffi-jvm")
             }

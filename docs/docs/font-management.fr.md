@@ -1399,23 +1399,24 @@ aucune politique de GPU, d’atlas, de rendu de plateforme ou de rendu.
 Le backend HarfBuzz 14.3.0 embarqué est l’implémentation de référence. Ses
 ressources Linux et macOS x64/arm64 et Windows x64 sont fournies par la liaison
 publiée `org.graphiks:kffi-harfbuzz`, et Android embarque le même moteur via
-l’artefact `org.graphiks:kffi-harfbuzz-android` ; la bibliothèque est vérifiée
-par hash (empreinte cryptographique) au chargement et jamais recherchée dans
-les bibliothèques du système. Le socle Android partagé est l’API 28, relevé
+l’artefact `org.graphiks:kffi-harfbuzz-android`. iOS embarque le même moteur,
+lié statiquement via cinterop, sous les artefacts
+`org.graphiks:kffi-harfbuzz-iosarm64` (appareil) et
+`org.graphiks:kffi-harfbuzz-iossimulatorarm64` (simulateur) ; la bibliothèque est
+vérifiée par hash (empreinte cryptographique) au chargement et jamais recherchée
+dans les bibliothèques du système. Le socle Android partagé est l’API 28, relevé
 depuis l’API 24 — un changement cassant délibéré pour les consommateurs API
-24–27. Les contrats publics ne contiennent ni type JNI ni type natif.
+24–27. Les contrats publics ne contiennent ni type JNI ni type natif, et aucune
+plateforme n’est laissée sans backend de shaping embarqué.
 
 Une location de variation non-défaut descend jusqu’à la fonte HarfBuzz préparée sur
-JVM et Android via `setVarCoordsNormalized` de la liaison republiée
+JVM, Android et iOS via `setVarCoordsNormalized` de la liaison republiée
 `org.graphiks:kffi-harfbuzz`, appliquée selon l’ordre des axes `fvar` en virgule
 fixe 2.14. Une location vide ou explicitement au défaut (face non-variable,
 instance par défaut, ou `[0.0]`) ne change pas le rendu : le chemin par défaut
 reste identique au bit près. L’avance verticale (et les bornes de la
 spécification) ne sont pas vérifiées : la requête d’avance verticale n’est pas
 exposée par la liaison.
-Apple ne possède pas encore d’adapter (adaptateur de plateforme) de composition
-exécutable : ce parcours ne doit donc pas être considéré comme conforme sur les
-plateformes Apple.
 
 ## Repli déterministe entre fontes
 
