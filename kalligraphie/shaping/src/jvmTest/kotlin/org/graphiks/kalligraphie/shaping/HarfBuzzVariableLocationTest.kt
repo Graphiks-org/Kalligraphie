@@ -41,7 +41,7 @@ class HarfBuzzVariableLocationTest {
     }
 
     /**
-     * The exit criterion: our metric at the instance equals HarfBuzz's advance at the same
+     * Our metric at the instance equals HarfBuzz's advance at the same
      * location. Audited outside the implementation (HarfBuzz 14.4.0):
      *   hb-shape NotoSansJP-VerticalFixture.ttf 'A' --variations=wght=900 -> ax 660
      *   hb-shape NotoSansJP-VerticalFixture.ttf 'A'                       -> ax 574
@@ -104,7 +104,7 @@ class HarfBuzzVariableLocationTest {
     }
 
     /**
-     * The exit criterion's vertical half, advance only: a top-to-bottom-shaped `A`'s `yAdvance` equals
+     * The vertical advance: a top-to-bottom-shaped `A`'s `yAdvance` equals
      * our `verticalMetrics()` advance at the same location. The engine normalizes HarfBuzz's negative
      * upward-positive advance through `toPhysicalVerticalCoordinate`, so both quantities are positive
      * downward-positive layout units. Audited outside the implementation (HarfBuzz 14.4.0):
