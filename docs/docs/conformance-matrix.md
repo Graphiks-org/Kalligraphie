@@ -32,10 +32,12 @@ diagnostic returned when — and only when — the capability is unavailable.
 | --- | --- | --- | --- | --- | --- |
 | JVM | Present | Present | Present | Present | `jvm-reference` |
 | iOS | Absent | Absent | Absent | Present | `absent` / `portable-glyph` |
-| Android | Absent | Absent | Absent | Present | `absent` / `portable-glyph` |
+| Android | Absent | Present | Absent | Present | `absent` / `bundled-harfbuzz` / `portable-glyph` |
 
-The JVM declares the complete reference capability surface. iOS and Android
-declare Unicode analysis, shaping, and end-to-end layout `absent`, and the glyph
+The JVM declares the complete reference capability surface. Android declares
+shaping present through the bundled HarfBuzz backend (API 28+), and declares
+Unicode analysis and end-to-end layout `absent`; iOS declares Unicode analysis,
+shaping, and end-to-end layout `absent`. Both mobile targets declare the glyph
 representation route present. The absence diagnostic is emitted for every absent
 capability, independently of whether a caller requires it.
 
@@ -78,9 +80,11 @@ only when portable geometry exists to compare.
 
 ## Known limitations
 
-- Portable Unicode analysis and shaping are owned by separate workstreams: the
-  system-font-provider and HarfBuzz/kffi bindings. Until those land, iOS and
-  Android declare analysis and shaping absent.
+- Portable Unicode analysis and end-to-end layout are owned by separate
+  workstreams. Android declares shaping present through the bundled HarfBuzz
+  backend, which requires API 28 or later; the shared Android library floor was
+  raised from API 24 to API 28, a deliberate breaking change for API 24–27
+  consumers. iOS still declares analysis and shaping absent.
 - Reading and rasterizing fonts is not part of this module.
 - `iosArm64` is compiled but tests execute on `iosSimulatorArm64`; device
   execution is not performed on hosted runners.

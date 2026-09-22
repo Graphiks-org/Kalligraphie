@@ -11,7 +11,7 @@ independently.
 - `:kalligraphie` is the public facade consumed by applications.
 - `:kalligraphie:api` contains the portable public contracts and immutable value types.
 - `:kalligraphie:unicode` provides canonical text decoding and the JVM reference Unicode analysis.
-- `:kalligraphie:shaping` provides the reference JVM HarfBuzz adapter behind portable shaping contracts.
+- `:kalligraphie:shaping` provides the reference multiplatform HarfBuzz adapter behind portable shaping contracts.
 - `:kalligraphie:layout` positions shaped runs and provides exact editable-line, editable-paragraph, flow-region, and incremental geometry.
 
 The `:kalligraphie:font:core`, `:kalligraphie:font:sfnt`,
