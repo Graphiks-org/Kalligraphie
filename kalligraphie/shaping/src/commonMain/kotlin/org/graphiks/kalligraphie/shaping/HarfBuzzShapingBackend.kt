@@ -133,11 +133,19 @@ private class HarfBuzzPortableBackend(
             )
         }
 
+        val variationLocation = when (val location = request.font.normalizedVariationLocation()) {
+            is FontOperationResult.Success -> location.value.toFloatArray()
+            is FontOperationResult.Failure -> return location
+            is FontOperationResult.Cancelled -> return location
+        }
+
         return try {
             val prepared = preparedFonts.acquire(
                 request.font.key,
                 source = { copyFontBytes(request) },
-                create = { bytes -> bindings.prepare(bytes, request.font.key.face.faceIndex, layoutSize) },
+                create = { bytes ->
+                    bindings.prepare(bytes, request.font.key.face.faceIndex, layoutSize, variationLocation)
+                },
             )
             try {
                 observeCancellation(request)
@@ -153,6 +161,8 @@ private class HarfBuzzPortableBackend(
             FontOperationResult.Cancelled()
         } catch (limitExceeded: ShapingLimitExceeded) {
             shapingResourceLimitFailure(limitExceeded.limit, limitExceeded.observed)
+        } catch (failure: HarfBuzzBindingException) {
+            bindingFailureError(failure)
         } catch (error: Throwable) {
             shapingFailure(
                 code = "font.shaping-native-failure",

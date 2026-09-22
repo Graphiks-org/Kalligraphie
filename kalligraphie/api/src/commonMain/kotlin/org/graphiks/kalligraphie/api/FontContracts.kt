@@ -754,6 +754,25 @@ public interface FontInstance {
      */
     public fun fontMetrics(): FontOperationResult<FontMetrics> =
         unsupportedContractOperation("This font instance does not support font metrics.")
+
+    /**
+     * Returns this instance's normalized variation location in the face's `fvar` axis order.
+     *
+     * The list length equals the face's declared `fvar` axis count and every value is a normalized
+     * coordinate in `[-1, 1]`; an axis absent from the instance's selection is `0.0`. The list is
+     * empty when the instance selects no variation or the face is not variable. Callers must treat
+     * an empty list as "apply no variation" and must never convert it to a zero-filled request:
+     * an empty request has no well-defined reset semantics on the native side.
+     *
+     * This is a low-level wiring accessor for the shaping backend. The tag-keyed
+     * [FontInstanceKey.geometry] axes are ordered here — where the `fvar` table is owned — because
+     * `:kalligraphie:shaping` consumes only this interface and does not parse `fvar`.
+     *
+     * The default returns `Success(emptyList())` for instances that do not implement variation.
+     */
+    @KalligraphieInternalApi
+    public fun normalizedVariationLocation(): FontOperationResult<List<Float>> =
+        FontOperationResult.Success(emptyList())
 }
 
 private inline fun cancelledAssetTransfer(token: CancellationToken, dispatch: () -> FontOperationResult<FontRenderAssetHandle>): FontOperationResult<FontRenderAssetHandle> {

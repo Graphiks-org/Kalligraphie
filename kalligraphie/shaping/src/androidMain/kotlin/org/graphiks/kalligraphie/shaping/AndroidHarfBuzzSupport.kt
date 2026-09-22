@@ -43,7 +43,9 @@ private class AndroidHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuz
 
     override fun createBuffer(): PlatformHarfBuzzBuffer = AndroidHarfBuzzBuffer(hb, hb.createBuffer())
 
-    override fun prepare(fontBytes: ByteArray, faceIndex: Int): PlatformPreparedFont {
+    override val supportsVariationLocation: Boolean = true
+
+    override fun prepare(fontBytes: ByteArray, faceIndex: Int, variationLocation: FloatArray): PlatformPreparedFont {
         val blob = hb.createBlob(fontBytes)
         var face: HarfBuzzFace? = null
         var font: HarfBuzzFont? = null
@@ -53,6 +55,9 @@ private class AndroidHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuz
             font = face.createFont()
             font.useOpenTypeFunctions()
             font.setScale(unitsPerEm, unitsPerEm)
+            if (variationLocation.any { it != 0f }) {
+                font.setVarCoordsNormalized(variationLocation.toNormalizedVarCoords())
+            }
             face.makeImmutable()
             font.makeImmutable()
             return AndroidPreparedFont(blob, face, font, unitsPerEm)
@@ -188,3 +193,4 @@ private fun ShapingDirection.toKffiDirection(): HarfBuzzDirection = when (this) 
     ShapingDirection.RIGHT_TO_LEFT -> HarfBuzzDirection.RIGHT_TO_LEFT
     ShapingDirection.TOP_TO_BOTTOM -> HarfBuzzDirection.TOP_TO_BOTTOM
 }
+

@@ -1021,10 +1021,15 @@ on the portable outline route. Malformed `gvar` data fails with
 portable `STAT` reading is a separate concern and is deferred, alongside native
 metric bridges (default-only), `avar` version 2, `cvar`, `VARC`,
 the fingerprint-regenerating profile limit fields,
-the shaping sub-plan's HarfBuzz metric cross-check (the `metrics() == HarfBuzz`
-exit criterion is not bound by this metric-variation sub-plan), and the §8
-`maxVariationTableBytes`/`retainedBytes` cache-budget billing of the decoded
-metric tables. `FontInstance.fontMetrics()`
+and the §8 `maxVariationTableBytes`/`retainedBytes` cache-budget billing of the
+decoded metric tables. The shaping-at-instance sub-plan now binds the HarfBuzz
+**horizontal** metric cross-check on JVM and Android: the instance's normalized
+location reaches the prepared HarfBuzz font (ordered into `fvar` axis order) and
+our `metrics()` advance is asserted equal to HarfBuzz's advance at the same
+location on the audited `NotoSansJP-VerticalFixture.ttf` (`A` = `660` at
+`wght = 900`, `622` at `wght = 500`, `574` at the default). The vertical advance
+and the spec's bounds are not cross-checked (the binding exposes no
+`hb_font_get_glyph_v_advance`). `FontInstance.fontMetrics()`
 is implemented: it returns the instance's `OS/2` (with `hhea` fallback), `post` and
 `MVAR` font-wide metrics in design units. Horizontal metrics use the priority
 `HVAR` then `gvar` phantom-point deltas then `hmtx`; vertical metrics use `VVAR`
@@ -1250,6 +1255,14 @@ search. The shared Android floor is API 28, raised from API 24 — a deliberate
 breaking change for API 24–27 consumers. Public contracts contain no JNI or
 native types. Apple does not yet provide an executable shaping adapter, so this
 route must not be treated as conformant on Apple platforms.
+
+A non-default variation location descends to the prepared HarfBuzz font on JVM and
+Android through the republished `org.graphiks:kffi-harfbuzz` binding's
+`setVarCoordsNormalized`, applied in the face's `fvar` axis order as 2.14 fixed
+point. An empty or explicitly design-default location (a non-variable face, the
+default instance, or `[0.0]`) never changes the render, so the default path is
+byte-identical. The vertical advance (and the spec's bounds) are not cross-checked:
+HarfBuzz's vertical-advance query is not exposed by the binding.
 
 ## Deterministic multi-font fallback
 

@@ -41,7 +41,9 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
 
     override fun createBuffer(): PlatformHarfBuzzBuffer = JvmHarfBuzzBuffer(hb, hb.createBuffer())
 
-    override fun prepare(fontBytes: ByteArray, faceIndex: Int): PlatformPreparedFont {
+    override val supportsVariationLocation: Boolean = true
+
+    override fun prepare(fontBytes: ByteArray, faceIndex: Int, variationLocation: FloatArray): PlatformPreparedFont {
         val blob = hb.createBlob(fontBytes)
         var face: HarfBuzzFace? = null
         var font: HarfBuzzFont? = null
@@ -51,6 +53,9 @@ private class JvmHarfBuzzPlatformBinding(private val hb: HarfBuzz) : HarfBuzzPla
             font = face.createFont()
             font.useOpenTypeFunctions()
             font.setScale(unitsPerEm, unitsPerEm)
+            if (variationLocation.any { it != 0f }) {
+                font.setVarCoordsNormalized(variationLocation.toNormalizedVarCoords())
+            }
             face.makeImmutable()
             font.makeImmutable()
             return JvmPreparedFont(blob, face, font, unitsPerEm)
@@ -179,3 +184,4 @@ private fun ShapingDirection.toKffiDirection(): HarfBuzzDirection = when (this) 
     ShapingDirection.RIGHT_TO_LEFT -> HarfBuzzDirection.RIGHT_TO_LEFT
     ShapingDirection.TOP_TO_BOTTOM -> HarfBuzzDirection.TOP_TO_BOTTOM
 }
+

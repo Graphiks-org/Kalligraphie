@@ -1143,10 +1143,16 @@ l’emplacement de table `gvar`.
 `Success(null)` : la lecture portable de `STAT` est un sujet distinct et reste
 différée, au même titre que les ponts natifs de métriques (limités au cas par
 défaut), `avar` version 2, `cvar`, `VARC`, les champs de limite de profil qui régénèrent les
-empreintes, la vérification croisée des métriques HarfBuzz du sous-plan de
-composition (`metrics() == HarfBuzz` n’est pas un critère de sortie lié à ce
-sous-plan de variation des métriques) et la facturation de budget de cache §8
-`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées.
+empreintes et la facturation de budget de cache §8
+`maxVariationTableBytes`/`retainedBytes` des tables de métriques décodées. Le
+sous-plan « composition à l’instance » lie désormais la vérification croisée
+**horizontale** des métriques HarfBuzz sur JVM et Android : la location normalisée
+de l’instance atteint la fonte HarfBuzz préparée (ordonnée selon l’ordre des axes
+`fvar`) et notre `metrics()` est égale à l’avance HarfBuzz à la même location sur
+la fixture auditée `NotoSansJP-VerticalFixture.ttf` (`A` = `660` à `wght = 900`,
+`622` à `wght = 500`, `574` au défaut). L’avance verticale et les bornes de la
+spécification ne sont pas vérifiées (la liaison n’expose aucun
+`hb_font_get_glyph_v_advance`).
 `FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
 de fonte de l’instance issues de `OS/2` (avec repli sur `hhea`), `post` et `MVAR`,
 en unités de design. Les métriques horizontales suivent la priorité `HVAR` puis
@@ -1398,6 +1404,15 @@ par hash (empreinte cryptographique) au chargement et jamais recherchée dans
 les bibliothèques du système. Le socle Android partagé est l’API 28, relevé
 depuis l’API 24 — un changement cassant délibéré pour les consommateurs API
 24–27. Les contrats publics ne contiennent ni type JNI ni type natif.
+
+Une location de variation non-défaut descend jusqu’à la fonte HarfBuzz préparée sur
+JVM et Android via `setVarCoordsNormalized` de la liaison republiée
+`org.graphiks:kffi-harfbuzz`, appliquée selon l’ordre des axes `fvar` en virgule
+fixe 2.14. Une location vide ou explicitement au défaut (face non-variable,
+instance par défaut, ou `[0.0]`) ne change pas le rendu : le chemin par défaut
+reste identique au bit près. L’avance verticale (et les bornes de la
+spécification) ne sont pas vérifiées : la requête d’avance verticale n’est pas
+exposée par la liaison.
 Apple ne possède pas encore d’adapter (adaptateur de plateforme) de composition
 exécutable : ce parcours ne doit donc pas être considéré comme conforme sur les
 plateformes Apple.

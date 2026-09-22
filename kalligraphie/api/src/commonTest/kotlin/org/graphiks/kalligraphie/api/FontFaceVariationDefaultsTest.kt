@@ -63,4 +63,12 @@ class FontFaceVariationDefaultsTest {
     fun defaultDescriptorHasNoVariationSelection() {
         assertNull(FontInstanceDescriptor().variation)
     }
+
+    @OptIn(KalligraphieInternalApi::class)
+    @Test
+    fun defaultNormalizedVariationLocationIsAnEmptySuccess() {
+        val result = StaticInstance().normalizedVariationLocation()
+        val success = assertIs<FontOperationResult.Success<List<Float>>>(result)
+        assertEquals(emptyList(), success.value)
+    }
 }
