@@ -8,20 +8,19 @@ import org.graphiks.kalligraphie.e2e.GoldenImage
 import org.graphiks.kalligraphie.e2e.GoldenManifest
 import org.graphiks.kalligraphie.e2e.GoldenManifestParseResult
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.e2e.GoldenVerifier
 
 class GoldenVerificationTest {
     @Test
     fun everyCataloguedSceneMatchesTheCommittedManifest() {
-        val text = checkNotNull(object {}.javaClass.getResourceAsStream("/golden/manifest.tsv")) {
-            "the golden manifest resource is missing; run ./gradlew :kalligraphie:e2e:updateE2eGolden"
-        }.use { input -> input.readBytes().decodeToString() }
+        val text = E2eTestEnvironment.corpus.text("/golden/manifest.tsv")
         val manifest = when (val parsed = GoldenManifest.parse(text)) {
             is GoldenManifestParseResult.Parsed -> parsed.manifest
             is GoldenManifestParseResult.Rejected -> error("${parsed.code.code}: ${parsed.detail}")
         }
 
-        val entries = JvmGoldenSceneCatalog.entries()
+        val entries = GoldenSceneCatalog.entries()
         assertTrue(entries.isNotEmpty(), "the golden scene catalog must not be empty")
         val rendered = LinkedHashMap<String, GoldenImage>()
         for (entry in entries) {

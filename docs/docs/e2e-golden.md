@@ -23,14 +23,21 @@ anything. `explicitApi()` is enabled.
 
 Its dependencies keep it outside the consumer graph: `commonMain` depends only on
 `:kalligraphie:api`, and the JVM test source set adds `:kalligraphie`,
-`:kalligraphie:raster-cpu`, `:kalligraphie:layout`, `:kalligraphie:shaping`,
-`:kalligraphie:unicode`, `:kalligraphie:font:core` and `:kalligraphie:font:sfnt`.
-Nothing in production depends on this module, and it is never published.
+`:kalligraphie:conformance`, `:kalligraphie:raster-cpu`, `:kalligraphie:layout`,
+`:kalligraphie:shaping`, `:kalligraphie:unicode`, `:kalligraphie:font:core` and
+`:kalligraphie:font:sfnt`. Nothing in production depends on this module, and it is
+never published.
 
 The pure model — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` and the SHA-256 digest — lives in
-`commonMain`, with no platform type. The catalog, the renderer, the verifier and
-the fixtures are JVM test sources.
+`commonMain`, with no platform type. The catalog, the scene materializer, the
+portable renderers, the verifier, the capability ratchets and the fixtures are
+shared test sources compiled into every test target that can run them, reading
+their bytes through an injected `FixtureCorpus` instead of the class path; only
+the paragraph-facade renderers, the writers and the journeys stay in `jvmTest`. A
+scene declares the `CatalogRoute` it needs, the platform declares its portable
+capabilities, and the ratchet refuses a registry that is not exactly what those
+capabilities imply.
 
 Protection is free: the root `check` runs `:kalligraphie:e2e:jvmTest` like any
 other subproject, and the existing pull-request workflow already covers
@@ -175,7 +182,9 @@ stay per consumer — `:kalligraphie:e2e` defines its own thin builders reading
 ## Known limitations
 
 - Only `jvmTest` executes. The iOS and Android targets compile, but the scene
-  catalog is JVM-only.
+  catalog is JVM-only — the portable half of the harness is already placed in
+  shared test sources, and the paragraph-authored scenes wait for a portable
+  Unicode-analysis backend.
 - Comparison is exact; a non-deterministic rendering route would require
   introducing a tolerance.
 - Reference images are not hosted externally (no LFS or build artifact), so the

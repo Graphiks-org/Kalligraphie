@@ -14,27 +14,50 @@ code lives and why.
 
 | Source set | Holds | Compiled for |
 | --- | --- | --- |
-| `commonMain` | The catalog model (`CatalogEntry`, its axes, statuses and audit), the canonical image and its geometry (`GoldenImage`, `GoldenInkBox`, `GoldenImageReframer`, `GoldenOrientation`), the claims export (`CatalogClaims`) and the matrix renderer (`CatalogMatrixRenderer`). | Every target |
+| `commonMain` | The catalog model (`CatalogEntry`, its axes, routes, statuses and audit), the canonical image and its geometry (`GoldenImage`, `GoldenInkBox`, `GoldenImageReframer`, `GoldenOrientation`), the claims export (`CatalogClaims`) and the matrix renderer (`CatalogMatrixRenderer`). | Every target |
 | `commonTest` | The tests of that model, which need no font and no host. | Every test target |
-| `jvmTest` | The renderers and scene materializers, the font fixtures, the golden manifest reader/writer and verifier, the probes, the ratchet, and the journeys. | JVM only |
+| `sharedTest` | The portable half of the harness: the corpus seam (`FixtureCorpus`), the scene renderers that need only the portable glyph route, the scene materializer and its catalog, the probes, the golden verifier, the capability ratchets, and the tests of all of them. | Every test target that can run it |
+| `classpathTest` | The corpus implementation of the JVM and Android family: fonts and committed resources read through the class loader. | JVM and Android test targets |
+| `jvmTest` | What genuinely needs this platform: the paragraph-facade renderers (`JvmSceneRenderers` — the composed lines, the weight ladder, the mosaic), the writers (`updateE2eGolden`, the matrix, the claims, the dumps), the journeys, and the platform declaration itself (`E2eTestEnvironment`). | JVM only |
 
-The rule for new code: **a unit that reads a font file or a host resource belongs in `jvmTest`;
-everything else belongs in `commonMain` with its test in `commonTest`.** Two facts fix that
-boundary, and neither is a matter of taste:
+`sharedTest` and `classpathTest` are not Kotlin source sets of their own: they are directories added
+to several test compilations with `kotlin.srcDir`. That is deliberate. `androidDeviceTest` cannot
+see `commonTest` in this repository, so a shared directory is the only way to compile one copy of
+the portable harness into every test target — the same arrangement `:kalligraphie:shaping` uses for
+its device goldens.
 
-- **Font bytes are a classpath resource.** `fixtureBytes` reads
-  `resources.srcDir(rootProject.file("test-fixtures"))` through `getResourceAsStream`, and
-  Kotlin/Native has no classpath resources. Any test that loads a font is therefore pulled into
-  `jvmTest` by construction. (`:kalligraphie:shaping` solves the same problem for iOS by generating
-  an embedded base64 corpus; that is the shape to follow if this harness ever has to run on a
-  non-JVM target.)
-- **The harness is Gradle plumbing.** The writers are `Test` tasks gated by environment variables
-  (`KALLIGRAPHIE_E2E_UPDATE`, `KALLIGRAPHIE_E2E_MATRIX`, `KALLIGRAPHIE_E2E_CLAIMS`,
-  `KALLIGRAPHIE_E2E_DUMPS`), they write into the source tree through `java.nio.file`, and the claims
-  round-trip shells out to `python3`. None of that is portable, and none of it is what the model
-  tests need.
+The rule for new code: **a scene that needs no paragraph facade belongs in `sharedTest`, and reads
+its font bytes from the injected `FixtureCorpus`; anything that writes into the repository belongs
+in `jvmTest`.** Two facts fix that boundary:
 
-So the split follows the *data*, not a preference: an `expect fun fixtureBytes(...)` seam would move
-files without moving the capability, because the Native actual would have no font to read. If the
-harness ever needs to run those tests on the shipped targets, the work is generating an embedded
-corpus, not relocating classes.
+- **Font bytes reach the harness through the corpus seam, never through the class path.**
+  `FixtureCorpus` has one implementation per platform family — the class-path reader for JVM and
+  Android, an embedded base64 corpus for Kotlin/Native, which has no classpath resources at all (the
+  shape `:kalligraphie:shaping` uses for its iOS goldens). A test that calls `bytes("/fonts/…")`
+  therefore compiles wherever a corpus exists, and the *same* committed fingerprint is verified by
+  every platform rather than re-frozen per platform.
+- **The harness's platform half is Gradle plumbing.** The writers are `Test` tasks gated by
+  environment variables (`KALLIGRAPHIE_E2E_UPDATE`, `KALLIGRAPHIE_E2E_MATRIX`,
+  `KALLIGRAPHIE_E2E_CLAIMS`, `KALLIGRAPHIE_E2E_DUMPS`), they write into the source tree through
+  `java.nio.file`, and the claims round-trip shells out to `python3`. None of that is portable: the
+  *verification* is shared, the *authoring* is not.
+
+## Which scenes a platform verifies, and why that is not a preference
+
+Every supported entry declares a `CatalogRoute`, and its renderer declares the same one; the
+materializer refuses a disagreement. The route maps to the portable capabilities of
+`:kalligraphie:conformance` — `PORTABLE_GLYPH` to `GLYPH_REPRESENTATION_VARIANTS`,
+`PARAGRAPH_LAYOUT` to that plus `END_TO_END_LAYOUT` — so each platform derives the scenes it must
+verify from its *own* declared capability identity, and the ratchet requires the registry to match
+that set exactly in both directions.
+
+Two consequences worth stating, because they are the reason the route exists at all:
+
+- A scene cannot be skipped in silence. An entry the platform does not verify is one its declared
+  capabilities excuse, and the comparison is checked, not narrated.
+- When a portable Unicode-analysis backend lands and `END_TO_END_LAYOUT` flips to available on a
+  shipped target, the ratchet stops excusing the composed lines, the weight ladder and the mosaic
+  there and *demands* their renderers — the work becomes forced rather than remembered.
+
+The journeys are not on this axis: they assert behaviour through the facade with their own fixture
+access and stay on the reference platform.

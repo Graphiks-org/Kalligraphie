@@ -21,6 +21,7 @@ public object VariationCatalog {
             tables = setOf("avar", "cmap", "fvar", "gvar", "GDEF", "glyf", "GPOS", "GSUB", "HVAR", "hmtx", "loca"),
             family = GoldenSceneFamily.COMPOSED_LINE,
             frame = SceneFramePolicy.AutoSized(padding = 2),
+            route = CatalogRoute.PARAGRAPH_LAYOUT,
         ),
         documented(
             id = "variation.avar-v2",

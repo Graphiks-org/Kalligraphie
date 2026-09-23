@@ -17,6 +17,7 @@ public object OutlineCatalog {
             tables = setOf("cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "post", "OS/2"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
             frame = SceneFramePolicy.Pinned(width = 43, height = 45),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "outline.cff1-static",
@@ -28,6 +29,7 @@ public object OutlineCatalog {
             tables = setOf("CFF ", "cmap"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
             frame = SceneFramePolicy.AutoSized(padding = 1),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "outline.cff2-static",
@@ -39,6 +41,7 @@ public object OutlineCatalog {
             tables = setOf("CFF2", "cmap"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
             frame = SceneFramePolicy.AutoSized(padding = 1),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
     )
 }

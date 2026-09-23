@@ -38,6 +38,7 @@ public object CompositionCatalog {
             tables = setOf("cmap", "glyf", "loca", "hmtx", "GDEF", "GPOS", "GSUB"),
             family = GoldenSceneFamily.MOSAIC,
             frame = SceneFramePolicy.AutoSized(padding = 2),
+            route = CatalogRoute.PARAGRAPH_LAYOUT,
             composedOf = listOf(
                 CorpusKeys.AMIRI,
                 CorpusKeys.NOTO_DEVANAGARI,

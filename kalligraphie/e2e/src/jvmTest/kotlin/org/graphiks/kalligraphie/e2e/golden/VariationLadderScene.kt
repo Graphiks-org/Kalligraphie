@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.e2e.golden
 
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.FontVariationCoordinate
 import org.graphiks.kalligraphie.api.FontVariationCoordinates
@@ -36,13 +37,14 @@ internal object VariationLadderScene {
      * @param weights design `wght` values, lightest first; at least two are required, since a ladder
      * of one rung says nothing about variation.
      */
-    fun ladder(text: String, fontPath: String, weights: List<Float>, language: String = "en"): GoldenImage {
+    fun ladder(corpus: FixtureCorpus, text: String, fontPath: String, weights: List<Float>, language: String = "en"): GoldenImage {
         require(weights.size >= 2) { "a weight ladder needs at least two weights." }
         require(weights.zipWithNext().all { (lighter, heavier) -> lighter < heavier }) {
             "a weight ladder must be ordered from the lightest weight to the heaviest."
         }
         val rows = weights.map { weight ->
             ComposedLineScenes.placeLine(
+                corpus = corpus,
                 text = text,
                 language = language,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,

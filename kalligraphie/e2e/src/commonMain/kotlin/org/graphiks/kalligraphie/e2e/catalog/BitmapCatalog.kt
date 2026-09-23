@@ -17,6 +17,7 @@ public object BitmapCatalog {
             tables = setOf("EBLC", "EBDT"),
             family = GoldenSceneFamily.GLYPH_BITMAP,
             frame = SceneFramePolicy.Pinned(width = 13, height = 13),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "bitmap.cbdt-png.u1f600.16",
@@ -28,6 +29,7 @@ public object BitmapCatalog {
             tables = setOf("CBLC", "CBDT"),
             family = GoldenSceneFamily.GLYPH_BITMAP,
             frame = SceneFramePolicy.AutoSized(padding = 1),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "bitmap.sbix-png.u1f600.16",
@@ -39,6 +41,7 @@ public object BitmapCatalog {
             tables = setOf("sbix"),
             family = GoldenSceneFamily.GLYPH_BITMAP,
             frame = SceneFramePolicy.AutoSized(padding = 1),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
     )
 }

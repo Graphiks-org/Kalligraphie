@@ -20,6 +20,7 @@ public object MetricsCatalog {
             tables = setOf("glyf", "loca", "cmap"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
             frame = SceneFramePolicy.AutoSized(padding = 1),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         documented(
             id = "metrics.vvar-real-font",

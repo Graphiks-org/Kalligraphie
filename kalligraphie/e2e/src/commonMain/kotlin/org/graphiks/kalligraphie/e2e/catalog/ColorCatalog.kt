@@ -17,6 +17,7 @@ public object ColorCatalog {
             tables = setOf("COLR", "CPAL", "glyf", "loca"),
             family = GoldenSceneFamily.GLYPH_PAINT,
             frame = SceneFramePolicy.Pinned(width = 71, height = 72),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "color.colr-v0-alphabet-sheet",
@@ -28,6 +29,7 @@ public object ColorCatalog {
             tables = setOf("COLR", "CPAL", "glyf", "loca"),
             family = GoldenSceneFamily.ALPHABET_SHEET,
             frame = SceneFramePolicy.Pinned(width = 656, height = 90),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "color.colr-v0-emoji-sheet",
@@ -39,6 +41,7 @@ public object ColorCatalog {
             tables = setOf("COLR", "CPAL", "glyf", "loca"),
             family = GoldenSceneFamily.ALPHABET_SHEET,
             frame = SceneFramePolicy.Pinned(width = 1200, height = 76),
+            route = CatalogRoute.PORTABLE_GLYPH,
         ),
         CatalogEntry(
             id = "color.colr-cff",

@@ -24,14 +24,21 @@ des tests aujourd'hui, les autres cibles compilent donc sans rien exécuter.
 
 Ses dépendances le tiennent hors du graphe consommateur : `commonMain` ne dépend
 que de `:kalligraphie:api`, et le source set de test JVM ajoute `:kalligraphie`,
-`:kalligraphie:raster-cpu`, `:kalligraphie:layout`, `:kalligraphie:shaping`,
-`:kalligraphie:unicode`, `:kalligraphie:font:core` et `:kalligraphie:font:sfnt`.
-Rien en production ne dépend de ce module, et il n'est jamais publié.
+`:kalligraphie:conformance`, `:kalligraphie:raster-cpu`, `:kalligraphie:layout`,
+`:kalligraphie:shaping`, `:kalligraphie:unicode`, `:kalligraphie:font:core` et
+`:kalligraphie:font:sfnt`. Rien en production ne dépend de ce module, et il n'est
+jamais publié.
 
 Le modèle pur — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` et le digest SHA-256 — vit dans
-`commonMain`, sans type plateforme. Le catalogue, le renderer, le vérificateur et
-les fixtures sont des sources de test JVM.
+`commonMain`, sans type plateforme. Le catalogue, le matérialiseur de scènes, les
+renderers portables, le vérificateur, les ratchets de capacités et les fixtures
+sont des sources de test partagées, compilées dans chaque cible de test qui peut
+les exécuter et lisant leurs octets via un `FixtureCorpus` injecté plutôt que par
+le class path ; seuls les renderers de la façade de paragraphe, les écrivains et
+les parcours restent dans `jvmTest`. Une scène déclare la `CatalogRoute` dont
+elle a besoin, la plateforme déclare ses capacités portables, et le ratchet
+refuse un registre qui ne serait pas exactement ce que ces capacités impliquent.
 
 La protection est gratuite : le `check` racine exécute `:kalligraphie:e2e:jvmTest`
 comme tout sous-projet, et le workflow de pull request existant couvre déjà
@@ -182,7 +189,9 @@ de fixtures partagé.
 ## Limites connues
 
 - Seul `jvmTest` s'exécute. Les cibles iOS et Android compilent, mais le
-  catalogue de scènes est JVM uniquement.
+  catalogue de scènes est JVM uniquement — la moitié portable du harnais est
+  déjà placée dans des sources de test partagées, et les scènes composées
+  attendent un moteur portable d'analyse Unicode.
 - La comparaison est exacte ; une route de rendu non déterministe exigerait
   d'introduire une tolérance.
 - Les images de référence ne sont pas hébergées à l'extérieur (ni LFS ni artefact

@@ -1,7 +1,7 @@
 // CatalogProbe.kt
 package org.graphiks.kalligraphie.e2e.catalog
 
-import org.graphiks.kalligraphie.e2e.golden.fixtureBytes
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 
 /** What a probe observed on the current implementation. */
 internal sealed interface ProbeObservation {
@@ -25,6 +25,6 @@ internal class CatalogProbe(
     val fontPath: String,
     private val observeBytes: (ByteArray) -> ProbeObservation,
 ) {
-    /** Reads [fontPath] and reports what the implementation did with it. */
-    fun observe(): ProbeObservation = observeBytes(fixtureBytes(fontPath))
+    /** Reads [fontPath] from [corpus] and reports what the implementation did with it. */
+    fun observe(corpus: FixtureCorpus): ProbeObservation = observeBytes(corpus.bytes(fontPath))
 }

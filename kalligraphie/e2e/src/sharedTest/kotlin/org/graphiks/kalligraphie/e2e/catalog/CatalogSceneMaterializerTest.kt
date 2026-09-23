@@ -8,16 +8,18 @@ import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
 import org.graphiks.kalligraphie.e2e.GoldenImage
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.GoldenSceneFamily
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 
 class CatalogSceneMaterializerTest {
     @Test
     fun anAutoSizedSceneFramesItsInkBoxWithPadding() {
         val entry = autoSizedEntry(padding = 2)
-        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf") {
+        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(4, 3, inkAt(x = 1, y = 1, width = 4, height = 3)))
         }
 
-        val materialized = CatalogSceneMaterializer.materialize(entry, renderer)
+        val materialized = CatalogSceneMaterializer.materialize(entry, renderer, E2eTestEnvironment.corpus)
 
         assertEquals(6, materialized.scene.width, "ink box is 2x2, padding 2 on each side")
         assertEquals(6, materialized.scene.height)
@@ -43,11 +45,11 @@ class CatalogSceneMaterializerTest {
     @Test
     fun aPinnedSceneRefusesAFrameThatNoLongerMatches() {
         val entry = pinnedEntry(width = 10, height = 10)
-        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf") {
+        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(9, 10, ByteArray(90)))
         }
 
-        val materialized = CatalogSceneMaterializer.materialize(entry, renderer)
+        val materialized = CatalogSceneMaterializer.materialize(entry, renderer, E2eTestEnvironment.corpus)
 
         val refused = assertIs<GoldenRenderOutcome.Refused>(materialized.render())
         assertEquals(GoldenDiagnosticCode.SCENE_BOUNDS_INVALID, refused.code)
@@ -56,11 +58,11 @@ class CatalogSceneMaterializerTest {
     @Test
     fun aPinnedSceneKeepsItsDeclaredFrameWhenTheRenderAgrees() {
         val entry = pinnedEntry(width = 10, height = 10)
-        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf") {
+        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(10, 10, ByteArray(100)))
         }
 
-        val materialized = CatalogSceneMaterializer.materialize(entry, renderer)
+        val materialized = CatalogSceneMaterializer.materialize(entry, renderer, E2eTestEnvironment.corpus)
 
         assertEquals(10, materialized.scene.width)
         assertEquals(GoldenSceneFamily.GLYPH_OUTLINE, materialized.scene.family)
@@ -72,11 +74,11 @@ class CatalogSceneMaterializerTest {
     @Test
     fun anAutoSizedSceneWithNoInkIsRefused() {
         val entry = autoSizedEntry(padding = 1)
-        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf") {
+        val renderer = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(8, 8, ByteArray(64)))
         }
 
-        val materialized = CatalogSceneMaterializer.materialize(entry, renderer)
+        val materialized = CatalogSceneMaterializer.materialize(entry, renderer, E2eTestEnvironment.corpus)
 
         val refused = assertIs<GoldenRenderOutcome.Refused>(materialized.render())
         assertEquals(GoldenDiagnosticCode.BLANK_SCENE, refused.code)
@@ -85,7 +87,7 @@ class CatalogSceneMaterializerTest {
     @Test
     fun theRendererFontPathMustBelongToTheEntryCorpusKey() {
         val entry = autoSizedEntry(padding = 1)
-        val renderer = CatalogSceneRenderer("/fonts/amiri/Amiri-Regular.ttf") {
+        val renderer = CatalogSceneRenderer("/fonts/amiri/Amiri-Regular.ttf", CatalogRoute.PORTABLE_GLYPH) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
         }
 
@@ -102,8 +104,9 @@ class CatalogSceneMaterializerTest {
         val entry = composedEntry(composedOf = listOf(CorpusKeys.AMIRI, CorpusKeys.NOTO_SANS_JP))
         val renderer = CatalogSceneRenderer(
             "/fonts/liberation/LiberationSans-Regular.ttf",
+            CatalogRoute.PORTABLE_GLYPH,
             additionalFontPaths = listOf("/fonts/amiri/Amiri-Regular.ttf"),
-        ) {
+        ) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
         }
 
@@ -119,11 +122,12 @@ class CatalogSceneMaterializerTest {
         val entry = composedEntry(composedOf = listOf(CorpusKeys.AMIRI))
         val renderer = CatalogSceneRenderer(
             "/fonts/liberation/LiberationSans-Regular.ttf",
+            CatalogRoute.PORTABLE_GLYPH,
             additionalFontPaths = listOf(
                 "/fonts/amiri/Amiri-Regular.ttf",
                 "/fonts/skia-cbdt/cbdt.ttf",
             ),
-        ) {
+        ) { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
         }
 
@@ -131,6 +135,29 @@ class CatalogSceneMaterializerTest {
             "entry outline.glyf renders [/fonts/skia-cbdt/cbdt.ttf] without declaring their " +
                 "corpus families",
             CatalogSceneMaterializer.fontPathMismatch(entry, renderer),
+        )
+    }
+
+    @Test
+    fun theRendererRouteMustMatchTheEntryRoute() {
+        val entry = autoSizedEntry(padding = 1)
+        val rendering: (FixtureCorpus) -> GoldenRenderOutcome = { _ ->
+            GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
+        }
+
+        assertEquals(
+            null,
+            CatalogSceneMaterializer.routeMismatch(
+                entry,
+                CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH, render = rendering),
+            ),
+        )
+        assertEquals(
+            "entry outline.glyf declares route PORTABLE_GLYPH but its renderer declares PARAGRAPH_LAYOUT",
+            CatalogSceneMaterializer.routeMismatch(
+                entry,
+                CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PARAGRAPH_LAYOUT, render = rendering),
+            ),
         )
     }
 
@@ -143,6 +170,7 @@ class CatalogSceneMaterializerTest {
         tables = setOf("glyf"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,
         frame = SceneFramePolicy.AutoSized(padding = 1),
+        route = CatalogRoute.PORTABLE_GLYPH,
         composedOf = composedOf,
         composedTables = composedOf.associateWith { key -> setOf("cmap") },
     )
@@ -150,20 +178,21 @@ class CatalogSceneMaterializerTest {
     @Test
     fun aRendererSceneIdOverridesTheEntryIdAndDefaultsToIt() {
         val entry = autoSizedEntry(padding = 1)
-        val render = {
+        val render: (FixtureCorpus) -> GoldenRenderOutcome = { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
         }
-        val inheriting = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", render = render)
+        val inheriting = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH, render = render)
         val overriding = CatalogSceneRenderer(
             "/fonts/liberation/LiberationSans-Regular.ttf",
+            CatalogRoute.PORTABLE_GLYPH,
             sceneId = "glyph.outline.liberation-sans.A.64",
             render = render,
         )
 
-        assertEquals("outline.glyf", CatalogSceneMaterializer.materialize(entry, inheriting).scene.id)
+        assertEquals("outline.glyf", CatalogSceneMaterializer.materialize(entry, inheriting, E2eTestEnvironment.corpus).scene.id)
         assertEquals(
             "glyph.outline.liberation-sans.A.64",
-            CatalogSceneMaterializer.materialize(entry, overriding).scene.id,
+            CatalogSceneMaterializer.materialize(entry, overriding, E2eTestEnvironment.corpus).scene.id,
         )
     }
 
@@ -175,6 +204,7 @@ class CatalogSceneMaterializerTest {
         status = CatalogStatus.Supported("abc1234"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,
         frame = SceneFramePolicy.AutoSized(padding = padding),
+        route = CatalogRoute.PORTABLE_GLYPH,
     )
 
     private fun pinnedEntry(width: Int, height: Int) = CatalogEntry(
@@ -185,6 +215,7 @@ class CatalogSceneMaterializerTest {
         status = CatalogStatus.Supported("abc1234"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,
         frame = SceneFramePolicy.Pinned(width = width, height = height),
+        route = CatalogRoute.PORTABLE_GLYPH,
     )
 
     private fun inkAt(x: Int, y: Int, width: Int, height: Int): ByteArray {

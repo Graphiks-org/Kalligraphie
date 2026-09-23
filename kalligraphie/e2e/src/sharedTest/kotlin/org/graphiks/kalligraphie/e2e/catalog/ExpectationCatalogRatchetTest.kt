@@ -5,31 +5,79 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import org.graphiks.kalligraphie.conformance.PortableCapability
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 
 class ExpectationCatalogRatchetTest {
     @Test
-    fun everySupportedEntryHasARendererAndEveryRendererHasASupportedEntry() {
-        val supported = ExpectationCatalog.entries
-            .filter { entry -> entry.status is CatalogStatus.Supported }
-            .map { entry -> entry.id }
-            .toSet()
-        assertEquals(supported, SceneRenderers.byId.keys, "supported entries and renderers must be the same set")
+    fun theRegistryIsExactlyWhatTheDeclaredCapabilitiesImply() {
+        val implied = supportedEntriesFor(E2eTestEnvironment.capabilities)
+        val registered = E2eTestEnvironment.renderers.keys
+        val missing = implied - registered
+        val extra = registered - implied
+        assertTrue(missing.isEmpty(), "entries this platform must verify but does not register: $missing")
+        assertTrue(extra.isEmpty(), "renderers registered on a platform whose declaration cannot serve them: $extra")
+    }
+
+    @Test
+    fun aPlatformWithoutEndToEndLayoutIsNotRequiredToVerifyTheParagraphScenes() {
+        // The mechanism the ratchet above rests on, pinned without a second platform: dropping
+        // END_TO_END_LAYOUT excuses exactly the scenes that compose text, and nothing else. If the
+        // capability ever lands here, the registry must grow the same entries or the ratchet fails.
+        val glyphOnly = supportedEntriesFor(setOf(PortableCapability.GLYPH_REPRESENTATION_VARIANTS))
+        assertTrue("outline.glyf-simple-composite" in glyphOnly, "the portable outline scene stays required")
+        assertTrue("script.latin.outline-sheet" in glyphOnly, "a portable sheet stays required")
+        assertEquals(
+            setOf(
+                "script.latin.composed-line",
+                "script.greek.composed-line",
+                "script.cyrillic.composed-line",
+                "script.arabic.composed-line",
+                "script.devanagari.composed-line",
+                "script.mixed.composed-line",
+                "variation.wght-ladder",
+                "composition.every-route-mosaic",
+            ),
+            supportedEntriesFor(E2eTestEnvironment.capabilities) - glyphOnly,
+            "the paragraph route must excuse exactly the scenes that compose text",
+        )
     }
 
     @Test
     fun everyRendererFontPathBelongsToItsEntryCorpusKey() {
         val mismatches = ExpectationCatalog.entries.mapNotNull { entry ->
-            val renderer = SceneRenderers.byId[entry.id] ?: return@mapNotNull null
+            val renderer = E2eTestEnvironment.renderers[entry.id] ?: return@mapNotNull null
             CatalogSceneMaterializer.fontPathMismatch(entry, renderer)
         }
         assertTrue(mismatches.isEmpty(), mismatches.joinToString("\n"))
     }
 
     @Test
+    fun everyRendererRouteMatchesItsEntryRoute() {
+        val mismatches = ExpectationCatalog.entries.mapNotNull { entry ->
+            val renderer = E2eTestEnvironment.renderers[entry.id] ?: return@mapNotNull null
+            CatalogSceneMaterializer.routeMismatch(entry, renderer)
+        }
+        assertTrue(mismatches.isEmpty(), mismatches.joinToString("\n"))
+    }
+
+    @Test
+    fun everyEntryWithoutARendererDeclaresNoPlatformRoute() {
+        val undeclared = ExpectationCatalog.entries
+            .filter { entry -> entry.id !in E2eTestEnvironment.renderers && entry.route != null }
+            .map { entry -> entry.id }
+        assertTrue(undeclared.isEmpty(), "entries claim a platform route without a scene: $undeclared")
+    }
+
+    @Test
     fun everySupportedEntryMaterializesOrRefusesTyped() {
         for (entry in ExpectationCatalog.entries.filter { entry -> entry.status is CatalogStatus.Supported }) {
-            val materialized = CatalogSceneMaterializer.materialize(entry, SceneRenderers.byId.getValue(entry.id))
+            val materialized = CatalogSceneMaterializer.materialize(
+                entry,
+                E2eTestEnvironment.renderers.getValue(entry.id),
+                E2eTestEnvironment.corpus,
+            )
             val outcome = materialized.render()
             if (outcome is GoldenRenderOutcome.Refused) {
                 assertTrue(
@@ -79,7 +127,7 @@ class ExpectationCatalogRatchetTest {
     fun everyProbeAgreesWithItsDeclaredStatus() {
         for (entry in ExpectationCatalog.entries) {
             val probe = CatalogProbes.byId[entry.id] ?: continue
-            val observed = probe.observe()
+            val observed = probe.observe(E2eTestEnvironment.corpus)
             when (val status = entry.status) {
                 is CatalogStatus.ExpectedRejection -> {
                     val rejected = assertIs<ProbeObservation.Rejected>(observed, "${entry.id} must be rejected")
@@ -120,9 +168,7 @@ class ExpectationCatalogRatchetTest {
     private class Exemption(val frame: String, val reason: String)
 
     private fun readExemptions(): Map<String, Exemption> {
-        val text = checkNotNull(object {}.javaClass.getResourceAsStream("/catalog/auto-sizing-exemptions.tsv")) {
-            "the auto-sizing exemptions resource is missing"
-        }.use { input -> input.readBytes().decodeToString() }
+        val text = E2eTestEnvironment.corpus.text("/catalog/auto-sizing-exemptions.tsv")
         val lines = text.split('\n').map { line -> line.removeSuffix("\r") }.filter { line -> line.isNotBlank() }
         assertEquals("# kalligraphie.e2e-exemptions/v1", lines.first(), "unrecognised exemptions header")
         return lines.drop(1).associate { line ->

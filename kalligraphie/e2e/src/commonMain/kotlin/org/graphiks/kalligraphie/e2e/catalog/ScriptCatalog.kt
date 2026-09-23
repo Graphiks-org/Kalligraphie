@@ -126,6 +126,7 @@ public object ScriptCatalog {
             tables = setOf("cmap", "GSUB", "GPOS", "GDEF"),
             family = GoldenSceneFamily.COMPOSED_LINE,
             frame = SceneFramePolicy.Pinned(width = PINNED_FRAMES.getValue(scene).first, height = PINNED_FRAMES.getValue(scene).second),
+            route = CatalogRoute.PARAGRAPH_LAYOUT,
         )
 
     private fun sheet(id: String, technology: CatalogText, font: CorpusKey, scene: String, sinceCommit: String, tags: Set<String>) =
@@ -139,5 +140,6 @@ public object ScriptCatalog {
             tables = setOf("cmap", "glyf", "loca", "hmtx"),
             family = GoldenSceneFamily.ALPHABET_SHEET,
             frame = SceneFramePolicy.Pinned(width = PINNED_FRAMES.getValue(scene).first, height = PINNED_FRAMES.getValue(scene).second),
+            route = CatalogRoute.PORTABLE_GLYPH,
         )
 }
