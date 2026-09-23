@@ -112,7 +112,7 @@ class CatalogAuditorTest {
     ) = CatalogEntry(
         id = id,
         axis = axis,
-        technology = "test technology",
+        technology = CatalogText("test technology", "technologie de test"),
         font = font,
         status = status,
         family = family,

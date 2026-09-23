@@ -15,74 +15,74 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `container.woff2` | WOFF 2.0 container wrapping | — | Pas encore ; corpus non acquis |
-| `container.woff` | WOFF 1.0 container wrapping | — | Pas encore ; corpus non acquis |
+| `container.woff2` | Encapsulation dans un conteneur WOFF 2.0 | — | Pas encore ; corpus non acquis |
+| `container.woff` | Encapsulation dans un conteneur WOFF 1.0 | — | Pas encore ; corpus non acquis |
 
 ## OUTLINE
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `outline.glyf-simple-composite` | TrueType glyf simple and composite outlines | liberation | Supporté depuis 35c4422c |
-| `outline.cff1-static` | Static CFF 1 Type 2 charstrings | cff-liberation | Supporté depuis 4b156eac |
-| `outline.cff2-static` | Static CFF 2 charstrings without variation deltas | cff2-liberation | Supporté depuis 4b156eac |
+| `outline.glyf-simple-composite` | Contours TrueType glyf simples et composites | liberation | Supporté depuis 35c4422c |
+| `outline.cff1-static` | Charstrings Type 2 CFF 1 statiques | cff-liberation | Supporté depuis 4b156eac |
+| `outline.cff2-static` | Charstrings CFF 2 statiques sans deltas de variation | cff2-liberation | Supporté depuis 4b156eac |
 
 ## METRICS
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `metrics.vvar-advance-height` | Variable face carrying VVAR: the scene loads the face and rasterises its outline, and observes no vertical advance delta | kalligraphie-var-vvar | Supporté depuis 4b156eac |
-| `metrics.vvar-real-font` | vvar vertical metrics from a real font | — | Pas encore ; aucune police réelle connue |
-| `metrics.mvar-real-font` | mvar metric variations from a real font | — | Pas encore ; aucune police réelle connue |
+| `metrics.vvar-advance-height` | Police variable portant VVAR : la scène charge la police et rastérise son contour, sans observer de delta d'avance verticale | kalligraphie-var-vvar | Supporté depuis 4b156eac |
+| `metrics.vvar-real-font` | Métriques verticales vvar d'une vraie police | — | Pas encore ; aucune police réelle connue |
+| `metrics.mvar-real-font` | Variations de métriques mvar d'une vraie police | — | Pas encore ; aucune police réelle connue |
 
 ## VARIATION
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `variation.wght-ladder` | Design-coordinate `wght` selection on a real variable font: one text at five weights, each laid out, shaped and rasterised independently, on one baseline grid | worksans | Supporté depuis 4f9b70bd |
-| `variation.avar-v2` | avar version 2 segment maps | — | Pas encore ; aucune police réelle connue |
-| `variation.cvar` | cvar CVT variations | — | Pas encore ; aucune police réelle connue |
-| `variation.varc` | VARC variable composite glyphs | — | Pas encore ; aucune police réelle connue |
-| `variation.stat` | STAT style attributes (named instances and their axes) | — | Pas encore ; le corpus le porte, le lecteur non |
+| `variation.wght-ladder` | Sélection `wght` en coordonnées de conception sur une vraie police variable : un texte à cinq graisses, chacune composée, mise en forme et rastérisée indépendamment, sur une même grille de lignes de base | worksans | Supporté depuis 4f9b70bd |
+| `variation.avar-v2` | Cartes de segments avar version 2 | — | Pas encore ; aucune police réelle connue |
+| `variation.cvar` | Variations CVT cvar | — | Pas encore ; aucune police réelle connue |
+| `variation.varc` | Glyphes composites variables VARC | — | Pas encore ; aucune police réelle connue |
+| `variation.stat` | Attributs de style STAT (instances nommées et leurs axes) | — | Pas encore ; le corpus le porte, le lecteur non |
 
 ## COLOR
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `color.colr-v0-single-glyph` | COLR v0 + CPAL v0 single-glyph paint graph | emoji-two-colr-v0 | Supporté depuis fa405247 |
-| `color.colr-v0-alphabet-sheet` | COLR v0 + CPAL v0 Latin alphabet sheet | bungee-color | Supporté depuis fa405247 |
-| `color.colr-v0-emoji-sheet` | COLR v0 + CPAL v0 emoji alphabet sheet | emoji-two-colr-v0 | Supporté depuis fa405247 |
-| `color.colr-cff` | CFF-backed COLR glyphs | — | Hors périmètre : CFF-in-COLR is not part of the supported paint surface; the rationale is recorded in font-management.md. |
-| `color.colr-v1-variable` | Variable COLR v1 paint graphs; blocked today by the CPU compositor, which does not composite GlyphClip nodes | kalligraphie-var-colr | Pas encore ; comportement actuel épinglé (`spec:§5 color`) |
-| `color.cpal-variable` | variable CPAL palettes | — | Pas encore ; corpus non acquis |
+| `color.colr-v0-single-glyph` | Graphe de peinture COLR v0 + CPAL v0 d'un glyphe isolé | emoji-two-colr-v0 | Supporté depuis fa405247 |
+| `color.colr-v0-alphabet-sheet` | Planche d'alphabet latin COLR v0 + CPAL v0 | bungee-color | Supporté depuis fa405247 |
+| `color.colr-v0-emoji-sheet` | Planche d'alphabet emoji COLR v0 + CPAL v0 | emoji-two-colr-v0 | Supporté depuis fa405247 |
+| `color.colr-cff` | Glyphes COLR adossés à des charstrings CFF | — | Hors périmètre : Le CFF-dans-COLR ne fait pas partie de la surface de peinture supportée ; le motif est consigné dans font-management.md. |
+| `color.colr-v1-variable` | Graphes de peinture COLR v1 variables ; bloqués aujourd'hui par le compositeur CPU, qui ne compose pas les nœuds GlyphClip | kalligraphie-var-colr | Pas encore ; comportement actuel épinglé (`spec:§5 color`) |
+| `color.cpal-variable` | Palettes CPAL variables | — | Pas encore ; corpus non acquis |
 
 ## BITMAP
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `bitmap.ebdt-format1` | EBLC/EBDT embedded bitmap strikes, format 1 | skia-ebdt-format1 | Supporté depuis fa405247 |
-| `bitmap.cbdt-png.u1f600.16` | CBLC/CBDT PNG colour strike | skia-cbdt | Supporté depuis 4b156eac |
-| `bitmap.sbix-png.u1f600.16` | sbix PNG strike | skia-sbix | Supporté depuis 4b156eac |
+| `bitmap.ebdt-format1` | Strikes bitmap embarqués EBLC/EBDT, format 1 | skia-ebdt-format1 | Supporté depuis fa405247 |
+| `bitmap.cbdt-png.u1f600.16` | Strike couleur PNG CBLC/CBDT | skia-cbdt | Supporté depuis 4b156eac |
+| `bitmap.sbix-png.u1f600.16` | Strike PNG sbix | skia-sbix | Supporté depuis 4b156eac |
 
 ## SCRIPT
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `script.latin.composed-line` | Latin composed line through the paragraph facade | liberation | Supporté depuis fa405247 |
-| `script.greek.composed-line` | Greek composed line through the paragraph facade | liberation | Supporté depuis fa405247 |
-| `script.cyrillic.composed-line` | Cyrillic composed line through the paragraph facade | liberation | Supporté depuis fa405247 |
-| `script.arabic.composed-line` | Arabic composed line through the paragraph facade | amiri | Supporté depuis fa405247 |
-| `script.devanagari.composed-line` | Devanagari composed line through the paragraph facade | noto-devanagari | Supporté depuis fa405247 |
-| `script.mixed.composed-line` | Mixed-script composed line over the three required faces (liberation, amiri, noto-devanagari) | liberation | Supporté depuis fa405247 |
-| `script.latin.outline-sheet` | Latin outline alphabet sheet | liberation | Supporté depuis fa405247 |
-| `script.greek.outline-sheet` | Greek outline alphabet sheet | liberation | Supporté depuis fa405247 |
-| `script.cyrillic.outline-sheet` | Cyrillic outline alphabet sheet | liberation | Supporté depuis fa405247 |
-| `script.arabic.outline-sheet` | Arabic outline alphabet sheet | amiri | Supporté depuis fa405247 |
-| `script.devanagari.outline-sheet` | Devanagari outline alphabet sheet | noto-devanagari | Supporté depuis fa405247 |
+| `script.latin.composed-line` | Ligne latine composée via la façade de paragraphe | liberation | Supporté depuis fa405247 |
+| `script.greek.composed-line` | Ligne grecque composée via la façade de paragraphe | liberation | Supporté depuis fa405247 |
+| `script.cyrillic.composed-line` | Ligne cyrillique composée via la façade de paragraphe | liberation | Supporté depuis fa405247 |
+| `script.arabic.composed-line` | Ligne arabe composée via la façade de paragraphe | amiri | Supporté depuis fa405247 |
+| `script.devanagari.composed-line` | Ligne devanagari composée via la façade de paragraphe | noto-devanagari | Supporté depuis fa405247 |
+| `script.mixed.composed-line` | Ligne composée multi-scripts sur les trois polices requises (liberation, amiri, noto-devanagari) | liberation | Supporté depuis fa405247 |
+| `script.latin.outline-sheet` | Planche d'alphabet latin en contour | liberation | Supporté depuis fa405247 |
+| `script.greek.outline-sheet` | Planche d'alphabet grec en contour | liberation | Supporté depuis fa405247 |
+| `script.cyrillic.outline-sheet` | Planche d'alphabet cyrillique en contour | liberation | Supporté depuis fa405247 |
+| `script.arabic.outline-sheet` | Planche d'alphabet arabe en contour | amiri | Supporté depuis fa405247 |
+| `script.devanagari.outline-sheet` | Planche d'alphabet devanagari en contour | noto-devanagari | Supporté depuis fa405247 |
 
 ## ROBUSTNESS
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `robustness.truncated-sfnt` | Truncated TrueType container | liberation | Rejet attendu `font.out-of-bounds` à DECODE |
-| `robustness.empty-input` | Zero-byte font source | liberation | Rejet attendu `font.invalid-font-data` à DECODE |
+| `robustness.truncated-sfnt` | Conteneur TrueType tronqué | liberation | Rejet attendu `font.out-of-bounds` à DECODE |
+| `robustness.empty-input` | Source de police de zéro octet | liberation | Rejet attendu `font.invalid-font-data` à DECODE |
 

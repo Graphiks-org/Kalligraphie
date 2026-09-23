@@ -10,7 +10,7 @@ public object BitmapCatalog {
         CatalogEntry(
             id = "bitmap.ebdt-format1",
             axis = CatalogAxis.BITMAP,
-            technology = "EBLC/EBDT embedded bitmap strikes, format 1",
+            technology = CatalogText("EBLC/EBDT embedded bitmap strikes, format 1", "Strikes bitmap embarqués EBLC/EBDT, format 1"),
             font = CorpusKeys.SKIA_EBDT_FORMAT1,
             status = CatalogStatus.Supported(sinceCommit = "fa405247"),
             tags = setOf("scripts:emoji"),
@@ -21,7 +21,7 @@ public object BitmapCatalog {
         CatalogEntry(
             id = "bitmap.cbdt-png.u1f600.16",
             axis = CatalogAxis.BITMAP,
-            technology = "CBLC/CBDT PNG colour strike",
+            technology = CatalogText("CBLC/CBDT PNG colour strike", "Strike couleur PNG CBLC/CBDT"),
             font = CorpusKeys.SKIA_CBDT,
             status = CatalogStatus.Supported(sinceCommit = "4b156eac"),
             tags = setOf("bitmap:cbdt", "auto-sized"),
@@ -32,7 +32,7 @@ public object BitmapCatalog {
         CatalogEntry(
             id = "bitmap.sbix-png.u1f600.16",
             axis = CatalogAxis.BITMAP,
-            technology = "sbix PNG strike",
+            technology = CatalogText("sbix PNG strike", "Strike PNG sbix"),
             font = CorpusKeys.SKIA_SBIX,
             status = CatalogStatus.Supported(sinceCommit = "4b156eac"),
             tags = setOf("bitmap:sbix", "auto-sized"),

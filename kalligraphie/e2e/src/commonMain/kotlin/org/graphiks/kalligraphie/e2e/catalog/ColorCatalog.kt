@@ -10,7 +10,7 @@ public object ColorCatalog {
         CatalogEntry(
             id = "color.colr-v0-single-glyph",
             axis = CatalogAxis.COLOR,
-            technology = "COLR v0 + CPAL v0 single-glyph paint graph",
+            technology = CatalogText("COLR v0 + CPAL v0 single-glyph paint graph", "Graphe de peinture COLR v0 + CPAL v0 d'un glyphe isolé"),
             font = CorpusKeys.EMOJI_TWO_COLR_V0,
             status = CatalogStatus.Supported(sinceCommit = "fa405247"),
             tags = setOf("scripts:emoji"),
@@ -21,7 +21,7 @@ public object ColorCatalog {
         CatalogEntry(
             id = "color.colr-v0-alphabet-sheet",
             axis = CatalogAxis.COLOR,
-            technology = "COLR v0 + CPAL v0 Latin alphabet sheet",
+            technology = CatalogText("COLR v0 + CPAL v0 Latin alphabet sheet", "Planche d'alphabet latin COLR v0 + CPAL v0"),
             font = CorpusKeys.BUNGEE_COLOR,
             status = CatalogStatus.Supported(sinceCommit = "fa405247"),
             tags = setOf("scripts:latin"),
@@ -32,7 +32,7 @@ public object ColorCatalog {
         CatalogEntry(
             id = "color.colr-v0-emoji-sheet",
             axis = CatalogAxis.COLOR,
-            technology = "COLR v0 + CPAL v0 emoji alphabet sheet",
+            technology = CatalogText("COLR v0 + CPAL v0 emoji alphabet sheet", "Planche d'alphabet emoji COLR v0 + CPAL v0"),
             font = CorpusKeys.EMOJI_TWO_COLR_V0,
             status = CatalogStatus.Supported(sinceCommit = "fa405247"),
             tags = setOf("scripts:emoji"),
@@ -43,18 +43,20 @@ public object ColorCatalog {
         CatalogEntry(
             id = "color.colr-cff",
             axis = CatalogAxis.COLOR,
-            technology = "CFF-backed COLR glyphs",
+            technology = CatalogText("CFF-backed COLR glyphs", "Glyphes COLR adossés à des charstrings CFF"),
             font = null,
             status = CatalogStatus.OutOfScope(
-                "CFF-in-COLR is not part of the supported paint surface; the rationale is recorded in font-management.md.",
+                CatalogText(
+                    "CFF-in-COLR is not part of the supported paint surface; the rationale is recorded in font-management.md.",
+                    "Le CFF-dans-COLR ne fait pas partie de la surface de peinture supportée ; le motif est consigné dans font-management.md.",
+                ),
             ),
             tags = setOf("documented-only"),
         ),
         CatalogEntry(
             id = "color.colr-v1-variable",
             axis = CatalogAxis.COLOR,
-            technology = "Variable COLR v1 paint graphs; blocked today by the CPU compositor, " +
-                "which does not composite GlyphClip nodes",
+            technology = CatalogText("Variable COLR v1 paint graphs; blocked today by the CPU compositor, which does not composite GlyphClip nodes", "Graphes de peinture COLR v1 variables ; bloqués aujourd'hui par le compositeur CPU, qui ne compose pas les nœuds GlyphClip"),
             font = CorpusKeys.KALLIGRAPHIE_VAR_COLR,
             status = CatalogStatus.NotYet(
                 trackingIssue = "spec:§5 color",
@@ -69,12 +71,12 @@ public object ColorCatalog {
         ),
         documented(
             id = "color.cpal-variable",
-            technology = "variable CPAL palettes",
+            technology = CatalogText("variable CPAL palettes", "Palettes CPAL variables"),
             unpinnedReason = UnpinnedReason.CORPUS_NOT_ACQUIRED,
         ),
     )
 
-    private fun documented(id: String, technology: String, unpinnedReason: UnpinnedReason) = CatalogEntry(
+    private fun documented(id: String, technology: CatalogText, unpinnedReason: UnpinnedReason) = CatalogEntry(
         id = id,
         axis = CatalogAxis.COLOR,
         technology = technology,

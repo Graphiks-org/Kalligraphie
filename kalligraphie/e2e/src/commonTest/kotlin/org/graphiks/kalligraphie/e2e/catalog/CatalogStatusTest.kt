@@ -43,7 +43,7 @@ class CatalogStatusTest {
 
     @Test
     fun anOutOfScopeStatusRequiresARationale() {
-        assertFailsWith<IllegalArgumentException> { CatalogStatus.OutOfScope("   ") }
+        assertFailsWith<IllegalArgumentException> { CatalogStatus.OutOfScope(CatalogText("   ", "   ")) }
     }
 
     @Test

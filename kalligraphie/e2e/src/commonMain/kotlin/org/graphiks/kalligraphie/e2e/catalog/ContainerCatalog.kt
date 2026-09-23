@@ -7,17 +7,17 @@ public object ContainerCatalog {
     public val entries: List<CatalogEntry> = listOf(
         documented(
             id = "container.woff2",
-            technology = "WOFF 2.0 container wrapping",
+            technology = CatalogText("WOFF 2.0 container wrapping", "Encapsulation dans un conteneur WOFF 2.0"),
             unpinnedReason = UnpinnedReason.CORPUS_NOT_ACQUIRED,
         ),
         documented(
             id = "container.woff",
-            technology = "WOFF 1.0 container wrapping",
+            technology = CatalogText("WOFF 1.0 container wrapping", "Encapsulation dans un conteneur WOFF 1.0"),
             unpinnedReason = UnpinnedReason.CORPUS_NOT_ACQUIRED,
         ),
     )
 
-    private fun documented(id: String, technology: String, unpinnedReason: UnpinnedReason) = CatalogEntry(
+    private fun documented(id: String, technology: CatalogText, unpinnedReason: UnpinnedReason) = CatalogEntry(
         id = id,
         axis = CatalogAxis.CONTAINER,
         technology = technology,

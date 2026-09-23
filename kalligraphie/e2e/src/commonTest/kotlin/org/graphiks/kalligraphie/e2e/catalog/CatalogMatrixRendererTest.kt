@@ -39,7 +39,7 @@ class CatalogMatrixRendererTest {
     private val entry = CatalogEntry(
         id = "outline.glyf",
         axis = CatalogAxis.OUTLINE,
-        technology = "glyf outlines",
+        technology = CatalogText("glyf outlines", "contours glyf"),
         font = CorpusKey("liberation"),
         status = CatalogStatus.Supported("abc1234"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,

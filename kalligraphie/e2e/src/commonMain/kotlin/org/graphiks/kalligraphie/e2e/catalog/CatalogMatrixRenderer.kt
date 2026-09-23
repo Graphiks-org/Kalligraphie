@@ -53,7 +53,10 @@ public object CatalogMatrixRenderer {
             )
             appendLine("| --- | --- | --- | --- |")
             for (entry in axisEntries) {
-                appendLine("| `${entry.id}` | ${entry.technology} | ${entry.font?.value ?: "—"} | ${describe(entry.status, language)} |")
+                appendLine(
+                    "| `${entry.id}` | ${entry.technology.text(language)} | ${entry.font?.value ?: "—"} | " +
+                        "${describe(entry.status, language)} |",
+                )
             }
             appendLine()
         }
@@ -107,9 +110,9 @@ public object CatalogMatrixRenderer {
         }
 
         is CatalogStatus.OutOfScope -> if (language == CatalogMatrixLanguage.EN) {
-            "Out of scope: ${status.rationale}"
+            "Out of scope: ${status.rationale.english}"
         } else {
-            "Hors périmètre : ${status.rationale}"
+            "Hors périmètre : ${status.rationale.french}"
         }
     }
 

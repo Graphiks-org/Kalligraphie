@@ -10,8 +10,7 @@ public object MetricsCatalog {
         CatalogEntry(
             id = "metrics.vvar-advance-height",
             axis = CatalogAxis.METRICS,
-            technology = "Variable face carrying VVAR: the scene loads the face and rasterises its " +
-                "outline, and observes no vertical advance delta",
+            technology = CatalogText("Variable face carrying VVAR: the scene loads the face and rasterises its outline, and observes no vertical advance delta", "Police variable portant VVAR : la scène charge la police et rastérise son contour, sans observer de delta d'avance verticale"),
             font = CorpusKeys.KALLIGRAPHIE_VAR_VVAR,
             status = CatalogStatus.Supported(sinceCommit = "4b156eac"),
             tags = setOf("metrics:vvar", "auto-sized"),
@@ -24,17 +23,17 @@ public object MetricsCatalog {
         ),
         documented(
             id = "metrics.vvar-real-font",
-            technology = "vvar vertical metrics from a real font",
+            technology = CatalogText("vvar vertical metrics from a real font", "Métriques verticales vvar d'une vraie police"),
             unpinnedReason = UnpinnedReason.NO_REAL_FONT_KNOWN,
         ),
         documented(
             id = "metrics.mvar-real-font",
-            technology = "mvar metric variations from a real font",
+            technology = CatalogText("mvar metric variations from a real font", "Variations de métriques mvar d'une vraie police"),
             unpinnedReason = UnpinnedReason.NO_REAL_FONT_KNOWN,
         ),
     )
 
-    private fun documented(id: String, technology: String, unpinnedReason: UnpinnedReason) = CatalogEntry(
+    private fun documented(id: String, technology: CatalogText, unpinnedReason: UnpinnedReason) = CatalogEntry(
         id = id,
         axis = CatalogAxis.METRICS,
         technology = technology,

@@ -119,7 +119,7 @@ class CatalogSceneMaterializerTest {
     private fun autoSizedEntry(padding: Int) = CatalogEntry(
         id = "outline.glyf",
         axis = CatalogAxis.OUTLINE,
-        technology = "glyf outlines",
+        technology = CatalogText("glyf outlines", "contours glyf"),
         font = CorpusKey("liberation"),
         status = CatalogStatus.Supported("abc1234"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,
@@ -129,7 +129,7 @@ class CatalogSceneMaterializerTest {
     private fun pinnedEntry(width: Int, height: Int) = CatalogEntry(
         id = "outline.glyf",
         axis = CatalogAxis.OUTLINE,
-        technology = "glyf outlines",
+        technology = CatalogText("glyf outlines", "contours glyf"),
         font = CorpusKey("liberation"),
         status = CatalogStatus.Supported("abc1234"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,

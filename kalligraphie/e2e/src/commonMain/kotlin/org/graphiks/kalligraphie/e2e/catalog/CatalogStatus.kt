@@ -48,11 +48,10 @@ public sealed interface CatalogStatus {
 
     /** Deliberately outside the supported surface, with a recorded rationale. */
     public data class OutOfScope(
-        /** Why this technology will not be supported. */
-        public val rationale: String,
+        /** Why this technology will not be supported, in both documentation languages. */
+        public val rationale: CatalogText,
     ) : CatalogStatus {
         init {
-            require(rationale.isNotBlank()) { "An OutOfScope entry must record its rationale." }
         }
     }
 }
