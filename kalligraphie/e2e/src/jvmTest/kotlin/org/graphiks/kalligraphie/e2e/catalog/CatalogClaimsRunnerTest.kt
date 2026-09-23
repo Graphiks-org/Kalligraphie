@@ -67,15 +67,31 @@ class CatalogClaimsRunnerTest {
             document = json.load(sys.stdin)
             sys.stdout.write(document["allowUnclaimed"]["weird-family"]["COLR"])
         """.trimIndent()
-        val process = try {
-            ProcessBuilder("python3", "-c", script).redirectErrorStream(true).start()
-        } catch (missing: IOException) {
-            error("python3 is required to prove the claims export parses as JSON: ${missing.message}")
-        }
+        val process = ProcessBuilder(pythonInterpreter(), "-c", script).redirectErrorStream(true).start()
         process.outputStream.bufferedWriter().use { writer -> writer.write(rendered) }
         val parsed = process.inputStream.bufferedReader().readText()
-        assertEquals(0, process.waitFor(), "python3 refused the rendered claims:\n$parsed")
+        assertEquals(0, process.waitFor(), "the Python proof refused the rendered claims:\n$parsed")
         assertEquals(reason, parsed)
+    }
+
+    /**
+     * Resolves the Python 3 interpreter the JSON round-trip runs on.
+     *
+     * A Windows runner installs Python as `python`, not `python3`, so the name is discovered rather
+     * than assumed. The proof this test carries is only worth having if it really runs: an
+     * interpreter that cannot be found fails the test, and never skips the round-trip.
+     */
+    private fun pythonInterpreter(): String =
+        listOf("python3", "python", "py").firstOrNull(::canRunPython)
+            ?: error("Python 3 is required to prove the claims export parses as JSON.")
+
+    private fun canRunPython(candidate: String): Boolean = try {
+        ProcessBuilder(candidate, "-c", "import json, sys; sys.exit(0)")
+            .redirectErrorStream(true)
+            .start()
+            .waitFor() == 0
+    } catch (missing: IOException) {
+        false
     }
 
     private fun claimsPath(): Path = repositoryRoot().resolve("kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json")
