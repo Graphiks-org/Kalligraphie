@@ -37,7 +37,8 @@ class GoldenImageReframerTest {
 
     @Test
     fun aZeroSizedFrameIsRefused() {
-        val source = GoldenImage.alpha8(1, 1, byteArrayOf(7))
+        // An empty source makes the containment guard trivially true, so only positivity can throw.
+        val source = GoldenImage.alpha8(0, 0, ByteArray(0))
         assertFailsWith<IllegalArgumentException> {
             GoldenImageReframer.reframe(source, width = 0, height = 1, offsetX = 0, offsetY = 0)
         }
