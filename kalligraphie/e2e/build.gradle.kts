@@ -33,20 +33,25 @@ tasks.withType<Test>().configureEach {
 
 val updateClass = "org.graphiks.kalligraphie.e2e.golden.GoldenUpdateRunnerTest"
 val dumpClass = "org.graphiks.kalligraphie.e2e.golden.GoldenDumpRunnerTest"
+val matrixClass = "org.graphiks.kalligraphie.e2e.catalog.CatalogMatrixRunnerTest"
 val e2eJvmTestTask = tasks.named<Test>("jvmTest")
 
 e2eJvmTestTask.configure {
     filter.excludeTestsMatching(updateClass)
     filter.excludeTestsMatching(dumpClass)
+    // Only the writer is excluded: the freshness test must keep running under `check`.
+    filter.excludeTestsMatching("$matrixClass.writesTheMatrixOnlyWhenExplicitlyEnabled")
 }
 
 tasks.register<Test>("updateE2eGolden") {
     group = "verification"
-    description = "Regenerates the committed golden fingerprint manifest from the scene catalog."
+    description = "Regenerates the committed golden fingerprint manifest and the catalog matrix from the scene catalog."
     testClassesDirs = e2eJvmTestTask.get().testClassesDirs
     classpath = e2eJvmTestTask.get().classpath
     filter.includeTestsMatching("$updateClass.writesTheManifestOnlyWhenExplicitlyEnabled")
+    filter.includeTestsMatching("$matrixClass.writesTheMatrixOnlyWhenExplicitlyEnabled")
     environment("KALLIGRAPHIE_E2E_UPDATE", "true")
+    environment("KALLIGRAPHIE_E2E_MATRIX", "true")
     outputs.upToDateWhen { false }
 }
 

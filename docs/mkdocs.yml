@@ -59,6 +59,7 @@ nav:
   - Advanced Typography: advanced-typography.md
   - Conformance Matrix: conformance-matrix.md
   - End-to-End Golden: e2e-golden.md
+  - Font Expectation Catalog: generated/e2e-catalog-matrix.md
   - Raster CPU: raster-cpu.md
 
 # !!! EMBEDDED DOKKA START, DO NOT COMMIT !!! #
