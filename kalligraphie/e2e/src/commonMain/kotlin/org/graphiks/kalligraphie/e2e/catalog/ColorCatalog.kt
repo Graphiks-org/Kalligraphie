@@ -3,7 +3,7 @@ package org.graphiks.kalligraphie.e2e.catalog
 
 import org.graphiks.kalligraphie.e2e.GoldenSceneFamily
 
-/** Colour-glyph expectations: the migrated COLR v0 scenes, then the documented gaps. */
+/** Colour-glyph expectations: the migrated COLR v0 scenes, then the documented and pinned gaps. */
 public object ColorCatalog {
     /** Declared colour expectations. */
     public val entries: List<CatalogEntry> = listOf(
@@ -49,6 +49,23 @@ public object ColorCatalog {
                 "CFF-in-COLR is not part of the supported paint surface; the rationale is recorded in font-management.md.",
             ),
             tags = setOf("documented-only"),
+        ),
+        CatalogEntry(
+            id = "color.colr-v1-variable",
+            axis = CatalogAxis.COLOR,
+            technology = "Variable COLR v1 paint graphs; blocked today by the CPU compositor, " +
+                "which does not composite GlyphClip nodes",
+            font = CorpusKeys.KALLIGRAPHIE_VAR_COLR,
+            status = CatalogStatus.NotYet(
+                trackingIssue = "spec:§5 color",
+                currentBehavior = PinnedBehavior.RejectedAt(
+                    stage = CatalogStage.FACE_RESOLUTION,
+                    diagnostic = "font.unsupported-representation-profile",
+                ),
+                unpinnedReason = null,
+            ),
+            tags = setOf("color:colr-v1", "blocked-by-compositor"),
+            tables = setOf("COLR", "CPAL", "fvar"),
         ),
         documented(
             id = "color.cpal-variable",
