@@ -36,6 +36,19 @@ public object CatalogClaims {
             "refusing GlyphClip, so no catalogued scene ever decodes its outlines"
 
     /**
+     * The reason the vertical-metric tables of the VVAR fixture are excused, shared by `VVAR`,
+     * `vhea` and `vmtx`.
+     */
+    private const val VVAR_VERTICAL_REASON =
+        "carried by the fixture; the catalogued scene rasterises the outline and observes no " +
+            "vertical metric, which the shaping suite covers"
+
+    /** The reason the VVAR fixture's axis declaration is excused. */
+    private const val VVAR_AXIS_REASON =
+        "carried by the fixture; the catalogued scene instantiates the default location, so it " +
+            "applies no axis value and reads no axis declaration"
+
+    /**
      * Tables a family an entry does reference really carries while no catalogued scene reads them,
      * keyed by corpus key. Each reason names the catalogued scene that stops short of the table, so
      * the excuse reads as a decision rather than as an omission.
@@ -56,6 +69,12 @@ public object CatalogClaims {
         "kalligraphie-var-colr" to mapOf(
             "glyf" to REJECTED_FIXTURE_OUTLINES_REASON,
             "loca" to REJECTED_FIXTURE_OUTLINES_REASON,
+        ),
+        "kalligraphie-var-vvar" to mapOf(
+            "VVAR" to VVAR_VERTICAL_REASON,
+            "vhea" to VVAR_VERTICAL_REASON,
+            "vmtx" to VVAR_VERTICAL_REASON,
+            "fvar" to VVAR_AXIS_REASON,
         ),
         "liberation" to mapOf(
             "kern" to "legacy pair-kerning records, every one of the 908 reproduced by the GPOS " +

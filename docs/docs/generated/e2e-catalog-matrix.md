@@ -30,7 +30,7 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 
 | Entry | Technology | Font | Status |
 | --- | --- | --- | --- |
-| `metrics.vvar-advance-height` | VVAR vertical advance deltas | kalligraphie-var-vvar | Supported since 4b156eac |
+| `metrics.vvar-advance-height` | Variable face carrying VVAR: the scene loads the face and rasterises its outline, and observes no vertical advance delta | kalligraphie-var-vvar | Supported since 4b156eac |
 | `metrics.vvar-real-font` | vvar vertical metrics from a real font | — | Not yet; no real font known |
 | `metrics.mvar-real-font` | mvar metric variations from a real font | — | Not yet; no real font known |
 

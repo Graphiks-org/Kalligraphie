@@ -30,7 +30,7 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `metrics.vvar-advance-height` | VVAR vertical advance deltas | kalligraphie-var-vvar | Supporté depuis 4b156eac |
+| `metrics.vvar-advance-height` | Variable face carrying VVAR: the scene loads the face and rasterises its outline, and observes no vertical advance delta | kalligraphie-var-vvar | Supporté depuis 4b156eac |
 | `metrics.vvar-real-font` | vvar vertical metrics from a real font | — | Pas encore ; aucune police réelle connue |
 | `metrics.mvar-real-font` | mvar metric variations from a real font | — | Pas encore ; aucune police réelle connue |
 

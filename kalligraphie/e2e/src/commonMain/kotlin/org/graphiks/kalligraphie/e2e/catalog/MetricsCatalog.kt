@@ -10,11 +10,15 @@ public object MetricsCatalog {
         CatalogEntry(
             id = "metrics.vvar-advance-height",
             axis = CatalogAxis.METRICS,
-            technology = "VVAR vertical advance deltas",
+            technology = "Variable face carrying VVAR: the scene loads the face and rasterises its " +
+                "outline, and observes no vertical advance delta",
             font = CorpusKeys.KALLIGRAPHIE_VAR_VVAR,
             status = CatalogStatus.Supported(sinceCommit = "4b156eac"),
             tags = setOf("metrics:vvar", "auto-sized"),
-            tables = setOf("VVAR", "fvar", "vhea", "vmtx", "glyf", "loca"),
+            // The scene is the outline route of the fixture's capital A: it resolves the code point
+            // through `cmap`, reads the `glyf`/`loca` outlines and rasterises them. The fixture's
+            // vertical and variation tables stay carried but unread; see CatalogClaims.
+            tables = setOf("glyf", "loca", "cmap"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
             frame = SceneFramePolicy.AutoSized(padding = 1),
         ),
