@@ -39,7 +39,7 @@ other subproject, and the existing pull-request workflow already covers
 ## Scene catalog
 
 Every scene is rendered through the public facade and the CPU rasterizer, then
-reduced to a single digest. The table below is an illustration of the five
+reduced to a single digest. The table below is an illustration of the six
 families, not the inventory: the generated [expectation catalog
 matrix](generated/e2e-catalog-matrix.md) lists every scene and is the only place
 where the catalog's counts appear.
@@ -49,7 +49,8 @@ where the catalog's counts appear.
 | `GLYPH_OUTLINE` | `glyph.outline.liberation-sans.A.64` (43×45) | One glyph flattened and scan-converted at 64 pixels per em. | `ALPHA_8` |
 | `GLYPH_PAINT` | `glyph.paint.emoji-two-colr-v0.u1F600.64` (71×72) | A COLR v0 glyph resolved to layers, composited `SOURCE_OVER` and tinted. | `RGBA_8888` |
 | `GLYPH_BITMAP` | `glyph.bitmap.skia-ebdt-format1.u1F600.16` (13×13) | A glyph routed to the embedded EBLC/EBDT strike. | `RGBA_8888` |
-| `COMPOSED_LINE` | `line.latin.48`, `line.greek.48`, `line.cyrillic.48`, `line.arabic.48`, `line.devanagari.48`, `line.mixed.48` | Real text shaped and laid out by the paragraph facade: Latin, Greek, Cyrillic, right-to-left Arabic, Devanagari, and a mixed line whose scripts are resolved by three-face fallback. | `ALPHA_8` |
+| `COMPOSED_LINE` | `line.latin.48`, `line.greek.48`, `line.cyrillic.48`, `line.arabic.48`, `line.devanagari.48`, `line.mixed.48`, `variation.wght-ladder` (291×306) | Real text shaped and laid out by the paragraph facade: Latin, Greek, Cyrillic, right-to-left Arabic, Devanagari, and a mixed line whose scripts are resolved by three-face fallback — plus one word rendered five times, once per `wght` instance of a real variable font, on one baseline grid. | `ALPHA_8` |
+| `MOSAIC` | `composition.every-route-mosaic` (592×366) | Seven routes in one image: a shaped word in a TrueType outline, the capital A through CFF 1 and CFF 2, a three-face multi-script line, one glyph at four weights, a colour paint and a bitmap strike, composed on one colour canvas. | `RGBA_8888` |
 | `ALPHABET_SHEET` | `sheet.outline.liberation-latin.32`, `sheet.outline.liberation-greek.32`, `sheet.outline.liberation-cyrillic.32`, `sheet.outline.amiri-arabic.32`, `sheet.outline.noto-devanagari.32`, `sheet.paint.bungee-color-latin.48`, `sheet.paint.emoji-two-colr-v0.64` | Every covered glyph of a face, laid out in one grid: coverage for the outline faces, composited colour for the Bungee Color and EmojiTwo faces. | `ALPHA_8` and `RGBA_8888` |
 
 The three single-glyph scenes are the promoted form of the conformance constants

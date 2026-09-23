@@ -17,6 +17,8 @@ public enum class CatalogAxis {
     BITMAP,
     /** Writing systems and their shaping requirements. */
     SCRIPT,
+    /** Several families, styles and representations composed into one artefact. */
+    COMPOSITION,
     /** Behaviour on hostile or malformed input. */
     ROBUSTNESS,
 }

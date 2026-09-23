@@ -75,14 +75,28 @@ internal object CatalogSceneMaterializer {
         }
     }
 
-    /** Returns a description of the corpus-key mismatch for [entry] and [renderer], or `null` when they agree. */
+    /**
+     * Returns the description of a corpus-family mismatch for [entry] and [renderer], or `null`
+     * when they agree.
+     *
+     * An entry declares the primary family it rests on in `font`, plus every further family its
+     * scene composes in `composedOf`; a renderer declares the resource path of each. Both
+     * directions are checked: a family the entry declares must be loaded, and a font the renderer
+     * loads must be declared, so a composed scene can neither hide a family nor claim one it never
+     * draws.
+     */
     fun fontPathMismatch(entry: CatalogEntry, renderer: CatalogSceneRenderer): String? {
-        val key = entry.font ?: return null
-        return if (renderer.fontPath.contains("/${key.value}/")) {
-            null
-        } else {
-            "entry ${entry.id} declares corpus key ${key.value} but renders ${renderer.fontPath}"
+        val declared = (listOfNotNull(entry.font) + entry.composedOf).map { key -> key.value }
+        val loaded = renderer.fontPaths
+        val missing = declared.filterNot { key -> loaded.any { path -> path.contains("/$key/") } }
+        if (missing.isNotEmpty()) {
+            return "entry ${entry.id} declares corpus families $missing but renders $loaded"
         }
+        val undeclared = loaded.filterNot { path -> declared.any { key -> path.contains("/$key/") } }
+        if (undeclared.isNotEmpty()) {
+            return "entry ${entry.id} renders $undeclared without declaring their corpus families"
+        }
+        return null
     }
 
     private fun refused(scene: GoldenScene, code: GoldenDiagnosticCode, what: String) = GoldenRenderOutcome.Refused(

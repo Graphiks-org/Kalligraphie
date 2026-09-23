@@ -140,6 +140,53 @@ internal class RgbaCanvas(val width: Int, val height: Int) {
         }
     }
 
+    /**
+     * Draws the eight-bit coverage of [image] at [penX] with its baseline at [baselineY], flipped
+     * vertically, tinted with [ink].
+     *
+     * [ink] is an opaque RGB colour, its low 24 bits read as `0xRRGGBB`; the coverage becomes the
+     * alpha of the stroke, so a glyph raster composites into a colour composition the way the
+     * coverage canvas draws it on black. Coverage images are the outline and paint-composite
+     * outputs, which are in design orientation and are flipped here exactly once.
+     */
+    fun drawCoverage(image: A8Image, penX: Int, baselineY: Int, ink: Int = 0) {
+        val red = (ink ushr 16) and 0xFF
+        val green = (ink ushr 8) and 0xFF
+        val blue = ink and 0xFF
+        val x0 = penX + image.left
+        val y0 = baselineY - (image.top + image.height)
+        for (row in 0 until image.height) {
+            val designRow = image.height - 1 - row
+            val canvasY = y0 + row
+            if (canvasY !in 0 until height) continue
+            for (column in 0 until image.width) {
+                val canvasX = x0 + column
+                if (canvasX !in 0 until width) continue
+                val coverage = image[column, designRow]
+                if (coverage == 0) continue
+                blend((coverage shl 24) or (red shl 16) or (green shl 8) or blue, canvasX, canvasY)
+            }
+        }
+    }
+
+    /** Returns the tight box of the non-white pixels of the canvas, or `null` when it is blank. */
+    fun inkBox(): CanvasInk? {
+        var minX = Int.MAX_VALUE
+        var minY = Int.MAX_VALUE
+        var maxX = -1
+        var maxY = -1
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                if (pixel(x, y) and 0x00FFFFFF == WHITE_RGB) continue
+                if (x < minX) minX = x
+                if (x > maxX) maxX = x
+                if (y < minY) minY = y
+                if (y > maxY) maxY = y
+            }
+        }
+        return if (maxX < 0) null else CanvasInk(minX = minX, minY = minY, maxX = maxX, maxY = maxY)
+    }
+
     private fun blend(source: Int, x: Int, y: Int) {
         val alpha = (source ushr 24) and 0xFF
         if (alpha == 0) return

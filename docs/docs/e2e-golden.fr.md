@@ -40,7 +40,7 @@ comme tout sous-projet, et le workflow de pull request existant couvre déjà
 ## Catalogue de scènes
 
 Chaque scène est rendue via la façade publique et le rastériseur CPU, puis
-réduite à un seul digest. Le tableau ci-dessous illustre les cinq familles, il
+réduite à un seul digest. Le tableau ci-dessous illustre les six familles, il
 n'est pas l'inventaire : la [matrice du catalogue
 d'attentes](generated/e2e-catalog-matrix.fr.md) générée énumère chaque scène et
 est le seul endroit où les compteurs du catalogue apparaissent.
@@ -50,7 +50,8 @@ est le seul endroit où les compteurs du catalogue apparaissent.
 | `GLYPH_OUTLINE` | `glyph.outline.liberation-sans.A.64` (43×45) | Un glyphe aplati puis converti en couverture à 64 pixels par em. | `ALPHA_8` |
 | `GLYPH_PAINT` | `glyph.paint.emoji-two-colr-v0.u1F600.64` (71×72) | Un glyphe COLR v0 résolu en calques, composé en `SOURCE_OVER` et teinté. | `RGBA_8888` |
 | `GLYPH_BITMAP` | `glyph.bitmap.skia-ebdt-format1.u1F600.16` (13×13) | Un glyphe routé vers le strike EBLC/EBDT embarqué. | `RGBA_8888` |
-| `COMPOSED_LINE` | `line.latin.48`, `line.greek.48`, `line.cyrillic.48`, `line.arabic.48`, `line.devanagari.48`, `line.mixed.48` | De vraies lignes de texte mises en forme et composées par la façade de paragraphe : latin, grec, cyrillique, arabe de droite à gauche, devanagari, et une ligne mixte dont les scripts sont résolus par repli entre trois polices. | `ALPHA_8` |
+| `COMPOSED_LINE` | `line.latin.48`, `line.greek.48`, `line.cyrillic.48`, `line.arabic.48`, `line.devanagari.48`, `line.mixed.48`, `variation.wght-ladder` (291×306) | De vraies lignes de texte mises en forme et composées par la façade de paragraphe : latin, grec, cyrillique, arabe de droite à gauche, devanagari, et une ligne mixte dont les scripts sont résolus par repli entre trois polices — plus un mot rendu cinq fois, une par instance `wght` d'une vraie police variable, sur une même grille de lignes de base. | `ALPHA_8` |
+| `MOSAIC` | `composition.every-route-mosaic` (592×366) | Sept routes dans une seule image : un mot mis en forme en contour TrueType, le A majuscule en CFF 1 puis CFF 2, une ligne multi-scripts résolue par trois polices, un glyphe à quatre graisses, une peinture couleur et un strike bitmap, composés sur un même canvas couleur. | `RGBA_8888` |
 | `ALPHABET_SHEET` | `sheet.outline.liberation-latin.32`, `sheet.outline.liberation-greek.32`, `sheet.outline.liberation-cyrillic.32`, `sheet.outline.amiri-arabic.32`, `sheet.outline.noto-devanagari.32`, `sheet.paint.bungee-color-latin.48`, `sheet.paint.emoji-two-colr-v0.64` | Tous les glyphes couverts d'une police, disposés dans une grille : couverture pour les polices de contour, couleur composée pour Bungee Color et EmojiTwo. | `ALPHA_8` et `RGBA_8888` |
 
 Les trois scènes de glyphe isolé sont la forme promue des constantes de

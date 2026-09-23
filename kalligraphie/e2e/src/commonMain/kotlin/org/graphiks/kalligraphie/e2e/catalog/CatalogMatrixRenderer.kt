@@ -106,6 +106,12 @@ public object CatalogMatrixRenderer {
                 "Pas encore ; le corpus le porte, le lecteur non"
             }
 
+            status.unpinnedReason == UnpinnedReason.NO_API_SURFACE -> if (language == CatalogMatrixLanguage.EN) {
+                "Not yet; no public entry point carries the request"
+            } else {
+                "Pas encore ; aucune entrée publique ne porte la demande"
+            }
+
             else -> error("${status.trackingIssue} declares no reason and pins no behaviour")
         }
 
