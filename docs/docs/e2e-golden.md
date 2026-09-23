@@ -166,14 +166,16 @@ A duplicate scene id, in the catalog or in the manifest, fails while loading.
 ```bash
 ./gradlew :kalligraphie:e2e:jvmTest
 ./gradlew :kalligraphie:e2e:updateE2eGolden
-env KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
-    ./gradlew :kalligraphie:e2e:e2eGoldenDumps
+./gradlew :kalligraphie:e2e:e2eGoldenDumps -Pkalligraphie.e2e.dumps=/tmp/kalligraphie-e2e
 ```
 
-`jvmTest` is part of `check`. The other two tasks are opt-in, are excluded from
-`check`, and always re-run: `updateE2eGolden` writes the manifest from the
-catalog, and `e2eGoldenDumps` writes one PGM or PPM per scene, named after the
-scene id, next to a manifest copy.
+`jvmTest` is part of `check`. The other two tasks are opt-in and always re-run:
+`updateE2eGolden` writes the manifest, the matrix and the claims from the catalog,
+and `e2eGoldenDumps` writes one PGM or PPM per scene, named after the scene id.
+Neither is a test, so neither is excluded from `check`: they drive
+`GoldenWriterMain` on the test runtime class path and assert nothing about the
+project. The dump output is a task parameter rather than an environment variable,
+so the command states the directory it writes to.
 
 The dump output must be an absolute path outside the repository; the runner
 asserts both and fails rather than writing into the checkout. Every dump opens

@@ -168,15 +168,16 @@ au chargement.
 ```bash
 ./gradlew :kalligraphie:e2e:jvmTest
 ./gradlew :kalligraphie:e2e:updateE2eGolden
-env KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \
-    ./gradlew :kalligraphie:e2e:e2eGoldenDumps
+./gradlew :kalligraphie:e2e:e2eGoldenDumps -Pkalligraphie.e2e.dumps=/tmp/kalligraphie-e2e
 ```
 
-`jvmTest` fait partie de `check`. Les deux autres tâches sont opt-in, sont
-exclues de `check`, et se réexécutent toujours : `updateE2eGolden` écrit le
-manifeste à partir du catalogue, et `e2eGoldenDumps` écrit une image PGM ou PPM
-par scène, nommée d'après l'identifiant de scène, accompagnée d'une copie du
-manifeste.
+`jvmTest` fait partie de `check`. Les deux autres tâches sont opt-in et se
+réexécutent toujours : `updateE2eGolden` écrit le manifeste, la matrice et les
+claims à partir du catalogue, et `e2eGoldenDumps` écrit une image PGM ou PPM par
+scène, nommée d'après l'identifiant de scène. Aucune des deux n'est un test, donc
+aucune n'est exclue de `check` : elles pilotent `GoldenWriterMain` sur le class
+path de test et n'affirment rien sur le projet. La sortie du dump est un paramètre
+de tâche plutôt qu'une variable d'environnement : la commande dit où elle écrit.
 
 La sortie de dump doit être un chemin absolu hors du dépôt ; le runner vérifie
 les deux et échoue plutôt que d'écrire dans le checkout. Chaque dump s'ouvre à

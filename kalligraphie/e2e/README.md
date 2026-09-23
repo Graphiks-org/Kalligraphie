@@ -39,12 +39,13 @@ in `jvmTest`.** Two facts fix that boundary:
   reads a corpus the `iosFixtureCorpus` task generates as base64 Kotlin source. A test that calls
   `bytes("/fonts/…")` therefore runs wherever a corpus exists, and the *same* committed fingerprint
   is verified by every platform rather than re-frozen per platform.
-- **The harness's platform half is Gradle plumbing.** The writers are `Test` tasks gated by
-  environment variables (`KALLIGRAPHIE_E2E_UPDATE`, `KALLIGRAPHIE_E2E_MATRIX`,
-  `KALLIGRAPHIE_E2E_CLAIMS`, `KALLIGRAPHIE_E2E_DUMPS`), they write into the source tree through
-  `java.nio.file`, and the dumps are written where a
-  maintainer asks for them. None of that is portable: the *verification* is shared, the
-  *authoring* is not.
+- **The suite asserts; the tooling acts.** Regenerating an artefact is not a test: the writers live
+  in `GoldenWriterMain`, one command per artefact, driven by `JavaExec` tasks on the test runtime
+  class path (`updateE2eGolden`, `e2eGoldenDumps`). They write into the source tree through
+  `java.nio.file`, so they stay on the reference platform — but they are never excluded from
+  `check`, because they are no longer tests. No test in this module spawns a host tool either: a
+  suite that has to discover an interpreter, or that switches itself off, is a suite that reports
+  on its plumbing rather than on the product.
 
 ## Which scenes a platform verifies, and why that is not a preference
 
