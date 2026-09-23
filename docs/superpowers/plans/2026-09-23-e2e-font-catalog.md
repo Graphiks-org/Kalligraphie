@@ -2874,15 +2874,20 @@ if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
 ```
 
-Les URL de `corpus.json` sont de deux formes : `url` pointe vers la page GitHub lisible depuis
-`PROVENANCE.md`, `rawUrl` vers le fichier brut que `--fetch` télécharge. Le manifeste doit porter
-les deux pour une famille non synthétique — `check_files` refuse une famille réelle sans `rawUrl`
-plutôt que de deviner la transformation.
+Les URL de `corpus.json` sont de deux formes : `url` pointe vers la page lisible depuis
+`PROVENANCE.md` et reste obligatoire pour toute famille réelle (c'est l'ancre de traçabilité),
+`rawUrl` vers le fichier brut que `--fetch` télécharge. Une famille réelle porte `rawUrl` **ou**
+`fetchNote` — la note expliquant la re-téléchargement manuel quand aucune URL ne sert les octets
+committés (sous-ensemble `pyftsubset`, archive de release, enveloppe qu'il faudrait ré-encoder).
+`check_files` exige l'un des deux plutôt que de deviner la transformation, et `--fetch` saute les
+familles à `fetchNote` avec un message. Une charge peut être encodée (gitiles `?format=TEXT`) :
+`--fetch` compare le digest sur la charge verbatim puis sur son décodage base64, le `sha256`
+épinglé restant le seul juge.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `python3 -m unittest discover -s scripts/fonts/tests -v`
-Expected: PASS (10 tests).
+Expected: PASS (11 tests).
 
 - [ ] **Step 5: Run the check against the real corpus**
 
