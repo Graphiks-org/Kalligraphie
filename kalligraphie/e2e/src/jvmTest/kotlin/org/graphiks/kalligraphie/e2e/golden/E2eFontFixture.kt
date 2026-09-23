@@ -157,6 +157,34 @@ internal fun bitmapProfile(): BitmapProfile = BitmapProfile(
     ),
 )
 
+/**
+ * Requirements for a colour strike: the CBDT and sbix fixtures carry one 16 ppem RGBA strike each,
+ * so the monochrome [bitmapProfile] cannot reach them.
+ */
+internal fun colourBitmapRequirements(): FontAccessRequirementsSnapshot =
+    FontAccessRequirementsSnapshot.renderable(listOf(colourBitmapProfile()))
+
+/** The 16 ppem RGBA strike profile the colour bitmap fixtures certify. */
+internal fun colourBitmapProfile(): BitmapProfile = BitmapProfile(
+    strike = BitmapStrike(16, 16, 32),
+    acceptedPixelFormats = listOf(BitmapPixelFormat.RGBA_8888),
+    acceptedColorSpaces = listOf(GlyphColorSpace.SRGB),
+    limits = BitmapLimits(
+        maxStrikes = 3,
+        maxIndexSubtables = 16,
+        maxRecordCount = 16,
+        maxIndexTableBytes = 16_384,
+        maxSourceTableBytes = 65_536,
+        maxWidth = 32,
+        maxHeight = 32,
+        maxPixels = 1_024,
+        maxCompressedBytes = 65_536,
+        maxTotalCompressedBytes = 65_536,
+        maxDecodedBytes = 4_096,
+        maxTotalDecodedBytes = 16_384,
+    ),
+)
+
 internal fun fixtureBytes(path: String): ByteArray =
     checkNotNull(object {}.javaClass.getResourceAsStream(path)) { "fixture resource $path is missing" }
         .use { input -> input.readBytes() }

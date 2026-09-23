@@ -1,10 +1,23 @@
 // MetricsCatalog.kt
 package org.graphiks.kalligraphie.e2e.catalog
 
-/** Vertical-metrics expectations no real font pins yet. */
+import org.graphiks.kalligraphie.e2e.GoldenSceneFamily
+
+/** Vertical-metrics expectations: the auto-sized VVAR scene, then the gaps no real font pins yet. */
 public object MetricsCatalog {
     /** Declared metrics expectations. */
     public val entries: List<CatalogEntry> = listOf(
+        CatalogEntry(
+            id = "metrics.vvar-advance-height",
+            axis = CatalogAxis.METRICS,
+            technology = "VVAR vertical advance deltas",
+            font = CorpusKeys.KALLIGRAPHIE_VAR_VVAR,
+            status = CatalogStatus.Supported(sinceCommit = "009d010e"),
+            tags = setOf("metrics:vvar", "auto-sized"),
+            tables = setOf("VVAR", "fvar", "vhea", "vmtx"),
+            family = GoldenSceneFamily.GLYPH_OUTLINE,
+            frame = SceneFramePolicy.AutoSized(padding = 1),
+        ),
         documented(
             id = "metrics.vvar-real-font",
             technology = "vvar vertical metrics from a real font",

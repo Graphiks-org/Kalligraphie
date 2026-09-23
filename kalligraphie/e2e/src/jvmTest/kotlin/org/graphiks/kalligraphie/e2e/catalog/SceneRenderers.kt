@@ -7,6 +7,7 @@ import org.graphiks.kalligraphie.e2e.golden.ComposedLineScenes
 import org.graphiks.kalligraphie.e2e.golden.GlyphSheetScenes
 import org.graphiks.kalligraphie.e2e.golden.bitmapOf
 import org.graphiks.kalligraphie.e2e.golden.bitmapRequirements
+import org.graphiks.kalligraphie.e2e.golden.colourBitmapRequirements
 import org.graphiks.kalligraphie.e2e.golden.fixtureBytes
 import org.graphiks.kalligraphie.e2e.golden.openOutlineFixture
 import org.graphiks.kalligraphie.e2e.golden.openRenderableFixture
@@ -33,6 +34,11 @@ internal object SceneRenderers {
     private const val BUNGEE_COLOR = "/fonts/bungee-color/BungeeColor-Regular.ttf"
     private const val EMOJI_TWO_COLR_V0 = "/fonts/emoji-two-colr-v0/EmojiTwoCOLRv0.ttf"
     private const val SKIA_EBDT_FORMAT1 = "/fonts/skia-ebdt-format1/ebdt_fmt1.ttf"
+    private const val SKIA_CBDT = "/fonts/skia-cbdt/cbdt.ttf"
+    private const val SKIA_SBIX = "/fonts/skia-sbix/sbix.ttf"
+    private const val CFF_LIBERATION = "/fonts/cff-liberation/LiberationSans-CFF.otf"
+    private const val CFF2_LIBERATION = "/fonts/cff2-liberation/LiberationSans-CFF2.otf"
+    private const val KALLIGRAPHIE_VAR_VVAR = "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf"
 
     private val LATIN_LETTERS: List<Int> = (0x41..0x5A).toList()
     private val LATIN: List<Int> = LATIN_LETTERS + (0x61..0x7A) + (0x30..0x39)
@@ -55,7 +61,8 @@ internal object SceneRenderers {
      *
      * A migrated renderer also declares the scene id it feeds: those scenes were named before the
      * catalog existed and keep their committed manifest keys, which the entry id — a name of the
-     * technology, not of the scene — does not reproduce.
+     * technology, not of the scene — does not reproduce. A scene born with the catalog declares
+     * none and takes the entry id.
      */
     val byId: Map<String, CatalogSceneRenderer> = mapOf(
         "outline.glyf-simple-composite" to CatalogSceneRenderer(
@@ -119,7 +126,48 @@ internal object SceneRenderers {
         "color.colr-v0-emoji-sheet" to CatalogSceneRenderer(EMOJI_TWO_COLR_V0, sceneId = "sheet.paint.emoji-two-colr-v0.64") {
             composed { GlyphSheetScenes.paintSheet(EMOJI_TWO_COLR_V0, EMOJI, 64.0, paletteIndex = 0) }
         },
+        "bitmap.cbdt-png.u1f600.16" to CatalogSceneRenderer(SKIA_CBDT, render = ::renderCbdtColourStrike),
+        "bitmap.sbix-png.u1f600.16" to CatalogSceneRenderer(SKIA_SBIX, render = ::renderSbixColourStrike),
+        "outline.cff1-static" to CatalogSceneRenderer(CFF_LIBERATION, render = ::renderCff1CapitalA),
+        "outline.cff2-static" to CatalogSceneRenderer(CFF2_LIBERATION, render = ::renderCff2CapitalA),
+        "metrics.vvar-advance-height" to CatalogSceneRenderer(KALLIGRAPHIE_VAR_VVAR, render = ::renderVvarCapitalA),
     )
+
+    private fun renderCbdtColourStrike(): GoldenRenderOutcome = colourStrike(SKIA_CBDT, "CBLC/CBDT strike")
+
+    private fun renderSbixColourStrike(): GoldenRenderOutcome = colourStrike(SKIA_SBIX, "sbix strike")
+
+    private fun renderCff1CapitalA(): GoldenRenderOutcome = outlineCapitalA(CFF_LIBERATION, "CFF 1 'A'")
+
+    private fun renderCff2CapitalA(): GoldenRenderOutcome = outlineCapitalA(CFF2_LIBERATION, "CFF 2 'A'")
+
+    private fun renderVvarCapitalA(): GoldenRenderOutcome = outlineCapitalA(KALLIGRAPHIE_VAR_VVAR, "VVAR fixture 'A'")
+
+    /** Renders the U+1F600 bitmap of [fontPath], as the 16 ppem RGBA strike it resolves to. */
+    private fun colourStrike(fontPath: String, what: String): GoldenRenderOutcome =
+        openRenderableFixture(fixtureBytes(fontPath), colourBitmapRequirements()).use { fixture ->
+            val bitmap = fixture.bitmapOf(0x1F600)
+            when (val result = GlyphRasterizer.rasterizeBitmap(bitmap, BitmapRasterRequest(GlyphColor(0, 0, 0, 255)))) {
+                is RasterResult.Success -> GoldenRenderOutcome.Rendered(
+                    GoldenImage.rgba8(result.value.width, result.value.height, result.value.copyPixels()),
+                )
+
+                is RasterResult.Failure -> refused(what, result.diagnostics.first().field)
+            }
+        }
+
+    /** Renders the capital A of the font at [fontPath] through the portable outline route. */
+    private fun outlineCapitalA(fontPath: String, what: String): GoldenRenderOutcome =
+        openOutlineFixture(fixtureBytes(fontPath)).use { fixture ->
+            val outline = fixture.outlineOf(0x41)
+            when (val result = GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(pixelsPerEm = 64.0))) {
+                is RasterResult.Success -> GoldenRenderOutcome.Rendered(
+                    GoldenImage.alpha8(result.value.width, result.value.height, result.value.copyPixels()),
+                )
+
+                is RasterResult.Failure -> refused(what, result.diagnostics.first().field)
+            }
+        }
 
     private fun renderLiberationCapitalA(): GoldenRenderOutcome =
         openOutlineFixture(fixtureBytes(LIBERATION_SANS)).use { fixture ->
