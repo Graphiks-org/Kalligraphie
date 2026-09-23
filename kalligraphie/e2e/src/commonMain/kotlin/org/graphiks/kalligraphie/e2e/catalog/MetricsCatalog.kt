@@ -12,7 +12,7 @@ public object MetricsCatalog {
             axis = CatalogAxis.METRICS,
             technology = "VVAR vertical advance deltas",
             font = CorpusKeys.KALLIGRAPHIE_VAR_VVAR,
-            status = CatalogStatus.Supported(sinceCommit = "009d010e"),
+            status = CatalogStatus.Supported(sinceCommit = "4b156eac"),
             tags = setOf("metrics:vvar", "auto-sized"),
             tables = setOf("VVAR", "fvar", "vhea", "vmtx"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
