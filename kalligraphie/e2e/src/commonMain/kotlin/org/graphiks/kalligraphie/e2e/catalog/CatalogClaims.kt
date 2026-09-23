@@ -84,6 +84,14 @@ public object CatalogClaims {
             "glyf" to SBIX_OUTLINES_REASON,
             "loca" to SBIX_OUTLINES_REASON,
         ),
+        "worksans" to mapOf(
+            "STAT" to "the ladder selects its instances by design `wght` coordinate through " +
+                "`fvar` and `avar` and reads no style attribute; `variation.stat` records that " +
+                "portable STAT reading is not implemented yet",
+            "gasp" to "the ladder rasterises the varied outlines with the portable CPU rasterizer, " +
+                "which applies no grid-fitting hint profile, so the table's flags and ranges are " +
+                "carried and never consulted",
+        ),
     )
 
     /**

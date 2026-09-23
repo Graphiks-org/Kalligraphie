@@ -91,7 +91,19 @@ public object CatalogMatrixRenderer {
                 "Pas encore ; aucune police réelle connue"
             }
 
-            else -> if (language == CatalogMatrixLanguage.EN) "Not yet; corpus not acquired" else "Pas encore ; corpus non acquis"
+            status.unpinnedReason == UnpinnedReason.CORPUS_NOT_ACQUIRED -> if (language == CatalogMatrixLanguage.EN) {
+                "Not yet; corpus not acquired"
+            } else {
+                "Pas encore ; corpus non acquis"
+            }
+
+            status.unpinnedReason == UnpinnedReason.READER_NOT_IMPLEMENTED -> if (language == CatalogMatrixLanguage.EN) {
+                "Not yet; the corpus carries it, the reader does not"
+            } else {
+                "Pas encore ; le corpus le porte, le lecteur non"
+            }
+
+            else -> error("${status.trackingIssue} declares no reason and pins no behaviour")
         }
 
         is CatalogStatus.OutOfScope -> if (language == CatalogMatrixLanguage.EN) {

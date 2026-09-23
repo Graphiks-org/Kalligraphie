@@ -6,7 +6,7 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 
 | Status | Entries |
 | --- | --- |
-| Supported | 21 |
+| Supported | 22 |
 | Expected rejection | 2 |
 | Not yet | 10 |
 | Out of scope | 1 |
@@ -38,10 +38,11 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 
 | Entry | Technology | Font | Status |
 | --- | --- | --- | --- |
+| `variation.wght-ladder` | Design-coordinate `wght` selection on a real variable font: one text at five weights, each laid out, shaped and rasterised independently, on one baseline grid | worksans | Supported since 4f9b70bd |
 | `variation.avar-v2` | avar version 2 segment maps | — | Not yet; no real font known |
 | `variation.cvar` | cvar CVT variations | — | Not yet; no real font known |
 | `variation.varc` | VARC variable composite glyphs | — | Not yet; no real font known |
-| `variation.stat` | STAT style attributes | — | Not yet; corpus not acquired |
+| `variation.stat` | STAT style attributes (named instances and their axes) | — | Not yet; the corpus carries it, the reader does not |
 
 ## COLOR
 

@@ -41,4 +41,6 @@ public object CorpusKeys {
     public val GDEF_KERN: CorpusKey = CorpusKey("gdef-kern")
     /** Liberation + Amiri TrueType collection. */
     public val LIBERATION_AMIRI_COLLECTION: CorpusKey = CorpusKey("liberation-amiri-collection")
+    /** Work Sans variable, `wght` axis 100–900. */
+    public val WORK_SANS: CorpusKey = CorpusKey("worksans")
 }

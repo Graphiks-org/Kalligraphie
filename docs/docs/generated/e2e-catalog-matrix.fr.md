@@ -6,7 +6,7 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Statut | Entrées |
 | --- | --- |
-| Supporté | 21 |
+| Supporté | 22 |
 | Rejet attendu | 2 |
 | Pas encore | 10 |
 | Hors périmètre | 1 |
@@ -38,10 +38,11 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
+| `variation.wght-ladder` | Design-coordinate `wght` selection on a real variable font: one text at five weights, each laid out, shaped and rasterised independently, on one baseline grid | worksans | Supporté depuis 4f9b70bd |
 | `variation.avar-v2` | avar version 2 segment maps | — | Pas encore ; aucune police réelle connue |
 | `variation.cvar` | cvar CVT variations | — | Pas encore ; aucune police réelle connue |
 | `variation.varc` | VARC variable composite glyphs | — | Pas encore ; aucune police réelle connue |
-| `variation.stat` | STAT style attributes | — | Pas encore ; corpus non acquis |
+| `variation.stat` | STAT style attributes (named instances and their axes) | — | Pas encore ; le corpus le porte, le lecteur non |
 
 ## COLOR
 

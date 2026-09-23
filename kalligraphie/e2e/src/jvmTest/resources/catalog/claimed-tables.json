@@ -12,7 +12,8 @@
     "noto-devanagari": ["GDEF", "GPOS", "GSUB", "cmap", "glyf", "hmtx", "loca"],
     "skia-cbdt": ["CBDT", "CBLC"],
     "skia-ebdt-format1": ["EBDT", "EBLC"],
-    "skia-sbix": ["sbix"]
+    "skia-sbix": ["sbix"],
+    "worksans": ["GDEF", "GPOS", "GSUB", "HVAR", "avar", "cmap", "fvar", "glyf", "gvar", "hmtx", "loca"]
   },
   "allowUnclaimed": {
     "*": {"OS/2": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "cmap": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "head": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "hhea": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "hmtx": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "maxp": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "name": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "post": "present in every SFNT and not technology-bearing; the catalog claims technology tables only"},
@@ -28,6 +29,7 @@
     "noto-sans-jp": {"*": "subset variable JP fixture whose vertical advances the shaping module cross-checks; no catalogued scene references this family"},
     "skia-colr-v1": {"*": "static COLR v1 fixture with transforms and gradients, read by the colour representation tests; the color axis pins COLR v1 on the synthetic variable fixture, and no catalogued scene uses the Skia file"},
     "skia-sbix": {"glyf": "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the sbix route does not require glyf, so this family's outlines are carried but never read", "loca": "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the sbix route does not require glyf, so this family's outlines are carried but never read"},
-    "twemoji-svginot-glyph5": {"*": "SVG-in-OpenType subset read by the glyph-representation suite; no catalogued scene renders an SVG glyph, so the family stays outside the claimed perimeter"}
+    "twemoji-svginot-glyph5": {"*": "SVG-in-OpenType subset read by the glyph-representation suite; no catalogued scene renders an SVG glyph, so the family stays outside the claimed perimeter"},
+    "worksans": {"STAT": "the ladder selects its instances by design `wght` coordinate through `fvar` and `avar` and reads no style attribute; `variation.stat` records that portable STAT reading is not implemented yet", "gasp": "the ladder rasterises the varied outlines with the portable CPU rasterizer, which applies no grid-fitting hint profile, so the table's flags and ranges are carried and never consulted"}
   }
 }
