@@ -34,24 +34,28 @@ tasks.withType<Test>().configureEach {
 val updateClass = "org.graphiks.kalligraphie.e2e.golden.GoldenUpdateRunnerTest"
 val dumpClass = "org.graphiks.kalligraphie.e2e.golden.GoldenDumpRunnerTest"
 val matrixClass = "org.graphiks.kalligraphie.e2e.catalog.CatalogMatrixRunnerTest"
+val claimsClass = "org.graphiks.kalligraphie.e2e.catalog.CatalogClaimsRunnerTest"
 val e2eJvmTestTask = tasks.named<Test>("jvmTest")
 
 e2eJvmTestTask.configure {
     filter.excludeTestsMatching(updateClass)
     filter.excludeTestsMatching(dumpClass)
-    // Only the writer is excluded: the freshness test must keep running under `check`.
+    // Only the writers are excluded: the freshness tests must keep running under `check`.
     filter.excludeTestsMatching("$matrixClass.writesTheMatrixOnlyWhenExplicitlyEnabled")
+    filter.excludeTestsMatching("$claimsClass.writesTheClaimsOnlyWhenExplicitlyEnabled")
 }
 
 tasks.register<Test>("updateE2eGolden") {
     group = "verification"
-    description = "Regenerates the committed golden fingerprint manifest and the catalog matrix from the scene catalog."
+    description = "Regenerates the committed golden fingerprint manifest, the catalog matrix and the table claims from the scene catalog."
     testClassesDirs = e2eJvmTestTask.get().testClassesDirs
     classpath = e2eJvmTestTask.get().classpath
     filter.includeTestsMatching("$updateClass.writesTheManifestOnlyWhenExplicitlyEnabled")
     filter.includeTestsMatching("$matrixClass.writesTheMatrixOnlyWhenExplicitlyEnabled")
+    filter.includeTestsMatching("$claimsClass.writesTheClaimsOnlyWhenExplicitlyEnabled")
     environment("KALLIGRAPHIE_E2E_UPDATE", "true")
     environment("KALLIGRAPHIE_E2E_MATRIX", "true")
+    environment("KALLIGRAPHIE_E2E_CLAIMS", "true")
     outputs.upToDateWhen { false }
 }
 

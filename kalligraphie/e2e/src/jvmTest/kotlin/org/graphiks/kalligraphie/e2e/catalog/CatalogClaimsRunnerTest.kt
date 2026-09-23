@@ -1,0 +1,53 @@
+// CatalogClaimsRunnerTest.kt
+package org.graphiks.kalligraphie.e2e.catalog
+
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import org.graphiks.kalligraphie.e2e.golden.repositoryRoot
+
+class CatalogClaimsRunnerTest {
+    @Test
+    fun writesTheClaimsOnlyWhenExplicitlyEnabled() {
+        if (System.getenv("KALLIGRAPHIE_E2E_CLAIMS") != "true") {
+            return
+        }
+        val target = claimsPath()
+        Files.createDirectories(target.parent)
+        Files.writeString(target, CatalogClaims.render(ExpectationCatalog.entries))
+    }
+
+    @Test
+    fun theCommittedClaimsMatchTheCatalog() {
+        val path = claimsPath()
+        check(Files.exists(path)) { "$path is missing; run ./gradlew :kalligraphie:e2e:updateE2eGolden" }
+        assertEquals(
+            CatalogClaims.render(ExpectationCatalog.entries),
+            Files.readString(path),
+            "$path is stale; run ./gradlew :kalligraphie:e2e:updateE2eGolden",
+        )
+    }
+
+    @Test
+    fun everyAllowlistedTableCarriesAReason() {
+        for ((key, tables) in CatalogClaims.unclaimedAllowlist) {
+            assertTrue(key.isNotBlank())
+            for ((table, reason) in tables) {
+                assertTrue(reason.isNotBlank(), "$key/$table is allowlisted without a reason")
+            }
+        }
+    }
+
+    @Test
+    fun everyClaimedTableIsDeclaredByAnEntryThatNamesItsFont() {
+        val claims = CatalogClaims.claimsOf(ExpectationCatalog.entries)
+        for ((key, tables) in claims) {
+            assertTrue(key.isNotBlank())
+            assertTrue(tables.isNotEmpty(), "$key is claimed by entries that declare no table")
+        }
+    }
+
+    private fun claimsPath(): Path = repositoryRoot().resolve("kalligraphie/e2e/src/jvmTest/resources/catalog/claimed-tables.json")
+}

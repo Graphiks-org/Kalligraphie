@@ -1,0 +1,20 @@
+{
+  "schema": "kalligraphie.e2e-claims/v1",
+  "fonts": {
+    "amiri": ["GPOS", "GSUB", "cmap", "glyf", "hmtx", "loca"],
+    "bungee-color": ["COLR", "CPAL"],
+    "cff-liberation": ["CFF ", "cmap"],
+    "cff2-liberation": ["CFF2", "cmap"],
+    "emoji-two-colr-v0": ["COLR", "CPAL"],
+    "kalligraphie-var-colr": ["COLR", "CPAL", "fvar"],
+    "kalligraphie-var-vvar": ["VVAR", "fvar", "vhea", "vmtx"],
+    "liberation": ["GPOS", "GSUB", "OS/2", "cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "post"],
+    "noto-devanagari": ["GPOS", "GSUB", "cmap", "glyf", "hmtx", "loca"],
+    "skia-cbdt": ["CBDT", "CBLC"],
+    "skia-ebdt-format1": ["EBDT", "EBLC"],
+    "skia-sbix": ["sbix"]
+  },
+  "allowUnclaimed": {
+    "*": {"OS/2": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "cmap": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "head": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "hhea": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "hmtx": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "maxp": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "name": "present in every SFNT and not technology-bearing; the catalog claims technology tables only", "post": "present in every SFNT and not technology-bearing; the catalog claims technology tables only"}
+  }
+}
