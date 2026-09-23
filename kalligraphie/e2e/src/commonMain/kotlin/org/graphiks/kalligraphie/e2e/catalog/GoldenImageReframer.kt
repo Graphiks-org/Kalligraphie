@@ -6,6 +6,10 @@ import org.graphiks.kalligraphie.e2e.GoldenImage
  * Places a rendered image inside a larger canonical frame without touching its pixels. Clipping is
  * refused rather than cropping: silently dropping ink would hide the very regression a golden scene
  * exists to catch.
+ *
+ * The frame keeps the source's [org.graphiks.kalligraphie.e2e.GoldenOrientation]: the reframer
+ * copies rows in the order it finds them, so a design-oriented render that went through an
+ * auto-sized frame stays design-oriented instead of silently claiming image orientation.
  */
 public object GoldenImageReframer {
     /** Copies [image] into a [width] x [height] frame at ([offsetX], [offsetY]). */
@@ -24,8 +28,11 @@ public object GoldenImageReframer {
             source.copyInto(target, destinationOffset = targetRow, startIndex = sourceRow, endIndex = sourceRow + image.width * bytesPerPixel)
         }
         return when (image.format) {
-            org.graphiks.kalligraphie.e2e.PixelFormat.ALPHA_8 -> GoldenImage.alpha8(width, height, target)
-            org.graphiks.kalligraphie.e2e.PixelFormat.RGBA_8888 -> GoldenImage.rgba8(width, height, target)
+            org.graphiks.kalligraphie.e2e.PixelFormat.ALPHA_8 ->
+                GoldenImage.alpha8(width, height, target, image.orientation)
+
+            org.graphiks.kalligraphie.e2e.PixelFormat.RGBA_8888 ->
+                GoldenImage.rgba8(width, height, target, image.orientation)
         }
     }
 }

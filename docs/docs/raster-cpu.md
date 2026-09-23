@@ -27,9 +27,10 @@ the paragraph facade — including a mixed multi-script line resolved by
 three-font fallback.
 
 That module also hosts the opt-in demonstration runner, which writes one PGM or
-PPM image per golden scene. Composed sheets and lines are flipped vertically for
-readability; the raw single-glyph dumps keep the rasterizer's source orientation;
-the EBDT strike keeps its image orientation. The dedicated task always executes
+PPM image per golden scene. Every dump opens upright: the raw single-glyph
+outline and paint renders carry the rasterizer's own row order and are reversed
+once by the writer, while the composed sheets and lines and the bitmap strikes
+are already in image orientation. The dedicated task always executes
 when invoked explicitly:
 
 ```bash

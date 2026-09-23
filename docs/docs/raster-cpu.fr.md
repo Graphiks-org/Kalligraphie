@@ -28,11 +28,11 @@ de texte composées par la façade de paragraphe — dont une ligne mixte
 multi-scripts résolue par repli (fallback) entre trois polices.
 
 Ce module héberge aussi la démonstration opt-in (à activation explicite), qui
-écrit une image PGM ou PPM par scène golden. Les planches et lignes composées
-sont retournées verticalement pour la lisibilité ; les dumps de référence
-conservent l'orientation source du rastériseur ; le strike EBDT conserve son
-orientation image. La tâche dédiée s'exécute toujours lorsqu'elle est invoquée
-explicitement :
+écrit une image PGM ou PPM par scène golden. Chaque dump s'ouvre à l'endroit :
+les rendus bruts de glyphe isolé (outline et peinture) portent l'ordre de lignes
+du rastériseur et sont retournés une fois par l'écrivain, tandis que les planches
+et lignes composées et les strikes bitmap sont déjà en orientation image. La
+tâche dédiée s'exécute toujours lorsqu'elle est invoquée explicitement :
 
 ```bash
 env KALLIGRAPHIE_E2E_DUMPS_OUTPUT=/tmp/kalligraphie-e2e \

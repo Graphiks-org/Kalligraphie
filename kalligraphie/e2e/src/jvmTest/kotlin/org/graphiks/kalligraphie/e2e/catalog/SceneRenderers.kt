@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.e2e.catalog
 
 import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
 import org.graphiks.kalligraphie.e2e.GoldenImage
+import org.graphiks.kalligraphie.e2e.GoldenOrientation
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.golden.ComposedLineScenes
 import org.graphiks.kalligraphie.e2e.golden.GlyphSheetScenes
@@ -148,6 +149,8 @@ internal object SceneRenderers {
         openRenderableFixture(fixtureBytes(fontPath), colourBitmapRequirements()).use { fixture ->
             val bitmap = fixture.bitmapOf(0x1F600)
             when (val result = GlyphRasterizer.rasterizeBitmap(bitmap, BitmapRasterRequest(GlyphColor(0, 0, 0, 255)))) {
+                // A normalized strike already arrives in image orientation: its decoded rows run top
+                // to bottom, and the bitmap compositor copies them one-to-one.
                 is RasterResult.Success -> GoldenRenderOutcome.Rendered(
                     GoldenImage.rgba8(result.value.width, result.value.height, result.value.copyPixels()),
                 )
@@ -161,8 +164,16 @@ internal object SceneRenderers {
         openOutlineFixture(fixtureBytes(fontPath)).use { fixture ->
             val outline = fixture.outlineOf(0x41)
             when (val result = GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(pixelsPerEm = 64.0))) {
+                // The outline route hands back the rasterizer's own rows, whose row zero is the
+                // smallest design y — the visual bottom. Declaring it here is what lets the dump
+                // writer put it back upright.
                 is RasterResult.Success -> GoldenRenderOutcome.Rendered(
-                    GoldenImage.alpha8(result.value.width, result.value.height, result.value.copyPixels()),
+                    GoldenImage.alpha8(
+                        result.value.width,
+                        result.value.height,
+                        result.value.copyPixels(),
+                        GoldenOrientation.DESIGN,
+                    ),
                 )
 
                 is RasterResult.Failure -> refused(what, result.diagnostics.first().field)
@@ -174,7 +185,12 @@ internal object SceneRenderers {
             val outline = fixture.outlineOf(0x41)
             when (val result = GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(pixelsPerEm = 64.0))) {
                 is RasterResult.Success -> GoldenRenderOutcome.Rendered(
-                    GoldenImage.alpha8(result.value.width, result.value.height, result.value.copyPixels()),
+                    GoldenImage.alpha8(
+                        result.value.width,
+                        result.value.height,
+                        result.value.copyPixels(),
+                        GoldenOrientation.DESIGN,
+                    ),
                 )
 
                 is RasterResult.Failure -> refused("Liberation Sans 'A'", result.diagnostics.first().field)
@@ -197,8 +213,15 @@ internal object SceneRenderers {
             } else {
                 val request = PaintRasterRequest(pixelsPerEm = 64.0, unitsPerEm = solidOutline.outline.unitsPerEm)
                 when (val result = GlyphRasterizer.rasterizePaint(paint, request)) {
+                    // The paint route keeps the rasterizer's design orientation too, which the
+                    // composed colour sheets reverse glyph by glyph when they draw.
                     is RasterResult.Success -> GoldenRenderOutcome.Rendered(
-                        GoldenImage.rgba8(result.value.width, result.value.height, result.value.copyPixels()),
+                        GoldenImage.rgba8(
+                            result.value.width,
+                            result.value.height,
+                            result.value.copyPixels(),
+                            GoldenOrientation.DESIGN,
+                        ),
                     )
 
                     is RasterResult.Failure -> refused("emoji COLRv0 paint", result.diagnostics.first().field)
@@ -220,6 +243,7 @@ internal object SceneRenderers {
             } else {
                 val request = BitmapRasterRequest(GlyphColor(0, 0, 0, 255))
                 when (val result = GlyphRasterizer.rasterizeBitmap(bitmap, request)) {
+                    // Same as the CBDT and sbix strikes: decoded rows already run top to bottom.
                     is RasterResult.Success -> GoldenRenderOutcome.Rendered(
                         GoldenImage.rgba8(result.value.width, result.value.height, result.value.copyPixels()),
                     )
