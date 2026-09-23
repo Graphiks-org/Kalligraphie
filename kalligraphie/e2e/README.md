@@ -42,8 +42,9 @@ in `jvmTest`.** Two facts fix that boundary:
 - **The harness's platform half is Gradle plumbing.** The writers are `Test` tasks gated by
   environment variables (`KALLIGRAPHIE_E2E_UPDATE`, `KALLIGRAPHIE_E2E_MATRIX`,
   `KALLIGRAPHIE_E2E_CLAIMS`, `KALLIGRAPHIE_E2E_DUMPS`), they write into the source tree through
-  `java.nio.file`, and the claims round-trip shells out to `python3`. None of that is portable: the
-  *verification* is shared, the *authoring* is not.
+  `java.nio.file`, and the dumps are written where a
+  maintainer asks for them. None of that is portable: the *verification* is shared, the
+  *authoring* is not.
 
 ## Which scenes a platform verifies, and why that is not a preference
 

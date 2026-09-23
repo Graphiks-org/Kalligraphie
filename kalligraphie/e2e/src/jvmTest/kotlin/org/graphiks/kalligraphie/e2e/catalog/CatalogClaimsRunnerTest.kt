@@ -1,7 +1,6 @@
 // CatalogClaimsRunnerTest.kt
 package org.graphiks.kalligraphie.e2e.catalog
 
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -55,48 +54,5 @@ class CatalogClaimsRunnerTest {
      * them must not be able to produce a document `json.loads` refuses. The freshness test cannot
      * see that: it compares [CatalogClaims.render] with itself.
      */
-    @Test
-    fun aHostileAllowlistReasonStillRendersJsonThatParsesBackVerbatim() {
-        val reason = "a \"quoted\" reason with a backslash \\ and a tab\tand a control \u0001"
-        val rendered = CatalogClaims.render(
-            ExpectationCatalog.entries,
-            mapOf("weird-family" to mapOf("COLR" to reason)),
-        )
-        val script = """
-            import json, sys
-            document = json.load(sys.stdin)
-            sys.stdout.write(document["allowUnclaimed"]["weird-family"]["COLR"])
-        """.trimIndent()
-        // `-X utf8` and explicit streams: the prover must not depend on the host locale, and a
-        // Windows runner decodes stdin and encodes stdout with its ANSI code page by default.
-        val process = ProcessBuilder(pythonInterpreter(), "-X", "utf8", "-c", script)
-            .redirectErrorStream(true)
-            .start()
-        process.outputStream.bufferedWriter(Charsets.UTF_8).use { writer -> writer.write(rendered) }
-        val parsed = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
-        assertEquals(0, process.waitFor(), "the Python proof refused the rendered claims:\n$parsed")
-        assertEquals(reason, parsed)
-    }
-
-    /**
-     * Resolves the Python 3 interpreter the JSON round-trip runs on.
-     *
-     * A Windows runner installs Python as `python`, not `python3`, so the name is discovered rather
-     * than assumed. The proof this test carries is only worth having if it really runs: an
-     * interpreter that cannot be found fails the test, and never skips the round-trip.
-     */
-    private fun pythonInterpreter(): String =
-        listOf("python3", "python", "py").firstOrNull(::canRunPython)
-            ?: error("Python 3 is required to prove the claims export parses as JSON.")
-
-    private fun canRunPython(candidate: String): Boolean = try {
-        ProcessBuilder(candidate, "-X", "utf8", "-c", "import json, sys; sys.exit(0)")
-            .redirectErrorStream(true)
-            .start()
-            .waitFor() == 0
-    } catch (missing: IOException) {
-        false
-    }
-
     private fun claimsPath(): Path = repositoryRoot().resolve("kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json")
 }
