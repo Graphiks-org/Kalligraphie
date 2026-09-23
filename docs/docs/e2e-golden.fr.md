@@ -39,9 +39,11 @@ comme tout sous-projet, et le workflow de pull request existant couvre déjà
 
 ## Catalogue de scènes
 
-Le catalogue déclare dix-sept scènes réparties en cinq familles. Chaque scène est
-rendue via la façade publique et le rastériseur CPU, puis réduite à un seul
-digest.
+Chaque scène est rendue via la façade publique et le rastériseur CPU, puis
+réduite à un seul digest. Le tableau ci-dessous illustre les cinq familles, il
+n'est pas l'inventaire : la [matrice du catalogue
+d'attentes](generated/e2e-catalog-matrix.fr.md) générée énumère chaque scène et
+est le seul endroit où les compteurs du catalogue apparaissent.
 
 | Famille | Scènes | Couverture observable | Format |
 | --- | --- | --- | --- |

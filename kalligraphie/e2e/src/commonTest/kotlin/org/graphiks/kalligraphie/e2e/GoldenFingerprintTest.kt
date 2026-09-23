@@ -41,6 +41,7 @@ class GoldenFingerprintTest {
             "RENDER_FAILED" to "e2e.render-failed",
             "MISMATCH" to "e2e.mismatch",
             "SCENE_BOUNDS_INVALID" to "e2e.scene-bounds-invalid",
+            "BLANK_SCENE" to "e2e.blank-scene",
             "MANIFEST_MISSING_ENTRY" to "e2e.manifest-missing-entry",
             "MANIFEST_STALE_ENTRY" to "e2e.manifest-stale-entry",
             "MANIFEST_DUPLICATE_ID" to "e2e.manifest-duplicate-id",

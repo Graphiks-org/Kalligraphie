@@ -1,0 +1,705 @@
+{
+  "schema": "kalligraphie.font-corpus/v1",
+  "families": [
+    {
+      "key": "amiri",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/amiri/Amiri-Regular.ttf",
+          "url": "https://github.com/google/fonts/tree/ade3d1533e06b2b1462ffcde8e08b129627ca360/ofl/amiri",
+          "rawUrl": "https://raw.githubusercontent.com/google/fonts/ade3d1533e06b2b1462ffcde8e08b129627ca360/ofl/amiri/Amiri-Regular.ttf",
+          "fetchNote": null,
+          "revision": "ade3d1533e06b2b1462ffcde8e08b129627ca360",
+          "sha256": "ab391c4147d054c48976e98322ad0eefe1427aa0e0502a12a4c75d80a70cfcd7",
+          "sizeBytes": 431116,
+          "tables": [
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/amiri/OFL.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "bungee-color",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/bungee-color/BungeeColor-Regular.ttf",
+          "url": "https://github.com/google/fonts",
+          "rawUrl": "https://raw.githubusercontent.com/google/fonts/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/bungeecolor/BungeeColor-Regular.ttf",
+          "fetchNote": null,
+          "revision": "5e35378e6bda803962ee6fd257e444a7d459660d",
+          "sha256": "cf21a786e54f43694f4edbb51a38f81331a4c3414217c524c8cb2d091aa7fd63",
+          "sizeBytes": 75420,
+          "tables": [
+            "COLR",
+            "CPAL",
+            "DSIG",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/liberation/OFL-1.1.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "cff-liberation",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/cff-liberation/LiberationSans-CFF.otf",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "208c7283a2edbf4fe804d68df75f23ebe3ae4368104f517b4f241ec970d733e7",
+          "sizeBytes": 1220,
+          "tables": [
+            "CFF ",
+            "OS/2",
+            "cmap",
+            "head",
+            "hhea",
+            "hmtx",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/liberation/OFL-1.1.txt",
+      "synthetic": true,
+      "builtBy": "build_cff_fixture.py"
+    },
+    {
+      "key": "cff2-liberation",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/cff2-liberation/LiberationSans-CFF2.otf",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "a4ee2c28ccd89b78cecbae04f1d36c4e1b3006f08801a3a1cc3a1f97bbe20df7",
+          "sizeBytes": 1144,
+          "tables": [
+            "CFF2",
+            "OS/2",
+            "cmap",
+            "head",
+            "hhea",
+            "hmtx",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/liberation/OFL-1.1.txt",
+      "synthetic": true,
+      "builtBy": "build_cff2_fixture.py"
+    },
+    {
+      "key": "cff2-variable",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/cff2-variable/SyntheticVariable-CFF2.otf",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "108aa5bc4fa1980b757f1fe3a8e59dc696797251429f3368fd0db0b7533ccee8",
+          "sizeBytes": 1312,
+          "tables": [
+            "CFF2",
+            "HVAR",
+            "OS/2",
+            "STAT",
+            "cmap",
+            "fvar",
+            "head",
+            "hhea",
+            "hmtx",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "synthetic": true,
+      "builtBy": "build_cff2_variable_fixture.py"
+    },
+    {
+      "key": "dejavu",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/dejavu/DejaVuSans.ttf",
+          "url": "https://sourceforge.net/projects/dejavu/files/dejavu/2.37/dejavu-sans-ttf-2.37.zip/download",
+          "rawUrl": null,
+          "fetchNote": "Download dejavu-sans-ttf-2.37.zip from the cited SourceForge page (archive SHA-256 5c6e497a2f36552cb5ffb112c413a6af39c0f3c47653662b90b4fa6499822fd7), extract dejavu-sans-ttf-2.37/ttf/DejaVuSans.ttf byte for byte, and verify SHA-256 7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954.",
+          "revision": "2.37",
+          "sha256": "7da195a74c55bef988d0d48f9508bd5d849425c1770dba5d7bfc6ce9ed848954",
+          "sizeBytes": 757076,
+          "tables": [
+            "FFTM",
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "MATH",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "kern",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "DejaVu",
+      "licenseFile": "test-fixtures/fonts/dejavu/LICENSE.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "emoji-two-colr-v0",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/emoji-two-colr-v0/EmojiTwoCOLRv0.ttf",
+          "url": "https://github.com/Emoji-COLRv0/Emoji-COLRv0",
+          "rawUrl": "https://raw.githubusercontent.com/Emoji-COLRv0/Emoji-COLRv0/1b81dcf46545252bdc82f6c6309335fb1c73b8c9/fonts/EmojiTwoCOLRv0.ttf",
+          "fetchNote": null,
+          "revision": "1b81dcf46545252bdc82f6c6309335fb1c73b8c9",
+          "sha256": "b5ba9f3a70f5d674f85d12f3f32e846f396965753aaed5b3d1e2ffee3fe94ef4",
+          "sizeBytes": 1349544,
+          "tables": [
+            "COLR",
+            "CPAL",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "CC-BY-4.0",
+      "licenseFile": "test-fixtures/fonts/emoji-two-colr-v0/LICENSE.md",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "gdef-kern",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/gdef-kern/GdefKerningFixture.ttf",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "c9f28286059cf869a80340af0edd035cfb83d10da586f67c728234f2d63b90a8",
+          "sizeBytes": 1772,
+          "tables": [
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "CC0-1.0",
+      "licenseFile": "test-fixtures/fonts/gdef-kern/LICENSE.md",
+      "synthetic": true,
+      "builtBy": "FixtureBuild.py"
+    },
+    {
+      "key": "kalligraphie-var-colr",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "afea84bc83bb5403fa2a1375e6029e0ab4c9436ed19b554668d00937bb0db78b",
+          "sizeBytes": 1240,
+          "tables": [
+            "COLR",
+            "CPAL",
+            "OS/2",
+            "cmap",
+            "fvar",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "synthetic": true,
+      "builtBy": "build_variable_colr_v1.py"
+    },
+    {
+      "key": "kalligraphie-var-vvar",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "ca2cab0eec59794b3b61e8c69bfd03051bbfce3abc8665703e8c6a774b3e9fe5",
+          "sizeBytes": 964,
+          "tables": [
+            "OS/2",
+            "VVAR",
+            "cmap",
+            "fvar",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "vhea",
+            "vmtx"
+          ]
+        }
+      ],
+      "license": "MIT",
+      "licenseFile": "LICENSE",
+      "synthetic": true,
+      "builtBy": "build_variable_vvar.py"
+    },
+    {
+      "key": "liberation",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/liberation/LiberationSans-Regular.ttf",
+          "url": "https://github.com/liberationfonts/liberation-fonts/files/7261482/liberation-fonts-ttf-2.1.5.tar.gz",
+          "rawUrl": null,
+          "fetchNote": "Download liberation-fonts-ttf-2.1.5.tar.gz from the cited GitHub release attachment (release 2.1.5, release commit 4b01920), extract LiberationSans-Regular.ttf byte for byte, and verify SHA-256 76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8.",
+          "revision": "2.1.5",
+          "sha256": "76d04c18ea243f426b7de1f3ad208e927008f961dc5945e5aad352d0dfde8ee8",
+          "sizeBytes": 410712,
+          "tables": [
+            "FFTM",
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "kern",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/liberation/OFL-1.1.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "liberation-amiri-collection",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/liberation-amiri-collection/LiberationAmiri-v2.ttc",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "467dcb0f7bceb673ff6182e8ce43e4e12a364e347d347a07488eeca0e0a3647f",
+          "sizeBytes": 841860,
+          "tables": [
+            "FFTM",
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "kern",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        },
+        {
+          "path": "test-fixtures/fonts/liberation-amiri-collection/LiberationAmiri.ttc",
+          "url": null,
+          "rawUrl": null,
+          "fetchNote": null,
+          "revision": null,
+          "sha256": "a214a4eea0d97ba15e575861cdd627516d06990998f3d53daf93a04f7a2f39b7",
+          "sizeBytes": 841848,
+          "tables": [
+            "FFTM",
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "kern",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/liberation/OFL-1.1.txt",
+      "synthetic": true,
+      "builtBy": "build_collection_fixture.py"
+    },
+    {
+      "key": "noto-devanagari",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/noto-devanagari/NotoSansDevanagari-Regular.ttf",
+          "url": "https://github.com/notofonts/devanagari/releases/download/NotoSansDevanagari-v2.006/NotoSansDevanagari-v2.006.zip",
+          "rawUrl": null,
+          "fetchNote": "Download NotoSansDevanagari-v2.006.zip from the cited release URL, extract NotoSansDevanagari/googlefonts/ttf/NotoSansDevanagari-Regular.ttf byte for byte, and verify SHA-256 da2d2135e978c6f68852cfd8201c3a067df1acf73232fe80c58f89e6302ee6e8.",
+          "revision": "NotoSansDevanagari-v2.006",
+          "sha256": "da2d2135e978c6f68852cfd8201c3a067df1acf73232fe80c58f89e6302ee6e8",
+          "sizeBytes": 282060,
+          "tables": [
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/noto-devanagari/OFL.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "noto-sans-jp",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf",
+          "url": "https://github.com/google/fonts/tree/5e35378e6bda803962ee6fd257e444a7d459660d/ofl/notosansjp",
+          "rawUrl": null,
+          "fetchNote": "The committed file is the pyftsubset derivative of the pinned source: download NotoSansJP[wght].ttf from the cited source URL (SHA-256 c2f3b4d463500a2ddcd3849cded1fceeb9fd6d1c32e6cbecd568453ba50fc68f), run pyftsubset 'NotoSansJP[wght].ttf' --unicodes=U+0041,U+65E5 --layout-features='*' --output-file=NotoSansJP-VerticalFixture.ttf, and verify SHA-256 f6ac0c94eb58e14c5fd6cfa5aa867ea029f1a21b449a2b58031bb986e940997b.",
+          "revision": "5e35378e6bda803962ee6fd257e444a7d459660d",
+          "sha256": "f6ac0c94eb58e14c5fd6cfa5aa867ea029f1a21b449a2b58031bb986e940997b",
+          "sizeBytes": 3408,
+          "tables": [
+            "BASE",
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "HVAR",
+            "OS/2",
+            "STAT",
+            "avar",
+            "cmap",
+            "fvar",
+            "gasp",
+            "glyf",
+            "gvar",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep",
+            "vhea",
+            "vmtx"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/noto-sans-jp/OFL.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "skia-cbdt",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/skia-cbdt/cbdt.ttf",
+          "url": "https://github.com/google/skia/blob/5f094e6de86302f604e6c3226b4ffc0afff1aa65/resources/fonts/cbdt.ttf",
+          "rawUrl": "https://raw.githubusercontent.com/google/skia/5f094e6de86302f604e6c3226b4ffc0afff1aa65/resources/fonts/cbdt.ttf",
+          "fetchNote": null,
+          "revision": "5f094e6de86302f604e6c3226b4ffc0afff1aa65",
+          "sha256": "eb66fce167177e4df2355ed2c7a519e6a17a1efd062556a1ef4cea342318c680",
+          "sizeBytes": 16760,
+          "tables": [
+            "CBDT",
+            "CBLC",
+            "OS/2",
+            "cmap",
+            "head",
+            "hhea",
+            "hmtx",
+            "maxp",
+            "name",
+            "post"
+          ]
+        },
+        {
+          "path": "test-fixtures/fonts/skia-cbdt/planetcbdt.ttf",
+          "url": "https://github.com/google/skia/blob/5f094e6de86302f604e6c3226b4ffc0afff1aa65/resources/fonts/planetcbdt.ttf",
+          "rawUrl": "https://raw.githubusercontent.com/google/skia/5f094e6de86302f604e6c3226b4ffc0afff1aa65/resources/fonts/planetcbdt.ttf",
+          "fetchNote": null,
+          "revision": "5f094e6de86302f604e6c3226b4ffc0afff1aa65",
+          "sha256": "53a88a71a10c2a32abc91284f95f71711b1a3010a5f6a6f9c67ceb499d866533",
+          "sizeBytes": 115512,
+          "tables": [
+            "CBDT",
+            "CBLC",
+            "OS/2",
+            "cmap",
+            "head",
+            "hhea",
+            "hmtx",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "BSD-3-Clause",
+      "licenseFile": "test-fixtures/fonts/skia-cbdt/LICENSE.md",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "skia-colr-v1",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/skia-colr-v1/test_glyphs-glyf_colr_1.ttf.b64",
+          "url": "https://github.com/google/skia/blob/90ce051cbbf81c5e27b272bac330f96c7f4c0441/resources/fonts/test_glyphs-glyf_colr_1.ttf",
+          "rawUrl": null,
+          "fetchNote": "Download test_glyphs-glyf_colr_1.ttf from the cited Skia blob page at commit 90ce051cbbf81c5e27b272bac330f96c7f4c0441 (the unmodified 21,568-byte resource, SHA-256 72cb79b606c79bc49861094e25f442db0b24881504b29533bbe8ea75f3902e67), base64-encode it with 76-column line wrapping and a trailing newline, and verify the committed 29,139-byte envelope's SHA-256 84b8d05c7d69faa2702ed0b4977b9deee87f5c792d4e3aba795d119005fd8e17.",
+          "revision": "90ce051cbbf81c5e27b272bac330f96c7f4c0441",
+          "sha256": "84b8d05c7d69faa2702ed0b4977b9deee87f5c792d4e3aba795d119005fd8e17",
+          "sizeBytes": 29139,
+          "tables": [
+            "COLR",
+            "CPAL",
+            "OS/2",
+            "cmap",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "BSD-3-Clause",
+      "licenseFile": "test-fixtures/fonts/skia-colr-v1/LICENSE.md",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "skia-ebdt-format1",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/skia-ebdt-format1/ebdt_fmt1.ttf",
+          "url": "https://chromium.googlesource.com/skia/+/4b24321eb36cac92020d8154307de78ecf1d1e50/resources/fonts/ebdt_fmt1.ttf?format=TEXT",
+          "rawUrl": "https://chromium.googlesource.com/skia/+/4b24321eb36cac92020d8154307de78ecf1d1e50/resources/fonts/ebdt_fmt1.ttf?format=TEXT",
+          "fetchNote": null,
+          "revision": "4b24321eb36cac92020d8154307de78ecf1d1e50",
+          "sha256": "e99cebed4d9421bc89964b9dc6a3bedfc6a286029d64336a07844708cce76274",
+          "sizeBytes": 5316,
+          "tables": [
+            "EBDT",
+            "EBLC",
+            "OS/2",
+            "cmap",
+            "head",
+            "hhea",
+            "hmtx",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "BSD-3-Clause",
+      "licenseFile": "test-fixtures/fonts/skia-ebdt-format1/LICENSE.md",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "skia-sbix",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/skia-sbix/sbix.ttf",
+          "url": "https://github.com/google/skia/blob/5f094e6de86302f604e6c3226b4ffc0afff1aa65/resources/fonts/sbix.ttf",
+          "rawUrl": "https://raw.githubusercontent.com/google/skia/5f094e6de86302f604e6c3226b4ffc0afff1aa65/resources/fonts/sbix.ttf",
+          "fetchNote": null,
+          "revision": "5f094e6de86302f604e6c3226b4ffc0afff1aa65",
+          "sha256": "466dfbce293909c858fe800f0cd856746b88a03cafa1a6750ba923ab99790888",
+          "sizeBytes": 16692,
+          "tables": [
+            "OS/2",
+            "cmap",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "sbix"
+          ]
+        }
+      ],
+      "license": "BSD-3-Clause",
+      "licenseFile": "test-fixtures/fonts/skia-sbix/LICENSE.md",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
+      "key": "twemoji-svginot-glyph5",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
+          "url": "https://github.com/13rac1/twemoji-color-font/releases/tag/v15.1.0",
+          "rawUrl": null,
+          "fetchNote": "Download the TwitterColorEmoji-SVGinOT-15.1.0.zip archive published with release v15.1.0 of 13rac1/twemoji-color-font (archive SHA-256 9075de7a1c9dd660782d02b5c5be1c1524e16db13a6d7d4264b9aabbd056b692), extract TwitterColorEmoji-SVGinOT.ttf (SHA-256 42d4b2a827c9ed557dff88c2f4723cb93985003a81dee76797324d66d04a57b8), run pyftsubset TwitterColorEmoji-SVGinOT.ttf --gids=5 --output-file=TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf with FontTools 4.55.0 and lxml 5.3.0 (the retained glyph ID 5 is renumbered to glyph ID 1), then base64-encode the subset and verify the committed encoding's SHA-256 50a56111f59e4d020cba6b79b406ad1375e34e7200b678cf68f1542a28e62625.",
+          "revision": "v15.1.0",
+          "sha256": "50a56111f59e4d020cba6b79b406ad1375e34e7200b678cf68f1542a28e62625",
+          "sizeBytes": 3915,
+          "tables": [
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "SVG ",
+            "cmap",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post"
+          ]
+        }
+      ],
+      "license": "CC-BY-4.0",
+      "licenseFile": "test-fixtures/fonts/twemoji-svginot-glyph5/LICENSE.md",
+      "synthetic": false,
+      "builtBy": null
+    }
+  ]
+}

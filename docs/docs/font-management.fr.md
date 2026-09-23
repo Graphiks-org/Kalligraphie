@@ -1170,7 +1170,11 @@ l’avance verticale de HarfBuzz à la même location via le chemin de shaping (
 haut-en-bas, dont la convention négative est inversée par notre moteur en un
 `advanceHeight` positif) ; la fixture auditée `NotoSansJP-VerticalFixture.ttf` a une
 avance verticale constante (`1000`), tandis que la fixture synthétique
-`KalligraphieVarVVAR.ttf` la fait varier (`1000`/`1100`/`1200`). Les bornes d’encre sont vérifiées à la même location via `hb_font_get_glyph_extents` (bornes d’encre variées de la fonte HarfBuzz préparée), reconstruites en `minX = x_bearing`, `maxX = x_bearing + width`, `maxY = y_bearing`, `minY = y_bearing + height`, sur les glyphes non composites (les bornes d’encre des composites instanciés restent non croisées).
+`KalligraphieVarVVAR.ttf` la fait varier (`1000`/`1100`/`1200`). Les bornes d’encre sont vérifiées à la même location via
+`hb_font_get_glyph_extents` (bornes d’encre variées de la fonte HarfBuzz préparée), reconstruites
+en `minX = x_bearing`, `maxX = x_bearing + width`, `maxY = y_bearing`,
+`minY = y_bearing + height`, sur les glyphes non composites (les bornes d’encre des
+composites instanciés restent non croisées).
 `FontInstance.fontMetrics()` est implémentée : elle renvoie les métriques
 de fonte de l’instance issues de `OS/2` (avec repli sur `hhea`), `post` et `MVAR`,
 en unités de design. Les métriques horizontales suivent la priorité `HVAR` puis

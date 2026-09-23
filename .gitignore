@@ -9,3 +9,4 @@ local.properties
 .worktrees/
 _site/
 docs/docs/api/
+__pycache__/
