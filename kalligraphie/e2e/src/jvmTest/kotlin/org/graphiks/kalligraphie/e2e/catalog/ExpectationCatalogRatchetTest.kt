@@ -63,6 +63,51 @@ class ExpectationCatalogRatchetTest {
         )
     }
 
+    @Test
+    fun everyProbeableEntryHasAProbeAndEveryProbeHasAProbeableEntry() {
+        val probeable = ExpectationCatalog.entries
+            .filter { entry ->
+                entry.status is CatalogStatus.ExpectedRejection ||
+                    (entry.status is CatalogStatus.NotYet && entry.status.currentBehavior != null)
+            }
+            .map { entry -> entry.id }
+            .toSet()
+        assertEquals(probeable, CatalogProbes.byId.keys, "probeable entries and probes must be the same set")
+    }
+
+    @Test
+    fun everyProbeAgreesWithItsDeclaredStatus() {
+        for (entry in ExpectationCatalog.entries) {
+            val probe = CatalogProbes.byId[entry.id] ?: continue
+            val observed = probe.observe()
+            when (val status = entry.status) {
+                is CatalogStatus.ExpectedRejection -> {
+                    val rejected = assertIs<ProbeObservation.Rejected>(observed, "${entry.id} must be rejected")
+                    assertEquals(status.stage, rejected.stage, "${entry.id} stage changed")
+                    assertEquals(status.code, rejected.diagnostic, "${entry.id} diagnostic changed")
+                }
+
+                is CatalogStatus.NotYet -> when (val pinned = status.currentBehavior) {
+                    is PinnedBehavior.RejectedAt -> {
+                        val rejected = assertIs<ProbeObservation.Rejected>(observed, "${entry.id} must be rejected")
+                        assertEquals(pinned.stage, rejected.stage, "${entry.id} stage changed")
+                        assertEquals(pinned.diagnostic, rejected.diagnostic, "${entry.id} diagnostic changed")
+                    }
+
+                    is PinnedBehavior.SucceededWith -> {
+                        val succeeded = assertIs<ProbeObservation.Succeeded>(observed, "${entry.id} must succeed")
+                        assertEquals(pinned.stage, succeeded.stage, "${entry.id} stage changed")
+                        assertEquals(pinned.observation, succeeded.observation, "${entry.id} observation changed")
+                    }
+
+                    null -> error("${entry.id} is probeable but declares no pinned behaviour")
+                }
+
+                else -> error("${entry.id} has a probe but is not probeable")
+            }
+        }
+    }
+
     private class Exemption(val frame: String, val reason: String)
 
     private fun readExemptions(): Map<String, Exemption> {

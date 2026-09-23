@@ -1,32 +1,33 @@
 // RobustnessCatalog.kt
 package org.graphiks.kalligraphie.e2e.catalog
 
-/** Hostile-input expectations, documented until the probes pin the observed refusals. */
+/** Hostile and malformed input: behaviours that must never soften. */
 public object RobustnessCatalog {
     /** Declared robustness expectations. */
     public val entries: List<CatalogEntry> = listOf(
-        documented(
+        expectedRejection(
             id = "robustness.truncated-sfnt",
-            technology = "SFNT input truncated mid-table",
-            unpinnedReason = UnpinnedReason.CORPUS_NOT_ACQUIRED,
+            technology = "Truncated TrueType container",
+            font = CorpusKeys.LIBERATION,
+            code = "font.out-of-bounds",
+            stage = CatalogStage.DECODE,
         ),
-        documented(
+        expectedRejection(
             id = "robustness.empty-input",
-            technology = "empty font input",
-            unpinnedReason = UnpinnedReason.CORPUS_NOT_ACQUIRED,
+            technology = "Zero-byte font source",
+            font = CorpusKeys.LIBERATION,
+            code = "font.invalid-font-data",
+            stage = CatalogStage.DECODE,
         ),
     )
 
-    private fun documented(id: String, technology: String, unpinnedReason: UnpinnedReason) = CatalogEntry(
-        id = id,
-        axis = CatalogAxis.ROBUSTNESS,
-        technology = technology,
-        font = null,
-        status = CatalogStatus.NotYet(
-            trackingIssue = "spec:§5 robustness",
-            currentBehavior = null,
-            unpinnedReason = unpinnedReason,
-        ),
-        tags = setOf("documented-only"),
-    )
+    private fun expectedRejection(id: String, technology: String, font: CorpusKey, code: String, stage: CatalogStage) =
+        CatalogEntry(
+            id = id,
+            axis = CatalogAxis.ROBUSTNESS,
+            technology = technology,
+            font = font,
+            status = CatalogStatus.ExpectedRejection(stage = stage, code = code),
+            tags = setOf("hostile-input"),
+        )
 }
