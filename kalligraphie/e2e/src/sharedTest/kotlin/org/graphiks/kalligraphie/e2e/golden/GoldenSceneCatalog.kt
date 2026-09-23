@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.e2e.golden
 import org.graphiks.kalligraphie.e2e.catalog.CatalogSceneMaterializer
 import org.graphiks.kalligraphie.e2e.catalog.ExpectationCatalog
 import org.graphiks.kalligraphie.e2e.catalog.GoldenSceneEntry
+import org.graphiks.kalligraphie.e2e.catalog.deferredSceneIdsFor
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 
 /**
@@ -22,4 +23,12 @@ internal object GoldenSceneCatalog {
         renderers = E2eTestEnvironment.renderers,
         corpus = E2eTestEnvironment.corpus,
     )
+
+    /**
+     * Scenes of this catalog that this platform is not expected to render.
+     *
+     * The complement of the registry on the supported entries, derived from the platform's declared
+     * capabilities: they are the entries the golden verification must neither render nor call stale.
+     */
+    fun deferredSceneIds(): Set<String> = deferredSceneIdsFor(E2eTestEnvironment.capabilities)
 }

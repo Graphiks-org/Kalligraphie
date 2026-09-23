@@ -26,6 +26,7 @@ class ExpectationCatalogRatchetTest {
         // END_TO_END_LAYOUT excuses exactly the scenes that compose text, and nothing else. If the
         // capability ever lands here, the registry must grow the same entries or the ratchet fails.
         val glyphOnly = supportedEntriesFor(setOf(PortableCapability.GLYPH_REPRESENTATION_VARIANTS))
+        val everyCapability = PortableCapability.entries.toSet()
         assertTrue("outline.glyf-simple-composite" in glyphOnly, "the portable outline scene stays required")
         assertTrue("script.latin.outline-sheet" in glyphOnly, "a portable sheet stays required")
         assertEquals(
@@ -39,7 +40,7 @@ class ExpectationCatalogRatchetTest {
                 "variation.wght-ladder",
                 "composition.every-route-mosaic",
             ),
-            supportedEntriesFor(E2eTestEnvironment.capabilities) - glyphOnly,
+            supportedEntriesFor(everyCapability) - glyphOnly,
             "the paragraph route must excuse exactly the scenes that compose text",
         )
     }
@@ -63,16 +64,17 @@ class ExpectationCatalogRatchetTest {
     }
 
     @Test
-    fun everyEntryWithoutARendererDeclaresNoPlatformRoute() {
-        val undeclared = ExpectationCatalog.entries
-            .filter { entry -> entry.id !in E2eTestEnvironment.renderers && entry.route != null }
-            .map { entry -> entry.id }
-        assertTrue(undeclared.isEmpty(), "entries claim a platform route without a scene: $undeclared")
+    fun everyRendererManifestKeyMatchesItsEntryKey() {
+        val mismatches = ExpectationCatalog.entries.mapNotNull { entry ->
+            val renderer = E2eTestEnvironment.renderers[entry.id] ?: return@mapNotNull null
+            CatalogSceneMaterializer.sceneIdMismatch(entry, renderer)
+        }
+        assertTrue(mismatches.isEmpty(), mismatches.joinToString("\n"))
     }
 
     @Test
     fun everySupportedEntryMaterializesOrRefusesTyped() {
-        for (entry in ExpectationCatalog.entries.filter { entry -> entry.status is CatalogStatus.Supported }) {
+        for (entry in ExpectationCatalog.entries.filter { candidate -> candidate.id in E2eTestEnvironment.renderers }) {
             val materialized = CatalogSceneMaterializer.materialize(
                 entry,
                 E2eTestEnvironment.renderers.getValue(entry.id),

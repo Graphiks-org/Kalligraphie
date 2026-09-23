@@ -22,7 +22,7 @@ class GoldenUpdateRunnerTest {
                     error("${outcome.code.code} (${entry.scene.id}): ${outcome.detail}")
             }
         }
-        val target = repositoryRoot().resolve("kalligraphie/e2e/src/jvmTest/resources/golden/manifest.tsv")
+        val target = repositoryRoot().resolve("kalligraphie/e2e/src/harnessResources/golden/manifest.tsv")
         Files.createDirectories(target.parent)
         Files.writeString(target, GoldenManifest.serialize(GoldenManifest.of(fingerprints)))
     }

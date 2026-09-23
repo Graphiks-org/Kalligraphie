@@ -11,16 +11,25 @@ import org.graphiks.kalligraphie.raster.Rgba8Image
  * single-glyph reference dumps.
  */
 internal fun pgm(image: A8Image): ByteArray {
-    val header = "P5\n${image.width} ${image.height}\n255\n".toByteArray(Charsets.US_ASCII)
+    val header = "P5\n${image.width} ${image.height}\n255\n".encodeToByteArray()
     return header + image.copyPixels()
 }
+
+/**
+ * Encodes [value] one byte per character, the portable equivalent of ISO-8859-1 encoding.
+ *
+ * The dump and raster expectations are written as readable literals whose characters are byte
+ * values, which the JVM spells `toString(Charsets.ISO_8859_1)`: that constructor does not exist on
+ * Kotlin/Native, and decoding those bytes as UTF-8 would replace every value above `0x7F`.
+ */
+internal fun latin1Bytes(value: String): ByteArray = ByteArray(value.length) { index -> value[index].code.toByte() }
 
 /**
  * Encodes one non-premultiplied RGBA image as a P6 PPM composited over white
  * without flipping (same integer formula as the canvases).
  */
 internal fun ppm(image: Rgba8Image): ByteArray {
-    val header = "P6\n${image.width} ${image.height}\n255\n".toByteArray(Charsets.US_ASCII)
+    val header = "P6\n${image.width} ${image.height}\n255\n".encodeToByteArray()
     val pixels = image.copyPixels()
     val composited = ByteArray(image.width * image.height * 3)
     for (index in 0 until image.width * image.height) {
@@ -78,7 +87,7 @@ internal class A8Canvas(val width: Int, val height: Int) {
 
     /** Encodes the canvas as a raw P5 PGM. */
     fun toPgm(): ByteArray {
-        val header = "P5\n$width $height\n255\n".toByteArray(Charsets.US_ASCII)
+        val header = "P5\n$width $height\n255\n".encodeToByteArray()
         return header + pixels.copyOf()
     }
 
@@ -201,7 +210,7 @@ internal class RgbaCanvas(val width: Int, val height: Int) {
 
     /** Encodes the canvas as a raw P6 PPM (the canvas is already opaque). */
     fun toPpm(): ByteArray {
-        val header = "P6\n$width $height\n255\n".toByteArray(Charsets.US_ASCII)
+        val header = "P6\n$width $height\n255\n".encodeToByteArray()
         val rgb = ByteArray(width * height * 3)
         for (index in 0 until width * height) {
             val base = index * 4

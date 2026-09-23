@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.e2e.golden
 
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import org.graphiks.kalligraphie.raster.A8Image
 import org.graphiks.kalligraphie.raster.Rgba8Image
@@ -9,10 +10,7 @@ class CompositionCanvasTest {
     @Test
     fun a8CanvasEncodesAnEmptyPgm() {
         val canvas = A8Canvas(width = 2, height = 2)
-        assertEquals(
-            "P5\n2 2\n255\n" + "\u0000\u0000\u0000\u0000",
-            canvas.toPgm().toString(Charsets.ISO_8859_1),
-        )
+        assertContentEquals(latin1Bytes("P5\n2 2\n255\n\u0000\u0000\u0000\u0000"), canvas.toPgm())
     }
 
     @Test
@@ -74,11 +72,11 @@ class CompositionCanvasTest {
     @Test
     fun rgbaCanvasEncodesAPpm() {
         val white = RgbaCanvas(width = 1, height = 1)
-        assertEquals("P6\n1 1\n255\n\u00FF\u00FF\u00FF", white.toPpm().toString(Charsets.ISO_8859_1))
+        assertContentEquals(latin1Bytes("P6\n1 1\n255\n\u00FF\u00FF\u00FF"), white.toPpm())
 
         val drawn = RgbaCanvas(width = 1, height = 1)
         drawn.drawBitmap(Rgba8Image(1, 1, 0, 0, byteArrayOf(10, 20, 30, -1)), x = 0, y = 0)
-        assertEquals("P6\n1 1\n255\n\u000A\u0014\u001E", drawn.toPpm().toString(Charsets.ISO_8859_1))
+        assertContentEquals(latin1Bytes("P6\n1 1\n255\n\u000A\u0014\u001E"), drawn.toPpm())
     }
 
     @Test
@@ -100,11 +98,11 @@ class CompositionCanvasTest {
     @Test
     fun standaloneEncodersKeepTheRawImages() {
         val a8 = A8Image(1, 1, 0, 0, byteArrayOf(7))
-        assertEquals("P5\n1 1\n255\n\u0007", pgm(a8).toString(Charsets.ISO_8859_1))
+        assertContentEquals(latin1Bytes("P5\n1 1\n255\n\u0007"), pgm(a8))
         val rgba = Rgba8Image(1, 1, 0, 0, byteArrayOf(10, 20, 30, -1))
-        assertEquals("P6\n1 1\n255\n\u000A\u0014\u001E", ppm(rgba).toString(Charsets.ISO_8859_1))
+        assertContentEquals(latin1Bytes("P6\n1 1\n255\n\u000A\u0014\u001E"), ppm(rgba))
 
         val translucent = Rgba8Image(1, 1, 0, 0, byteArrayOf(10, 20, 30, -128))
-        assertEquals("P6\n1 1\n255\n\u0084\u0089\u008E", ppm(translucent).toString(Charsets.ISO_8859_1))
+        assertContentEquals(latin1Bytes("P6\n1 1\n255\n\u0084\u0089\u008E"), ppm(translucent))
     }
 }

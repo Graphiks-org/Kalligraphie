@@ -39,7 +39,7 @@ internal fun unionOf(boxes: List<CanvasInk>): CanvasInk? = when (boxes.isEmpty()
  * first row is the canvas's last one — the same reversal `A8Canvas.drawCoverage` and
  * `RgbaCanvas.drawCoverage` apply while they draw.
  */
-internal fun ComposedLineScenes.PlacedGlyph.inkInCanvas(rowOffset: Int = 0): CanvasInk? {
+internal fun PlacedGlyph.inkInCanvas(rowOffset: Int = 0): CanvasInk? {
     val box = rasterInkOf(image) ?: return null
     val x0 = penX + image.left
     val y0 = baselineY - (image.top + image.height) + rowOffset
@@ -52,7 +52,7 @@ internal fun ComposedLineScenes.PlacedGlyph.inkInCanvas(rowOffset: Int = 0): Can
 }
 
 /** Ink extent of every raster of [glyphs], unified. */
-internal fun List<ComposedLineScenes.PlacedGlyph>.inkInCanvas(rowOffset: Int = 0): CanvasInk? =
+internal fun List<PlacedGlyph>.inkInCanvas(rowOffset: Int = 0): CanvasInk? =
     unionOf(mapNotNull { glyph -> glyph.inkInCanvas(rowOffset) })
 
 /** Returns the ink extent of [image] in the image's own columns and rows, or `null` when blank. */

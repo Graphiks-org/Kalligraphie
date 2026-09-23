@@ -125,6 +125,7 @@ public object ScriptCatalog {
             tags = tags,
             tables = setOf("cmap", "GSUB", "GPOS", "GDEF"),
             family = GoldenSceneFamily.COMPOSED_LINE,
+            sceneId = scene,
             frame = SceneFramePolicy.Pinned(width = PINNED_FRAMES.getValue(scene).first, height = PINNED_FRAMES.getValue(scene).second),
             route = CatalogRoute.PARAGRAPH_LAYOUT,
         )
@@ -139,6 +140,7 @@ public object ScriptCatalog {
             tags = tags,
             tables = setOf("cmap", "glyf", "loca", "hmtx"),
             family = GoldenSceneFamily.ALPHABET_SHEET,
+            sceneId = scene,
             frame = SceneFramePolicy.Pinned(width = PINNED_FRAMES.getValue(scene).first, height = PINNED_FRAMES.getValue(scene).second),
             route = CatalogRoute.PORTABLE_GLYPH,
         )

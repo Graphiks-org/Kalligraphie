@@ -9,14 +9,22 @@ import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 
 /** Turns a catalog entry plus its renderer into the golden scene the verifier consumes. */
 internal object CatalogSceneMaterializer {
-    /** Materializes every supported entry, failing on the first entry that has no renderer. */
+    /**
+     * Materializes every supported entry [renderers] is responsible for.
+     *
+     * The registry decides what a platform verifies, so an entry it does not register is left out
+     * rather than failed: an entry a platform cannot serve is exactly what the capability ratchet
+     * is there to check, and the catalog is the list of scenes, not the list of excuses. A registry
+     * that forgets an entry it *should* serve is caught by that same ratchet, not here.
+     */
     fun materializeAll(
         entries: List<CatalogEntry>,
         renderers: Map<String, CatalogSceneRenderer>,
         corpus: FixtureCorpus,
     ): List<GoldenSceneEntry> = entries.mapNotNull { entry ->
+        val renderer = renderers[entry.id] ?: return@mapNotNull null
         when (entry.status) {
-            is CatalogStatus.Supported -> materialize(entry, renderers.getValue(entry.id), corpus)
+            is CatalogStatus.Supported -> materialize(entry, renderer, corpus)
             else -> null
         }
     }
@@ -25,7 +33,7 @@ internal object CatalogSceneMaterializer {
     fun materialize(entry: CatalogEntry, renderer: CatalogSceneRenderer, corpus: FixtureCorpus): GoldenSceneEntry {
         val family = requireNotNull(entry.family) { "${entry.id} is supported but declares no family" }
         val frame = requireNotNull(entry.frame) { "${entry.id} is supported but declares no frame" }
-        val sceneId = renderer.sceneId ?: entry.id
+        val sceneId = entry.sceneId ?: entry.id
         val natural = lazy { renderer.render(corpus) }
         return when (frame) {
             is SceneFramePolicy.Pinned -> {
@@ -105,6 +113,25 @@ internal object CatalogSceneMaterializer {
         code = code,
         detail = "${scene.id} $what",
     )
+
+    /**
+     * Returns the description of a manifest-key mismatch for [entry] and [renderer], or `null` when
+     * they agree.
+     *
+     * The key the scene is certified under is declared by the entry, where a platform that defers
+     * the scene can still read it, and by the renderer, where it describes the scene the code draws.
+     * The harness refuses a disagreement: a renderer cannot write a fingerprint under a key the
+     * catalog does not certify, and a catalog cannot certify a key no renderer produces.
+     */
+    fun sceneIdMismatch(entry: CatalogEntry, renderer: CatalogSceneRenderer): String? {
+        val declared = entry.sceneId ?: entry.id
+        val rendered = renderer.sceneId ?: entry.id
+        return if (declared == rendered) {
+            null
+        } else {
+            "entry ${entry.id} certifies the scene $declared but its renderer writes $rendered"
+        }
+    }
 
     /**
      * Returns the description of a platform-route mismatch for [entry] and [renderer], or `null`

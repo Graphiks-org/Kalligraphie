@@ -31,3 +31,23 @@ internal fun supportedEntriesFor(capabilities: Set<PortableCapability>): Set<Str
         .filter { entry -> entry.route?.capabilities()?.all { capability -> capability in capabilities } == true }
         .map { entry -> entry.id }
         .toSet()
+
+/** Every portable capability the conformance module knows about. */
+internal val everyPortableCapability: Set<PortableCapability> = PortableCapability.entries.toSet()
+
+/**
+ * Ids of the supported entries a platform declaring [capabilities] leaves to another platform.
+ *
+ * Derived, never listed: a scene is deferred exactly when the platform's declaration cannot serve
+ * its route. The golden verifier receives this set so a deferred entry is not reported as a stale
+ * manifest entry, and the capability ratchet proves the same set is the one the registry omits —
+ * so a scene can be deferred *and* explained on every platform, never merely absent.
+ */
+internal fun deferredSceneIdsFor(capabilities: Set<PortableCapability>): Set<String> {
+    val served = supportedEntriesFor(capabilities)
+    return ExpectationCatalog.entries
+        .filter { entry -> entry.status is CatalogStatus.Supported }
+        .filter { entry -> entry.id !in served }
+        .map { entry -> entry.sceneId ?: entry.id }
+        .toSet()
+}

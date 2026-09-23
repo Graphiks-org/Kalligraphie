@@ -176,8 +176,9 @@ class CatalogSceneMaterializerTest {
     )
 
     @Test
-    fun aRendererSceneIdOverridesTheEntryIdAndDefaultsToIt() {
+    fun theEntryManifestKeyOverridesTheEntryIdAndDefaultsToIt() {
         val entry = autoSizedEntry(padding = 1)
+        val keyed = autoSizedEntry(padding = 1, sceneId = "glyph.outline.liberation-sans.A.64")
         val render: (FixtureCorpus) -> GoldenRenderOutcome = { _ ->
             GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
         }
@@ -189,20 +190,43 @@ class CatalogSceneMaterializerTest {
             render = render,
         )
 
-        assertEquals("outline.glyf", CatalogSceneMaterializer.materialize(entry, inheriting, E2eTestEnvironment.corpus).scene.id)
+        val corpus = E2eTestEnvironment.corpus
+        assertEquals("outline.glyf", CatalogSceneMaterializer.materialize(entry, inheriting, corpus).scene.id)
         assertEquals(
             "glyph.outline.liberation-sans.A.64",
-            CatalogSceneMaterializer.materialize(entry, overriding, E2eTestEnvironment.corpus).scene.id,
+            CatalogSceneMaterializer.materialize(keyed, overriding, corpus).scene.id,
         )
     }
 
-    private fun autoSizedEntry(padding: Int) = CatalogEntry(
+    @Test
+    fun theRendererManifestKeyMustMatchTheEntryKey() {
+        val entry = autoSizedEntry(padding = 1, sceneId = "glyph.outline.liberation-sans.A.64")
+        val render: (FixtureCorpus) -> GoldenRenderOutcome = { _ ->
+            GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
+        }
+        val agreeing = CatalogSceneRenderer(
+            "/fonts/liberation/LiberationSans-Regular.ttf",
+            CatalogRoute.PORTABLE_GLYPH,
+            sceneId = "glyph.outline.liberation-sans.A.64",
+            render = render,
+        )
+        val disagreeing = CatalogSceneRenderer("/fonts/liberation/LiberationSans-Regular.ttf", CatalogRoute.PORTABLE_GLYPH, render = render)
+
+        assertEquals(null, CatalogSceneMaterializer.sceneIdMismatch(entry, agreeing))
+        assertEquals(
+            "entry outline.glyf certifies the scene glyph.outline.liberation-sans.A.64 but its renderer writes outline.glyf",
+            CatalogSceneMaterializer.sceneIdMismatch(entry, disagreeing),
+        )
+    }
+
+    private fun autoSizedEntry(padding: Int, sceneId: String? = null) = CatalogEntry(
         id = "outline.glyf",
         axis = CatalogAxis.OUTLINE,
         technology = CatalogText("glyf outlines", "contours glyf"),
         font = CorpusKey("liberation"),
         status = CatalogStatus.Supported("abc1234"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,
+        sceneId = sceneId,
         frame = SceneFramePolicy.AutoSized(padding = padding),
         route = CatalogRoute.PORTABLE_GLYPH,
     )

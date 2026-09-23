@@ -22,6 +22,16 @@ public data class CatalogEntry(
     /** Manifest route of the generated scene; set exactly for [CatalogStatus.Supported]. */
     public val family: GoldenSceneFamily? = null,
     /**
+     * Manifest key this entry's scene is certified under; `null` when the entry id is the key.
+     *
+     * The scenes migrated from the pre-catalog registry keep the keys they were committed under,
+     * which are names of the scene rather than of the technology: the entry `script.latin.composed-line`
+     * is certified as `line.latin.48`. Declaring the key here rather than only on the renderer is what
+     * makes it available to a platform that does not compile that renderer — the entries a platform
+     * defers must still name the manifest entries it is deferring.
+     */
+    public val sceneId: String? = null,
+    /**
      * Platform route the scene needs; set exactly for [CatalogStatus.Supported].
      *
      * The entry's half of a two-way check: its renderer declares the same route and the harness
