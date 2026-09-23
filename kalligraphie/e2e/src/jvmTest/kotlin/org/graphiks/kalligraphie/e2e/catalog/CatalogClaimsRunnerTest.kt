@@ -67,9 +67,13 @@ class CatalogClaimsRunnerTest {
             document = json.load(sys.stdin)
             sys.stdout.write(document["allowUnclaimed"]["weird-family"]["COLR"])
         """.trimIndent()
-        val process = ProcessBuilder(pythonInterpreter(), "-c", script).redirectErrorStream(true).start()
-        process.outputStream.bufferedWriter().use { writer -> writer.write(rendered) }
-        val parsed = process.inputStream.bufferedReader().readText()
+        // `-X utf8` and explicit streams: the prover must not depend on the host locale, and a
+        // Windows runner decodes stdin and encodes stdout with its ANSI code page by default.
+        val process = ProcessBuilder(pythonInterpreter(), "-X", "utf8", "-c", script)
+            .redirectErrorStream(true)
+            .start()
+        process.outputStream.bufferedWriter(Charsets.UTF_8).use { writer -> writer.write(rendered) }
+        val parsed = process.inputStream.bufferedReader(Charsets.UTF_8).readText()
         assertEquals(0, process.waitFor(), "the Python proof refused the rendered claims:\n$parsed")
         assertEquals(reason, parsed)
     }
@@ -86,7 +90,7 @@ class CatalogClaimsRunnerTest {
             ?: error("Python 3 is required to prove the claims export parses as JSON.")
 
     private fun canRunPython(candidate: String): Boolean = try {
-        ProcessBuilder(candidate, "-c", "import json, sys; sys.exit(0)")
+        ProcessBuilder(candidate, "-X", "utf8", "-c", "import json, sys; sys.exit(0)")
             .redirectErrorStream(true)
             .start()
             .waitFor() == 0
