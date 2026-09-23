@@ -169,6 +169,109 @@ class ManifestShapeTest(unittest.TestCase):
         self.assertEqual([], unknown)
 
 
+class FixtureTreeCoverageTest(unittest.TestCase):
+    """The manifest and the committed fixture tree must describe exactly the same files.
+
+    Every other check walks the families the manifest declares, so this is the only guard against a
+    font dropped into the tree by hand, and the only one that sees a family directory the manifest
+    never mentions.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = pathlib.Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def manifest(self, families):
+        """Builds a manifest from `{family key: [file paths]}`, with nothing else declared."""
+        return {
+            "schema": "kalligraphie.font-corpus/v1",
+            "families": [
+                {"key": key, "files": [{"path": path} for path in paths]} for key, paths in families.items()
+            ],
+        }
+
+    def commit(self, *paths):
+        for relative in paths:
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"\x00\x01\x00\x00font")
+
+    def test_a_declared_font_that_is_committed_passes(self):
+        self.commit("test-fixtures/fonts/tiny/tiny.ttf")
+        manifest = self.manifest({"tiny": ["test-fixtures/fonts/tiny/tiny.ttf"]})
+        self.assertEqual([], fetch_fonts.coverage_errors(manifest, self.root))
+
+    def test_a_font_committed_by_hand_and_undeclared_is_reported(self):
+        self.commit("test-fixtures/fonts/tiny/tiny.ttf", "test-fixtures/fonts/tiny/extra.ttf")
+        manifest = self.manifest({"tiny": ["test-fixtures/fonts/tiny/tiny.ttf"]})
+        errors = fetch_fonts.coverage_errors(manifest, self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("extra.ttf", errors[0])
+        self.assertIn("declares no such file", errors[0])
+
+    def test_a_family_directory_the_manifest_never_mentions_is_reported(self):
+        self.commit("test-fixtures/fonts/tiny/tiny.ttf", "test-fixtures/fonts/ghost/ghost.ttf")
+        manifest = self.manifest({"tiny": ["test-fixtures/fonts/tiny/tiny.ttf"]})
+        errors = fetch_fonts.coverage_errors(manifest, self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("ghost", errors[0])
+
+    def test_a_family_the_manifest_declares_without_a_directory_is_reported(self):
+        self.commit("test-fixtures/fonts/tiny/tiny.ttf")
+        manifest = self.manifest({"tiny": ["test-fixtures/fonts/tiny/tiny.ttf"], "absent": []})
+        errors = fetch_fonts.coverage_errors(manifest, self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("absent", errors[0])
+        self.assertIn("no directory", errors[0])
+
+    def test_a_declared_file_that_is_not_committed_is_reported(self):
+        self.commit("test-fixtures/fonts/tiny/tiny.ttf")
+        manifest = self.manifest(
+            {"tiny": ["test-fixtures/fonts/tiny/tiny.ttf", "test-fixtures/fonts/tiny/gone.ttf"]}
+        )
+        errors = fetch_fonts.coverage_errors(manifest, self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("gone.ttf", errors[0])
+        self.assertIn("not committed", errors[0])
+
+    def test_companion_files_of_a_family_are_not_font_artifacts(self):
+        """PROVENANCE, licence texts, builder scripts and audit records are not declared."""
+        self.commit(
+            "test-fixtures/fonts/tiny/tiny.ttf",
+            "test-fixtures/fonts/tiny/PROVENANCE.md",
+            "test-fixtures/fonts/tiny/LICENSE.txt",
+            "test-fixtures/fonts/tiny/build_tiny.py",
+            "test-fixtures/fonts/tiny/audit.json",
+            "test-fixtures/fonts/tiny/tiny-A-outline.txt",
+        )
+        manifest = self.manifest({"tiny": ["test-fixtures/fonts/tiny/tiny.ttf"]})
+        self.assertEqual([], fetch_fonts.coverage_errors(manifest, self.root))
+
+    def test_a_base64_wrapper_is_a_font_artifact(self):
+        self.commit(
+            "test-fixtures/fonts/tiny/wrapped.ttf.b64",
+            "test-fixtures/fonts/tiny/wrapped.ttf.base64",
+        )
+        manifest = self.manifest(
+            {
+                "tiny": [
+                    "test-fixtures/fonts/tiny/wrapped.ttf.b64",
+                    "test-fixtures/fonts/tiny/wrapped.ttf.base64",
+                ]
+            }
+        )
+        self.assertEqual([], fetch_fonts.coverage_errors(manifest, self.root))
+
+    def test_the_committed_fixture_tree_matches_the_manifest(self):
+        """The real corpus, not a synthetic tree: the guard the lint cannot provide itself."""
+        root = pathlib.Path(__file__).resolve().parents[3]
+        manifest = fetch_fonts.load_manifest(root / "scripts/fonts/corpus.json")
+        self.assertEqual([], fetch_fonts.coverage_errors(manifest, root))
+
+
 class _Response:
     """The subset of an HTTP response `fetch` uses: read() inside a with block."""
 

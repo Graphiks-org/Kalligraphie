@@ -39,6 +39,14 @@ ALLOWED_LICENSES = frozenset(
 SCHEMA = "kalligraphie.font-corpus/v1"
 SIGNIFICANT_LICENSE_FIELD = "license"
 
+# The fixture tree the manifest describes: one directory per family key.
+FIXTURES_ROOT = "test-fixtures/fonts"
+
+# The font artifacts a family directory may commit: a `.ttf`, `.otf` or `.ttc`, or the base64
+# wrapper of one. Every other file of a family directory (PROVENANCE.md, a licence text, the
+# builder script, an audit record, a recorded outline oracle) is a companion, not an artifact.
+FONT_SUFFIXES = frozenset({".ttf", ".otf", ".ttc", ".b64", ".base64"})
+
 
 def load_manifest(path: pathlib.Path) -> dict:
     """Loads and shape-checks the corpus manifest."""
@@ -93,6 +101,53 @@ def check_files(manifest: dict, root: pathlib.Path) -> list[str]:
                 errors.append(
                     f"{key}: {record['path']} needs a rawUrl or a fetchNote explaining the manual re-download"
                 )
+    return errors
+
+
+def committed_fonts(root: pathlib.Path, key: str) -> set[str]:
+    """Returns the repository-relative paths of the font artifacts of one family directory."""
+    directory = root / FIXTURES_ROOT / key
+    if not directory.is_dir():
+        return set()
+    return {
+        f"{FIXTURES_ROOT}/{key}/{path.name}"
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix.lower() in FONT_SUFFIXES
+    }
+
+
+def coverage_errors(manifest: dict, root: pathlib.Path) -> list[str]:
+    """Checks that the manifest and the committed fixture tree describe exactly the same files.
+
+    Every other check of the corpus walks the families the manifest declares, so a directory
+    dropped into `test-fixtures/fonts/` by hand, or a font file added to a declared family, would
+    otherwise never be looked at. Both directions are errors, so a directory the manifest does not
+    know and a family it declares with no directory behind it are equally loud.
+    """
+    errors: list[str] = []
+    fixtures = root / FIXTURES_ROOT
+    directories = {path.name for path in fixtures.iterdir() if path.is_dir()} if fixtures.is_dir() else set()
+    keys = {family["key"] for family in manifest["families"]}
+    errors += [
+        f"{FIXTURES_ROOT}/{key}: committed and no family of the manifest uses this directory"
+        for key in sorted(directories - keys)
+    ]
+    errors += [
+        f"{key}: declared as a family and no directory of {FIXTURES_ROOT}/ carries it"
+        for key in sorted(keys - directories)
+    ]
+    for family in manifest["families"]:
+        key = family["key"]
+        declared = {record["path"] for record in family["files"]}
+        committed = committed_fonts(root, key)
+        errors += [
+            f"{key}: {path} is declared by the manifest and not committed"
+            for path in sorted(declared - committed)
+        ]
+        errors += [
+            f"{key}: {path} is committed and the manifest declares no such file"
+            for path in sorted(committed - declared)
+        ]
     return errors
 
 

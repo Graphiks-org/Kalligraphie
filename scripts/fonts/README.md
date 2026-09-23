@@ -197,18 +197,27 @@ uv run --with fonttools==4.65.0 python scripts/fonts/check_exhaustiveness.py
 python3 -m unittest discover -s scripts/fonts/tests -v
 ```
 
-Coverage control — every fixture directory is in the manifest, and every manifest key is a fixture
-directory:
+Coverage control — the manifest and the committed fixture tree describe exactly the same files, in
+both directions, asserted by `FixtureTreeCoverageTest` in `scripts/fonts/tests/test_fetch_fonts.py`
+and therefore run by the command above without any argument:
 
 ```sh
 python3 -c "
-import json, pathlib
-manifest = json.load(open('scripts/fonts/corpus.json'))
-keys = {f['key'] for f in manifest['families']}
-dirs = {p.name for p in pathlib.Path('test-fixtures/fonts').iterdir() if p.is_dir()}
-print('missing from manifest:', sorted(dirs - keys))
-print('unknown in manifest:', sorted(keys - dirs))
+import json, pathlib, sys
+sys.path.insert(0, 'scripts/fonts')
+import fetch_fonts
+root = pathlib.Path('.').resolve()
+manifest = fetch_fonts.load_manifest(root / 'scripts/fonts/corpus.json')
+print('\n'.join(fetch_fonts.coverage_errors(manifest, root)))
 "
 ```
 
-Expected: both lists empty.
+`fetch_fonts.coverage_errors` compares the directory names of `test-fixtures/fonts/` with the
+manifest keys, and, per family, the committed font artifacts with the declared `path`s. A font
+dropped into the tree by hand, a directory of `test-fixtures/fonts/` no family of the manifest uses
+(a phantom family), a family the manifest declares with no directory behind it, and a declared file
+that is not committed all fail. Only the font artifacts count — a `.ttf`, `.otf` or `.ttc`, or its
+base64 wrapper; `PROVENANCE.md`, the licence texts, the builder scripts, `audit.json` and the
+recorded oracles are companions and are not declared.
+
+Expected: no output.
