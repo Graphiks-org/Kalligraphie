@@ -108,6 +108,15 @@ class ExpectationCatalogRatchetTest {
         }
     }
 
+    @Test
+    fun everyProbeFontPathBelongsToItsEntryCorpusKey() {
+        val mismatches = ExpectationCatalog.entries.mapNotNull { entry ->
+            val probe = CatalogProbes.byId[entry.id] ?: return@mapNotNull null
+            CatalogProbes.fontPathMismatch(entry, probe)
+        }
+        assertTrue(mismatches.isEmpty(), mismatches.joinToString("\n"))
+    }
+
     private class Exemption(val frame: String, val reason: String)
 
     private fun readExemptions(): Map<String, Exemption> {
