@@ -7,21 +7,21 @@ public object RobustnessCatalog {
     public val entries: List<CatalogEntry> = listOf(
         expectedRejection(
             id = "robustness.truncated-sfnt",
-            technology = "Truncated TrueType container",
+            technology = CatalogText("Truncated TrueType container", "Conteneur TrueType tronqué"),
             font = CorpusKeys.LIBERATION,
             code = "font.out-of-bounds",
             stage = CatalogStage.DECODE,
         ),
         expectedRejection(
             id = "robustness.empty-input",
-            technology = "Zero-byte font source",
+            technology = CatalogText("Zero-byte font source", "Source de police de zéro octet"),
             font = CorpusKeys.LIBERATION,
             code = "font.invalid-font-data",
             stage = CatalogStage.DECODE,
         ),
     )
 
-    private fun expectedRejection(id: String, technology: String, font: CorpusKey, code: String, stage: CatalogStage) =
+    private fun expectedRejection(id: String, technology: CatalogText, font: CorpusKey, code: String, stage: CatalogStage) =
         CatalogEntry(
             id = id,
             axis = CatalogAxis.ROBUSTNESS,

@@ -53,7 +53,10 @@ public object CatalogMatrixRenderer {
             )
             appendLine("| --- | --- | --- | --- |")
             for (entry in axisEntries) {
-                appendLine("| `${entry.id}` | ${entry.technology} | ${entry.font?.value ?: "—"} | ${describe(entry.status, language)} |")
+                appendLine(
+                    "| `${entry.id}` | ${entry.technology.text(language)} | ${entry.font?.value ?: "—"} | " +
+                        "${describe(entry.status, language)} |",
+                )
             }
             appendLine()
         }
@@ -91,13 +94,25 @@ public object CatalogMatrixRenderer {
                 "Pas encore ; aucune police réelle connue"
             }
 
-            else -> if (language == CatalogMatrixLanguage.EN) "Not yet; corpus not acquired" else "Pas encore ; corpus non acquis"
+            status.unpinnedReason == UnpinnedReason.CORPUS_NOT_ACQUIRED -> if (language == CatalogMatrixLanguage.EN) {
+                "Not yet; corpus not acquired"
+            } else {
+                "Pas encore ; corpus non acquis"
+            }
+
+            status.unpinnedReason == UnpinnedReason.READER_NOT_IMPLEMENTED -> if (language == CatalogMatrixLanguage.EN) {
+                "Not yet; the corpus carries it, the reader does not"
+            } else {
+                "Pas encore ; le corpus le porte, le lecteur non"
+            }
+
+            else -> error("${status.trackingIssue} declares no reason and pins no behaviour")
         }
 
         is CatalogStatus.OutOfScope -> if (language == CatalogMatrixLanguage.EN) {
-            "Out of scope: ${status.rationale}"
+            "Out of scope: ${status.rationale.english}"
         } else {
-            "Hors périmètre : ${status.rationale}"
+            "Hors périmètre : ${status.rationale.french}"
         }
     }
 

@@ -27,7 +27,7 @@ public object ScriptCatalog {
     public val entries: List<CatalogEntry> = listOf(
         line(
             id = "script.latin.composed-line",
-            technology = "Latin composed line through the paragraph facade",
+            technology = CatalogText("Latin composed line through the paragraph facade", "Ligne latine composée via la façade de paragraphe"),
             font = CorpusKeys.LIBERATION,
             scene = "line.latin.48",
             sinceCommit = "fa405247",
@@ -35,7 +35,7 @@ public object ScriptCatalog {
         ),
         line(
             id = "script.greek.composed-line",
-            technology = "Greek composed line through the paragraph facade",
+            technology = CatalogText("Greek composed line through the paragraph facade", "Ligne grecque composée via la façade de paragraphe"),
             font = CorpusKeys.LIBERATION,
             scene = "line.greek.48",
             sinceCommit = "fa405247",
@@ -43,7 +43,7 @@ public object ScriptCatalog {
         ),
         line(
             id = "script.cyrillic.composed-line",
-            technology = "Cyrillic composed line through the paragraph facade",
+            technology = CatalogText("Cyrillic composed line through the paragraph facade", "Ligne cyrillique composée via la façade de paragraphe"),
             font = CorpusKeys.LIBERATION,
             scene = "line.cyrillic.48",
             sinceCommit = "fa405247",
@@ -51,7 +51,7 @@ public object ScriptCatalog {
         ),
         line(
             id = "script.arabic.composed-line",
-            technology = "Arabic composed line through the paragraph facade",
+            technology = CatalogText("Arabic composed line through the paragraph facade", "Ligne arabe composée via la façade de paragraphe"),
             font = CorpusKeys.AMIRI,
             scene = "line.arabic.48",
             sinceCommit = "fa405247",
@@ -59,7 +59,7 @@ public object ScriptCatalog {
         ),
         line(
             id = "script.devanagari.composed-line",
-            technology = "Devanagari composed line through the paragraph facade",
+            technology = CatalogText("Devanagari composed line through the paragraph facade", "Ligne devanagari composée via la façade de paragraphe"),
             font = CorpusKeys.NOTO_DEVANAGARI,
             scene = "line.devanagari.48",
             sinceCommit = "fa405247",
@@ -67,7 +67,7 @@ public object ScriptCatalog {
         ),
         line(
             id = "script.mixed.composed-line",
-            technology = "Mixed-script composed line over the three required faces (liberation, amiri, noto-devanagari)",
+            technology = CatalogText("Mixed-script composed line over the three required faces (liberation, amiri, noto-devanagari)", "Ligne composée multi-scripts sur les trois polices requises (liberation, amiri, noto-devanagari)"),
             font = CorpusKeys.LIBERATION,
             scene = "line.mixed.48",
             sinceCommit = "fa405247",
@@ -75,7 +75,7 @@ public object ScriptCatalog {
         ),
         sheet(
             id = "script.latin.outline-sheet",
-            technology = "Latin outline alphabet sheet",
+            technology = CatalogText("Latin outline alphabet sheet", "Planche d'alphabet latin en contour"),
             font = CorpusKeys.LIBERATION,
             scene = "sheet.outline.liberation-latin.32",
             sinceCommit = "fa405247",
@@ -83,7 +83,7 @@ public object ScriptCatalog {
         ),
         sheet(
             id = "script.greek.outline-sheet",
-            technology = "Greek outline alphabet sheet",
+            technology = CatalogText("Greek outline alphabet sheet", "Planche d'alphabet grec en contour"),
             font = CorpusKeys.LIBERATION,
             scene = "sheet.outline.liberation-greek.32",
             sinceCommit = "fa405247",
@@ -91,7 +91,7 @@ public object ScriptCatalog {
         ),
         sheet(
             id = "script.cyrillic.outline-sheet",
-            technology = "Cyrillic outline alphabet sheet",
+            technology = CatalogText("Cyrillic outline alphabet sheet", "Planche d'alphabet cyrillique en contour"),
             font = CorpusKeys.LIBERATION,
             scene = "sheet.outline.liberation-cyrillic.32",
             sinceCommit = "fa405247",
@@ -99,7 +99,7 @@ public object ScriptCatalog {
         ),
         sheet(
             id = "script.arabic.outline-sheet",
-            technology = "Arabic outline alphabet sheet",
+            technology = CatalogText("Arabic outline alphabet sheet", "Planche d'alphabet arabe en contour"),
             font = CorpusKeys.AMIRI,
             scene = "sheet.outline.amiri-arabic.32",
             sinceCommit = "fa405247",
@@ -107,7 +107,7 @@ public object ScriptCatalog {
         ),
         sheet(
             id = "script.devanagari.outline-sheet",
-            technology = "Devanagari outline alphabet sheet",
+            technology = CatalogText("Devanagari outline alphabet sheet", "Planche d'alphabet devanagari en contour"),
             font = CorpusKeys.NOTO_DEVANAGARI,
             scene = "sheet.outline.noto-devanagari.32",
             sinceCommit = "fa405247",
@@ -115,7 +115,7 @@ public object ScriptCatalog {
         ),
     )
 
-    private fun line(id: String, technology: String, font: CorpusKey, scene: String, sinceCommit: String, tags: Set<String>) =
+    private fun line(id: String, technology: CatalogText, font: CorpusKey, scene: String, sinceCommit: String, tags: Set<String>) =
         CatalogEntry(
             id = id,
             axis = CatalogAxis.SCRIPT,
@@ -128,7 +128,7 @@ public object ScriptCatalog {
             frame = SceneFramePolicy.Pinned(width = PINNED_FRAMES.getValue(scene).first, height = PINNED_FRAMES.getValue(scene).second),
         )
 
-    private fun sheet(id: String, technology: String, font: CorpusKey, scene: String, sinceCommit: String, tags: Set<String>) =
+    private fun sheet(id: String, technology: CatalogText, font: CorpusKey, scene: String, sinceCommit: String, tags: Set<String>) =
         CatalogEntry(
             id = id,
             axis = CatalogAxis.SCRIPT,

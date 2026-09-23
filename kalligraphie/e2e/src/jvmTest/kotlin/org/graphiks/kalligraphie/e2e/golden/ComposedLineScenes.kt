@@ -24,6 +24,7 @@ import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.LayoutRect
@@ -64,19 +65,114 @@ internal object ComposedLineScenes {
      * @param baseDirection explicit paragraph base direction.
      * @param requiredFaces asserts that the layout participates with exactly that many distinct faces;
      * `0` disables the check.
+     * @param fontPaths the ordered fallback catalog, most preferred first; defaults to the three
+     * fixture faces the script scenes share.
+     * @param variation design-coordinate instance selection applied to every face of the catalog,
+     * or `null` for each face's default instance.
      */
     fun line(
         text: String,
         language: String,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         requiredFaces: Int = 0,
-    ): GoldenImage {
+        fontPaths: List<String> = FONT_PATHS,
+        variation: FontVariationCoordinates? = null,
+    ): GoldenImage = toInkBox(placeLine(text, language, baseDirection, requiredFaces, fontPaths, variation))
+
+    /** One rasterized glyph kept at the pen position and baseline its own layout gave it. */
+    internal class PlacedGlyph(
+        val image: A8Image,
+        val penX: Int,
+        val baselineY: Int,
+    )
+
+    /**
+     * Lays [text] out through the paragraph facade and rasterizes every positioned glyph.
+     *
+     * Each glyph keeps the coordinates of the single line the facade produced, so a caller can fold
+     * them into that line's own ink box through [toInkBox] or place several layouts on one canvas
+     * on a shared baseline grid — which is how the weight ladder lines five instances up.
+     */
+    internal fun placeLine(
+        text: String,
+        language: String,
+        baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
+        requiredFaces: Int = 0,
+        fontPaths: List<String> = FONT_PATHS,
+        variation: FontVariationCoordinates? = null,
+    ): List<PlacedGlyph> {
         require(text.isNotEmpty()) { "line text must not be empty." }
         require(language.isNotBlank()) { "line language must not be blank." }
-        return openMultiFaceFixture().use { fixture ->
-            val line = layoutLine(fixture, text, language, baseDirection)
-            renderLine(fixture, line, requiredFaces, text)
+        require(fontPaths.isNotEmpty()) { "a composed line needs at least one face." }
+        return openMultiFaceFixture(fontPaths, variation).use { fixture ->
+            val line = layoutLine(fixture, text, language, baseDirection, variation)
+            placeGlyphs(fixture, line, requiredFaces, text)
         }
+    }
+
+    private fun placeGlyphs(fixture: MultiFaceFixture, line: LineLayout, requiredFaces: Int, text: String): List<PlacedGlyph> {
+        val placed = ArrayList<PlacedGlyph>()
+        val facesUsed = LinkedHashSet<FontFaceId>()
+        line.positionedGlyphRuns.forEach { run ->
+            val faceId = run.fontInstanceKey.face
+            facesUsed += faceId
+            val asset = fixture.assets[faceId] ?: error("line used an unexpected face $faceId")
+            run.glyphs.forEach glyphLoop@{ glyph ->
+                val resolution = when (val outcome = asset.resolveGlyph(FontGlyphRequest(glyph.shapedGlyph.glyphId))) {
+                    is FontOperationResult.Success -> outcome.value
+                    is FontOperationResult.Failure -> error(
+                        "line '$text' glyph ${glyph.shapedGlyph.glyphId.value} resolution failed: ${outcome.error.code}",
+                    )
+
+                    is FontOperationResult.Cancelled -> error(
+                        "line '$text' glyph ${glyph.shapedGlyph.glyphId.value} resolution was cancelled",
+                    )
+                }
+                val outline = when (resolution) {
+                    is GlyphRepresentation.Outline -> resolution.outline
+                    is GlyphRepresentation.Empty -> return@glyphLoop
+                    else -> error("line '$text' glyph ${glyph.shapedGlyph.glyphId.value} is not an outline")
+                }
+                val image = assertIs<RasterResult.Success<A8Image>>(
+                    GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(PIXELS_PER_EM.toDouble())),
+                ).value
+                if (image.width == 0 || image.height == 0) return@glyphLoop
+                placed += PlacedGlyph(
+                    image = image,
+                    penX = glyph.origin.x.value.roundToInt(),
+                    baselineY = glyph.origin.y.value.roundToInt(),
+                )
+            }
+        }
+        check(placed.isNotEmpty()) { "line '$text' produced no ink" }
+        if (requiredFaces > 0) {
+            check(facesUsed.size == requiredFaces) {
+                "line used ${facesUsed.size} faces instead of the expected $requiredFaces: $facesUsed"
+            }
+        }
+        return placed
+    }
+
+    /**
+     * Draws [placed] on the smallest canvas that holds their ink, with [PADDING] on every side.
+     *
+     * The canvas is the canonical golden image: the glyphs are flipped while they are drawn, so the
+     * image is in image orientation and canonicalization never flips again.
+     */
+    private fun toInkBox(placed: List<PlacedGlyph>): GoldenImage {
+        val minX = placed.minOf { item -> item.penX + item.image.left }
+        val minY = placed.minOf { item -> item.baselineY - (item.image.top + item.image.height) }
+        val maxX = placed.maxOf { item -> item.penX + item.image.left + item.image.width }
+        val maxY = placed.maxOf { item -> item.baselineY - item.image.top }
+        val canvas = A8Canvas(maxX - minX + 2 * PADDING, maxY - minY + 2 * PADDING)
+        placed.forEach { item ->
+            canvas.drawCoverage(
+                image = item.image,
+                penX = item.penX - minX + PADDING,
+                baselineY = item.baselineY - minY + PADDING,
+            )
+        }
+        return canvas.toGoldenImage()
     }
 
     private class MultiFaceFixture(
@@ -94,8 +190,8 @@ internal object ComposedLineScenes {
         }
     }
 
-    private fun openMultiFaceFixture(): MultiFaceFixture {
-        val sources = FONT_PATHS.map { path ->
+    private fun openMultiFaceFixture(fontPaths: List<String>, variation: FontVariationCoordinates?): MultiFaceFixture {
+        val sources = fontPaths.map { path ->
             FontSource(sourceBytes = fixtureBytes(path), provenance = FontSourceProvenance(path))
         }
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
@@ -112,7 +208,7 @@ internal object ComposedLineScenes {
                     catalog.resolveFace(faceId, outlineRequirements()),
                 ).value
                 val instance = assertIs<FontOperationResult.Success<FontInstance>>(
-                    face.instantiate(FontInstanceDescriptor(LayoutUnit(PIXELS_PER_EM))),
+                    face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(PIXELS_PER_EM), variation = variation)),
                 ).value
                 assets[faceId] = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
                     instance.acquireRenderAsset(resolver, FontRenderVariantSnapshot.default, outlineRequirements()),
@@ -131,6 +227,7 @@ internal object ComposedLineScenes {
         text: String,
         language: String,
         baseDirection: BaseDirection,
+        variation: FontVariationCoordinates?,
     ): LineLayout {
         val faces = fixture.assets.keys.toList()
         val policy = FontResolutionPolicySnapshot(
@@ -155,7 +252,7 @@ internal object ComposedLineScenes {
             language = language,
             fontCatalog = fixture.catalog,
             resolutionPolicy = policy,
-            fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(PIXELS_PER_EM)),
+            fontInstanceDescriptor = FontInstanceDescriptor(layoutSize = LayoutUnit(PIXELS_PER_EM), variation = variation),
             features = emptyList(),
             materialization = EditableLineMaterialization.Renderable(
                 fixture.resolver,
@@ -182,62 +279,5 @@ internal object ComposedLineScenes {
             "line '$text' produced ${result.layout.lines.size} lines"
         }
         return result.layout.lines.single()
-    }
-
-    private fun renderLine(fixture: MultiFaceFixture, line: LineLayout, requiredFaces: Int, text: String): GoldenImage {
-        class Placed(val image: A8Image, val penX: Int, val baselineY: Int)
-
-        val placed = ArrayList<Placed>()
-        val facesUsed = LinkedHashSet<FontFaceId>()
-        line.positionedGlyphRuns.forEach { run ->
-            val faceId = run.fontInstanceKey.face
-            facesUsed += faceId
-            val asset = fixture.assets[faceId] ?: error("line used an unexpected face $faceId")
-            run.glyphs.forEach glyphLoop@{ glyph ->
-                val resolution = when (val outcome = asset.resolveGlyph(FontGlyphRequest(glyph.shapedGlyph.glyphId))) {
-                    is FontOperationResult.Success -> outcome.value
-                    is FontOperationResult.Failure -> error(
-                        "line '$text' glyph ${glyph.shapedGlyph.glyphId.value} resolution failed: ${outcome.error.code}",
-                    )
-
-                    is FontOperationResult.Cancelled -> error(
-                        "line '$text' glyph ${glyph.shapedGlyph.glyphId.value} resolution was cancelled",
-                    )
-                }
-                val outline = when (resolution) {
-                    is GlyphRepresentation.Outline -> resolution.outline
-                    is GlyphRepresentation.Empty -> return@glyphLoop
-                    else -> error("line '$text' glyph ${glyph.shapedGlyph.glyphId.value} is not an outline")
-                }
-                val image = assertIs<RasterResult.Success<A8Image>>(
-                    GlyphRasterizer.rasterizeOutline(outline, OutlineRasterRequest(PIXELS_PER_EM.toDouble())),
-                ).value
-                if (image.width == 0 || image.height == 0) return@glyphLoop
-                placed += Placed(
-                    image = image,
-                    penX = glyph.origin.x.value.roundToInt(),
-                    baselineY = glyph.origin.y.value.roundToInt(),
-                )
-            }
-        }
-        check(placed.isNotEmpty()) { "line '$text' produced no ink" }
-        if (requiredFaces > 0) {
-            check(facesUsed.size == requiredFaces) {
-                "line used ${facesUsed.size} faces instead of the expected $requiredFaces: $facesUsed"
-            }
-        }
-        val minX = placed.minOf { item -> item.penX + item.image.left }
-        val minY = placed.minOf { item -> item.baselineY - (item.image.top + item.image.height) }
-        val maxX = placed.maxOf { item -> item.penX + item.image.left + item.image.width }
-        val maxY = placed.maxOf { item -> item.baselineY - item.image.top }
-        val canvas = A8Canvas(maxX - minX + 2 * PADDING, maxY - minY + 2 * PADDING)
-        placed.forEach { item ->
-            canvas.drawCoverage(
-                image = item.image,
-                penX = item.penX - minX + PADDING,
-                baselineY = item.baselineY - minY + PADDING,
-            )
-        }
-        return canvas.toGoldenImage()
     }
 }

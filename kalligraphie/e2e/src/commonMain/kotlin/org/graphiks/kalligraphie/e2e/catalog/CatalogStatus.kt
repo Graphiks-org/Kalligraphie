@@ -48,11 +48,10 @@ public sealed interface CatalogStatus {
 
     /** Deliberately outside the supported surface, with a recorded rationale. */
     public data class OutOfScope(
-        /** Why this technology will not be supported. */
-        public val rationale: String,
+        /** Why this technology will not be supported, in both documentation languages. */
+        public val rationale: CatalogText,
     ) : CatalogStatus {
         init {
-            require(rationale.isNotBlank()) { "An OutOfScope entry must record its rationale." }
         }
     }
 }
@@ -82,4 +81,12 @@ public enum class UnpinnedReason {
     NO_REAL_FONT_KNOWN,
     /** A real font exists but is not in the corpus yet. */
     CORPUS_NOT_ACQUIRED,
+    /**
+     * A committed font carries the technology and the engine does not read it yet.
+     *
+     * Distinct from the two acquisition reasons: no download closes this gap, only code does, and
+     * saying "corpus not acquired" about a table the corpus already carries would send a maintainer
+     * looking for a font instead of at the reader.
+     */
+    READER_NOT_IMPLEMENTED,
 }

@@ -6,6 +6,7 @@ import org.graphiks.kalligraphie.e2e.GoldenOrientation
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.golden.ComposedLineScenes
 import org.graphiks.kalligraphie.e2e.golden.GlyphSheetScenes
+import org.graphiks.kalligraphie.e2e.golden.VariationLadderScene
 import org.graphiks.kalligraphie.e2e.golden.bitmapOf
 import org.graphiks.kalligraphie.e2e.golden.bitmapRequirements
 import org.graphiks.kalligraphie.e2e.golden.colourBitmapRequirements
@@ -40,6 +41,7 @@ internal object SceneRenderers {
     private const val CFF_LIBERATION = "/fonts/cff-liberation/LiberationSans-CFF.otf"
     private const val CFF2_LIBERATION = "/fonts/cff2-liberation/LiberationSans-CFF2.otf"
     private const val KALLIGRAPHIE_VAR_VVAR = "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf"
+    private const val WORK_SANS = "/fonts/worksans/WorkSans[wght].ttf"
 
     private val LATIN_LETTERS: List<Int> = (0x41..0x5A).toList()
     private val LATIN: List<Int> = LATIN_LETTERS + (0x61..0x7A) + (0x30..0x39)
@@ -132,7 +134,17 @@ internal object SceneRenderers {
         "outline.cff1-static" to CatalogSceneRenderer(CFF_LIBERATION, render = ::renderCff1CapitalA),
         "outline.cff2-static" to CatalogSceneRenderer(CFF2_LIBERATION, render = ::renderCff2CapitalA),
         "metrics.vvar-advance-height" to CatalogSceneRenderer(KALLIGRAPHIE_VAR_VVAR, render = ::renderVvarCapitalA),
+        "variation.wght-ladder" to CatalogSceneRenderer(WORK_SANS) {
+            composed { renderWeightLadder() }
+        },
     )
+
+    /** The weights of the ladder scene, lightest first: the named instances the family publishes. */
+    private val LADDER_WEIGHTS: List<Float> = listOf(100f, 300f, 500f, 700f, 900f)
+
+    /** Renders the capitalised word at every weight of the variable fixture, on one baseline grid. */
+    private fun renderWeightLadder(): GoldenImage =
+        VariationLadderScene.ladder("Kalligraphie", WORK_SANS, LADDER_WEIGHTS)
 
     private fun renderCbdtColourStrike(): GoldenRenderOutcome = colourStrike(SKIA_CBDT, "CBLC/CBDT strike")
 

@@ -9,8 +9,8 @@ public data class CatalogEntry(
     public val id: String,
     /** Dimension this entry belongs to. */
     public val axis: CatalogAxis,
-    /** Short human description of the technology, e.g. "COLR v0 + CPAL v0". */
-    public val technology: String,
+    /** Short human description of the technology, e.g. "COLR v0 + CPAL v0", in both languages. */
+    public val technology: CatalogText,
     /** Corpus family carrying the technology, or null when none applies yet. */
     public val font: CorpusKey?,
     /** Expected behaviour. */
@@ -27,7 +27,6 @@ public data class CatalogEntry(
     init {
         require(id.isNotBlank()) { "A catalog entry id must not be blank." }
         require(id.matches(ID_PATTERN)) { "A catalog entry id must be lower-case dotted form: $id" }
-        require(technology.isNotBlank()) { "A catalog entry must describe its technology: $id" }
     }
 
     private companion object {
