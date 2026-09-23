@@ -24,10 +24,16 @@ public object CatalogClaims {
         listOf("cmap", "head", "hhea", "hmtx", "maxp", "name", "post", "OS/2")
 
     /**
-     * Tables no entry claims on purpose, with the reason, keyed by corpus key. The wildcard key
-     * `"*"` holds the tables that live in every SFNT without carrying a technology: no entry can
-     * claim them, and a per-family copy of the same reason would drown the export. Another key
-     * lands here only after the lint of task 12 named the table, never in advance.
+     * Tables an entry is allowed to leave unclaimed, with the reason, keyed by corpus key.
+     *
+     * The wildcard key `"*"` excuses the tables every SFNT carries without carrying a technology:
+     * they deserve no claim, and a per-family copy of one reason would drown the export. It is an
+     * excuse for the families where no entry claims such a table, not a statement that none ever
+     * does — `cmap`, `hmtx`, `OS/2` and the rest are claimed by the entries of the families whose
+     * scenes really read them. The lint merges these reasons with the ones of the family before it
+     * checks, so a claimed table stays claimed and the merged reason is simply not needed.
+     *
+     * Another key lands here only after the lint of task 12 named the table, never in advance.
      *
      * Declared after the structural tables it reads, because an object initialises its properties
      * in declaration order.
@@ -35,34 +41,73 @@ public object CatalogClaims {
     public val unclaimedAllowlist: Map<String, Map<String, String>> =
         mapOf(STRUCTURAL_TABLES_KEY to STRUCTURAL_TABLES.associateWith { STRUCTURAL_REASON })
 
-    /** Groups the claimed tables of [entries] by corpus key. */
+    /**
+     * Groups the claimed tables of [entries] by corpus key. The sets carry no guaranteed order: the
+     * canonical order is the one [render] produces with `sorted()`, not one of these sets.
+     */
     public fun claimsOf(entries: List<CatalogEntry>): Map<String, Set<String>> = entries
         .filter { entry -> entry.font != null }
         .groupBy { entry -> entry.font!!.value }
         .mapValues { (_, axisEntries) -> axisEntries.flatMapTo(linkedSetOf()) { entry -> entry.tables } }
 
-    /** Returns the canonical JSON export of [entries]. */
-    public fun render(entries: List<CatalogEntry>): String = buildString {
+    /**
+     * Returns the canonical JSON export of [entries], with [allowlist] written under
+     * `allowUnclaimed`. [allowlist] defaults to [unclaimedAllowlist] and is a parameter so a test
+     * can prove that a hand-written reason survives the escaping.
+     */
+    public fun render(
+        entries: List<CatalogEntry>,
+        allowlist: Map<String, Map<String, String>> = unclaimedAllowlist,
+    ): String = buildString {
         appendLine("{")
         appendLine("  \"schema\": \"kalligraphie.e2e-claims/v1\",")
         appendLine("  \"fonts\": {")
         val claims = claimsOf(entries).entries.sortedBy { (key, _) -> key }
         claims.forEachIndexed { index, (key, tables) ->
-            append("    \"$key\": [")
-            append(tables.sorted().joinToString(", ") { table -> "\"$table\"" })
+            append("    ").append(jsonString(key)).append(": [")
+            append(tables.sorted().joinToString(", ") { table -> jsonString(table) })
             append("]")
             appendLine(if (index == claims.size - 1) "" else ",")
         }
         appendLine("  },")
         appendLine("  \"allowUnclaimed\": {")
-        val allowlist = unclaimedAllowlist.entries.sortedBy { (key, _) -> key }
-        allowlist.forEachIndexed { index, (key, tables) ->
-            append("    \"$key\": {")
-            append(tables.entries.sortedBy { (table, _) -> table }.joinToString(", ") { (table, reason) -> "\"$table\": \"$reason\"" })
+        val allowlistEntries = allowlist.entries.sortedBy { (key, _) -> key }
+        allowlistEntries.forEachIndexed { index, (key, tables) ->
+            append("    ").append(jsonString(key)).append(": {")
+            append(
+                tables.entries.sortedBy { (table, _) -> table }
+                    .joinToString(", ") { (table, reason) -> "${jsonString(table)}: ${jsonString(reason)}" },
+            )
             append("}")
-            appendLine(if (index == allowlist.size - 1) "" else ",")
+            appendLine(if (index == allowlistEntries.size - 1) "" else ",")
         }
         appendLine("  }")
         appendLine("}")
+    }
+
+    /**
+     * Escapes [raw] as a JSON string literal, quotation marks, backslash and control characters
+     * included: a hand-written allowlist reason must not be able to break the document the lint
+     * parses. The escapes are the ones `json.loads` accepts.
+     */
+    private fun jsonString(raw: String): String = buildString(raw.length + 2) {
+        append('"')
+        for (char in raw) {
+            when (char) {
+                '"' -> append("\\\"")
+                '\\' -> append("\\\\")
+                '\n' -> append("\\n")
+                '\r' -> append("\\r")
+                '\t' -> append("\\t")
+                '\b' -> append("\\b")
+                '\u000C' -> append("\\f")
+                else -> if (char.code < 0x20) {
+                    append("\\u").append(char.code.toString(16).padStart(4, '0'))
+                } else {
+                    append(char)
+                }
+            }
+        }
+        append('"')
     }
 }
