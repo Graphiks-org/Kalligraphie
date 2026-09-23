@@ -20,7 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
 /**
- * Binds the umbrella design's exit criterion §9.2 for the **bounds** half: our
+ * Cross-checks the **bounds** half against HarfBuzz: our
  * `GlyphMetrics.bounds` equals HarfBuzz's `hb_font_get_glyph_extents` at the same variation
  * location.
  *
@@ -51,7 +51,7 @@ class HarfBuzzGlyphBoundsTest {
 
     /**
      * The CFF2 route already produced varied ink bounds before this cross-check; the test pins it as
-     * a regression guard so a future blend regression is caught by the same criterion. Audited with
+     * a regression guard so a future blend regression is caught by the same cross-check. Audited with
      * fontTools 4.65.0 and HarfBuzz 14.3.0 at `scale = upem = 1000`:
      *   default (wght 0)    extents (0, 200, 100, -200) -> bbox (0, 0, 100, 200)
      *   norm 0.5 (wght 500) extents (0, 250, 100, -250) -> bbox (0, 0, 100, 250)
