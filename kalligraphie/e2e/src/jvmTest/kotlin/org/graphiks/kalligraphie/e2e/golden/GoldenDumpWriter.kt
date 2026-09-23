@@ -15,9 +15,13 @@ internal object GoldenDumpWriter {
      * Returns the binary PGM/PPM bytes for [image]. The header is ASCII, the raster is binary.
      * Straight RGBA is composited over white with the same integer formula the raster-cpu dumps
      * use, so an alpha-only difference stays visible and transparent pixels read as white.
+     *
+     * The raster is written in image orientation, row zero at the top, whatever the producer
+     * declared: a design-oriented render is reversed once through
+     * [GoldenImage.toImageOrientation], so every dump opens upright in an image viewer.
      */
     fun encode(image: GoldenImage): ByteArray {
-        val pixels = image.copyCanonicalBytes()
+        val pixels = image.toImageOrientation().copyCanonicalBytes()
         val header: String
         val raster: ByteArray
         when (image.format) {

@@ -66,8 +66,14 @@ padded it by two pixels for readability.
 Canonicalization fixes one serialized form, stable and portable:
 
 - pixels are row-major with no padding;
-- the orientation is the one the rasterizer returns — **no flip**; vertical
-  flipping for human readability is a dump-time concern only;
+- the bytes keep the row order their producer declared, which `GoldenImage`
+  names: `GoldenOrientation.DESIGN` for the raw outline and paint routes, whose
+  row zero is the visual bottom, and `GoldenOrientation.IMAGE` for the composed
+  canvases and the normalized bitmap strikes. Nothing normalizes the canonical
+  bytes, so the same logical image always hashes to the same digest;
+- presenting a scene the right way round is a dump-time concern only: the dump
+  writer reverses a design-oriented raster once and leaves an image-oriented one
+  alone;
 - the fingerprint is the SHA-256 of those canonical bytes;
 - the form is versioned by `CANONICALIZATION_VERSION`, currently `1`.
 
@@ -133,10 +139,11 @@ catalog, and `e2eGoldenDumps` writes one PGM or PPM per scene, named after the
 scene id, next to a manifest copy.
 
 The dump output must be an absolute path outside the repository; the runner
-asserts both and fails rather than writing into the checkout. Composed sheets and
-lines are flipped vertically for readability, the raw single-glyph dumps keep the
-rasterizer's orientation, and the EBDT strike keeps its image orientation — the
-same distinction the canonicalization invariant draws.
+asserts both and fails rather than writing into the checkout. Every dump opens
+upright: a scene that declares design orientation — the raw single-glyph outline
+and paint routes — is reversed once by the writer, while the composed sheets and
+lines and the bitmap strikes are already in image orientation and are written
+untouched.
 
 ## Journeys and scenes
 

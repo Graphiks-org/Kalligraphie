@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.e2e.golden
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import org.graphiks.kalligraphie.e2e.GoldenImage
+import org.graphiks.kalligraphie.e2e.GoldenOrientation
 
 class GoldenDumpWriterTest {
     @Test
@@ -44,5 +45,26 @@ class GoldenDumpWriterTest {
     fun writesAnEmptyAlphaImage() {
         val bytes = GoldenDumpWriter.encode(GoldenImage.alpha8(0, 0, ByteArray(0)))
         assertEquals("P5\n0 0\n255\n", bytes.decodeToString())
+    }
+
+    @Test
+    fun reversesADesignOrientedAlphaRasterOnce() {
+        val image = GoldenImage.alpha8(2, 2, byteArrayOf(1, 2, 3, 4), GoldenOrientation.DESIGN)
+        val bytes = GoldenDumpWriter.encode(image)
+        assertEquals("P5\n2 2\n255\n", bytes.copyOfRange(0, 11).decodeToString())
+        assertEquals(listOf<Byte>(3, 4, 1, 2), bytes.copyOfRange(11, 15).toList())
+    }
+
+    @Test
+    fun reversesADesignOrientedColourRasterBeforeCompositingOverWhite() {
+        val image = GoldenImage.rgba8(
+            width = 1,
+            height = 2,
+            pixels = byteArrayOf(10, 20, 30, 255.toByte(), 40, 50, 60, 255.toByte()),
+            orientation = GoldenOrientation.DESIGN,
+        )
+        val bytes = GoldenDumpWriter.encode(image)
+        assertEquals("P6\n1 2\n255\n", bytes.copyOfRange(0, 11).decodeToString())
+        assertEquals(listOf<Byte>(40, 50, 60, 10, 20, 30), bytes.copyOfRange(11, 17).toList())
     }
 }

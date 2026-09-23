@@ -68,8 +68,15 @@ dump ajoutait deux pixels de marge pour la lisibilité.
 La canonicalisation fixe une seule forme sérialisée, stable et portable :
 
 - les pixels sont en row-major, sans padding ;
-- l'orientation est celle que retourne le rastériseur — **aucun flip** ; le flip
-  vertical pour la lisibilité humaine reste une préoccupation de dump ;
+- les octets conservent l'ordre de lignes déclaré par leur producteur, que
+  `GoldenImage` nomme : `GoldenOrientation.DESIGN` pour les routes brutes
+  d'outline et de peinture, dont la ligne zéro est le bas visuel, et
+  `GoldenOrientation.IMAGE` pour les canvas composés et les strikes bitmap
+  normalisés. Rien ne normalise les octets canoniques, donc la même image
+  logique produit toujours la même empreinte ;
+- présenter une scène à l'endroit est une préoccupation de dump seulement :
+  l'écrivain retourne une trame en orientation conception une fois, et laisse
+  intacte une trame déjà en orientation image ;
 - l'empreinte est le SHA-256 de ces octets canoniques ;
 - la forme est versionnée par `CANONICALIZATION_VERSION`, actuellement `1`.
 
@@ -136,11 +143,11 @@ par scène, nommée d'après l'identifiant de scène, accompagnée d'une copie d
 manifeste.
 
 La sortie de dump doit être un chemin absolu hors du dépôt ; le runner vérifie
-les deux et échoue plutôt que d'écrire dans le checkout. Les planches et lignes
-composées sont retournées verticalement pour la lisibilité, les dumps bruts de
-glyphe isolé conservent l'orientation du rastériseur, et le strike EBDT conserve
-son orientation image — exactement la distinction que pose l'invariant de
-canonicalisation.
+les deux et échoue plutôt que d'écrire dans le checkout. Chaque dump s'ouvre à
+l'endroit : une scène qui déclare l'orientation conception — les routes brutes
+de glyphe isolé, outline et peinture — est retournée une fois par l'écrivain,
+tandis que les planches et lignes composées et les strikes bitmap sont déjà en
+orientation image et sont écrits tels quels.
 
 ## Journeys et scènes
 
