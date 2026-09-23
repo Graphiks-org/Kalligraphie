@@ -1,0 +1,15 @@
+# Byte stability first. The harness digests committed resources (the hyphenation pattern it
+# verifies by SHA-256, the golden manifest, the claims export) and compares generated pages
+# byte for byte, so a checkout that rewrites their line endings breaks them: this is what made the
+# Windows runner fail. Text files therefore keep LF everywhere, whatever the host's autocrlf says.
+* text=auto eol=lf
+
+# Anything the harness reads as bytes is never line-ending converted and never merged.
+*.ttf binary
+*.otf binary
+*.b64 binary
+*.png binary
+*.jpg binary
+*.zip binary
+*.ttc binary
+*.woff2 binary

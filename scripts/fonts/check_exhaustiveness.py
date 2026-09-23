@@ -140,7 +140,7 @@ def decoded_font_path(path: pathlib.Path, scratch: pathlib.Path) -> pathlib.Path
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--corpus", default="scripts/fonts/corpus.json")
-    parser.add_argument("--claims", default="kalligraphie/e2e/src/jvmTest/resources/catalog/claimed-tables.json")
+    parser.add_argument("--claims", default="kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json")
     arguments = parser.parse_args(argv)
 
     root = pathlib.Path(__file__).resolve().parents[2]

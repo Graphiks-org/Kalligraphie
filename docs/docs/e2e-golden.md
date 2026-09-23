@@ -44,8 +44,12 @@ capabilities imply.
 Protection is free on the reference platform: the root `check` runs
 `:kalligraphie:e2e:jvmTest` like any other subproject, and the existing
 pull-request workflow already covers `kalligraphie/**`. The other targets are
-executed where they can be: `testAndroidHostTest` and `connectedAndroidDeviceTest`
-on an emulator, `iosSimulatorArm64Test` on a macOS runner.
+executed by `.github/workflows/golden-portability.yml`: the JVM suite on the five
+runner architectures the library ships, `testAndroidHostTest` and
+`connectedAndroidDeviceTest` on an emulator, and `iosSimulatorArm64Test` on a
+macOS runner together with the portable rasterizer suite. A platform that stops
+reproducing the committed fingerprints fails its own job, and the record is never
+re-frozen to match.
 
 ## Which scenes each platform verifies
 
