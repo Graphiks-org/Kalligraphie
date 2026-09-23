@@ -10,16 +10,6 @@ import org.graphiks.kalligraphie.e2e.golden.repositoryRoot
 
 class CatalogClaimsRunnerTest {
     @Test
-    fun writesTheClaimsOnlyWhenExplicitlyEnabled() {
-        if (System.getenv("KALLIGRAPHIE_E2E_CLAIMS") != "true") {
-            return
-        }
-        val target = claimsPath()
-        Files.createDirectories(target.parent)
-        Files.writeString(target, CatalogClaims.render(ExpectationCatalog.entries))
-    }
-
-    @Test
     fun theCommittedClaimsMatchTheCatalog() {
         val path = claimsPath()
         check(Files.exists(path)) { "$path is missing; run ./gradlew :kalligraphie:e2e:updateE2eGolden" }

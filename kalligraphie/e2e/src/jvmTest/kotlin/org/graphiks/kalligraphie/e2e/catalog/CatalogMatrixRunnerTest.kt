@@ -9,18 +9,6 @@ import org.graphiks.kalligraphie.e2e.golden.repositoryRoot
 
 class CatalogMatrixRunnerTest {
     @Test
-    fun writesTheMatrixOnlyWhenExplicitlyEnabled() {
-        if (System.getenv("KALLIGRAPHIE_E2E_MATRIX") != "true") {
-            return
-        }
-        for (language in CatalogMatrixLanguage.entries) {
-            val target = matrixPath(language)
-            Files.createDirectories(target.parent)
-            Files.writeString(target, CatalogMatrixRenderer.render(ExpectationCatalog.entries, language))
-        }
-    }
-
-    @Test
     fun theCommittedMatrixMatchesTheCatalog() {
         for (language in CatalogMatrixLanguage.entries) {
             val path = matrixPath(language)

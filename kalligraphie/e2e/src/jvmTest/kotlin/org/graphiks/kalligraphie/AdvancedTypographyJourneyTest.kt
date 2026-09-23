@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie
 
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
@@ -1482,17 +1483,8 @@ class AdvancedTypographyJourneyTest {
         lineMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),
     )
 
-    private fun fixtureBytes(relativePath: String): ByteArray {
-        val classpathPath = "/fonts/$relativePath"
-        javaClass.getResourceAsStream(classpathPath)?.use { stream -> return stream.readBytes() }
-        val sourceCandidates = listOf(
-            Path.of("test-fixtures", "fonts", relativePath),
-            Path.of("..", "test-fixtures", "fonts", relativePath),
-            Path.of("..", "..", "test-fixtures", "fonts", relativePath),
-        )
-        val source = sourceCandidates.firstOrNull(Files::isRegularFile)
-        return Files.readAllBytes(checkNotNull(source) { "fixture font is missing: $relativePath" })
-    }
+    private fun fixtureBytes(relativePath: String): ByteArray =
+        E2eTestEnvironment.corpus.bytes("/fonts/$relativePath")
 
     private fun firstGlyphOfRange(
         fixture: JourneyFixture,

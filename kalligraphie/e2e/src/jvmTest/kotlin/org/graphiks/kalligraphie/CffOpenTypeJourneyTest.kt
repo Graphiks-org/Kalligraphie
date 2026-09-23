@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie
 
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.api.DesignBounds
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
 import org.graphiks.kalligraphie.api.FontGlyphRequest
@@ -142,8 +143,7 @@ class CffOpenTypeJourneyTest {
         assertTrue(abs(expected - actual) < 1e-6, "expected $expected but was $actual")
     }
 
-    private fun fixture(path: String): ByteArray =
-        checkNotNull(javaClass.getResourceAsStream(path)) { "Missing fixture $path" }.use { it.readBytes() }
+    private fun fixture(path: String): ByteArray = E2eTestEnvironment.corpus.bytes(path)
 
     private fun <T> success(result: FontOperationResult<T>): T = when (result) {
         is FontOperationResult.Success -> result.value

@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie
 
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertIs
@@ -124,14 +125,5 @@ private fun incrementalFontSource(relativePath: String, declaredName: String): F
     provenance = FontSourceProvenance(declaredName),
 )
 
-private fun incrementalFixtureBytes(relativePath: String): ByteArray {
-    IncrementalRealFontFixture::class.java.getResourceAsStream("/fonts/$relativePath")?.use { stream ->
-        return stream.readBytes()
-    }
-    val candidates = listOf(
-        Path.of("test-fixtures", "fonts", relativePath),
-        Path.of("..", "test-fixtures", "fonts", relativePath),
-        Path.of("..", "..", "test-fixtures", "fonts", relativePath),
-    )
-    return Files.readAllBytes(checkNotNull(candidates.firstOrNull(Files::isRegularFile)))
-}
+private fun incrementalFixtureBytes(relativePath: String): ByteArray =
+    E2eTestEnvironment.corpus.bytes("/fonts/$relativePath")

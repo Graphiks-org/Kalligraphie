@@ -175,40 +175,31 @@ tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
 
-val updateClass = "org.graphiks.kalligraphie.e2e.golden.GoldenUpdateRunnerTest"
-val dumpClass = "org.graphiks.kalligraphie.e2e.golden.GoldenDumpRunnerTest"
-val matrixClass = "org.graphiks.kalligraphie.e2e.catalog.CatalogMatrixRunnerTest"
-val claimsClass = "org.graphiks.kalligraphie.e2e.catalog.CatalogClaimsRunnerTest"
-val e2eJvmTestTask = tasks.named<Test>("jvmTest")
-
-e2eJvmTestTask.configure {
-    filter.excludeTestsMatching(updateClass)
-    filter.excludeTestsMatching(dumpClass)
-    // Only the writers are excluded: the freshness tests must keep running under `check`.
-    filter.excludeTestsMatching("$matrixClass.writesTheMatrixOnlyWhenExplicitlyEnabled")
-    filter.excludeTestsMatching("$claimsClass.writesTheClaimsOnlyWhenExplicitlyEnabled")
+/**
+ * The generators run on the test runtime class path: they read the same scene catalog and the same
+ * fixture corpus the verification does, they just write the committed artefacts instead of
+ * asserting them. Nothing about the project's correctness is claimed here, which is why they are
+ * tasks and not tests: the suite no longer excludes a single class from `check`.
+ */
+val writerOnce = tasks.withType<JavaExec>().configureEach {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
+    classpath = tasks.named<Test>("jvmTest").get().classpath
+    mainClass.set("org.graphiks.kalligraphie.e2e.golden.GoldenWriterMainKt")
 }
 
-tasks.register<Test>("updateE2eGolden") {
+tasks.register<JavaExec>("updateE2eGolden") {
     group = "verification"
     description = "Regenerates the committed golden fingerprint manifest, the catalog matrix and the table claims from the scene catalog."
-    testClassesDirs = e2eJvmTestTask.get().testClassesDirs
-    classpath = e2eJvmTestTask.get().classpath
-    filter.includeTestsMatching("$updateClass.writesTheManifestOnlyWhenExplicitlyEnabled")
-    filter.includeTestsMatching("$matrixClass.writesTheMatrixOnlyWhenExplicitlyEnabled")
-    filter.includeTestsMatching("$claimsClass.writesTheClaimsOnlyWhenExplicitlyEnabled")
-    environment("KALLIGRAPHIE_E2E_UPDATE", "true")
-    environment("KALLIGRAPHIE_E2E_MATRIX", "true")
-    environment("KALLIGRAPHIE_E2E_CLAIMS", "true")
-    outputs.upToDateWhen { false }
+    args("manifest", "matrix", "claims")
 }
 
-tasks.register<Test>("e2eGoldenDumps") {
+tasks.register<JavaExec>("e2eGoldenDumps") {
     group = "verification"
-    description = "Writes opt-in golden inspection dumps outside the repository."
-    testClassesDirs = e2eJvmTestTask.get().testClassesDirs
-    classpath = e2eJvmTestTask.get().classpath
-    filter.includeTestsMatching("$dumpClass.writesDumpsOnlyWhenExplicitlyEnabled")
-    environment("KALLIGRAPHIE_E2E_DUMPS", "true")
-    outputs.upToDateWhen { false }
+    description = "Writes the golden inspection dumps outside the repository; requires -Pkalligraphie.e2e.dumps=<absolute directory>."
+    val output = providers.gradleProperty("kalligraphie.e2e.dumps")
+    doFirst {
+        val directory = output.orNull
+            ?: error("pass -Pkalligraphie.e2e.dumps=<absolute directory outside the repository>")
+        args("dumps=$directory")
+    }
 }
