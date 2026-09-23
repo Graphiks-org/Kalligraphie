@@ -2673,12 +2673,19 @@ class CheckFilesTest(unittest.TestCase):
         self.assertEqual(1, len(errors))
         self.assertIn("url", errors[0])
 
-    def test_a_real_family_without_a_raw_url_blocks(self):
+    def test_a_real_family_without_a_raw_url_or_a_note_blocks(self):
         manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
         manifest["families"][0]["files"][0]["rawUrl"] = None
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
-        self.assertIn("rawUrl", errors[0])
+        self.assertIn("fetchNote", errors[0])
+
+    def test_a_real_family_with_a_fetch_note_instead_of_a_raw_url_is_accepted(self):
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest["families"][0]["files"][0]["rawUrl"] = None
+        manifest["families"][0]["files"][0]["fetchNote"] = "release archive; unzip manually"
+        errors = fetch_fonts.check_files(manifest, self.root)
+        self.assertEqual([], errors)
 
 
 class ManifestShapeTest(unittest.TestCase):
@@ -2727,11 +2734,14 @@ import urllib.request
 
 # Licences whose terms allow redistributing the font file in this repository.
 # A new licence requires a human review first; the check below fails closed.
+# CC-BY-4.0 covers the two emoji families (emoji-two-colr-v0, twemoji-svginot-glyph5);
+# MIT is the repository licence and covers the fixtures generated in-tree.
 ALLOWED_LICENSES = frozenset(
     {
         "Apache-2.0",
         "BSD-3-Clause",
         "CC0-1.0",
+        "CC-BY-4.0",
         "DejaVu",
         "MIT",
         "OFL-1.1",
@@ -2790,8 +2800,10 @@ def check_files(manifest: dict, root: pathlib.Path) -> list[str]:
                 errors.append(f"{key}: {record['path']} sha256 is {digest}, manifest expects {record['sha256']}")
             if not family.get("synthetic") and not record.get("url"):
                 errors.append(f"{key}: {record['path']} is not synthetic and declares no url")
-            if not family.get("synthetic") and not record.get("rawUrl"):
-                errors.append(f"{key}: {record['path']} is not synthetic and declares no rawUrl for --fetch")
+            if not family.get("synthetic") and not (record.get("rawUrl") or record.get("fetchNote")):
+                errors.append(
+                    f"{key}: {record['path']} needs a rawUrl or a fetchNote explaining the manual re-download"
+                )
     return errors
 
 
