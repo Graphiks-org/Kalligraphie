@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.e2e.golden
 
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
@@ -30,12 +31,13 @@ internal object GlyphSheetScenes {
 
     /** Renders an outline sheet as a coverage canvas. */
     fun outlineSheet(
+        corpus: FixtureCorpus,
         fontPath: String,
         codepoints: List<Int>,
         pixelsPerEm: Double,
     ): GoldenImage {
         require(codepoints.isNotEmpty()) { "a sheet needs at least one code point." }
-        return openOutlineFixture(fixtureBytes(fontPath)).use { fixture ->
+        return openOutlineFixture(corpus.bytes(fontPath)).use { fixture ->
             val images = codepoints.map { codepoint -> resolveOutline(fixture, codepoint, pixelsPerEm) }
             renderCoverageSheet(images)
         }
@@ -43,6 +45,7 @@ internal object GlyphSheetScenes {
 
     /** Renders a color sheet as an RGBA canvas (glyph colors already composited over white). */
     fun paintSheet(
+        corpus: FixtureCorpus,
         fontPath: String,
         codepoints: List<Int>,
         pixelsPerEm: Double,
@@ -50,7 +53,7 @@ internal object GlyphSheetScenes {
     ): GoldenImage {
         require(codepoints.isNotEmpty()) { "a sheet needs at least one code point." }
         return openRenderableFixture(
-            bytes = fixtureBytes(fontPath),
+            bytes = corpus.bytes(fontPath),
             requirements = paintRequirements(),
             renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = paletteIndex),
         ).use { fixture ->

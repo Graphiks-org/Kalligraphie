@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.e2e.catalog
 
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 
 /**
  * One entry's renderer, at its natural frame.
@@ -11,6 +12,15 @@ import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 internal class CatalogSceneRenderer(
     /** Resource path of the primary font this renderer loads; checked against the entry's key. */
     val fontPath: String,
+    /**
+     * Platform route this renderer's scene needs; checked against the entry's declaration.
+     *
+     * The renderer's half of the two-way check: a renderer registered on a platform whose
+     * capabilities cannot serve this route is a harness error, and the harness refuses it rather
+     * than letting the scene fail at render time. A route is therefore never inferred from the
+     * scene's code — the scene declares it, and the registry is checked against it.
+     */
+    val route: CatalogRoute,
     /**
      * Manifest id of the scene this renderer feeds, or `null` to inherit the entry's id.
      *
@@ -26,8 +36,8 @@ internal class CatalogSceneRenderer(
      * directions, so neither side can drift from the other.
      */
     val additionalFontPaths: List<String> = emptyList(),
-    /** Renders at the natural frame. */
-    val render: () -> GoldenRenderOutcome,
+    /** Renders at the natural frame, reading its fonts from the supplied corpus. */
+    val render: (FixtureCorpus) -> GoldenRenderOutcome,
 ) {
     /** Every resource path this renderer loads, the primary one first. */
     val fontPaths: List<String> get() = listOf(fontPath) + additionalFontPaths

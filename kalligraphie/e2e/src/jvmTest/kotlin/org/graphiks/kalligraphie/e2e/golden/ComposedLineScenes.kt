@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.e2e.golden
 
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import kotlin.math.roundToInt
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.JvmEditableParagraphFacade
@@ -71,13 +72,14 @@ internal object ComposedLineScenes {
      * or `null` for each face's default instance.
      */
     fun line(
+        corpus: FixtureCorpus,
         text: String,
         language: String,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         requiredFaces: Int = 0,
         fontPaths: List<String> = FONT_PATHS,
         variation: FontVariationCoordinates? = null,
-    ): GoldenImage = toInkBox(placeLine(text, language, baseDirection, requiredFaces, fontPaths, variation))
+    ): GoldenImage = toInkBox(placeLine(corpus, text, language, baseDirection, requiredFaces, fontPaths, variation))
 
     /** One rasterized glyph kept at the pen position and baseline its own layout gave it. */
     internal class PlacedGlyph(
@@ -94,6 +96,7 @@ internal object ComposedLineScenes {
      * on a shared baseline grid — which is how the weight ladder lines five instances up.
      */
     internal fun placeLine(
+        corpus: FixtureCorpus,
         text: String,
         language: String,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -104,7 +107,7 @@ internal object ComposedLineScenes {
         require(text.isNotEmpty()) { "line text must not be empty." }
         require(language.isNotBlank()) { "line language must not be blank." }
         require(fontPaths.isNotEmpty()) { "a composed line needs at least one face." }
-        return openMultiFaceFixture(fontPaths, variation).use { fixture ->
+        return openMultiFaceFixture(corpus, fontPaths, variation).use { fixture ->
             val line = layoutLine(fixture, text, language, baseDirection, variation)
             placeGlyphs(fixture, line, requiredFaces, text)
         }
@@ -190,9 +193,13 @@ internal object ComposedLineScenes {
         }
     }
 
-    private fun openMultiFaceFixture(fontPaths: List<String>, variation: FontVariationCoordinates?): MultiFaceFixture {
+    private fun openMultiFaceFixture(
+        corpus: FixtureCorpus,
+        fontPaths: List<String>,
+        variation: FontVariationCoordinates?,
+    ): MultiFaceFixture {
         val sources = fontPaths.map { path ->
-            FontSource(sourceBytes = fixtureBytes(path), provenance = FontSourceProvenance(path))
+            FontSource(sourceBytes = corpus.bytes(path), provenance = FontSourceProvenance(path))
         }
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
             Kalligraphie.embedded(sources),

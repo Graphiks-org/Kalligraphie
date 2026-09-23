@@ -5,6 +5,7 @@ import java.nio.file.Path
 import kotlin.test.Test
 import org.graphiks.kalligraphie.e2e.GoldenFingerprint
 import org.graphiks.kalligraphie.e2e.GoldenManifest
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 
 class GoldenUpdateRunnerTest {
@@ -14,7 +15,7 @@ class GoldenUpdateRunnerTest {
             return
         }
         val fingerprints = ArrayList<GoldenFingerprint>()
-        for (entry in JvmGoldenSceneCatalog.entries()) {
+        for (entry in GoldenSceneCatalog.entries()) {
             when (val outcome = entry.render()) {
                 is GoldenRenderOutcome.Rendered -> fingerprints.add(GoldenFingerprint.of(entry.scene, outcome.image))
                 is GoldenRenderOutcome.Refused ->

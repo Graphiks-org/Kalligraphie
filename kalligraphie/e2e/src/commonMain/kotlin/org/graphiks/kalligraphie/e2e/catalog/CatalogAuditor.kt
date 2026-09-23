@@ -50,17 +50,20 @@ public object CatalogAuditor {
                 if (entry.font == null) violations.add(entry.violation("supported-missing-font", "a supported entry must name its corpus font"))
                 if (entry.family == null) violations.add(entry.violation("supported-missing-family", "a supported entry must name its scene family"))
                 if (entry.frame == null) violations.add(entry.violation("supported-missing-frame", "a supported entry must name its frame policy"))
+                if (entry.route == null) {
+                    violations.add(entry.violation("supported-missing-route", "a supported entry must name the platform route its scene needs"))
+                }
                 if (entry.tables.isEmpty()) violations.add(entry.violation("supported-without-tables", "a supported entry must claim the tables it exercises"))
             }
 
             is CatalogStatus.ExpectedRejection, is CatalogStatus.OutOfScope -> {
-                if (entry.family != null || entry.frame != null) {
+                if (entry.family != null || entry.frame != null || entry.route != null) {
                     violations.add(entry.violation("non-scene-carries-scene-fields", "${entry.id} declares scene fields but produces no scene"))
                 }
             }
 
             is CatalogStatus.NotYet -> {
-                if (entry.family != null || entry.frame != null) {
+                if (entry.family != null || entry.frame != null || entry.route != null) {
                     violations.add(entry.violation("non-scene-carries-scene-fields", "${entry.id} declares scene fields but produces no scene"))
                 }
                 if (entry.status.currentBehavior != null && entry.font == null) {

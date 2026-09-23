@@ -13,6 +13,7 @@ kotlin {
         }
         jvmTest.dependencies {
             implementation(project(":kalligraphie"))
+            implementation(project(":kalligraphie:conformance"))
             implementation(project(":kalligraphie:raster-cpu"))
             implementation(project(":kalligraphie:layout"))
             implementation(project(":kalligraphie:shaping"))
@@ -23,6 +24,11 @@ kotlin {
         }
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
+            // The harness is shared, not duplicated: one copy of the portable scenes, of the
+            // verification and of the ratchets compiles into every test target that can run it.
+            kotlin.srcDir("src/sharedTest/kotlin")
+            // The class-path fixture reader is the JVM family's implementation of the corpus seam.
+            kotlin.srcDir("src/classpathTest/kotlin")
         }
     }
 }

@@ -184,7 +184,3 @@ internal fun colourBitmapProfile(): BitmapProfile = BitmapProfile(
         maxTotalDecodedBytes = 16_384,
     ),
 )
-
-internal fun fixtureBytes(path: String): ByteArray =
-    checkNotNull(object {}.javaClass.getResourceAsStream(path)) { "fixture resource $path is missing" }
-        .use { input -> input.readBytes() }

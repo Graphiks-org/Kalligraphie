@@ -4,6 +4,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 
 class GoldenDumpRunnerTest {
@@ -20,7 +21,7 @@ class GoldenDumpRunnerTest {
         assertTrue(!directory.normalize().startsWith(repositoryRoot()), "the dump output must be outside the repository")
         Files.createDirectories(directory)
 
-        for (entry in JvmGoldenSceneCatalog.entries()) {
+        for (entry in GoldenSceneCatalog.entries()) {
             require(entry.scene.id.none { character -> character == '/' || character == '\\' }) {
                 "A scene id must not contain a path separator: ${entry.scene.id}"
             }

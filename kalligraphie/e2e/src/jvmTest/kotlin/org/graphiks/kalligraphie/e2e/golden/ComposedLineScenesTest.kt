@@ -6,21 +6,23 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.e2e.PixelFormat
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 
 class ComposedLineScenesTest {
     @Test
     fun composesALatinLine() {
-        val first = ComposedLineScenes.line(text = "Kalligraphie", language = "en")
+        val first = ComposedLineScenes.line(E2eTestEnvironment.corpus, text = "Kalligraphie", language = "en")
         assertEquals(PixelFormat.ALPHA_8, first.format)
         assertTrue(first.width > 0 && first.height > 0, "a composed line must contain ink")
-        val second = ComposedLineScenes.line(text = "Kalligraphie", language = "en")
+        val second = ComposedLineScenes.line(E2eTestEnvironment.corpus, text = "Kalligraphie", language = "en")
         assertContentEquals(first.copyCanonicalBytes(), second.copyCanonicalBytes())
     }
 
     @Test
     fun composesAMixedLineUsingEveryFace() {
-        val latin = ComposedLineScenes.line(text = "Kalligraphie", language = "en")
+        val latin = ComposedLineScenes.line(E2eTestEnvironment.corpus, text = "Kalligraphie", language = "en")
         val mixed = ComposedLineScenes.line(
+            E2eTestEnvironment.corpus,
             text = "Kalligraphie — العربية — देवनागरी",
             language = "en",
             requiredFaces = 3,
@@ -32,11 +34,13 @@ class ComposedLineScenesTest {
     @Test
     fun composesAnArabicLineRightToLeft() {
         val first = ComposedLineScenes.line(
+            E2eTestEnvironment.corpus,
             text = "الخط العربي",
             language = "ar",
             baseDirection = BaseDirection.RIGHT_TO_LEFT,
         )
         val second = ComposedLineScenes.line(
+            E2eTestEnvironment.corpus,
             text = "الخط العربي",
             language = "ar",
             baseDirection = BaseDirection.RIGHT_TO_LEFT,

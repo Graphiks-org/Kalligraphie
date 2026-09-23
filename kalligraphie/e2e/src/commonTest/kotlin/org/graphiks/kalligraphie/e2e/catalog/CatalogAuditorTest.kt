@@ -8,13 +8,16 @@ import org.graphiks.kalligraphie.e2e.GoldenSceneFamily
 
 class CatalogAuditorTest {
     @Test
-    fun aSupportedEntryNeedsAFontAFamilyAndAFrame() {
+    fun aSupportedEntryNeedsAFontAFamilyAFrameAndARoute() {
         val violations = entryViolations(
             listOf(
                 entry(id = "outline.glyf", status = CatalogStatus.Supported("abc1234"), tables = setOf("cmap")),
             ),
         )
-        assertEquals(setOf("supported-missing-font", "supported-missing-family", "supported-missing-frame"), violations.map { it.rule }.toSet())
+        assertEquals(
+            setOf("supported-missing-font", "supported-missing-family", "supported-missing-frame", "supported-missing-route"),
+            violations.map { it.rule }.toSet(),
+        )
     }
 
     @Test
@@ -33,6 +36,7 @@ class CatalogAuditorTest {
                     font = CorpusKey("liberation"),
                     family = GoldenSceneFamily.GLYPH_OUTLINE,
                     frame = SceneFramePolicy.Pinned(10, 10),
+                    route = CatalogRoute.PORTABLE_GLYPH,
                 ),
             ),
         )
@@ -48,6 +52,20 @@ class CatalogAuditorTest {
                     status = CatalogStatus.ExpectedRejection(CatalogStage.DECODE, "font.sfnt.truncated"),
                     font = CorpusKey("liberation"),
                     family = GoldenSceneFamily.GLYPH_OUTLINE,
+                ),
+            ),
+        )
+        assertEquals(setOf("non-scene-carries-scene-fields"), violations.map { it.rule }.toSet())
+    }
+
+    @Test
+    fun aNotYetEntryMustNotCarryAPlatformRoute() {
+        val violations = entryViolations(
+            listOf(
+                entry(
+                    id = "metrics.vvar-real-font",
+                    status = CatalogStatus.NotYet(trackingIssue = "spec:§5 metrics", currentBehavior = null, unpinnedReason = UnpinnedReason.NO_REAL_FONT_KNOWN),
+                    route = CatalogRoute.PARAGRAPH_LAYOUT,
                 ),
             ),
         )
@@ -98,6 +116,7 @@ class CatalogAuditorTest {
         font = CorpusKey("liberation"),
         family = GoldenSceneFamily.GLYPH_OUTLINE,
         frame = SceneFramePolicy.Pinned(10, 10),
+        route = CatalogRoute.PORTABLE_GLYPH,
         tables = setOf("cmap"),
     )
 
@@ -108,6 +127,7 @@ class CatalogAuditorTest {
         font: CorpusKey? = null,
         family: GoldenSceneFamily? = null,
         frame: SceneFramePolicy? = null,
+        route: CatalogRoute? = null,
         tables: Set<String> = emptySet(),
     ) = CatalogEntry(
         id = id,
@@ -117,6 +137,7 @@ class CatalogAuditorTest {
         status = status,
         family = family,
         frame = frame,
+        route = route,
         tables = tables,
     )
 

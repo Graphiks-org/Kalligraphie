@@ -8,7 +8,8 @@ import org.graphiks.kalligraphie.e2e.GoldenOrientation
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.PixelFormat
 import org.graphiks.kalligraphie.e2e.golden.GoldenDumpWriter
-import org.graphiks.kalligraphie.e2e.golden.JvmGoldenSceneCatalog
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
+import org.graphiks.kalligraphie.e2e.golden.GoldenSceneCatalog
 
 /**
  * Pins the orientation contract the dumps rest on.
@@ -35,10 +36,10 @@ class SceneOrientationTest {
     @Test
     fun everySceneDeclaresTheOrientationOfItsProducer() {
         val misplaced = LinkedHashMap<String, String>()
-        for ((entryId, renderer) in SceneRenderers.byId) {
+        for ((entryId, renderer) in E2eTestEnvironment.renderers) {
             val sceneId = renderer.sceneId ?: entryId
             val expected = if (sceneId in designOrientedScenes) GoldenOrientation.DESIGN else GoldenOrientation.IMAGE
-            val actual = rendered(renderer.render(), sceneId).orientation
+            val actual = rendered(renderer.render(E2eTestEnvironment.corpus), sceneId).orientation
             if (actual != expected) misplaced[sceneId] = "$actual, expected $expected"
         }
         assertTrue(misplaced.isEmpty(), "scenes declare the wrong orientation: $misplaced")
@@ -64,7 +65,10 @@ class SceneOrientationTest {
     }
 
     private fun renderedScene(sceneId: String): GoldenImage =
-        rendered(JvmGoldenSceneCatalog.entries().single { entry -> entry.scene.id == sceneId }.render(), sceneId)
+        rendered(
+            GoldenSceneCatalog.entries().single { entry -> entry.scene.id == sceneId }.render(),
+            sceneId,
+        )
 
     private fun rendered(outcome: GoldenRenderOutcome, sceneId: String): GoldenImage = when (outcome) {
         is GoldenRenderOutcome.Rendered -> outcome.image

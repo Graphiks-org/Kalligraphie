@@ -21,6 +21,15 @@ public data class CatalogEntry(
     public val tables: Set<String> = emptySet(),
     /** Manifest route of the generated scene; set exactly for [CatalogStatus.Supported]. */
     public val family: GoldenSceneFamily? = null,
+    /**
+     * Platform route the scene needs; set exactly for [CatalogStatus.Supported].
+     *
+     * The entry's half of a two-way check: its renderer declares the same route and the harness
+     * refuses a disagreement, so an entry cannot claim a route its scene does not use. The declared
+     * route is what decides whether a platform verifies this scene or justifies skipping it against
+     * its own capability matrix.
+     */
+    public val route: CatalogRoute? = null,
     /** Frame policy of the generated scene; set exactly for [CatalogStatus.Supported]. */
     public val frame: SceneFramePolicy? = null,
     /**

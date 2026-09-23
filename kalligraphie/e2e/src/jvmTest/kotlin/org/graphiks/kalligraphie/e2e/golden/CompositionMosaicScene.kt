@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.e2e.golden
 
+import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
@@ -68,11 +69,12 @@ internal object CompositionMosaicScene {
     private const val MULTI_SCRIPT = "Ελληνικά — العربية — देवनागरी"
 
     /** Renders the mosaic: seven bands, one colour canvas, one shared left margin. */
-    fun mosaic(): GoldenImage {
+    fun mosaic(corpus: FixtureCorpus): GoldenImage {
         val bands = ArrayList<Band>()
         // The one family carrying a full alphabet renders the word, laid out and shaped by the facade.
         bands += Band.coverage(
             ComposedLineScenes.placeLine(
+                corpus = corpus,
                 text = WORD,
                 language = "en",
                 requiredFaces = 1,
@@ -81,10 +83,11 @@ internal object CompositionMosaicScene {
         )
         // The two converted fixtures carry a single glyph each, so each contributes that letter: the
         // band still shows the decoder, while the word is what only the full family can lay out.
-        bands += Band.coverage(listOf(glyphAt(CFF_LIBERATION)))
-        bands += Band.coverage(listOf(glyphAt(CFF2_LIBERATION)))
+        bands += Band.coverage(listOf(glyphAt(corpus, CFF_LIBERATION)))
+        bands += Band.coverage(listOf(glyphAt(corpus, CFF2_LIBERATION)))
         bands += Band.coverage(
             ComposedLineScenes.placeLine(
+                corpus = corpus,
                 text = MULTI_SCRIPT,
                 language = "en",
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -92,7 +95,7 @@ internal object CompositionMosaicScene {
                 fontPaths = listOf(LIBERATION, AMIRI, NOTO_DEVANAGARI),
             ),
         )
-        val styles = styleCells()
+        val styles = styleCells(corpus)
         val light = coverageOf(styles.first())
         val heavy = coverageOf(styles.last())
         check(heavy > light) {
@@ -100,13 +103,13 @@ internal object CompositionMosaicScene {
                 "wght ${STYLE_WEIGHTS.first()}: the variation did not reach the outlines"
         }
         bands += Band.style(styles)
-        val paint = emojiPaint()
+        val paint = emojiPaint(corpus)
         check(hasChroma(paint)) {
             "the colour band carries no chroma: the COLR v0 paint rasterised to grey, so the mosaic " +
                 "would show a silhouette where the catalogue expects colour"
         }
         bands += Band.colour(paint)
-        bands += Band.strike(bitmapStrike())
+        bands += Band.strike(bitmapStrike(corpus))
         return compose(bands)
     }
 
@@ -204,8 +207,9 @@ internal object CompositionMosaicScene {
      * A Latin variable family with a full alphabet is deliberately left to the weight ladder, which
      * renders text; here the point is that the *same* image carries several styles at once.
      */
-    private fun styleCells(): List<List<ComposedLineScenes.PlacedGlyph>> = STYLE_WEIGHTS.map { weight ->
+    private fun styleCells(corpus: FixtureCorpus): List<List<ComposedLineScenes.PlacedGlyph>> = STYLE_WEIGHTS.map { weight ->
         ComposedLineScenes.placeLine(
+            corpus = corpus,
             text = "A",
             language = "en",
             requiredFaces = 1,
@@ -238,17 +242,17 @@ internal object CompositionMosaicScene {
     }
 
     /** Rasterises the capital A of [path] at 64 pixels per em, on its own glyph origin. */
-    private fun glyphAt(path: String): ComposedLineScenes.PlacedGlyph =
-        openOutlineFixture(fixtureBytes(path)).use { fixture ->
+    private fun glyphAt(corpus: FixtureCorpus, path: String): ComposedLineScenes.PlacedGlyph =
+        openOutlineFixture(corpus.bytes(path)).use { fixture ->
             val image = assertIs<RasterResult.Success<A8Image>>(
                 GlyphRasterizer.rasterizeOutline(fixture.outlineOf(0x41), OutlineRasterRequest(pixelsPerEm = 64.0)),
             ).value
             ComposedLineScenes.PlacedGlyph(image = image, penX = 0, baselineY = 0)
         }
 
-    /** The U+1F600 paint of the COLR v0 emoji family, rasterised at 64 pixels per em. */    private fun emojiPaint(): Rgba8Image =
+    /** The U+1F600 paint of the COLR v0 emoji family, rasterised at 64 pixels per em. */    private fun emojiPaint(corpus: FixtureCorpus): Rgba8Image =
         openRenderableFixture(
-            bytes = fixtureBytes(EMOJI_TWO_COLR_V0),
+            bytes = corpus.bytes(EMOJI_TWO_COLR_V0),
             requirements = paintRequirements(),
             renderVariant = FontRenderVariantSnapshot(cpalPaletteIndex = 0),
         ).use { fixture ->
@@ -264,9 +268,9 @@ internal object CompositionMosaicScene {
         }
 
     /** The U+1F600 CBDT strike, at the size the strike really is: this route does not scale it. */
-    private fun bitmapStrike(): Rgba8Image =
+    private fun bitmapStrike(corpus: FixtureCorpus): Rgba8Image =
         openRenderableFixture(
-            bytes = fixtureBytes(SKIA_CBDT),
+            bytes = corpus.bytes(SKIA_CBDT),
             requirements = colourBitmapRequirements(),
         ).use { fixture ->
             assertIs<RasterResult.Success<Rgba8Image>>(
