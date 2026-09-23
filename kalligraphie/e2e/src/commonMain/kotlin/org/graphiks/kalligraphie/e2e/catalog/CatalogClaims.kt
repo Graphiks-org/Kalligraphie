@@ -10,10 +10,12 @@ package org.graphiks.kalligraphie.e2e.catalog
  */
 public object CatalogClaims {
     /**
-     * Key of the allowlist entry that applies to every corpus family, so a structural table is not
-     * excused once per family.
+     * The wildcard key, read in two positions. As the top-level key of `allowUnclaimed` it names the
+     * entry that applies to every corpus family, so a structural table is not excused once per
+     * family; inside one family's entry it excuses that family whole, and says why the family stays
+     * outside the claimed perimeter.
      */
-    private const val STRUCTURAL_TABLES_KEY = "*"
+    private const val WILDCARD_KEY = "*"
 
     /** The one reason the structural tables are excused, stated once. */
     private const val STRUCTURAL_REASON =
@@ -22,6 +24,74 @@ public object CatalogClaims {
     /** Tables every SFNT carries and no technology owns; listed in the conventional sfnt order. */
     private val STRUCTURAL_TABLES: List<String> =
         listOf("cmap", "head", "hhea", "hmtx", "maxp", "name", "post", "OS/2")
+
+    /** The reason the outline tables of the sbix family are excused, shared by `glyf` and `loca`. */
+    private const val SBIX_OUTLINES_REASON =
+        "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the " +
+            "sbix route does not require glyf, so this family's outlines are carried but never read"
+
+    /** The reason the outline tables of the COLR v1 fixture are excused, shared by `glyf` and `loca`. */
+    private const val REJECTED_FIXTURE_OUTLINES_REASON =
+        "the colour axis pins this fixture as rejected at face resolution, the CPU compositor " +
+            "refusing GlyphClip, so no catalogued scene ever decodes its outlines"
+
+    /**
+     * Tables a family an entry does reference really carries while no catalogued scene reads them,
+     * keyed by corpus key. Each reason names the catalogued scene that stops short of the table, so
+     * the excuse reads as a decision rather than as an omission.
+     *
+     * Declared before [unclaimedAllowlist], which reads it while the object initialises.
+     */
+    private val UNREAD_TABLES: Map<String, Map<String, String>> = mapOf(
+        "bungee-color" to mapOf(
+            "GPOS" to "no catalogued scene shapes text with this family: the colour sheet resolves " +
+                "code points through cmap and paints the COLR graph, never consulting pair positioning",
+            "GSUB" to "no catalogued scene shapes text with this family: the colour sheet never " +
+                "selects a substitution, so its locl and stylistic-set lookups carry no expectation",
+        ),
+        "emoji-two-colr-v0" to mapOf(
+            "GSUB" to "no catalogued scene shapes text with this family: the emoji sheets resolve " +
+                "code points through cmap and paint the COLR graph, never applying ccmp",
+        ),
+        "kalligraphie-var-colr" to mapOf(
+            "glyf" to REJECTED_FIXTURE_OUTLINES_REASON,
+            "loca" to REJECTED_FIXTURE_OUTLINES_REASON,
+        ),
+        "liberation" to mapOf(
+            "kern" to "legacy pair-kerning records, every one of the 908 reproduced by the GPOS " +
+                "kerning the composed lines apply; no catalogued scene reads the redundant table",
+        ),
+        "skia-sbix" to mapOf(
+            "glyf" to SBIX_OUTLINES_REASON,
+            "loca" to SBIX_OUTLINES_REASON,
+        ),
+    )
+
+    /**
+     * Families no catalog entry references at all, each with the reason it stands outside the
+     * claimed perimeter. The lint reads such an entry as one excuse for the whole family, so no
+     * table of these families is left unaccounted for.
+     *
+     * Declared before [unclaimedAllowlist], which reads it while the object initialises.
+     */
+    private val UNREFERENCED_FAMILIES: Map<String, String> = mapOf(
+        "cff2-variable" to "synthetic variable CFF 2 fixture of the CFF journey and the scaler's " +
+            "variation tests; the CFF 2 outline expectation is pinned on cff2-liberation, and no " +
+            "catalogued scene references this family",
+        "dejavu" to "real DejaVu Sans, the default wide-coverage face of the layout module's " +
+            "paragraph fixtures; no catalogued scene references this family",
+        "gdef-kern" to "minimal GDEF/GPOS caret fixture of the layout and shaping suites; no " +
+            "catalogued scene references this family",
+        "liberation-amiri-collection" to "Liberation + Amiri TrueType collection, the multi-face " +
+            "container fixture of the platform registry suites; no catalogued scene references this family",
+        "noto-sans-jp" to "subset variable JP fixture whose vertical advances the shaping module " +
+            "cross-checks; no catalogued scene references this family",
+        "skia-colr-v1" to "static COLR v1 fixture with transforms and gradients, read by the colour " +
+            "representation tests; the color axis pins COLR v1 on the synthetic variable fixture, " +
+            "and no catalogued scene uses the Skia file",
+        "twemoji-svginot-glyph5" to "SVG-in-OpenType subset read by the glyph-representation suite; " +
+            "no catalogued scene renders an SVG glyph, so the family stays outside the claimed perimeter",
+    )
 
     /**
      * Tables an entry is allowed to leave unclaimed, with the reason, keyed by corpus key.
@@ -34,12 +104,17 @@ public object CatalogClaims {
      * checks, so a claimed table stays claimed and the merged reason is simply not needed.
      *
      * Another key lands here only after the lint of task 12 named the table, never in advance.
+     * [UNREAD_TABLES] holds the tables a referenced family carries and no catalogued scene reads;
+     * [UNREFERENCED_FAMILIES] holds the families no entry references, each excused whole by a
+     * wildcard reason of its own.
      *
-     * Declared after the structural tables it reads, because an object initialises its properties
-     * in declaration order.
+     * Declared after the structural tables and the family excuses it reads, because an object
+     * initialises its properties in declaration order.
      */
     public val unclaimedAllowlist: Map<String, Map<String, String>> =
-        mapOf(STRUCTURAL_TABLES_KEY to STRUCTURAL_TABLES.associateWith { STRUCTURAL_REASON })
+        mapOf(WILDCARD_KEY to STRUCTURAL_TABLES.associateWith { STRUCTURAL_REASON }) +
+            UNREAD_TABLES +
+            UNREFERENCED_FAMILIES.mapValues { (_, reason) -> mapOf(WILDCARD_KEY to reason) }
 
     /**
      * Groups the claimed tables of [entries] by corpus key. The sets carry no guaranteed order: the

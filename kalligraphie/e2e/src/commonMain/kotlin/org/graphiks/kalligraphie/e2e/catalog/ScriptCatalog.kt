@@ -123,7 +123,7 @@ public object ScriptCatalog {
             font = font,
             status = CatalogStatus.Supported(sinceCommit),
             tags = tags,
-            tables = setOf("cmap", "GSUB", "GPOS"),
+            tables = setOf("cmap", "GSUB", "GPOS", "GDEF"),
             family = GoldenSceneFamily.COMPOSED_LINE,
             frame = SceneFramePolicy.Pinned(width = PINNED_FRAMES.getValue(scene).first, height = PINNED_FRAMES.getValue(scene).second),
         )

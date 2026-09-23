@@ -14,7 +14,7 @@ public object MetricsCatalog {
             font = CorpusKeys.KALLIGRAPHIE_VAR_VVAR,
             status = CatalogStatus.Supported(sinceCommit = "4b156eac"),
             tags = setOf("metrics:vvar", "auto-sized"),
-            tables = setOf("VVAR", "fvar", "vhea", "vmtx"),
+            tables = setOf("VVAR", "fvar", "vhea", "vmtx", "glyf", "loca"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
             frame = SceneFramePolicy.AutoSized(padding = 1),
         ),
