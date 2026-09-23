@@ -44,9 +44,13 @@ refuse un registre qui ne serait pas exactement ce que ces capacités impliquent
 
 La protection est gratuite sur la plateforme de référence : le `check` racine
 exécute `:kalligraphie:e2e:jvmTest` comme tout sous-projet, et le workflow de pull
-request existant couvre déjà `kalligraphie/**`. Les autres cibles sont exécutées là
-où elles le peuvent : `testAndroidHostTest` et `connectedAndroidDeviceTest` sur un
-émulateur, `iosSimulatorArm64Test` sur un runner macOS.
+request existant couvre déjà `kalligraphie/**`. Les autres cibles sont exécutées par
+`.github/workflows/golden-portability.yml` : la suite JVM sur les cinq architectures
+de runner que la bibliothèque livre, `testAndroidHostTest` et
+`connectedAndroidDeviceTest` sur un émulateur, et `iosSimulatorArm64Test` sur un
+runner macOS avec la suite portable du rastériseur. Une plateforme qui cesse de
+reproduire les empreintes committées échoue son propre job, et l'enregistrement
+n'est jamais regelé pour lui plaire.
 
 ## Quelles scènes chaque plateforme vérifie
 
