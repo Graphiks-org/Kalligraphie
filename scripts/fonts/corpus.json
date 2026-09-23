@@ -579,8 +579,8 @@
         {
           "path": "test-fixtures/fonts/skia-colr-v1/test_glyphs-glyf_colr_1.ttf.b64",
           "url": "https://github.com/google/skia/blob/90ce051cbbf81c5e27b272bac330f96c7f4c0441/resources/fonts/test_glyphs-glyf_colr_1.ttf",
-          "rawUrl": "https://raw.githubusercontent.com/google/skia/90ce051cbbf81c5e27b272bac330f96c7f4c0441/resources/fonts/test_glyphs-glyf_colr_1.ttf",
-          "fetchNote": null,
+          "rawUrl": null,
+          "fetchNote": "Download test_glyphs-glyf_colr_1.ttf from the cited Skia blob page at commit 90ce051cbbf81c5e27b272bac330f96c7f4c0441 (the unmodified 21,568-byte resource, SHA-256 72cb79b606c79bc49861094e25f442db0b24881504b29533bbe8ea75f3902e67), base64-encode it with 76-column line wrapping and a trailing newline, and verify the committed 29,139-byte envelope's SHA-256 84b8d05c7d69faa2702ed0b4977b9deee87f5c792d4e3aba795d119005fd8e17.",
           "revision": "90ce051cbbf81c5e27b272bac330f96c7f4c0441",
           "sha256": "84b8d05c7d69faa2702ed0b4977b9deee87f5c792d4e3aba795d119005fd8e17",
           "sizeBytes": 29139,

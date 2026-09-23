@@ -14,7 +14,24 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import fetch_fonts
 
 
-def manifest_with(path, sha256, size, license_id="OFL-1.1", license_file=None):
+# Sentinel: the family declares the licence file the corpus layout gives it, and the helper
+# writes that file under the temporary root so a healthy family really is healthy.
+DECLARED_LICENSE = object()
+
+
+def manifest_with(path, sha256, size, root=None, license_id="OFL-1.1", license_file=DECLARED_LICENSE):
+    """Builds a one-family manifest.
+
+    By default the family declares its own licence file and, when `root` is given, that file is
+    written there. Pass `license_file=None` to declare none, or an explicit path to point at a
+    file the test deliberately leaves absent.
+    """
+    if license_file is DECLARED_LICENSE:
+        license_file = "test-fixtures/fonts/tiny/LICENSE.txt"
+        if root is not None:
+            declared = root / license_file
+            declared.parent.mkdir(parents=True, exist_ok=True)
+            declared.write_text("SIL Open Font License 1.1 (test fixture)\n", encoding="utf-8")
     return {
         "schema": "kalligraphie.font-corpus/v1",
         "families": [
@@ -52,23 +69,23 @@ class CheckFilesTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_a_matching_hash_and_size_pass(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
         self.assertEqual([], fetch_fonts.check_files(manifest, self.root))
 
     def test_a_wrong_hash_is_reported(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", "0" * 64, len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", "0" * 64, len(self.bytes), root=self.root)
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
         self.assertIn("sha256", errors[0])
 
     def test_a_wrong_size_is_reported(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes) + 1)
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes) + 1, root=self.root)
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
         self.assertIn("size", errors[0])
 
     def test_a_missing_file_is_reported(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/absent.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/absent.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
         self.assertIn("missing", errors[0])
@@ -78,6 +95,7 @@ class CheckFilesTest(unittest.TestCase):
             "test-fixtures/fonts/tiny/tiny.ttf",
             hashlib.sha256(self.bytes).hexdigest(),
             len(self.bytes),
+            root=self.root,
             license_file="test-fixtures/fonts/tiny/LICENSE.txt",
         )
         errors = fetch_fonts.check_files(manifest, self.root)
@@ -89,6 +107,7 @@ class CheckFilesTest(unittest.TestCase):
             "test-fixtures/fonts/tiny/tiny.ttf",
             hashlib.sha256(self.bytes).hexdigest(),
             len(self.bytes),
+            root=self.root,
             license_id="Proprietary-EULA",
         )
         errors = fetch_fonts.check_files(manifest, self.root)
@@ -96,32 +115,49 @@ class CheckFilesTest(unittest.TestCase):
         self.assertIn("Proprietary-EULA", errors[0])
 
     def test_a_synthetic_family_without_a_builder_blocks(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
         manifest["families"][0]["synthetic"] = True
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
         self.assertIn("builtBy", errors[0])
 
     def test_a_real_family_without_a_url_blocks(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
         manifest["families"][0]["files"][0]["url"] = None
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
         self.assertIn("url", errors[0])
 
     def test_a_real_family_without_a_raw_url_or_a_note_blocks(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
         manifest["families"][0]["files"][0]["rawUrl"] = None
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual(1, len(errors))
         self.assertIn("fetchNote", errors[0])
 
     def test_a_real_family_with_a_fetch_note_instead_of_a_raw_url_is_accepted(self):
-        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes))
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
         manifest["families"][0]["files"][0]["rawUrl"] = None
         manifest["families"][0]["files"][0]["fetchNote"] = "release archive; unzip manually"
         errors = fetch_fonts.check_files(manifest, self.root)
         self.assertEqual([], errors)
+
+    def test_a_real_family_that_declares_no_license_file_blocks(self):
+        manifest = manifest_with(
+            "test-fixtures/fonts/tiny/tiny.ttf",
+            hashlib.sha256(self.bytes).hexdigest(),
+            len(self.bytes),
+            root=self.root,
+            license_file=None,
+        )
+        errors = fetch_fonts.check_files(manifest, self.root)
+        self.assertEqual(1, len(errors))
+        self.assertIn("licenseFile", errors[0])
+
+    def test_the_declared_license_file_is_a_real_file_and_passes(self):
+        manifest = manifest_with("test-fixtures/fonts/tiny/tiny.ttf", hashlib.sha256(self.bytes).hexdigest(), len(self.bytes), root=self.root)
+        self.assertTrue((self.root / manifest["families"][0]["licenseFile"]).exists())
+        self.assertEqual([], fetch_fonts.check_files(manifest, self.root))
 
 
 class ManifestShapeTest(unittest.TestCase):
@@ -163,7 +199,7 @@ class FetchTransportTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def manifest_for(self, path, sha256, size, raw_url="https://example.invalid/raw/tiny.ttf", fetch_note=None, synthetic=False, built_by=None):
-        manifest = manifest_with(path, sha256, size)
+        manifest = manifest_with(path, sha256, size, root=self.root)
         record = manifest["families"][0]["files"][0]
         record["rawUrl"] = raw_url
         record["fetchNote"] = fetch_note

@@ -115,15 +115,18 @@ anchor even when its bytes cannot be re-downloaded.
 
 `rawUrl` is recorded when a single unauthenticated `GET` is enough to obtain the file. The payload
 may be encoded — gitiles serves base64 — in which case a fetcher must decode it before comparing the
-digest; that is a transport exception, not a licence to rewrite the URL. The one URL rewrite this
-manifest performs is the mechanical counterpart of a GitHub `/blob/<revision>/` page,
+digest; that is a transport exception, not a licence to rewrite the URL, and the pinned digest is
+what accepts or rejects the decoding. A payload that would have to be *re-encoded* to match a
+committed envelope is a different matter: no transport serves that envelope, so the file carries a
+`fetchNote` instead and no `rawUrl` (`skia-colr-v1`, below). The one URL rewrite this manifest
+performs is the mechanical counterpart of a GitHub `/blob/<revision>/` page,
 `https://raw.githubusercontent.com/<org>/<repo>/<revision>/<path>`; it is applied to nothing else and
 is never guessed from a page that is not a blob page. Every `rawUrl` in this manifest has been
-fetched and checked: six return the committed bytes verbatim, and the two that do not are described
-below.
+fetched and checked: six return the committed bytes verbatim, and the seventh, `skia-ebdt-format1`,
+is served base64 and is described below.
 
 `fetchNote` carries the manual recipe instead of `rawUrl` — one sentence naming the archive, the
-member path, the transform and the digest — for the five families whose committed file is not a plain
+member path, the transform and the digest — for the six families whose committed file is not a plain
 `GET` away:
 
 | Family | Why |
@@ -132,26 +135,30 @@ member path, the transform and the digest — for the five families whose commit
 | `liberation` | The TTF is a member of a GitHub release attachment tarball. |
 | `noto-devanagari` | The TTF is a member of a release zip. |
 | `noto-sans-jp` | The committed file is a `pyftsubset` derivative of the pinned source. |
+| `skia-colr-v1` | A plain `GET` returns the font itself, but the committed artifact is its `.b64` envelope: reproducing it means re-encoding with 76-column wrapping, which `--fetch` refuses to guess. |
 | `twemoji-svginot-glyph5` | A release zip, then a subset, then base64 encoding; the release page is recorded as `url`, and no URL serves the font's bytes. |
 
-Two `rawUrl`s do not return the committed bytes verbatim, and the acquisition code must handle each:
+One `rawUrl` does not return the committed bytes verbatim, and the acquisition code must handle it:
 
 - `skia-ebdt-format1`: gitiles serves the payload base64 (`?format=TEXT`). The payload hashes to
   `ddae4f9b32e11fba5e461b8c9eedd06a9534e187285931c51fb1e56d16c729f9`; base64-decoded it is the
   committed font, `e99cebed4d9421bc89964b9dc6a3bedfc6a286029d64336a07844708cce76274`. A fetcher must
-  decode before comparing the digest.
-- `skia-colr-v1`: the `rawUrl` returns the font, but the committed artifact is the `.b64` envelope of
-  that font, so the recorded `sha256` and `sizeBytes` are the encoding's. A fetcher that starts from
-  the decoded font must re-encode it and compare that digest, not the font's own (`72cb79b6…`). The
-  same caveat applies to the `.base64` artifact of `twemoji-svginot-glyph5`, which carries no
-  `rawUrl`: its `fetchNote` holds the encoding step.
+  decode before comparing the digest, and it may only try these two readings of one payload — the
+  payload verbatim, then its base64 decoding — with the pinned digest deciding between them.
+
+The converse case no longer carries a `rawUrl`: the page of `skia-colr-v1` serves the 21,568-byte
+font, while the committed artifact is the `.b64` envelope of that font (29,139 bytes,
+`84b8d05c…`), so the recorded `sha256` and `sizeBytes` are the encoding's and reproducing the
+committed bytes would mean re-encoding the font with 76-column wrapping and a trailing newline. The
+same caveat applies to the `.base64` artifact of `twemoji-svginot-glyph5`, which carries no `rawUrl`
+either and whose `fetchNote` holds the encoding step.
 
 Contract for `fetch_fonts.py`, which the manifest's data imposes: `rawUrl` and `fetchNote` are
 alternatives. A file with a `fetchNote` and no `rawUrl` cannot be re-downloaded by a plain `GET`, so
 `--check` must not report it as a non-synthetic file without a `rawUrl` and `--fetch` must skip it,
-printing the note; a non-synthetic file with neither field is an error. Five files are in that
+printing the note; a non-synthetic file with neither field is an error. Six files are in that
 position, all of them upstream distributions: `dejavu`, `liberation`, `noto-devanagari`,
-`noto-sans-jp` and `twemoji-svginot-glyph5`.
+`noto-sans-jp`, `skia-colr-v1` and `twemoji-svginot-glyph5`.
 
 ## Full fonts, never subsampled
 

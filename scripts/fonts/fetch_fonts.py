@@ -69,9 +69,12 @@ def check_files(manifest: dict, root: pathlib.Path) -> list[str]:
         if family.get("synthetic") and not family.get("builtBy"):
             errors.append(f"{key}: a synthetic family must name its builtBy script")
         if license_id in ALLOWED_LICENSES:
-            # A licence file that is declared must exist; `--provenance` re-checks it too.
+            # A redistributed font ships its licence: the declaration is mandatory, and the
+            # file it names must exist. `--provenance` re-checks the same field.
             license_file = family.get("licenseFile")
-            if license_file and not (root / license_file).exists():
+            if not license_file:
+                errors.append(f"{key}: no licenseFile declared")
+            elif not (root / license_file).exists():
                 errors.append(f"{key}: license file {license_file} is missing")
         for record in family["files"]:
             path = root / record["path"]
