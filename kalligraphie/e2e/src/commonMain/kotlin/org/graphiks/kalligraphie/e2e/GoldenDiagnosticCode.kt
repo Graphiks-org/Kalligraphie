@@ -14,6 +14,9 @@ public enum class GoldenDiagnosticCode(
     /** A scene's declared frame and its rendered bounds disagree. */
     SCENE_BOUNDS_INVALID("e2e.scene-bounds-invalid"),
 
+    /** An auto-sized scene measured no ink at all. */
+    BLANK_SCENE("e2e.blank-scene"),
+
     /** A catalogued scene has no manifest entry. */
     MANIFEST_MISSING_ENTRY("e2e.manifest-missing-entry"),
 
