@@ -3118,15 +3118,38 @@ class ExhaustivenessTest(unittest.TestCase):
         self.assertEqual(1, len(violations))
         self.assertIn("SVG", violations[0])
 
-    def test_a_table_both_claimed_and_allowlisted_is_reported(self):
+    def test_a_claimed_table_covered_by_an_excuse_is_accepted(self):
         violations = check_exhaustiveness.compare(
             key="tiny",
             real_tables={"cmap"},
             claimed={"cmap"},
-            allow_unclaimed={"cmap": "redundant"},
+            allow_unclaimed={"cmap": "structural excuse"},
         )
-        self.assertEqual(1, len(violations))
-        self.assertIn("both claimed and allowlisted", violations[0])
+        self.assertEqual([], violations)
+
+    def test_a_family_level_excuse_covers_every_unclaimed_table(self):
+        violations = check_exhaustiveness.compare(
+            key="tiny",
+            real_tables={"cmap", "COLR"},
+            claimed=set(),
+            allow_unclaimed={},
+            excuse_all=True,
+        )
+        self.assertEqual([], violations)
+
+    def test_the_global_excuses_merge_with_the_family_ones(self):
+        claims = {
+            "allowUnclaimed": {
+                "*": {"cmap": "structural"},
+                "tiny": {"COLR": "painted, never shaped", "*": "family out of scope"},
+            },
+        }
+        merged, excuse_all = check_exhaustiveness.merged_excuses(claims, "tiny")
+        self.assertEqual({"cmap": "structural", "COLR": "painted, never shaped"}, merged)
+        self.assertTrue(excuse_all)
+        merged_other, excuse_all_other = check_exhaustiveness.merged_excuses(claims, "other")
+        self.assertEqual({"cmap": "structural"}, merged_other)
+        self.assertFalse(excuse_all_other)
 
     def test_a_table_outside_the_significant_set_is_ignored(self):
         violations = check_exhaustiveness.compare(
@@ -3180,19 +3203,40 @@ SIGNIFICANT_TABLES = {
 }
 
 
-def compare(key: str, real_tables: set[str], claimed: set[str], allow_unclaimed: dict[str, str]) -> list[str]:
+def merged_excuses(claims: dict, key: str) -> tuple[dict[str, str], bool]:
+    """Returns this family's excuses merged with the global ones, and whether the whole family is excused.
+
+    The `*` key at the top level covers the tables every SFNT carries; the `*` key inside a family
+    covers a family no catalog entry references at all. A claimed table stays claimed whatever
+    excuse covers it.
+    """
+    global_excuses = claims["allowUnclaimed"].get("*", {})
+    family_excuses = claims["allowUnclaimed"].get(key, {})
+    merged = dict(global_excuses)
+    merged.update({table: reason for table, reason in family_excuses.items() if table != "*"})
+    return merged, "*" in family_excuses
+
+
+def compare(
+    key: str,
+    real_tables: set[str],
+    claimed: set[str],
+    allow_unclaimed: dict[str, str],
+    excuse_all: bool = False,
+) -> list[str]:
     """Compares the claimed tables of one font with the tables it really carries.
 
     [real_tables] may be wider than the significant set: anything outside it is ignored, so a
-    cosmetic table can never produce a violation.
+    cosmetic table can never produce a violation. A claimed table is accepted however it is
+    excused, which is what lets the global structural entry coexist with entries that do claim
+    `cmap` or `OS/2`.
     """
     violations: list[str] = []
     significant = real_tables & SIGNIFICANT_TABLES
     for table in sorted(significant):
-        if table in claimed and table in allow_unclaimed:
-            violations.append(f"{key}: {table} is both claimed and allowlisted")
-        elif table not in claimed and table not in allow_unclaimed:
-            violations.append(f"{key}: {table} is carried by the font and claimed nobody; claim it or allowlist it")
+        if table in claimed or excuse_all or table in allow_unclaimed:
+            continue
+        violations.append(f"{key}: {table} is carried by the font and claimed nobody; claim it or allowlist it")
     for table in sorted(claimed - real_tables):
         violations.append(f"{key}: {table} is claimed but the font does not carry it")
     return violations
