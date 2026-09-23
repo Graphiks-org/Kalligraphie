@@ -3355,14 +3355,23 @@ git commit -m "chore(e2e): lint the corpus tables against the catalog claims"
 
 ## Task 13: Job CI hors ligne et CHANGELOG
 
+> **Amendement du 2026-09-23 (propriétaire du dépôt) : le job CI décrit ci-dessous a été RETIRÉ.**
+> La CI ne porte que des concepts métier ; la comptabilité du corpus et le lint d'exhaustivité sont
+> des vérifications locales obligatoires. Le fichier `.github/workflows/font-corpus.yml` n'existe
+> pas dans la branche livrée, les scripts et leurs tests restent dans `scripts/fonts/`, et le
+> CHANGELOG comme le spec §4 ont été amendés en conséquence. Les étapes 1 et 2 ci-dessous sont donc
+> caduques ; seule la mise à jour du CHANGELOG a été conservée, sans mention de workflow. Les
+> commandes locales que tout changement de corpus doit exécuter sont documentées dans
+> `scripts/fonts/README.md` et dans le spec §4 (« Vérifications locales (hors CI) »).
+
 **Files:**
-- Create: `.github/workflows/font-corpus.yml`
+- Create: `.github/workflows/font-corpus.yml` (retiré — voir l'amendement ci-dessus)
 - Modify: `CHANGELOG.md`
 
 **Interfaces:**
 - Consumes: `scripts/fonts/fetch_fonts.py`, `scripts/fonts/check_exhaustiveness.py`,
   `scripts/fonts/tests/`.
-- Produces: le job `font-corpus` exécuté sur les PR touchant le corpus ou le catalogue.
+- Produces: les vérifications locales de corpus documentées (le job `font-corpus` n'est plus livré).
 
 - [ ] **Step 1: Write the workflow**
 

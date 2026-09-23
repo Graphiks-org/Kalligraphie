@@ -15,7 +15,10 @@ que Kalligraphie doit savoir consommer comme technologies de polices :
   **complètes** (pas de sous-échantillonnage) ;
 - **couvrant aussi le non-supporté au jour J** : le catalogue est la carte des attentes, pas
   seulement des réussites ;
-- **vérifié par la CI** : aucun trou silencieux, aucune dérive doc/code.
+- **vérifié mécaniquement** : aucun trou silencieux, aucune dérive doc/code. Les gardes qui portent
+  un concept métier (cliquet du catalogue, empreintes golden, fraîcheur de la matrice et des
+  revendications) tournent en CI ; la comptabilité du corpus et le lint d'exhaustivité sont des
+  vérifications locales obligatoires (voir §4).
 
 Le public est double : les mainteneurs (progression du support, cliquet anti-régression) et tout
 contributeur qui veut savoir « où en est Kalligraphie sur la technologie X, et quelle police la
@@ -194,19 +197,43 @@ Autorité unique côté outillage Python ; le modèle Kotlin s'y relie par la `C
 - (Re)génère et valide les `PROVENANCE.md` par famille (URL, révision, SHA-256, taille,
   licence, oracle fontTools/HarfBuzz) sur le modèle existant.
 - Mode `--check` : hors ligne, ne fait que vérifier hash + licence + fraîcheur
-  `PROVENANCE.md` (c'est ce que la CI appelle).
+  `PROVENANCE.md` (c'est le mode que le mainteneur appelle avant de committer).
 
-### Job CI `font-corpus.yml` (hors ligne)
+### Vérifications locales (hors CI)
 
-1. Re-hash des polices committées contre `corpus.json`.
-2. Validation des `PROVENANCE.md` (régénérés en temporaire, diff vide attendu).
-3. **Lint d'exhaustivité fontTools** : pour chaque police réelle du corpus, chaque table
-   « significative » portée doit être revendiquée par au moins une entrée du catalogue ou
-   figurer dans une allowlist explicite de non-revendication avec raison. Les revendications
-   sont exportées du modèle Kotlin (ex. génération d'un JSON `claimed-tables.json` par une
-   tâche Gradle, ou assertion directe côté test Kotlin contre un export fontTools committé —
-   le plan d'implémentation tranche le sens de la dépendance, l'important est qu'il n'y ait
-   qu'une seule liste de revendications : celle du modèle Kotlin).
+Décision du propriétaire du dépôt, consignée ici comme amendement daté du 2026-09-23 : **la CI ne
+porte que des concepts métier**. La comptabilité du corpus — hash, taille, licence, fraîcheur des
+`PROVENANCE.md` — et la correspondance entre les tables réellement portées et les revendications du
+catalogue restent des **commandes locales**, exécutées par le mainteneur avant de committer une
+modification du corpus. Aucun job ne les exécute, et le fichier
+`.github/workflows/font-corpus.yml` a été retiré de la branche.
+
+Ce que ce retrait laisse sans garde automatique, et pourquoi c'est assumé :
+
+- Une police re-pinnée sans mise à jour de son digest n'est plus signalée par un job — mais elle
+  fait échouer les tests métier : les empreintes golden pour les six familles que les scènes
+  utilisent, et les suites de shaping pour les autres, dont les assertions sont calibrées sur ces
+  fichiers.
+- Une licence hors allowlist, une taille ou un digest erronés dans le manifeste ne sont plus
+  bloquants — ce sont des erreurs de saisie du mainteneur, hors du périmètre d'un test de
+  comportement.
+- La correspondance tables réelles ↔ revendications du catalogue reste vérifiée par le script, mais
+  seulement quand on le lance. C'est le contrôle que ce dispositif tient le plus à conserver : il
+  rend le catalogue prenable en défaut. Il est donc documenté comme étape obligatoire de toute
+  modification de corpus dans `scripts/fonts/README.md`.
+
+Les procédures à lancer localement :
+
+1. `python3 scripts/fonts/fetch_fonts.py --check --provenance` — hash, taille, licences,
+   `licenseFile`, présence des `PROVENANCE.md`, règle `url` + (`rawUrl` xor `fetchNote`).
+2. `python3 -m unittest discover -s scripts/fonts/tests -v` — les règles ci-dessus et celles du
+   lint, dont la complétude du manifeste face à l'arborescence de `test-fixtures/fonts/`.
+3. `uv run --with fonttools==4.65.0 python scripts/fonts/check_exhaustiveness.py` —
+   **lint d'exhaustivité** : pour chaque police réelle du corpus, chaque table « significative »
+   portée doit être revendiquée par au moins une entrée du catalogue ou figurer dans une allowlist
+   explicite de non-revendication avec raison. Les revendications sont exportées du modèle Kotlin
+   (`claimed-tables.json`), qui reste l'unique autorité : une seule liste de revendications, celle
+   du modèle.
 4. Les tables « significatives » = liste fermée maintenue dans le lint (les tables purement
    cosmétiques/optionnelles non pertinentes pour Kalligraphie y sont exclues).
 
@@ -248,9 +275,9 @@ remplacé — l'entrée, elle, reste.
 | Situation | Détection | Conséquence |
 |---|---|---|
 | Entrée orpheline / id dupliqué / liaison sans entrée | `ExpectationCatalogRatchetTest` | échec `check` |
-| Hash divergent, licence absente, `PROVENANCE.md` périmé | `font-corpus.yml` (mode `--check`) | échec CI |
-| Table réelle portée et non revendiquée (hors allowlist) | lint fontTools | échec CI |
-| Matrice de doc non régénérée | CI (artefact pas à jour) | échec CI |
+| Hash divergent, licence absente, `PROVENANCE.md` périmé | `fetch_fonts.py --check --provenance` | erreur bloquante locale |
+| Table réelle portée et non revendiquée (hors allowlist) | lint fontTools | erreur bloquante locale |
+| Matrice de doc non régénérée | test de fraîcheur dans `check` (artefact pas à jour) | échec CI |
 | Comportement épinglé `NotYet` qui change | sonde | échec → flip de statut obligatoire |
 | Rejet typé qui disparaît ou change de code | sonde `ExpectedRejection` | échec CI |
 | URL morte / hash non conforme à l'acquisition | `fetch_fonts.py` | erreur bloquante locale |
@@ -273,7 +300,7 @@ TDD pour le modèle et le générateur (le comportement est défini avant l'impl
    (`Supported`). Zéro nouvelle police ; la régression visuelle est impossible par
    construction (mêmes empreintes).
 2. **Acquisition** : `corpus.json`, `fetch_fonts.py` (+ mode `--check`), migration des 19
-   familles, job CI `font-corpus.yml`, lint d'exhaustivité fontTools + export des
+   familles, lint d'exhaustivité fontTools + export des
    revendications.
 3. **Remplissage technologies** : nouvelles polices réelles des axes CONTAINER, OUTLINE,
    METRICS, VARIATION, COLOR, BITMAP + entrées `NotYet`/`OutOfScope` (STAT, woff/woff2,

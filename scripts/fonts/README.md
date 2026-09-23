@@ -174,6 +174,13 @@ No new subsampling may be introduced; the rule for a new fixture is the whole fo
 
 ## Commands
 
+**These checks are local obligations, not CI steps.** This repository's continuous integration
+carries business concepts — the catalog ratchet, the golden fingerprints and the freshness of the
+generated artifacts — while the corpus bookkeeping and the exhaustiveness lint stay on the
+maintainer's machine. Run all of the commands below before committing any change to
+`test-fixtures/fonts/`, to `corpus.json`, or to the catalog's claimed tables; nothing else will run
+them for you.
+
 Task 10 — acquisition and verification:
 
 ```sh

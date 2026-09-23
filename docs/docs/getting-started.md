@@ -17,8 +17,10 @@
 
 ## Verify the font corpus
 
-`scripts/fonts/corpus.json` describes every font committed under `test-fixtures/fonts/`. These checks
-run offline and never download a font:
+`scripts/fonts/corpus.json` describes every font committed under `test-fixtures/fonts/`. These
+checks are local obligations rather than CI steps — continuous integration here carries the catalog
+ratchet, the golden fingerprints and the freshness of the generated artifacts — and they run
+offline, never downloading a font:
 
 ```bash
 python3 scripts/fonts/fetch_fonts.py --check --provenance
@@ -26,8 +28,9 @@ python3 -m unittest discover -s scripts/fonts/tests -v
 uv run --with fonttools==4.65.0 python scripts/fonts/check_exhaustiveness.py
 ```
 
-`scripts/fonts/README.md` documents the manifest and the acquisition contract; `--fetch` is the only
-mode that downloads.
+Run them before committing any change to `test-fixtures/fonts/`, to `corpus.json`, or to the
+tables the catalog claims. `scripts/fonts/README.md` documents the manifest and the acquisition
+contract; `--fetch` is the only mode that downloads.
 
 ## Build the API reference and site
 
