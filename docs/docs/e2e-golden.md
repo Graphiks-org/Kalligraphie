@@ -38,9 +38,11 @@ other subproject, and the existing pull-request workflow already covers
 
 ## Scene catalog
 
-The catalog declares seventeen scenes across five families. Every scene is
-rendered through the public facade and the CPU rasterizer, then reduced to a
-single digest.
+Every scene is rendered through the public facade and the CPU rasterizer, then
+reduced to a single digest. The table below is an illustration of the five
+families, not the inventory: the generated [expectation catalog
+matrix](generated/e2e-catalog-matrix.md) lists every scene and is the only place
+where the catalog's counts appear.
 
 | Family | Scenes | Observable coverage | Format |
 | --- | --- | --- | --- |
