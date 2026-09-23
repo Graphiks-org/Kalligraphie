@@ -8,6 +8,8 @@ on:
       - 'settings.gradle.kts'
       - 'gradle/**'
       - 'gradlew'
+      - 'test-fixtures/**'
+      - 'docs/docs/generated/**'
       - '.github/workflows/font-tests.yml'
   push:
     branches: [master]
@@ -17,6 +19,8 @@ on:
       - 'settings.gradle.kts'
       - 'gradle/**'
       - 'gradlew'
+      - 'test-fixtures/**'
+      - 'docs/docs/generated/**'
       - '.github/workflows/font-tests.yml'
 
 permissions:
