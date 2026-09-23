@@ -16,6 +16,7 @@ public object BitmapCatalog {
             tags = setOf("scripts:emoji"),
             tables = setOf("EBLC", "EBDT"),
             family = GoldenSceneFamily.GLYPH_BITMAP,
+            sceneId = "glyph.bitmap.skia-ebdt-format1.u1F600.16",
             frame = SceneFramePolicy.Pinned(width = 13, height = 13),
             route = CatalogRoute.PORTABLE_GLYPH,
         ),

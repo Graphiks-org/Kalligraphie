@@ -16,6 +16,7 @@ public object OutlineCatalog {
             tags = setOf("smoke", "scripts:latin"),
             tables = setOf("cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "post", "OS/2"),
             family = GoldenSceneFamily.GLYPH_OUTLINE,
+            sceneId = "glyph.outline.liberation-sans.A.64",
             frame = SceneFramePolicy.Pinned(width = 43, height = 45),
             route = CatalogRoute.PORTABLE_GLYPH,
         ),

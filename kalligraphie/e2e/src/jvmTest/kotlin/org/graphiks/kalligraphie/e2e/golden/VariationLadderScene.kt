@@ -78,6 +78,6 @@ internal object VariationLadderScene {
     }
 
     /** Sums the coverage of one row of placed glyphs, the ink the ladder compares between weights. */
-    private fun coverageOf(row: List<ComposedLineScenes.PlacedGlyph>): Long =
+    private fun coverageOf(row: List<PlacedGlyph>): Long =
         row.sumOf { glyph -> glyph.image.copyPixels().sumOf { sample -> (sample.toInt() and 0xFF).toLong() } }
 }

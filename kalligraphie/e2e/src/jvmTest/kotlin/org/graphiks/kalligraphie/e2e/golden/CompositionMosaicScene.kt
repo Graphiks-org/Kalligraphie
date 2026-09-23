@@ -126,7 +126,7 @@ internal object CompositionMosaicScene {
 
         companion object {
             /** A band of coverage glyphs, drawn with the mosaic ink on their own baselines. */
-            fun coverage(glyphs: List<ComposedLineScenes.PlacedGlyph>): Band {
+            fun coverage(glyphs: List<PlacedGlyph>): Band {
                 val ink = glyphs.inkInCanvas() ?: error("a coverage band produced no ink")
                 return Band(ink) { canvas, shiftX, shiftY ->
                     glyphs.forEach { glyph ->
@@ -141,7 +141,7 @@ internal object CompositionMosaicScene {
             }
 
             /** A band of style cells, laid side by side with [CELL_GAP] between them. */
-            fun style(cells: List<List<ComposedLineScenes.PlacedGlyph>>): Band {
+            fun style(cells: List<List<PlacedGlyph>>): Band {
                 val boxes = cells.map { cell -> cell.inkInCanvas() ?: error("a style cell carries no ink") }
                 val baseline = boxes.maxOf { box -> box.maxY }
                 val placed = ArrayList<Placed>()
@@ -194,7 +194,7 @@ internal object CompositionMosaicScene {
 
     /** One style cell together with the offset that aligns it on the band's shared baseline. */
     private data class Placed(
-        val cell: List<ComposedLineScenes.PlacedGlyph>,
+        val cell: List<PlacedGlyph>,
         val cellX: Int,
         val cellY: Int,
     )
@@ -207,7 +207,7 @@ internal object CompositionMosaicScene {
      * A Latin variable family with a full alphabet is deliberately left to the weight ladder, which
      * renders text; here the point is that the *same* image carries several styles at once.
      */
-    private fun styleCells(corpus: FixtureCorpus): List<List<ComposedLineScenes.PlacedGlyph>> = STYLE_WEIGHTS.map { weight ->
+    private fun styleCells(corpus: FixtureCorpus): List<List<PlacedGlyph>> = STYLE_WEIGHTS.map { weight ->
         ComposedLineScenes.placeLine(
             corpus = corpus,
             text = "A",
@@ -242,12 +242,12 @@ internal object CompositionMosaicScene {
     }
 
     /** Rasterises the capital A of [path] at 64 pixels per em, on its own glyph origin. */
-    private fun glyphAt(corpus: FixtureCorpus, path: String): ComposedLineScenes.PlacedGlyph =
+    private fun glyphAt(corpus: FixtureCorpus, path: String): PlacedGlyph =
         openOutlineFixture(corpus.bytes(path)).use { fixture ->
             val image = assertIs<RasterResult.Success<A8Image>>(
                 GlyphRasterizer.rasterizeOutline(fixture.outlineOf(0x41), OutlineRasterRequest(pixelsPerEm = 64.0)),
             ).value
-            ComposedLineScenes.PlacedGlyph(image = image, penX = 0, baselineY = 0)
+            PlacedGlyph(image = image, penX = 0, baselineY = 0)
         }
 
     /** The U+1F600 paint of the COLR v0 emoji family, rasterised at 64 pixels per em. */    private fun emojiPaint(corpus: FixtureCorpus): Rgba8Image =
@@ -310,6 +310,6 @@ internal object CompositionMosaicScene {
     }
 
     /** Sums the coverage of one style cell, the ink the mosaic compares between weights. */
-    private fun coverageOf(cell: List<ComposedLineScenes.PlacedGlyph>): Long =
+    private fun coverageOf(cell: List<PlacedGlyph>): Long =
         cell.sumOf { glyph -> glyph.image.copyPixels().sumOf { sample -> (sample.toInt() and 0xFF).toLong() } }
 }

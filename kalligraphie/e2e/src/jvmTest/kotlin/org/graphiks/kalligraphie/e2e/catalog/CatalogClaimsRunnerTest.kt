@@ -78,5 +78,5 @@ class CatalogClaimsRunnerTest {
         assertEquals(reason, parsed)
     }
 
-    private fun claimsPath(): Path = repositoryRoot().resolve("kalligraphie/e2e/src/jvmTest/resources/catalog/claimed-tables.json")
+    private fun claimsPath(): Path = repositoryRoot().resolve("kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json")
 }

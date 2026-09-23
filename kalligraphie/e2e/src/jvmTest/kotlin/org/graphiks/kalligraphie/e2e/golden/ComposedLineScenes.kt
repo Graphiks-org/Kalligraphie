@@ -81,13 +81,6 @@ internal object ComposedLineScenes {
         variation: FontVariationCoordinates? = null,
     ): GoldenImage = toInkBox(placeLine(corpus, text, language, baseDirection, requiredFaces, fontPaths, variation))
 
-    /** One rasterized glyph kept at the pen position and baseline its own layout gave it. */
-    internal class PlacedGlyph(
-        val image: A8Image,
-        val penX: Int,
-        val baselineY: Int,
-    )
-
     /**
      * Lays [text] out through the paragraph facade and rasterizes every positioned glyph.
      *

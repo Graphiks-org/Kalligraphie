@@ -13,6 +13,12 @@ public object GoldenVerifier {
      * Results follow catalog order for catalogued scenes, then manifest order for
      * stale entries.
      *
+     * [deferredSceneIds] names the manifest entries this caller deliberately does not render, so
+     * they are not reported as stale. It exists because a platform verifies the scenes its
+     * capabilities can serve and no others: the entries it leaves out are declared, never silently
+     * dropped, and the caller is expected to derive that set rather than list it. An id that is
+     * neither rendered nor deferred is still stale.
+     *
      * @throws IllegalArgumentException when [scenes] contains a duplicate id, or when
      * a catalogued scene has no entry in [rendered]. A render refusal is reported as
      * [GoldenRenderOutcome.Refused] by the renderer before verification is attempted.
@@ -21,6 +27,7 @@ public object GoldenVerifier {
         scenes: List<GoldenScene>,
         rendered: Map<String, GoldenImage>,
         manifest: GoldenManifest,
+        deferredSceneIds: Set<String> = emptySet(),
     ): List<GoldenComparison> {
         val ids = scenes.map { scene -> scene.id }
         require(ids.distinct().size == ids.size) { "A golden scene catalog must not contain duplicate ids." }
@@ -62,7 +69,7 @@ public object GoldenVerifier {
         }
 
         for (entry in manifest.entries) {
-            if (entry.sceneId !in cataloguedIds) {
+            if (entry.sceneId !in cataloguedIds && entry.sceneId !in deferredSceneIds) {
                 results.add(GoldenComparison.StaleManifestEntry(entry.sceneId))
             }
         }

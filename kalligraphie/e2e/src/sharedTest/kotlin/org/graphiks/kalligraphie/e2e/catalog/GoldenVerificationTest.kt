@@ -30,7 +30,12 @@ class GoldenVerificationTest {
             }
         }
 
-        val results = GoldenVerifier.verify(entries.map { entry -> entry.scene }, rendered, manifest)
+        val results = GoldenVerifier.verify(
+            scenes = entries.map { entry -> entry.scene },
+            rendered = rendered,
+            manifest = manifest,
+            deferredSceneIds = GoldenSceneCatalog.deferredSceneIds(),
+        )
         val failures = results.filterNot { result -> result is GoldenComparison.Matched }
         assertTrue(
             failures.isEmpty(),

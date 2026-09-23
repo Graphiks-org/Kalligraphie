@@ -17,16 +17,18 @@ between journeys and scenes.
 
 `:kalligraphie:e2e` lives at `kalligraphie/e2e/` and uses the standard
 non-published KMP convention (like `:kalligraphie:conformance`). The convention
-declares the `jvm`, `iosArm64`, `iosSimulatorArm64` and `android` targets; only
-`jvmTest` carries tests today, so the other targets compile without executing
-anything. `explicitApi()` is enabled.
+declares the `jvm`, `iosArm64`, `iosSimulatorArm64` and `android` targets, and the
+golden verification now executes on all of them but `iosArm64`: the JVM, the
+Android host and device compilations, and the iOS simulator. `iosArm64` compiles
+and executes nothing, because no hosted runner can supply a device.
+`explicitApi()` is enabled.
 
 Its dependencies keep it outside the consumer graph: `commonMain` depends only on
-`:kalligraphie:api`, and the JVM test source set adds `:kalligraphie`,
-`:kalligraphie:conformance`, `:kalligraphie:raster-cpu`, `:kalligraphie:layout`,
-`:kalligraphie:shaping`, `:kalligraphie:unicode`, `:kalligraphie:font:core` and
-`:kalligraphie:font:sfnt`. Nothing in production depends on this module, and it is
-never published.
+`:kalligraphie:api`, and the test source sets add `:kalligraphie`,
+`:kalligraphie:conformance`, `:kalligraphie:raster-cpu`, `:kalligraphie:font:core`
+and `:kalligraphie:font:sfnt` — plus `:kalligraphie:layout`, `:kalligraphie:shaping`
+and `:kalligraphie:unicode` on the JVM, where the paragraph-facade scenes run.
+Nothing in production depends on this module, and it is never published.
 
 The pure model — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` and the SHA-256 digest — lives in
@@ -39,9 +41,32 @@ scene declares the `CatalogRoute` it needs, the platform declares its portable
 capabilities, and the ratchet refuses a registry that is not exactly what those
 capabilities imply.
 
-Protection is free: the root `check` runs `:kalligraphie:e2e:jvmTest` like any
-other subproject, and the existing pull-request workflow already covers
-`kalligraphie/**`. No dedicated workflow exists.
+Protection is free on the reference platform: the root `check` runs
+`:kalligraphie:e2e:jvmTest` like any other subproject, and the existing
+pull-request workflow already covers `kalligraphie/**`. The other targets are
+executed where they can be: `testAndroidHostTest` and `connectedAndroidDeviceTest`
+on an emulator, `iosSimulatorArm64Test` on a macOS runner.
+
+## Which scenes each platform verifies
+
+Every scene declares the `CatalogRoute` it needs, and each platform verifies the
+scenes its own declared capabilities can serve. On the JVM that is the whole
+catalog; on Android and iOS it is the portable glyph route. The `Sources` column
+below is derived from the route, and the `Manifest` column from the committed
+record.
+
+| Command | Platform | Scenes |
+| --- | --- | --- |
+| `./gradlew :kalligraphie:e2e:jvmTest` | JVM, all runners | Every catalogued scene |
+| `./gradlew :kalligraphie:e2e:testAndroidHostTest` | Android unit test, JVM runtime | The portable scenes |
+| `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Android emulator, ART | The portable scenes |
+| `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | iOS simulator, Kotlin/Native | The portable scenes |
+
+All four compare against the same committed manifest, byte for byte, with no
+numeric tolerance: the fingerprint of a scene is a fact about the rasterizer, not
+about the platform that ran it. A scene a platform does not verify is named by
+`deferredSceneIds()`, derived from that platform's capability identity, so it is
+excused rather than skipped.
 
 ## Scene catalog
 
@@ -86,7 +111,7 @@ Canonicalization fixes one serialized form, stable and portable:
 - the form is versioned by `CANONICALIZATION_VERSION`, currently `1`.
 
 The manifest lives at
-`kalligraphie/e2e/src/jvmTest/resources/golden/manifest.tsv`. Its first line
+`kalligraphie/e2e/src/harnessResources/golden/manifest.tsv`. Its first line
 declares the format and the canonicalization version, then one tab-separated row
 per scene, sorted lexicographically by scene id:
 
@@ -181,10 +206,11 @@ stay per consumer — `:kalligraphie:e2e` defines its own thin builders reading
 
 ## Known limitations
 
-- Only `jvmTest` executes. The iOS and Android targets compile, but the scene
-  catalog is JVM-only — the portable half of the harness is already placed in
-  shared test sources, and the paragraph-authored scenes wait for a portable
-  Unicode-analysis backend.
+- The paragraph-authored scenes — the composed lines, the weight ladder and the
+  mosaic — execute on the JVM only. They wait for a portable Unicode-analysis
+  backend, and the capability ratchet will demand them on every target the day it
+  lands.
+- `iosArm64` compiles but executes nothing: no hosted runner can supply a device.
 - Comparison is exact; a non-deterministic rendering route would require
   introducing a tolerance.
 - Reference images are not hosted externally (no LFS or build artifact), so the
