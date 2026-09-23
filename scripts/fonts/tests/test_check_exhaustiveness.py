@@ -79,6 +79,63 @@ class ExhaustivenessTest(unittest.TestCase):
         self.assertIn("COLR", violations[0])
 
 
+class DeclaredTablesTest(unittest.TestCase):
+    """The manifest's `tables` field is data: a declaration the file does not back is a lie."""
+
+    def test_a_declared_table_the_file_does_not_carry_is_reported(self):
+        violations = check_exhaustiveness.compare_declared_tables(
+            key="tiny",
+            path="test-fixtures/fonts/tiny/tiny.ttf",
+            declared=["cmap", "VVAR"],
+            real={"cmap"},
+        )
+        self.assertEqual(1, len(violations))
+        self.assertIn("VVAR", violations[0])
+        self.assertIn("does not carry", violations[0])
+
+    def test_a_carried_table_the_manifest_does_not_declare_is_reported(self):
+        violations = check_exhaustiveness.compare_declared_tables(
+            key="tiny",
+            path="test-fixtures/fonts/tiny/tiny.ttf",
+            declared=["cmap", "glyf", "loca"],
+            real={"cmap", "glyf", "loca", "vhea", "vmtx"},
+        )
+        self.assertEqual(2, len(violations))
+        self.assertTrue(any("vhea" in violation and "does not declare" in violation for violation in violations))
+
+    def test_a_faithful_declaration_is_accepted(self):
+        violations = check_exhaustiveness.compare_declared_tables(
+            key="tiny",
+            path="test-fixtures/fonts/tiny/tiny.ttf",
+            declared=["OS/2", "cmap", "glyf", "head", "loca"],
+            real={"OS/2", "cmap", "glyf", "head", "loca"},
+        )
+        self.assertEqual([], violations)
+
+    def test_an_empty_declaration_reports_every_carried_table(self):
+        violations = check_exhaustiveness.compare_declared_tables(
+            key="tiny",
+            path="test-fixtures/fonts/tiny/tiny.ttf",
+            declared=None,
+            real={"cmap", "glyf"},
+        )
+        self.assertEqual(2, len(violations))
+
+    def test_the_glyph_order_pseudo_entry_is_not_a_table(self):
+        """fontTools reports it in every directory; declaring it is impossible and expecting it fatal."""
+        self.assertEqual({"cmap", "glyf"}, check_exhaustiveness.sfnt_tags_of(["GlyphOrder", "cmap", "glyf"]))
+        self.assertEqual(set(), check_exhaustiveness.sfnt_tags_of(["GlyphOrder"]))
+
+    def test_the_pseudo_entry_is_not_read_as_an_undeclared_table(self):
+        violations = check_exhaustiveness.compare_declared_tables(
+            key="tiny",
+            path="test-fixtures/fonts/tiny/tiny.ttf",
+            declared=["cmap"],
+            real=check_exhaustiveness.sfnt_tags_of(["GlyphOrder", "cmap"]),
+        )
+        self.assertEqual([], violations)
+
+
 class MergedExcusesTest(unittest.TestCase):
     def claims(self, allow_unclaimed):
         return {"allowUnclaimed": allow_unclaimed}

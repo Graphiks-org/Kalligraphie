@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Checks that every significant table a corpus font carries is claimed by the catalog.
+"""Checks the corpus against the catalog's claims and against the manifest's own table lists.
 
-Reads the claims exported from the Kotlin catalog (`claimed-tables.json`), so there is exactly one
-authority on what is claimed: the model. Requires fontTools.
+Two contracts are verified, both requiring fontTools:
+
+* every significant table a corpus font *carries* is claimed by the catalog or excused
+  (`claimed-tables.json`, the export of the Kotlin catalog, is the only authority on what is
+  claimed);
+* every `tables` list the manifest *declares* for a file is that file's real sfnt table
+  directory — the declaration is data, and data that is never checked drifts.
 """
 
 from __future__ import annotations
@@ -25,6 +30,10 @@ SIGNIFICANT_TABLES = {
     "kern", "loca", "maxp", "morx", "MVAR", "name", "OS/2", "post", "sbix", "STAT", "SVG ",
     "vhea", "vmtx", "VORG", "VARC", "VVAR",
 }
+
+# Pseudo-entries fontTools reports in a table directory without an sfnt tag of their own. They are
+# never declared in the manifest, so reading one as a missing declaration would be a false alarm.
+PSEUDO_TABLES = frozenset({"GlyphOrder"})
 
 
 def compare(
@@ -67,21 +76,50 @@ def merged_excuses(claims: dict, key: str) -> tuple[dict[str, str], bool]:
     return merged, excuse_all
 
 
-def real_tables_of(path: pathlib.Path, keys: set[str]) -> set[str]:
-    """Returns the significant tables of the font or collection at [path], using fontTools."""
+def sfnt_tags_of(tags) -> set[str]:
+    """Returns the real sfnt tags of a fontTools table directory, pseudo-entries dropped."""
+    return {tag for tag in tags if tag not in PSEUDO_TABLES}
+
+
+def sfnt_table_directory(path: pathlib.Path) -> set[str]:
+    """Returns every sfnt table tag the font or collection at [path] really carries.
+
+    The whole directory is returned, cosmetic tables included, because the manifest records all
+    of them; callers that care about the significant subset intersect the result themselves. For a
+    collection the directory is the union over its faces.
+    """
     from fontTools.ttLib import TTCollection, TTFont  # imported lazily so --help works without fontTools
 
-    found: set[str] = set()
     if path.suffix.lower() == ".ttc":
         with TTCollection(path, lazy=True) as collection:
+            found: set[str] = set()
             for font in collection.fonts:
-                found |= {tag for tag in font.keys() if tag in keys}
-        return found
+                found |= sfnt_tags_of(font.keys())
+            return found
     font = TTFont(path, lazy=True)
     try:
-        return {tag for tag in font.keys() if tag in keys}
+        return sfnt_tags_of(font.keys())
     finally:
         font.close()
+
+
+def compare_declared_tables(key: str, path: str, declared, real: set[str]) -> list[str]:
+    """Compares the tables a manifest record declares with the sfnt tables the file carries.
+
+    Both directions violate: a declaration nothing carries is stale, and a carried table the
+    manifest does not name is invisible to every reader of the manifest. A `.ttc` compares against
+    the union over its faces, which is what the manifest is documented to declare.
+    """
+    declared_set = set(declared or ())
+    stale = [
+        f"{key}: {path} declares the table {table} and the file does not carry it"
+        for table in sorted(declared_set - real)
+    ]
+    undeclared = [
+        f"{key}: {path} carries the table {table} and the manifest does not declare it"
+        for table in sorted(real - declared_set)
+    ]
+    return stale + undeclared
 
 
 def decoded_font_path(path: pathlib.Path, scratch: pathlib.Path) -> pathlib.Path:
@@ -119,7 +157,14 @@ def main(argv: list[str]) -> int:
             tables: set[str] = set()
             for record in family["files"]:
                 path = decoded_font_path(root / record["path"], scratch_path)
-                tables |= real_tables_of(path, SIGNIFICANT_TABLES)
+                directory = sfnt_table_directory(path)
+                tables |= directory & SIGNIFICANT_TABLES
+                violations += compare_declared_tables(
+                    key=family["key"],
+                    path=record["path"],
+                    declared=record.get("tables", []),
+                    real=directory,
+                )
             if not tables:
                 violations.append(f"{family['key']}: no font file yielded any significant table; the lint would be blind here")
                 continue
