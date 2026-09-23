@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.e2e.catalog
 
 import kotlin.test.Test
+import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.e2e.GoldenDiagnosticCode
@@ -23,6 +24,20 @@ class CatalogSceneMaterializerTest {
         val framed = assertIs<GoldenRenderOutcome.Rendered>(materialized.render()).image
         assertEquals(6, framed.width)
         assertEquals(6, framed.height)
+        // The ink sits at (1,1) and (2,2) of the natural 4x3 image, so the tight box starts one pixel
+        // from the origin and the reframe moves it to (padding, padding) == (2,2) of the 6x6 frame:
+        // the two lit pixels land at (2,2) and (3,3), at byte index y * 6 + x.
+        assertContentEquals(
+            byteArrayOf(
+                0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0,
+                0, 0, 0xFF.toByte(), 0, 0, 0,
+                0, 0, 0, 0xFF.toByte(), 0, 0,
+                0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0,
+            ),
+            framed.copyCanonicalBytes(),
+        )
     }
 
     @Test
@@ -49,6 +64,9 @@ class CatalogSceneMaterializerTest {
 
         assertEquals(10, materialized.scene.width)
         assertEquals(GoldenSceneFamily.GLYPH_OUTLINE, materialized.scene.family)
+        val rendered = assertIs<GoldenRenderOutcome.Rendered>(materialized.render())
+        assertEquals(10, rendered.image.width, "an agreeing render keeps the pinned frame")
+        assertEquals(10, rendered.image.height)
     }
 
     @Test
