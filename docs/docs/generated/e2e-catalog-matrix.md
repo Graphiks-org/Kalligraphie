@@ -6,9 +6,9 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 
 | Status | Entries |
 | --- | --- |
-| Supported | 22 |
+| Supported | 23 |
 | Expected rejection | 2 |
-| Not yet | 10 |
+| Not yet | 11 |
 | Out of scope | 1 |
 
 ## CONTAINER
@@ -78,6 +78,13 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 | `script.cyrillic.outline-sheet` | Cyrillic outline alphabet sheet | liberation | Supported since fa405247 |
 | `script.arabic.outline-sheet` | Arabic outline alphabet sheet | amiri | Supported since fa405247 |
 | `script.devanagari.outline-sheet` | Devanagari outline alphabet sheet | noto-devanagari | Supported since fa405247 |
+
+## COMPOSITION
+
+| Entry | Technology | Font | Status |
+| --- | --- | --- | --- |
+| `composition.every-route-mosaic` | Seven rendering routes in one image: one word in a TrueType outline, the capital A in a CFF 1 and in a CFF 2 outline, a line whose three scripts resolve through three-face fallback, one glyph at four design weights, a colour paint and a bitmap strike, composed on one colour canvas with a shared left margin | liberation | Supported since 58ba2267 |
+| `composition.per-span-style` | Per-span styling inside one paragraph: a run that keeps its own face or its own variation instance while the rest of the paragraph keeps another | — | Not yet; no public entry point carries the request |
 
 ## ROBUSTNESS
 

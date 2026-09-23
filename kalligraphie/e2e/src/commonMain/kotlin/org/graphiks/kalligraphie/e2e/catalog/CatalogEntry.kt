@@ -23,10 +23,38 @@ public data class CatalogEntry(
     public val family: GoldenSceneFamily? = null,
     /** Frame policy of the generated scene; set exactly for [CatalogStatus.Supported]. */
     public val frame: SceneFramePolicy? = null,
+    /**
+     * Corpus families the one scene of this entry composes beside [font], in declaration order.
+     *
+     * Empty for the ordinary entry, whose scene rests on a single family. A composition entry — the
+     * mosaic that mixes representations, faces and styles in one image — declares every family it
+     * draws, and its renderer must load exactly the declared set: the ratchet checks both
+     * directions, so a composed font cannot appear undeclared and a declared one cannot be missing.
+     * [font] stays the primary family, the one this entry's [tables] are claimed against.
+     */
+    public val composedOf: List<CorpusKey> = emptyList(),
+    /**
+     * SFNT tables the scene of this entry exercises in each family of [composedOf].
+     *
+     * A composed scene reads different tables in different families — the mosaic draws outlines in
+     * the Latin families, a colour graph in the emoji one and a strike in the bitmap one — so its
+     * claims are per family, never a union that would credit a family with a table it never
+     * contributes. Every composed family must appear, and [tables] stays the claim of the primary
+     * family [font]. The lint reads both through the same per-family export.
+     */
+    public val composedTables: Map<CorpusKey, Set<String>> = emptyMap(),
 ) {
     init {
         require(id.isNotBlank()) { "A catalog entry id must not be blank." }
         require(id.matches(ID_PATTERN)) { "A catalog entry id must be lower-case dotted form: $id" }
+        require(composedOf.none { key -> key == font }) { "A composed entry must not repeat its primary family: $id" }
+        require(composedOf.distinct().size == composedOf.size) { "A composed entry must not repeat a family: $id" }
+        require(composedTables.keys.toSet() == composedOf.toSet()) {
+            "a composed entry must claim the tables of every family it composes, and of no other: $id"
+        }
+        require(composedTables.values.none { claims -> claims.isEmpty() }) {
+            "a composed entry must claim at least one table per family it composes: $id"
+        }
     }
 
     private companion object {

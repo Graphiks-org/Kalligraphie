@@ -84,6 +84,21 @@ public object CatalogClaims {
             "glyf" to SBIX_OUTLINES_REASON,
             "loca" to SBIX_OUTLINES_REASON,
         ),
+        "noto-sans-jp" to mapOf(
+            "BASE" to "the mosaic draws one glyph per weight on a single baseline and reads no " +
+                "baseline axis; the shaping suite covers the fixture's vertical layout",
+            "HVAR" to "the mosaic draws one glyph per weight, so no advance is observable; the " +
+                "fixture's advance variation stays carried and unread here, and the shaping suite " +
+                "covers it",
+            "STAT" to "the mosaic selects its instances by design `wght` coordinate through " +
+                "`fvar`/`avar` and reads no style attribute; `variation.stat` records that portable " +
+                "STAT reading is not implemented yet",
+            "gasp" to "the mosaic rasterises the varied outlines with the portable CPU rasterizer, " +
+                "which applies no grid-fitting hint profile, so the table's flags and ranges are " +
+                "carried and never consulted",
+            "vhea" to VVAR_VERTICAL_REASON,
+            "vmtx" to VVAR_VERTICAL_REASON,
+        ),
         "worksans" to mapOf(
             "STAT" to "the ladder selects its instances by design `wght` coordinate through " +
                 "`fvar` and `avar` and reads no style attribute; `variation.stat` records that " +
@@ -111,8 +126,6 @@ public object CatalogClaims {
             "catalogued scene references this family",
         "liberation-amiri-collection" to "Liberation + Amiri TrueType collection, the multi-face " +
             "container fixture of the platform registry suites; no catalogued scene references this family",
-        "noto-sans-jp" to "subset variable JP fixture whose vertical advances the shaping module " +
-            "cross-checks; no catalogued scene references this family",
         "skia-colr-v1" to "static COLR v1 fixture with transforms and gradients, read by the colour " +
             "representation tests; the color axis pins COLR v1 on the synthetic variable fixture, " +
             "and no catalogued scene uses the Skia file",
@@ -144,13 +157,23 @@ public object CatalogClaims {
             UNREFERENCED_FAMILIES.mapValues { (_, reason) -> mapOf(WILDCARD_KEY to reason) }
 
     /**
-     * Groups the claimed tables of [entries] by corpus key. The sets carry no guaranteed order: the
+     * Groups the claimed tables of [entries] by corpus key, every family an entry composes included.
+     *
+     * An ordinary entry claims its [CatalogEntry.tables] against its own family; a composed entry
+     * claims [CatalogEntry.composedTables] against each family it composes, so a mosaic credits every
+     * family it draws with exactly the tables it reads there. The sets carry no guaranteed order: the
      * canonical order is the one [render] produces with `sorted()`, not one of these sets.
      */
-    public fun claimsOf(entries: List<CatalogEntry>): Map<String, Set<String>> = entries
-        .filter { entry -> entry.font != null }
-        .groupBy { entry -> entry.font!!.value }
-        .mapValues { (_, axisEntries) -> axisEntries.flatMapTo(linkedSetOf()) { entry -> entry.tables } }
+    public fun claimsOf(entries: List<CatalogEntry>): Map<String, Set<String>> {
+        val claims = LinkedHashMap<String, MutableSet<String>>()
+        for (entry in entries) {
+            entry.font?.let { key -> claims.getOrPut(key.value) { linkedSetOf() } += entry.tables }
+            for ((key, tables) in entry.composedTables) {
+                claims.getOrPut(key.value) { linkedSetOf() } += tables
+            }
+        }
+        return claims
+    }
 
     /**
      * Returns the canonical JSON export of [entries], with [allowlist] written under

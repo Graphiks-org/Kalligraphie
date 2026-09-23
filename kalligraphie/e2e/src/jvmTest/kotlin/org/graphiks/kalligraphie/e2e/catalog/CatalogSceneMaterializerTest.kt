@@ -91,10 +91,61 @@ class CatalogSceneMaterializerTest {
 
         val failure = CatalogSceneMaterializer.fontPathMismatch(entry, renderer)
         assertEquals(
-            "entry outline.glyf declares corpus key liberation but renders /fonts/amiri/Amiri-Regular.ttf",
+            "entry outline.glyf declares corpus families [liberation] but renders " +
+                "[/fonts/amiri/Amiri-Regular.ttf]",
             failure,
         )
     }
+
+    @Test
+    fun aComposedRendererMustLoadEveryFamilyItsEntryDeclares() {
+        val entry = composedEntry(composedOf = listOf(CorpusKeys.AMIRI, CorpusKeys.NOTO_SANS_JP))
+        val renderer = CatalogSceneRenderer(
+            "/fonts/liberation/LiberationSans-Regular.ttf",
+            additionalFontPaths = listOf("/fonts/amiri/Amiri-Regular.ttf"),
+        ) {
+            GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
+        }
+
+        assertEquals(
+            "entry outline.glyf declares corpus families [noto-sans-jp] but renders " +
+                "[/fonts/liberation/LiberationSans-Regular.ttf, /fonts/amiri/Amiri-Regular.ttf]",
+            CatalogSceneMaterializer.fontPathMismatch(entry, renderer),
+        )
+    }
+
+    @Test
+    fun aRendererMustNotLoadAFamilyItsEntryNeverDeclares() {
+        val entry = composedEntry(composedOf = listOf(CorpusKeys.AMIRI))
+        val renderer = CatalogSceneRenderer(
+            "/fonts/liberation/LiberationSans-Regular.ttf",
+            additionalFontPaths = listOf(
+                "/fonts/amiri/Amiri-Regular.ttf",
+                "/fonts/skia-cbdt/cbdt.ttf",
+            ),
+        ) {
+            GoldenRenderOutcome.Rendered(GoldenImage.alpha8(2, 2, byteArrayOf(0, 0, 0, 1)))
+        }
+
+        assertEquals(
+            "entry outline.glyf renders [/fonts/skia-cbdt/cbdt.ttf] without declaring their " +
+                "corpus families",
+            CatalogSceneMaterializer.fontPathMismatch(entry, renderer),
+        )
+    }
+
+    private fun composedEntry(composedOf: List<CorpusKey>) = CatalogEntry(
+        id = "outline.glyf",
+        axis = CatalogAxis.OUTLINE,
+        technology = CatalogText("glyf outlines over several families", "contours glyf sur plusieurs familles"),
+        font = CorpusKey("liberation"),
+        status = CatalogStatus.Supported("abc1234"),
+        tables = setOf("glyf"),
+        family = GoldenSceneFamily.GLYPH_OUTLINE,
+        frame = SceneFramePolicy.AutoSized(padding = 1),
+        composedOf = composedOf,
+        composedTables = composedOf.associateWith { key -> setOf("cmap") },
+    )
 
     @Test
     fun aRendererSceneIdOverridesTheEntryIdAndDefaultsToIt() {

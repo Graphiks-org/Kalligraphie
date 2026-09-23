@@ -17,6 +17,9 @@ public enum class GoldenSceneFamily {
     /** A composed text line through the paragraph facade. */
     COMPOSED_LINE,
 
+    /** Several families, styles and representations composed into one image. */
+    MOSAIC,
+
     /** A composed paragraph through the facade. */
     PARAGRAPH,
 

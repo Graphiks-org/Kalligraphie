@@ -6,9 +6,9 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Statut | Entrées |
 | --- | --- |
-| Supporté | 22 |
+| Supporté | 23 |
 | Rejet attendu | 2 |
-| Pas encore | 10 |
+| Pas encore | 11 |
 | Hors périmètre | 1 |
 
 ## CONTAINER
@@ -78,6 +78,13 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 | `script.cyrillic.outline-sheet` | Planche d'alphabet cyrillique en contour | liberation | Supporté depuis fa405247 |
 | `script.arabic.outline-sheet` | Planche d'alphabet arabe en contour | amiri | Supporté depuis fa405247 |
 | `script.devanagari.outline-sheet` | Planche d'alphabet devanagari en contour | noto-devanagari | Supporté depuis fa405247 |
+
+## COMPOSITION
+
+| Entrée | Technologie | Police | Statut |
+| --- | --- | --- | --- |
+| `composition.every-route-mosaic` | Sept routes de rendu dans une seule image : un mot en contour TrueType, le A majuscule en contour CFF 1 puis CFF 2, une ligne dont les trois scripts sont résolus par repli entre trois polices, un glyphe à quatre graisses, une peinture couleur et un strike bitmap, composés sur un même canvas couleur à marge gauche partagée | liberation | Supporté depuis 58ba2267 |
+| `composition.per-span-style` | Style par plage à l'intérieur d'un paragraphe : un segment qui garde sa propre police ou sa propre instance de variation alors que le reste du paragraphe en garde une autre | — | Pas encore ; aucune entrée publique ne porte la demande |
 
 ## ROBUSTNESS
 

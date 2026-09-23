@@ -89,4 +89,12 @@ public enum class UnpinnedReason {
      * looking for a font instead of at the reader.
      */
     READER_NOT_IMPLEMENTED,
+    /**
+     * The engine could not express the request even in principle: no public entry point carries it.
+     *
+     * Distinct from [READER_NOT_IMPLEMENTED] — the table is read, the surface is simply absent — and
+     * from both acquisition reasons: nothing to download, nothing to implement behind an existing
+     * signature, a caller-facing capability to add.
+     */
+    NO_API_SURFACE,
 }

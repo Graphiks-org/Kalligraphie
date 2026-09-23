@@ -5,6 +5,7 @@ import org.graphiks.kalligraphie.e2e.GoldenImage
 import org.graphiks.kalligraphie.e2e.GoldenOrientation
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.golden.ComposedLineScenes
+import org.graphiks.kalligraphie.e2e.golden.CompositionMosaicScene
 import org.graphiks.kalligraphie.e2e.golden.GlyphSheetScenes
 import org.graphiks.kalligraphie.e2e.golden.VariationLadderScene
 import org.graphiks.kalligraphie.e2e.golden.bitmapOf
@@ -42,6 +43,7 @@ internal object SceneRenderers {
     private const val CFF2_LIBERATION = "/fonts/cff2-liberation/LiberationSans-CFF2.otf"
     private const val KALLIGRAPHIE_VAR_VVAR = "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf"
     private const val WORK_SANS = "/fonts/worksans/WorkSans[wght].ttf"
+    private const val NOTO_SANS_JP = "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"
 
     private val LATIN_LETTERS: List<Int> = (0x41..0x5A).toList()
     private val LATIN: List<Int> = LATIN_LETTERS + (0x61..0x7A) + (0x30..0x39)
@@ -136,6 +138,20 @@ internal object SceneRenderers {
         "metrics.vvar-advance-height" to CatalogSceneRenderer(KALLIGRAPHIE_VAR_VVAR, render = ::renderVvarCapitalA),
         "variation.wght-ladder" to CatalogSceneRenderer(WORK_SANS) {
             composed { renderWeightLadder() }
+        },
+        "composition.every-route-mosaic" to CatalogSceneRenderer(
+            LIBERATION_SANS,
+            additionalFontPaths = listOf(
+                AMIRI,
+                NOTO_DEVANAGARI,
+                NOTO_SANS_JP,
+                CFF_LIBERATION,
+                CFF2_LIBERATION,
+                EMOJI_TWO_COLR_V0,
+                SKIA_CBDT,
+            ),
+        ) {
+            composed { CompositionMosaicScene.mosaic() }
         },
     )
 
