@@ -156,8 +156,8 @@
           ]
         }
       ],
-      "license": "CC0-1.0",
-      "licenseFile": "test-fixtures/fonts/gdef-kern/LICENSE.md",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
       "synthetic": true,
       "builtBy": "build_cff2_variable_fixture.py"
     },
@@ -295,8 +295,8 @@
           ]
         }
       ],
-      "license": "CC0-1.0",
-      "licenseFile": "test-fixtures/fonts/gdef-kern/LICENSE.md",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
       "synthetic": true,
       "builtBy": "build_variable_colr_v1.py"
     },
@@ -329,8 +329,8 @@
           ]
         }
       ],
-      "license": "CC0-1.0",
-      "licenseFile": "test-fixtures/fonts/gdef-kern/LICENSE.md",
+      "license": "MIT",
+      "licenseFile": "LICENSE",
       "synthetic": true,
       "builtBy": "build_variable_vvar.py"
     },
@@ -671,9 +671,9 @@
       "files": [
         {
           "path": "test-fixtures/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
-          "url": null,
+          "url": "https://github.com/13rac1/twemoji-color-font/releases/tag/v15.1.0",
           "rawUrl": null,
-          "fetchNote": "Download the TwitterColorEmoji-SVGinOT-15.1.0.zip archive published with release v15.1.0 of 13rac1/twemoji-color-font (archive SHA-256 9075de7a1c9dd660782d02b5c5be1c1524e16db13a6d7d4264b9aabbd056b692), extract TwitterColorEmoji-SVGinOT.ttf (SHA-256 42d4b2a827c9ed557dff88c2f4723cb93985003a81dee76797324d66d04a57b8), run pyftsubset TwitterColorEmoji-SVGinOT.ttf --gids=5 --output-file=TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf, then base64-encode the subset and verify the committed encoding's SHA-256 50a56111f59e4d020cba6b79b406ad1375e34e7200b678cf68f1542a28e62625.",
+          "fetchNote": "Download the TwitterColorEmoji-SVGinOT-15.1.0.zip archive published with release v15.1.0 of 13rac1/twemoji-color-font (archive SHA-256 9075de7a1c9dd660782d02b5c5be1c1524e16db13a6d7d4264b9aabbd056b692), extract TwitterColorEmoji-SVGinOT.ttf (SHA-256 42d4b2a827c9ed557dff88c2f4723cb93985003a81dee76797324d66d04a57b8), run pyftsubset TwitterColorEmoji-SVGinOT.ttf --gids=5 --output-file=TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf with FontTools 4.55.0 and lxml 5.3.0 (the retained glyph ID 5 is renumbered to glyph ID 1), then base64-encode the subset and verify the committed encoding's SHA-256 50a56111f59e4d020cba6b79b406ad1375e34e7200b678cf68f1542a28e62625.",
           "revision": "v15.1.0",
           "sha256": "50a56111f59e4d020cba6b79b406ad1375e34e7200b678cf68f1542a28e62625",
           "sizeBytes": 3915,

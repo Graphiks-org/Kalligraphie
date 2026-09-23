@@ -27,7 +27,7 @@ Each family:
 | --- | --- |
 | `key` | The directory name under `test-fixtures/fonts/`. One entry per directory. |
 | `files` | The committed font artifacts of the directory, sorted by `path`. Font files only (see below). |
-| `license` | One of the licence identifiers in `fetch_fonts.ALLOWED_LICENSES`. |
+| `license` | One of the eight licence identifiers of `fetch_fonts.ALLOWED_LICENSES`: `Apache-2.0`, `BSD-3-Clause`, `CC0-1.0`, `CC-BY-4.0`, `DejaVu`, `MIT`, `OFL-1.1`, `Unlicense`. |
 | `licenseFile` | Repository-relative path of the licence text that applies. |
 | `synthetic` | `true` when the fonts are constructed locally instead of distributed upstream. |
 | `builtBy` | For a synthetic family, the constructor script; `null` otherwise. |
@@ -37,8 +37,8 @@ Each entry of `files`:
 | Field | Meaning |
 | --- | --- |
 | `path` | Repository-relative path of a committed font artifact. |
-| `url` | The readable page the `PROVENANCE.md` cites; `null` when it cites none. |
-| `rawUrl` | The URL whose plain `GET` returns the committed bytes; `null` when no such URL exists. |
+| `url` | The readable page the `PROVENANCE.md` cites, or the source page the provenance names when it cites no file page. Every non-synthetic family carries one; it is the tracing anchor even when the bytes themselves are not re-downloadable. `null` for a synthetic family. |
+| `rawUrl` | The URL a plain `GET` starts from; the payload may need decoding before the digest can be compared (see the transports below). `null` when no URL serves the bytes. |
 | `fetchNote` | One sentence giving the manual recipe when the bytes are not a plain `GET` away; `null` otherwise. |
 | `revision` | The immutable coordinate the `PROVENANCE.md` pins. |
 | `sha256` | SHA-256 of the committed file (`shasum -a 256`), never copied from prose. |
@@ -63,14 +63,24 @@ Notes on the fields:
 - **`revision`** is the 40-character commit for a GitHub source, the release or tag identifier for an
   archived source (`2.37`, `2.1.5`, `NotoSansDevanagari-v2.006`, `v15.1.0`), and `null` for a
   synthetic family.
+- **`license`** is the identifier of record for the family. The corpus uses six of the eight:
+  `OFL-1.1` (the Liberation, Amiri, Noto and Bungee families), `BSD-3-Clause` (the four Skia
+  fixtures), `DejaVu`, `CC-BY-4.0` (the two emoji families, `emoji-two-colr-v0` and
+  `twemoji-svginot-glyph5`), `CC0-1.0` (`gdef-kern`, which declares it explicitly) and `MIT`, which
+  covers the fixtures generated inside the repository that declare no licence of their own
+  (`cff2-variable`, `kalligraphie-var-colr`, `kalligraphie-var-vvar`; see `licenseFile` below).
+  `Apache-2.0` and `Unlicense` are allowed but unused.
 - **`licenseFile`** points at the family's own licence text when the directory carries one. Three
-  families (the CFF fixtures derived from Liberation and the Liberation/Amiri collection) are covered
-  by `test-fixtures/fonts/liberation/OFL-1.1.txt`, which their `PROVENANCE.md` names explicitly. Two
-  gaps are documented rather than hidden: `bungee-color` ships no local licence text (upstream's
-  `OFL.txt` lives in the source repository), and the project-owned synthetic fixtures
-  (`cff2-variable`, `kalligraphie-var-colr`, `kalligraphie-var-vvar`) declare no licence of their
-  own — they are recorded as `CC0-1.0`, the dedication the corpus's other Kalligraphie-authored
-  fixture (`gdef-kern`) uses, and their `licenseFile` points at that same CC0 text.
+  families (the two CFF fixtures derived from Liberation and the Liberation/Amiri collection) are
+  covered by `test-fixtures/fonts/liberation/OFL-1.1.txt`, which their `PROVENANCE.md` names
+  explicitly. Two gaps are documented rather than hidden. `bungee-color` ships no local licence
+  text — upstream's `OFL.txt` lives in the source repository — so the field points at the corpus's
+  OFL-1.1 copy, whose header names Google and Red Hat while the applicable copyright, The Bungee
+  Project Authors and David Jonathan Ross, is the one recorded in that family's `PROVENANCE.md`.
+  And the three fixtures generated inside the repository that declare no licence of their own
+  (`cff2-variable`, `kalligraphie-var-colr`, `kalligraphie-var-vvar`) point at the repository's
+  `LICENSE`, the MIT text that covers generated material with no third-party content; those three
+  `PROVENANCE.md` files declaring no licence at all is a known corpus gap still to close.
 
 ## The `synthetic` / `builtBy` rule
 
@@ -98,14 +108,19 @@ The other twelve families (`amiri`, `bungee-color`, `dejavu`, `emoji-two-colr-v0
 `url` is the readable page the `PROVENANCE.md` cites — a GitHub tree or blob page, a project or
 repository page, a release page. When the provenance cites the repository rather than the file page
 (`bungee-color`, `emoji-two-colr-v0`) or cites the pinned download only (`skia-ebdt-format1`), `url`
-records exactly what is cited; `rawUrl` then identifies the file itself.
+records exactly what is cited; `rawUrl` then identifies the file itself. When the provenance names
+only the repository and a release tag without a URL (`twemoji-svginot-glyph5`), `url` is the release
+page those coordinates identify, because a real family always carries an `url` as its tracing
+anchor even when its bytes cannot be re-downloaded.
 
-`rawUrl` is recorded when a single unauthenticated `GET` returns exactly the committed bytes. The one
-URL rewrite this manifest performs is the mechanical counterpart of a GitHub `/blob/<revision>/`
-page, `https://raw.githubusercontent.com/<org>/<repo>/<revision>/<path>`; it is applied to nothing
-else and is never guessed from a page that is not a blob page. Every `rawUrl` in this manifest has
-been fetched and checked: seven return the committed bytes verbatim, and the eighth is the encoded
-transport described below.
+`rawUrl` is recorded when a single unauthenticated `GET` is enough to obtain the file. The payload
+may be encoded — gitiles serves base64 — in which case a fetcher must decode it before comparing the
+digest; that is a transport exception, not a licence to rewrite the URL. The one URL rewrite this
+manifest performs is the mechanical counterpart of a GitHub `/blob/<revision>/` page,
+`https://raw.githubusercontent.com/<org>/<repo>/<revision>/<path>`; it is applied to nothing else and
+is never guessed from a page that is not a blob page. Every `rawUrl` in this manifest has been
+fetched and checked: six return the committed bytes verbatim, and the two that do not are described
+below.
 
 `fetchNote` carries the manual recipe instead of `rawUrl` — one sentence naming the archive, the
 member path, the transform and the digest — for the five families whose committed file is not a plain
@@ -117,26 +132,26 @@ member path, the transform and the digest — for the five families whose commit
 | `liberation` | The TTF is a member of a GitHub release attachment tarball. |
 | `noto-devanagari` | The TTF is a member of a release zip. |
 | `noto-sans-jp` | The committed file is a `pyftsubset` derivative of the pinned source. |
-| `twemoji-svginot-glyph5` | A release zip, then a subset, then base64 encoding; the provenance cites no URL at all. |
+| `twemoji-svginot-glyph5` | A release zip, then a subset, then base64 encoding; the release page is recorded as `url`, and no URL serves the font's bytes. |
 
-Two encoded transports carry `rawUrl` but still need care, because the URL does not return the
-committed bytes verbatim:
+Two `rawUrl`s do not return the committed bytes verbatim, and the acquisition code must handle each:
 
 - `skia-ebdt-format1`: gitiles serves the payload base64 (`?format=TEXT`). The payload hashes to
   `ddae4f9b32e11fba5e461b8c9eedd06a9534e187285931c51fb1e56d16c729f9`; base64-decoded it is the
   committed font, `e99cebed4d9421bc89964b9dc6a3bedfc6a286029d64336a07844708cce76274`. A fetcher must
   decode before comparing the digest.
-- `skia-colr-v1` and `twemoji-svginot-glyph5`: the committed artifact is the base64 *encoding*. The
-  recorded digest is the encoding's; a fetcher that starts from the decoded font must re-encode it
-  and compare that, not the font's own digest.
+- `skia-colr-v1`: the `rawUrl` returns the font, but the committed artifact is the `.b64` envelope of
+  that font, so the recorded `sha256` and `sizeBytes` are the encoding's. A fetcher that starts from
+  the decoded font must re-encode it and compare that digest, not the font's own (`72cb79b6…`). The
+  same caveat applies to the `.base64` artifact of `twemoji-svginot-glyph5`, which carries no
+  `rawUrl`: its `fetchNote` holds the encoding step.
 
 Contract for `fetch_fonts.py`, which the manifest's data imposes: `rawUrl` and `fetchNote` are
 alternatives. A file with a `fetchNote` and no `rawUrl` cannot be re-downloaded by a plain `GET`, so
 `--check` must not report it as a non-synthetic file without a `rawUrl` and `--fetch` must skip it,
-printing the note; a non-synthetic file with neither field is an error. Exactly one file in the
-corpus — `twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64` — carries its
-whole provenance in the `fetchNote`, `url` and `rawUrl` both being `null`, because its
-`PROVENANCE.md` cites no URL.
+printing the note; a non-synthetic file with neither field is an error. Five files are in that
+position, all of them upstream distributions: `dejavu`, `liberation`, `noto-devanagari`,
+`noto-sans-jp` and `twemoji-svginot-glyph5`.
 
 ## Full fonts, never subsampled
 
