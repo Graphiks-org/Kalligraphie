@@ -28,6 +28,7 @@ kotlin {
                 implementation(libs.okio)
             }
             resources.srcDir(rootProject.file("test-fixtures"))
+            kotlin.srcDir("src/classpathTest/kotlin")
         }
     }
 }
