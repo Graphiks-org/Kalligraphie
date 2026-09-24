@@ -5,6 +5,8 @@ agp = "9.0.0"
 compose-multiplatform = "1.11.1"
 dokka = "2.2.0"
 maven-publish = "0.36.0"
+kotlinx-benchmark = "0.5.0"
+androidx-benchmark = "1.4.1"
 
 # Libraries
 coroutines = "1.10.1"
@@ -44,6 +46,10 @@ androidx-test-runner = { module = "androidx.test:runner", version.ref = "android
 icu4j = { module = "com.ibm.icu:icu4j", version.ref = "icu4j" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
 
+# Measurement
+kotlinx-benchmark-runtime = { module = "org.jetbrains.kotlinx:kotlinx-benchmark-runtime", version.ref = "kotlinx-benchmark" }
+androidx-benchmark-junit4 = { module = "androidx.benchmark:benchmark-junit4", version.ref = "androidx-benchmark" }
+
 # Native bindings
 kffi-coretext-jvm = { module = "org.graphiks:kffi-coretext-jvm", version.ref = "kffi" }
 kffi-fontconfig-jvm = { module = "org.graphiks:kffi-fontconfig-jvm", version.ref = "kffi" }
@@ -56,6 +62,7 @@ kffi-harfbuzz-android = { module = "org.graphiks:kffi-harfbuzz-android", version
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-cocoapods = { id = "org.jetbrains.kotlin.native.cocoapods", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kotlinx-benchmark = { id = "org.jetbrains.kotlinx.benchmark", version.ref = "kotlinx-benchmark" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
