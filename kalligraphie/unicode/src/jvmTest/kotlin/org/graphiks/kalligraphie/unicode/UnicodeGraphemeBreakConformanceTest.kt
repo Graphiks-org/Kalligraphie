@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.graphiks.kalligraphie.unicode.corpus.UnicodeTestEnvironment
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.api.TextSlice
@@ -32,9 +33,9 @@ class UnicodeGraphemeBreakConformanceTest {
     }
 
     private fun unicode16GraphemeBreakCases(): Sequence<GraphemeBreakCase> = sequence {
-        val corpus = checkNotNull(javaClass.getResourceAsStream("/unicode/16.0.0/GraphemeBreakTest.txt")) {
-            "The checked-in Unicode 16 GraphemeBreakTest corpus is missing."
-        }
+        val corpus = UnicodeTestEnvironment.corpus
+            .text("/unicode/16.0.0/GraphemeBreakTest.txt")
+            .byteInputStream()
         corpus.bufferedReader().useLines { lines ->
             lines.forEachIndexed { index, rawLine ->
                 val source = rawLine.substringBefore('#').trim()

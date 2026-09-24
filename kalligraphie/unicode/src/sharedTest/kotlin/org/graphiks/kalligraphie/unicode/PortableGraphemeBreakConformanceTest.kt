@@ -3,6 +3,7 @@ package org.graphiks.kalligraphie.unicode
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.graphiks.kalligraphie.unicode.corpus.UnicodeTestEnvironment
 
 /**
  * The Unicode 16 `GraphemeBreakTest.txt` corpus, run against the portable segmenter.
@@ -28,14 +29,10 @@ class PortableGraphemeBreakConformanceTest {
     }
 
     private fun graphemeBreakCases(): Sequence<Case> = sequence {
-        val corpus = checkNotNull(javaClass.getResourceAsStream("/unicode/16.0.0/GraphemeBreakTest.txt")) {
-            "The checked-in Unicode 16 GraphemeBreakTest corpus is missing."
-        }
-        corpus.bufferedReader().useLines { lines ->
-            lines.forEachIndexed { index, rawLine ->
-                val source = rawLine.substringBefore('#').trim()
-                if (source.isNotEmpty()) yield(parseCase(index + 1, source))
-            }
+        val corpus = UnicodeTestEnvironment.corpus.text(CORPUS)
+        corpus.lineSequence().forEachIndexed { index, rawLine ->
+            val source = rawLine.substringBefore('#').trim()
+            if (source.isNotEmpty()) yield(parseCase(index + 1, source))
         }
     }
 
@@ -60,6 +57,7 @@ class PortableGraphemeBreakConformanceTest {
     )
 
     private companion object {
+        const val CORPUS: String = "/unicode/16.0.0/GraphemeBreakTest.txt"
         val WHITESPACE: Regex = Regex("\\s+")
         const val BREAK: String = "÷"
         const val NO_BREAK: String = "×"

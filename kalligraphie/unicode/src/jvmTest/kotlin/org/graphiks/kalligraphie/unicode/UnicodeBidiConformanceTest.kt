@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.graphiks.kalligraphie.unicode.corpus.UnicodeTestEnvironment
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.BidiRun
 import org.graphiks.kalligraphie.api.TextIndex
@@ -138,9 +139,10 @@ class UnicodeBidiConformanceTest {
         }
     }
 
-    private fun resource(fileName: String) = checkNotNull(
-        javaClass.getResourceAsStream("/unicode/16.0.0/$fileName"),
-    ) { "The checked-in Unicode 16.0 $fileName corpus is missing." }
+    // The corpus text comes from the shared seam; these tests are JVM-only, so re-wrapping it
+    // as a stream keeps their reading idiom while the module keeps one way to reach a corpus.
+    private fun resource(fileName: String) =
+        UnicodeTestEnvironment.corpus.text("/unicode/16.0.0/$fileName").byteInputStream()
 
     private fun parseLevels(source: String): List<Int?> = source.trim().split(WHITESPACE).map { token ->
         token.takeUnless { it == X9_REMOVED }?.toInt()

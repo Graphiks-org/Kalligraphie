@@ -10,7 +10,7 @@
       "license": "Unicode-3.0",
       "sha256": "b8f32554c6f658821fb0ee742d21c5b1f2086b9bf13071fed04894b022f93d67",
       "sizeBytes": 8891,
-      "repositoryPath": "kalligraphie/unicode/src/jvmTest/resources/unicode/16.0.0/BidiBrackets.txt",
+      "repositoryPath": "kalligraphie/unicode/src/harnessResources/unicode/16.0.0/BidiBrackets.txt",
       "cacheFile": null,
       "kdocFileName": null,
       "provides": ["Bidi_Paired_Bracket", "Bidi_Paired_Bracket_Type"]
@@ -114,7 +114,7 @@
       "license": "Unicode-3.0",
       "sha256": "049117ce26b9769fe2749b06eef51a50a89faef4a97764dd2d81daa715980700",
       "sizeBytes": 20576,
-      "repositoryPath": "kalligraphie/unicode/src/jvmTest/resources/unicode/16.0.0/ScriptExtensions.txt",
+      "repositoryPath": "kalligraphie/unicode/src/harnessResources/unicode/16.0.0/ScriptExtensions.txt",
       "cacheFile": null,
       "kdocFileName": null,
       "provides": ["Script_Extensions"]
@@ -127,7 +127,7 @@
       "license": "Unicode-3.0",
       "sha256": "9e88f0a677df47311106340be8ede2ecdacd9c1c931831218d2be6d5508e0039",
       "sizeBytes": 189588,
-      "repositoryPath": "kalligraphie/unicode/src/jvmTest/resources/unicode/16.0.0/Scripts.txt",
+      "repositoryPath": "kalligraphie/unicode/src/harnessResources/unicode/16.0.0/Scripts.txt",
       "cacheFile": null,
       "kdocFileName": null,
       "provides": ["Script"]

@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.unicode
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.graphiks.kalligraphie.unicode.corpus.UnicodeTestEnvironment
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.ScriptLanguageRun
 import org.graphiks.kalligraphie.api.TextIndex
@@ -188,9 +189,7 @@ class UnicodePropertyConformanceTest {
     }.toList()
 
     private fun dataLines(fileName: String): Sequence<DataLine> = sequence {
-        val corpus = checkNotNull(javaClass.getResourceAsStream("/unicode/16.0.0/$fileName")) {
-            "The checked-in Unicode 16.0 $fileName data is missing."
-        }
+        val corpus = UnicodeTestEnvironment.corpus.text("/unicode/16.0.0/$fileName").byteInputStream()
         corpus.bufferedReader().useLines { lines ->
             lines.forEachIndexed { index, rawLine ->
                 val source = rawLine.substringBefore('#').trim()
