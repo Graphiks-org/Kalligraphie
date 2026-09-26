@@ -78,12 +78,63 @@ val iosBenchmarkCorpus by tasks.registering {
     }
 }
 
+/**
+ * The measured commit travels to the instrumentation process as a class-path resource — the same
+ * channel the corpus uses — because a process on the device cannot call git, the publication
+ * contract refuses an unnamed commit, and the main compilation cannot see androidx.test's argument
+ * surface.
+ */
+val androidBenchmarkIdentity by tasks.registering {
+    group = "benchmark"
+    description = "Writes the measured commit into the Android device-test APK."
+    val outputDirectory = layout.buildDirectory.dir("generated/android-benchmark-identity")
+    outputs.dir(outputDirectory)
+    doLast {
+        val commit = providers.exec {
+            commandLine("git", "rev-parse", "HEAD")
+            workingDir(rootDir)
+        }.standardOutput.asText.get().trim()
+        check(commit.matches(Regex("[0-9a-f]{40}"))) {
+            "Could not identify the measured commit for the Android benchmark: $commit"
+        }
+        outputDirectory.get().asFile.apply { mkdirs() }
+            .resolve("bench-identity.properties")
+            .writeText("commit=$commit\n")
+    }
+}
+
 kotlin {
     explicitApi()
 
     jvm {
         val main = compilations.getByName("main")
         compilations.create("benchmark") { associateWith(main) }
+    }
+
+    android {
+        withDeviceTest {
+            instrumentationRunner = "androidx.benchmark.junit4.AndroidBenchmarkRunner"
+            // AGP 9's KMP device-test DSL offers no build-type lever, so the instrumentation APK is
+            // debuggable, and the measurement runs on the managed emulator. androidx.benchmark
+            // refuses both conditions; suppressing them is the tool's own sanctioned escape hatch,
+            // and the identity discloses the bias instead of hiding it. The per-test method and
+            // perfetto traces are disabled as well — the publication contract needs the measured
+            // medians and counters, not tens of megabytes of trace per profile.
+            instrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "DEBUGGABLE,EMULATOR"
+            // The per-test method and perfetto traces weigh tens of megabytes each and their
+            // device-to-host pull has repeatedly aborted the run mid-way; the publication contract
+            // needs the measured medians and counters, not the traces.
+            instrumentationRunnerArguments["androidx.benchmark.profiling.mode"] = "none"
+            managedDevices {
+                localDevices {
+                    create("mediumPhone") {
+                        device = "Medium Phone"
+                        apiLevel = 35
+                        systemImageSource = "aosp"
+                    }
+                }
+            }
+        }
     }
 
     iosSimulatorArm64 {
@@ -113,6 +164,19 @@ kotlin {
                 implementation(libs.okio)
             }
             resources.srcDir(rootProject.file("test-fixtures"))
+            kotlin.srcDir("src/classpathTest/kotlin")
+        }
+        getByName("androidDeviceTest") {
+            dependencies {
+                implementation(project(":kalligraphie"))
+                implementation(libs.androidx.benchmark.junit4)
+                implementation(libs.androidx.test.ext.junit)
+                implementation(libs.androidx.test.runner)
+            }
+            // AGP packages the same directories into the device-test APK, so the instrumented
+            // benchmark reads the same committed corpus through the class loader.
+            resources.srcDir(rootProject.file("test-fixtures"))
+            resources.srcDir(androidBenchmarkIdentity)
             kotlin.srcDir("src/classpathTest/kotlin")
         }
         getByName("iosSimulatorArm64Bench") {
