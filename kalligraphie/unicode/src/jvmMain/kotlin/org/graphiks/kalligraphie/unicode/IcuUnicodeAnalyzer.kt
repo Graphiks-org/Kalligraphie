@@ -801,95 +801,11 @@ private data class ExplicitBidiStructure(
     val sequenceAt: IntArray,
 )
 
-private fun nextEmbeddingLevel(current: Int, rtl: Boolean): Int = if (rtl) {
-    if (current % 2 == 0) current + 1 else current + 2
-} else {
-    if (current % 2 == 0) current + 2 else current + 1
-}
-
-private val BaseDirection.paragraphLevel: Int
-    get() = if (this == BaseDirection.LEFT_TO_RIGHT) 0 else 1
-
 private data class EmbeddingStatus(
     val level: Int,
     val isolate: Boolean,
     val override: Boolean,
 )
-
-private fun bidiRuns(
-    snapshot: TextSnapshot,
-    levels: IntArray,
-    profile: UnicodeAnalysisProfile,
-    cancellationToken: CancellationToken,
-): List<BidiRun> {
-    if (levels.isEmpty()) return emptyList()
-    val runs = mutableListOf<BidiRun>()
-    var start = 0
-    var level = levels.first()
-    for (scalarIndex in 1 until levels.size) {
-        observeCancellation(scalarIndex, profile, cancellationToken)
-        if (levels[scalarIndex] != level) {
-            runs += BidiRun(scalarRange(snapshot, start, scalarIndex), level)
-            start = scalarIndex
-            level = levels[scalarIndex]
-        }
-    }
-    runs += BidiRun(scalarRange(snapshot, start, levels.size), level)
-    return runs
-}
-
-private fun reorderBidiRuns(
-    logicalRuns: List<BidiRun>,
-    profile: UnicodeAnalysisProfile,
-    cancellationToken: CancellationToken,
-): List<BidiRun> {
-    var minimumOddLevel: Int? = null
-    var maximumLevel = 0
-    val visualRuns = ArrayList<BidiRun>(logicalRuns.size)
-    logicalRuns.forEachIndexed { runIndex, run ->
-        observeCancellation(runIndex, profile, cancellationToken)
-        if (run.level.rem(2) == 1) {
-            minimumOddLevel = minOf(minimumOddLevel ?: run.level, run.level)
-        }
-        maximumLevel = maxOf(maximumLevel, run.level)
-        visualRuns += run
-    }
-    val firstReorderingLevel = minimumOddLevel ?: return logicalRuns
-    for (level in maximumLevel downTo firstReorderingLevel) {
-        var sequenceStart: Int? = null
-        for (runIndex in 0..visualRuns.size) {
-            observeCancellation(runIndex, profile, cancellationToken)
-            if (runIndex < visualRuns.size && visualRuns[runIndex].level >= level) {
-                if (sequenceStart == null) sequenceStart = runIndex
-            } else if (sequenceStart != null) {
-                reverseBidiRunSequence(visualRuns, sequenceStart, runIndex, profile, cancellationToken)
-                sequenceStart = null
-            }
-        }
-    }
-    return visualRuns
-}
-
-private fun reverseBidiRunSequence(
-    runs: MutableList<BidiRun>,
-    start: Int,
-    endExclusive: Int,
-    profile: UnicodeAnalysisProfile,
-    cancellationToken: CancellationToken,
-) {
-    var left = start
-    var right = endExclusive - 1
-    var swapIndex = 0
-    while (left < right) {
-        observeCancellation(swapIndex, profile, cancellationToken)
-        val run = runs[left]
-        runs[left] = runs[right]
-        runs[right] = run
-        left += 1
-        right -= 1
-        swapIndex += 1
-    }
-}
 
 private fun bidi(
     text: String,
@@ -938,26 +854,6 @@ private class CanonicalUtf16Text(
         return scalarBoundary
     }
 }
-
-private fun observeCancellation(cancellationToken: CancellationToken) {
-    if (cancellationToken.isCancellationRequested()) throw UnicodeAnalysisCancelled
-}
-
-private fun observeCancellation(
-    scalarIndex: Int,
-    profile: UnicodeAnalysisProfile,
-    cancellationToken: CancellationToken,
-) {
-    if (scalarIndex % profile.cancellationCheckInterval == 0) observeCancellation(cancellationToken)
-}
-
-private data object UnicodeAnalysisCancelled : RuntimeException()
-
-private fun scalarRange(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange =
-    TextRange(
-        snapshot.textIndexAtScalarBoundary(start),
-        snapshot.textIndexAtScalarBoundary(endExclusive),
-    )
 
 private fun verifyPinnedUnicodeData() {
     check(UCharacter.getUnicodeVersion() == VersionInfo.UNICODE_16_0) {
