@@ -1,10 +1,11 @@
 package org.graphiks.kalligraphie.bench
 
 import org.graphiks.kalligraphie.bench.fixture.FixtureCorpus
+import org.graphiks.kalligraphie.bench.scenarios.paragraphScenariosJvm
 
 /**
- * JVM actual: the paragraph scenarios are provided once the portable contract is wired — filled in
- * by the port of `IncrementalLayoutBenchmark`, `EditableLineMeasurement` and the materialization
- * consumer/session and handoff profiles, all of which need `END_TO_END_LAYOUT`.
+ * JVM actual: the incremental-layout, editable-line, consumer, session, handoff and concurrent
+ * scenarios — all of which need `END_TO_END_LAYOUT`, which the JVM platform declares present.
  */
-public actual fun paragraphScenarios(corpus: FixtureCorpus): List<MeasurementScenario> = emptyList()
+public actual fun paragraphScenarios(corpus: FixtureCorpus): List<MeasurementScenario> =
+    paragraphScenariosJvm(corpus)

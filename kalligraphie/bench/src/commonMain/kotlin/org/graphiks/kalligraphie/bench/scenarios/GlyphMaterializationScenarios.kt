@@ -18,7 +18,7 @@ import org.graphiks.kalligraphie.bench.fixture.FixtureCorpus
 private val COLR_BYTES_PATH = "/fonts/bungee-color/BungeeColor-Regular.ttf"
 private val SVG_BYTES_PATH = "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64"
 private val BITMAP_BYTES_PATH = "/fonts/skia-ebdt-format1/ebdt_fmt1.ttf"
-private val LIBERATION_BYTES_PATH = "/fonts/liberation/LiberationSans-Regular.ttf"
+internal val LIBERATION_BYTES_PATH = "/fonts/liberation/LiberationSans-Regular.ttf"
 
 private class ColdResolution(
     name: String,
