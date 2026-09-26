@@ -10,3 +10,6 @@ local.properties
 _site/
 docs/docs/api/
 __pycache__/
+# The UCD payloads `scripts/unicode/fetch_ucd.py` downloads: pinned by digest in `ucd.json`, and
+# never committed — the tables they produce are.
+scripts/unicode/.cache/
