@@ -37,10 +37,10 @@ public data class MeasurementProfile(
         require(warmupIterations > 0 && iterations > 0) {
             "A profile needs positive warmup and iteration counts."
         }
-        require(consumed.isNotEmpty()) {
-            "A profile must publish what it consumed, or it cannot be told from a no-op: $name."
-        }
-        require(consumed.values.all { it > 0 }) {
+        // The no-op guard is "nothing was consumed", not "every counter is positive": a cold
+        // profile legitimately observes zero on counters that count reuse or hits — the zero is
+        // itself the evidence the path was cold — so one positive counter clears the profile.
+        require(consumed.isNotEmpty() && consumed.values.any { it > 0 }) {
             "A profile that consumed nothing measured a no-op: $name."
         }
     }

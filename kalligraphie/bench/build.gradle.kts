@@ -13,6 +13,7 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
+import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 
 plugins {
     id("ygdrasil.conventions.kmp-library")
@@ -158,6 +159,12 @@ kotlin {
             implementation(project(":kalligraphie:font:core"))
             implementation(project(":kalligraphie:font:sfnt"))
         }
+        getByName("jvmMain") {
+            // The report aggregator parses the JMH JSON the benchmark tool writes.
+            dependencies {
+                implementation(libs.kotlinx.serialization.json)
+            }
+        }
         getByName("jvmBenchmark") {
             dependencies {
                 implementation(project(":kalligraphie"))
@@ -205,13 +212,14 @@ benchmark {
 // Allocation therefore comes from the per-thread probe inside the benchmark method, and the
 // observations path travels through the environment: JMH's forked JVMs inherit it, so each
 // scenario's TearDown can append its counters to the same run file instead of them dying with the
-// fork.
+// fork. The file is truncated before the run so it always holds exactly one measurement run — the
+// same hygiene the iOS task applies — because the report aggregator reads it as a single run.
+val jvmBenchmarkObservations = layout.buildDirectory.file("bench/observations.jsonl")
 tasks.withType<JavaExec>().configureEach {
     if (name != "jvmBenchmarkBenchmark") return@configureEach
-    environment(
-        "KALLIGRAPHIE_BENCH_OBSERVATIONS",
-        layout.buildDirectory.file("bench/observations.jsonl").get().asFile.absolutePath,
-    )
+    val observations = jvmBenchmarkObservations.get().asFile
+    environment("KALLIGRAPHIE_BENCH_OBSERVATIONS", observations.absolutePath)
+    doFirst { observations.delete() }
 }
 
 tasks.withType<Test>().configureEach {
@@ -338,4 +346,46 @@ val iosSimulatorArm64Benchmark by tasks.registering(IosBenchmarkRunTask::class) 
     repositoryRoot.set(rootProject.layout.projectDirectory)
     observationsFile.set(layout.buildDirectory.file("bench/ios-observations.jsonl"))
     reportFile.set(layout.buildDirectory.file("bench/ios-report.md"))
+}
+
+/**
+ * Aggregates the three platforms' raw measurement outputs into the publication contract's
+ * per-platform reports plus a comparison, without measuring anything itself: the measurement tasks
+ * stay opt-in, and a missing input fails loudly naming the path, because a report assembled from
+ * partial runs would look complete while publishing nothing for the absent platform.
+ */
+val measurementReport by tasks.registering(JavaExec::class) {
+    group = "benchmark"
+    description = "Joins the JVM, iOS and Android measurement outputs into per-platform reports."
+    val jvmBenchmarkCompilation = kotlin.targets
+        .named<KotlinJvmTarget>("jvm")
+        .get()
+        .compilations
+        .getByName("benchmark")
+    classpath = files(
+        jvmBenchmarkCompilation.output.classesDirs,
+        jvmBenchmarkCompilation.output.resourcesDir,
+        jvmBenchmarkCompilation.runtimeDependencyFiles,
+    )
+    dependsOn(jvmBenchmarkCompilation.compileTaskProvider, jvmBenchmarkCompilation.processResourcesTaskName)
+    mainClass.set("org.graphiks.kalligraphie.bench.ReportAggregatorKt")
+
+    val benchBuild = layout.buildDirectory
+    fun default(property: String, path: Provider<String>): String =
+        providers.gradleProperty(property).orElse(path).get()
+
+    argumentProviders.add {
+        listOf(
+            "--jvm-jmh-dir=${default("kalligraphie.bench.jvmJmhDir", benchBuild.dir("reports/benchmarks/main").map { it.asFile.absolutePath })}",
+            "--jvm-obs=${default("kalligraphie.bench.jvmObservations", benchBuild.file("bench/observations.jsonl").map { it.asFile.absolutePath })}",
+            "--ios-obs=${default("kalligraphie.bench.iosObservations", benchBuild.file("bench/ios-observations.jsonl").map { it.asFile.absolutePath })}",
+            "--ios-report=${default("kalligraphie.bench.iosReport", benchBuild.file("bench/ios-report.md").map { it.asFile.absolutePath })}",
+            "--android-obs=${default("kalligraphie.bench.androidObservations", benchBuild.file("bench/android-observations.jsonl").map { it.asFile.absolutePath })}",
+            "--android-medians=${default(
+                "kalligraphie.bench.androidMedians",
+                benchBuild.dir("outputs/managed_device_android_test_additional_output/androidmain/mediumPhone").map { it.asFile.absolutePath },
+            )}",
+            "--out=${benchBuild.dir("bench").get().asFile.absolutePath}",
+        )
+    }
 }
