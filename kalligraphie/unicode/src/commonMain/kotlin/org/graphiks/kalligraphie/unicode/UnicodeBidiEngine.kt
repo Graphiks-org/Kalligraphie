@@ -19,18 +19,26 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile
  */
 internal object UnicodeBidiEngine {
 
+    /** One resolved analysis: the embedding levels and the BD16 bracket pairs the resolution used. */
+    internal class ResolvedLevels(
+        val levels: IntArray,
+        val bracketPairs: UnicodeBidiStructure.BracketResolution,
+    )
+
     /**
-     * Resolves the embedding level of every scalar of [scalars], per UAX #9, at [paragraphLevel].
+     * Resolves the embedding level of every scalar of [scalars], per UAX #9, at [paragraphLevel],
+     * and keeps the BD16 bracket pairs the resolution found — the same pairs the script resolution
+     * attributes paired punctuation from, so one analysis computes them once.
      *
      * The X9-removed characters carry the normative level the shared repair assigns them, so the
      * result is directly partitionable into runs and reordable into visual order.
      */
-    internal fun resolveLevels(
+    internal fun resolve(
         scalars: List<Int>,
         paragraphLevel: Int,
         profile: UnicodeAnalysisProfile,
         cancellationToken: CancellationToken,
-    ): IntArray {
+    ): ResolvedLevels {
         val classOf = TABLES
         val fsi = UnicodeBidiStructure.fsiDirections(scalars, paragraphLevel, classOf, profile, cancellationToken)
         val explicit = UnicodeBidiStructure.explicitStructure(
@@ -59,8 +67,15 @@ internal object UnicodeBidiEngine {
             profile,
             cancellationToken,
         )
-        return levels
+        return ResolvedLevels(levels, brackets)
     }
+
+    internal fun resolveLevels(
+        scalars: List<Int>,
+        paragraphLevel: Int,
+        profile: UnicodeAnalysisProfile,
+        cancellationToken: CancellationToken,
+    ): IntArray = resolve(scalars, paragraphLevel, profile, cancellationToken).levels
 
     private val TABLES: UnicodeBidiStructure.ClassOf = UnicodeBidiStructure.ClassOf { scalar ->
         UnicodeBidiClass.of(scalar)
