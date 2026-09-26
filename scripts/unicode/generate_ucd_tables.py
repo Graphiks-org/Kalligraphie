@@ -664,6 +664,207 @@ def emit_extended_pictographic(sources: Sources) -> str:
     )
 
 
+def emit_combining_mark(sources: Sources) -> str:
+    source = sources.at("general-category")
+    ranges = [
+        Run(run.start, run.end, "mark")
+        for run in parse_ranges(source.text)
+        if run.value in ("Mn", "Mc")
+    ]
+    pairs = [(run.start, run.end) for run in merge_contiguous(ranges)]
+    return (
+        header(
+            sources,
+            source,
+            "General_Category",
+            "Used by the portable UAX #14 line-break analyzer (LB1 resolves the `SA` class into"
+            " `CM` for a combining mark and `AL` otherwise).",
+            " * It contains only the scalars the source assigns `Mn` or `Mc`; every other\n"
+            " * scalar is not one, which is why the `@missing` default needs no range.",
+        )
+        + f"\ninternal object UnicodeCombiningMark {{\n"
+        + version_constant(sources)
+        + """
+    /** Returns whether [scalar] has General_Category `Mn` or `Mc`, a combining mark. */
+    internal fun isCombiningMark(scalar: Int): Boolean {
+        if (scalar !in 0..0x10FFFF) return false
+        var low = 0
+        var high = RANGE_BOUNDARIES.size / 2 - 1
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val start = RANGE_BOUNDARIES[middle * 2]
+            val end = RANGE_BOUNDARIES[middle * 2 + 1]
+            when {
+                scalar < start -> high = middle - 1
+                scalar > end -> low = middle + 1
+                else -> return true
+            }
+        }
+        return false
+    }
+
+"""
+        + format_pair_array("RANGE_BOUNDARIES", pairs)
+        + "\n}\n"
+    )
+
+
+def emit_quotation(sources: Sources) -> str:
+    source = sources.at("general-category")
+    initial = [Run(run.start, run.end, "pi") for run in parse_ranges(source.text) if run.value == "Pi"]
+    final = [Run(run.start, run.end, "pf") for run in parse_ranges(source.text) if run.value == "Pf"]
+    return (
+        header(
+            sources,
+            source,
+            "General_Category",
+            "Used by the portable UAX #14 line-break analyzer (LB15a and LB15b resolve the"
+            " quotation punctuation among the `QU` class by its General_Category).",
+            " * It contains only the scalars the source assigns `Pi` or `Pf`; every other\n"
+            " * scalar is not one, which is why the `@missing` default needs no range.",
+        )
+        + f"\ninternal object UnicodeQuotation {{\n"
+        + version_constant(sources)
+        + """
+    /** Returns whether [scalar] has General_Category `Pi`, an initial quotation mark. */
+    internal fun isInitialQuotation(scalar: Int): Boolean = contains(INITIAL_BOUNDARIES, scalar)
+
+    /** Returns whether [scalar] has General_Category `Pf`, a final quotation mark. */
+    internal fun isFinalQuotation(scalar: Int): Boolean = contains(FINAL_BOUNDARIES, scalar)
+
+    private fun contains(boundaries: IntArray, scalar: Int): Boolean {
+        if (scalar !in 0..0x10FFFF) return false
+        var low = 0
+        var high = boundaries.size / 2 - 1
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val start = boundaries[middle * 2]
+            val end = boundaries[middle * 2 + 1]
+            when {
+                scalar < start -> high = middle - 1
+                scalar > end -> low = middle + 1
+                else -> return true
+            }
+        }
+        return false
+    }
+
+"""
+        + format_pair_array("INITIAL_BOUNDARIES", [(run.start, run.end) for run in merge_contiguous(initial)])
+        + "\n"
+        + format_pair_array("FINAL_BOUNDARIES", [(run.start, run.end) for run in merge_contiguous(final)])
+        + "\n}\n"
+    )
+
+
+def emit_potential_emoji(sources: Sources) -> str:
+    emoji = sources.at("emoji-data")
+    category = sources.at("general-category")
+    pictographic = [
+        (run.start, run.end)
+        for run in parse_ranges(emoji.text)
+        if run.value == "Extended_Pictographic"
+    ]
+    unassigned = [
+        (run.start, run.end)
+        for run in parse_ranges(category.text)
+        if run.value == "Cn"
+    ]
+    pairs = [(run.start, run.end) for run in intersect(pictographic, unassigned)]
+    return (
+        header(
+            sources,
+            emoji,
+            "Extended_Pictographic and General_Category",
+            "Used by the portable UAX #14 line-break analyzer (LB30b admits an `EM` after a"
+            " potential emoji base: a scalar that is both `Extended_Pictographic` and `Cn`).",
+            " * It contains only the scalars that are both, which is why the `@missing`\n"
+            " * default needs no range. The pinned `General_Category` source supplies the\n"
+            " * unassigned half of the intersection.",
+        )
+        + f"\ninternal object UnicodePotentialEmoji {{\n"
+        + version_constant(sources)
+        + """
+    /** Returns whether [scalar] is an `Extended_Pictographic` that is still `Cn`. */
+    internal fun isPotentialEmojiBase(scalar: Int): Boolean {
+        if (scalar !in 0..0x10FFFF) return false
+        var low = 0
+        var high = RANGE_BOUNDARIES.size / 2 - 1
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val start = RANGE_BOUNDARIES[middle * 2]
+            val end = RANGE_BOUNDARIES[middle * 2 + 1]
+            when {
+                scalar < start -> high = middle - 1
+                scalar > end -> low = middle + 1
+                else -> return true
+            }
+        }
+        return false
+    }
+
+"""
+        + format_pair_array("RANGE_BOUNDARIES", pairs)
+        + "\n}\n"
+    )
+
+
+def intersect(left: list[tuple[int, int]], right: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    pairs: list[tuple[int, int]] = []
+    for (lstart, lend) in left:
+        for (rstart, rend) in right:
+            start = max(lstart, rstart)
+            end = min(lend, rend)
+            if start <= end:
+                pairs.append((start, end))
+    return merge_contiguous([Run(start, end, "x") for (start, end) in pairs])
+
+
+def emit_east_asian_width(sources: Sources) -> str:
+    source = sources.at("east-asian-width")
+    ranges = [
+        Run(run.start, run.end, "wide")
+        for run in parse_ranges(source.text)
+        if run.value in ("F", "W", "H")
+    ]
+    pairs = [(run.start, run.end) for run in merge_contiguous(ranges)]
+    return (
+        header(
+            sources,
+            source,
+            "East_Asian_Width",
+            "Used by the portable UAX #14 line-break analyzer (LB30 exempts the `OP` and `CP`"
+            " punctuation whose East_Asian_Width is `F`, `W` or `H` from its pairing).",
+            " * It contains only the scalars the source assigns `F`, `W` or `H`; the `@missing\n"
+            " * default `N` answers every other scalar, which needs no range.",
+        )
+        + f"\ninternal object UnicodeEastAsianWidth {{\n"
+        + version_constant(sources)
+        + """
+    /** Returns whether [scalar] has East_Asian_Width `F`, `W` or `H`. */
+    internal fun isFullwidthWideOrHalfwidth(scalar: Int): Boolean {
+        if (scalar !in 0..0x10FFFF) return false
+        var low = 0
+        var high = RANGE_BOUNDARIES.size / 2 - 1
+        while (low <= high) {
+            val middle = (low + high) ushr 1
+            val start = RANGE_BOUNDARIES[middle * 2]
+            val end = RANGE_BOUNDARIES[middle * 2 + 1]
+            when {
+                scalar < start -> high = middle - 1
+                scalar > end -> low = middle + 1
+                else -> return true
+            }
+        }
+        return false
+    }
+
+"""
+        + format_pair_array("RANGE_BOUNDARIES", pairs)
+        + "\n}\n"
+    )
+
+
 def emit_script(sources: Sources) -> str:
     source = sources.at("scripts")
     aliases = parse_value_aliases(sources.at("property-value-aliases").text)["sc"]
@@ -960,6 +1161,10 @@ TABLES = {
     table_path("IndicConjunctBreak"): emit_indic_conjunct_break,
     table_path("LineBreakClass"): emit_line_break,
     table_path("UnicodeExtendedPictographic"): emit_extended_pictographic,
+    table_path("UnicodeCombiningMark"): emit_combining_mark,
+    table_path("UnicodeQuotation"): emit_quotation,
+    table_path("UnicodePotentialEmoji"): emit_potential_emoji,
+    table_path("UnicodeEastAsianWidth"): emit_east_asian_width,
     table_path("UnicodeScript"): emit_script,
     table_path("UnicodeScriptExtensions"): emit_script_extensions,
     table_path("UnicodeLikelyScript"): emit_likely_script,

@@ -55,6 +55,10 @@ One emitted file per property, in `kalligraphie/unicode/src/commonMain/.../unico
 | `UnicodeScriptExtensions` | `ScriptExtensions.txt` | Sparse; each distinct set of codes is emitted once and the ranges index into it. |
 | `UnicodeBidiBrackets` | `BidiBrackets.txt` | Sparse; three parallel arrays over the bracketed scalars. |
 | `UnicodeLikelyScript` | `likelySubtags.xml` (CLDR) | Sparse; the languages carrying no region, mapped to the script their maximised tag names. |
+| `UnicodeCombiningMark` | `DerivedGeneralCategory.txt` (`Mn`, `Mc`) | Sparse; the scalars LB1 resolves the `SA` class with. |
+| `UnicodeQuotation` | `DerivedGeneralCategory.txt` (`Pi`, `Pf`) | Sparse; the initial and final quotation marks LB15a, LB15b and LB19 read. |
+| `UnicodePotentialEmoji` | `emoji-data.txt` **and** `DerivedGeneralCategory.txt` | Sparse; the scalars that are both `Extended_Pictographic` and `Cn`, which is LB30b's potential emoji base. |
+| `UnicodeEastAsianWidth` | `EastAsianWidth.txt` (`F`, `W`, `H`) | Sparse; the set UAX #14 spells `$EastAsian`, read by LB19a, LB21a and LB30. |
 
 Two shapes of binary search, and the difference is not cosmetic. A **dense** table bounds each range
 by the next range's start, so testing `scalar >= start` is enough. A **sparse** table has gaps, so it
@@ -89,7 +93,15 @@ python3 scripts/unicode/fetch_ucd.py --fetch --key line-break # restrict to one 
 python3 scripts/unicode/generate_ucd_tables.py --check      # regenerate in memory and compare
 python3 scripts/unicode/generate_ucd_tables.py --write      # write the tables into the source tree
 python3 -m unittest discover -s scripts/unicode/tests -v    # unit tests, no network
+python3 scripts/unicode/generate_hyphenation_source.py --check  # the embedded pattern set matches
+python3 scripts/unicode/generate_hyphenation_source.py --write  # re-emit it after a pattern change
 ```
+
+`generate_hyphenation_source.py` is a separate, much smaller generator: Kotlin/Native has no class
+path, so the American-English `hyph-en-us.pat.txt` resource the JVM provider reads at runtime is
+emitted as `EmbeddedHyphenationPatterns.kt`, a generated Kotlin constant, with the pinned SHA-256
+verified at generation time instead of at runtime. The vendored resource stays the authority: change
+it and the generator refuses to emit until the digest in the script is updated.
 
 Only `--fetch` reaches the network. `--check` compares the committed tables with what the pinned
 sources produce and names the file and the first differing line, so a table edited by hand, a source

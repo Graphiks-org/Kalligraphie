@@ -41,6 +41,8 @@ ALLOWED_PROVIDES = frozenset(
         "Bidi_Paired_Bracket",
         "Bidi_Paired_Bracket_Type",
         "Extended_Pictographic",
+        "General_Category",
+        "East_Asian_Width",
         "Grapheme_Cluster_Break",
         "ISO-15924-short-names",
         "Indic_Conjunct_Break",

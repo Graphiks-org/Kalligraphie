@@ -69,7 +69,7 @@ internal class UcdUnicodeAnalyzer : BoundedUnicodeAnalyzer {
             UnicodeAnalysisOutcome.Success(
                 UnicodeAnalysis(
                     range = snapshot.range,
-                    unicodeData = UNICODE_DATA,
+                    unicodeData = PORTABLE_UNICODE_DATA,
                     graphemeClusters = graphemes,
                     scriptLanguageRuns = scripts,
                     logicalBidiRuns = logicalBidiRuns,
@@ -106,9 +106,10 @@ internal class UcdUnicodeAnalyzer : BoundedUnicodeAnalyzer {
 /**
  * The data identity of the portable analysis: the generated tables *are* the implementation, and
  * their release is the Unicode version they were generated from, so both names carry that version
- * the way the JVM reference carries ICU's.
+ * the way the JVM reference carries ICU's. The line-break analyzer requires the analysis it reads
+ * to carry this same identity, which is what keeps the two resolutions on one table set.
  */
-private val UNICODE_DATA: UnicodeDataIdentity = UnicodeDataIdentity(
+internal val PORTABLE_UNICODE_DATA: UnicodeDataIdentity = UnicodeDataIdentity(
     unicodeVersion = UnicodeScript.unicodeVersion,
     implementation = "Kalligraphie",
     implementationVersion = UnicodeScript.unicodeVersion,
