@@ -60,6 +60,14 @@ public interface MeasurementScenario {
     /** Untimed, once after the measurement run: release everything [prepare] opened. */
     public fun release() {}
 
+    /**
+     * A running checksum of everything the operations consumed, for the harness to hand to its
+     * black hole. Without it, a scheduler may eliminate a measured operation that produces no
+     * observable value — the fastest no-op in the report.
+     */
+    public val evidence: Long
+        get() = 0L
+
     /** Reads the counters left by the timed operations. */
     public fun observations(): ScenarioObservations
 }

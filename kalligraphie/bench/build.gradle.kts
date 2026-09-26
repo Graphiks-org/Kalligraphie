@@ -14,6 +14,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.benchmark.runtime)
+            implementation(project(":kalligraphie"))
             implementation(project(":kalligraphie:api"))
             implementation(project(":kalligraphie:conformance"))
             implementation(project(":kalligraphie:shaping"))
@@ -21,11 +22,6 @@ kotlin {
             implementation(project(":kalligraphie:layout"))
             implementation(project(":kalligraphie:font:core"))
             implementation(project(":kalligraphie:font:sfnt"))
-        }
-        val jvmMain by getting {
-            dependencies {
-                implementation(project(":kalligraphie"))
-            }
         }
         val jvmBenchmark by getting {
             dependencies {
