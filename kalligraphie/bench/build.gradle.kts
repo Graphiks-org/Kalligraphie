@@ -22,6 +22,11 @@ kotlin {
             implementation(project(":kalligraphie:font:core"))
             implementation(project(":kalligraphie:font:sfnt"))
         }
+        val jvmMain by getting {
+            dependencies {
+                implementation(project(":kalligraphie"))
+            }
+        }
         val jvmBenchmark by getting {
             dependencies {
                 implementation(project(":kalligraphie"))
