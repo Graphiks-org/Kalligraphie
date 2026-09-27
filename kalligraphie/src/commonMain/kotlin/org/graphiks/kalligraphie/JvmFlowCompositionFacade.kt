@@ -2,7 +2,7 @@
 
 package org.graphiks.kalligraphie
 
-import java.util.Collections
+import org.graphiks.kalligraphie.api.immutableListSnapshot
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
 import org.graphiks.kalligraphie.api.EditorOperationContext
@@ -60,7 +60,7 @@ public class JvmFlowCompositionRequest(
     features: List<OpenTypeFeature> = request.input.typography.features,
 ) {
     /** Immutable OpenType feature overrides in deterministic caller order. */
-    public val features: List<OpenTypeFeature> = Collections.unmodifiableList(features.toList())
+    public val features: List<OpenTypeFeature> = features.toList().immutableListSnapshot()
 
     init {
         require(language.isNotBlank()) { "Flow composition language must not be blank." }
