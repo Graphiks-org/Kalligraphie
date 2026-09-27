@@ -61,6 +61,10 @@ val iosFixtureCorpus by tasks.registering {
         "/fonts/cff2-liberation/LiberationSans-CFF2.otf" to fixtures.file("fonts/cff2-liberation/LiberationSans-CFF2.otf").asFile,
         "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf" to fixtures.file("fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf").asFile,
         "/fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf" to fixtures.file("fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf").asFile,
+        // The paragraph scenes' own fixtures: the variable family the weight ladder walks and the
+        // vertical Japanese face the mosaic composes.
+        "/fonts/worksans/WorkSans[wght].ttf" to fixtures.file("fonts/worksans/WorkSans[wght].ttf").asFile,
+        "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf" to fixtures.file("fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf").asFile,
         "/catalog/auto-sizing-exemptions.tsv" to resources.file("catalog/auto-sizing-exemptions.tsv").asFile,
         "/golden/manifest.tsv" to resources.file("golden/manifest.tsv").asFile,
     )
@@ -139,7 +143,10 @@ kotlin {
             resources.srcDir(layout.projectDirectory.dir("src/harnessResources"))
             sharedHarnessDirs.forEach { directory -> kotlin.srcDir(directory) }
             kotlin.srcDir(classpathCorpusDir)
-            kotlin.srcDir("src/androidFamilyTest/kotlin")
+            // The host and the device compilations share the harness but not the environment: the
+            // host runs on a JVM and cannot load the Android native artifact, so it declares only
+            // the capabilities its runtime serves. Each directory holds exactly one declaration.
+            kotlin.srcDir("src/androidHostTest/kotlin")
         }
         val androidDeviceTest by getting {
             dependencies {
@@ -156,7 +163,7 @@ kotlin {
             resources.srcDir(layout.projectDirectory.dir("src/harnessResources"))
             sharedHarnessDirs.forEach { directory -> kotlin.srcDir(directory) }
             kotlin.srcDir(classpathCorpusDir)
-            kotlin.srcDir("src/androidFamilyTest/kotlin")
+            kotlin.srcDir("src/androidDeviceTest/kotlin")
         }
         val iosSimulatorArm64Test by getting {
             dependencies {

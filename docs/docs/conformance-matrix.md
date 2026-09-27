@@ -31,15 +31,20 @@ diagnostic returned when — and only when — the capability is unavailable.
 | Platform | Unicode analysis | Shaping | End-to-end layout | Glyph representation variants | Profile |
 | --- | --- | --- | --- | --- | --- |
 | JVM | Present | Present | Present | Present | `jvm-reference` |
-| iOS | Absent | Present | Absent | Present | `absent` / `bundled-harfbuzz` / `portable-glyph` |
-| Android | Absent | Present | Absent | Present | `absent` / `bundled-harfbuzz` / `portable-glyph` |
+| iOS | Present | Present | Present | Present | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
+| Android | Present | Present | Present | Present | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
 
-The JVM declares the complete reference capability surface. Android declares
-shaping present through the bundled HarfBuzz backend (API 28+), and iOS declares
-shaping present through the bundled HarfBuzz backend; both mobile targets declare
-Unicode analysis and end-to-end layout `absent` and the glyph representation
-route present. The absence diagnostic is emitted for every absent capability,
-independently of whether a caller requires it.
+Every platform declares the complete portable capability surface, and the results
+are the same on each of them. The JVM is the reference. Android and iOS take
+shaping from the bundled HarfBuzz backend (Android requires API 28 or later),
+the glyph representation route from portable code, and the remaining two from
+this repository's own portable code: Unicode analysis and line breaking resolve
+from the generated Unicode 16.0 tables, and the paragraph facade composes text
+through them, so a device's own Unicode engine cannot change a result. The
+absence diagnostic is emitted for every absent capability, independently of
+whether a caller requires it; no capability is absent anywhere, so nothing emits
+it today, and the declaration still carries it per platform for the next
+platform that is not complete.
 
 ## Test coverage
 
@@ -83,12 +88,14 @@ only when portable geometry exists to compare.
 
 ## Known limitations
 
-- Portable Unicode analysis and end-to-end layout are owned by separate
-  workstreams. Android declares shaping present through the bundled HarfBuzz
-  backend, which requires API 28 or later; the shared Android library floor was
-  raised from API 24 to API 28, a deliberate breaking change for API 24–27
-  consumers. iOS declares shaping present through the bundled HarfBuzz backend
-  and analysis absent.
+- Android declares shaping present through the bundled HarfBuzz backend, which
+  requires API 28 or later; the shared Android library floor was raised from API
+  24 to API 28, a deliberate breaking change for API 24–27 consumers. iOS
+  declares shaping present through the bundled HarfBuzz backend.
+- The Android *host* test compilation declares less than the Android platform:
+  it runs on a JVM and cannot load the shared library the shaping route needs, so
+  it declares the portable Unicode analysis and the portable glyph route alone.
+  The device runtime carries the full declaration.
 - Reading and rasterizing fonts is not part of this module.
 - `iosArm64` is compiled but tests execute on `iosSimulatorArm64`; device
   execution is not performed on hosted runners.

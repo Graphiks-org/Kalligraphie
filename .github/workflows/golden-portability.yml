@@ -1,9 +1,14 @@
 name: Golden portability
 
 # The golden fingerprints are one committed record, and every platform reproduces them byte for
-# byte. This workflow is that claim, executed: the same `manifest.tsv`, compared by the JVM on five
-# runners, by the Android unit-test compilation, by the Android device runtime under ART, and by the
-# iOS simulator binary. No job uses a tolerance, and no platform owns a private record.
+# byte — composed text included, now that the text facades are portable. This workflow is that claim,
+# executed: the same `manifest.tsv`, compared by the JVM on five runners, by the Android unit-test
+# compilation, by the Android device runtime under ART, and by the iOS simulator binary. No job uses
+# a tolerance, and no platform owns a private record.
+#
+# One compilation verifies less than its platform declares: the Android unit test runs on a JVM and
+# cannot load the shared library the shaping route needs, so it carries the portable scenes alone and
+# declares exactly that. The device runtime carries the rest.
 
 on:
   pull_request:
@@ -77,6 +82,9 @@ jobs:
       - name: Set up Android SDK and NDK
         uses: ./.github/actions/setup-android
       - run: chmod +x gradlew
+      # The host compilation runs on a JVM, so it verifies the portable scenes only: the Android
+      # native artifact is a shared library a unit test cannot load, which is why the device job
+      # carries the full catalog and this one carries what needs no native code.
       - name: Verify the portable scenes against the committed manifest
         run: ./gradlew --no-daemon :kalligraphie:e2e:testAndroidHostTest
 
@@ -100,7 +108,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - name: Verify the portable scenes on ART
+      - name: Verify every catalogued scene on ART
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -122,7 +130,7 @@ jobs:
           java-version: '25'
           cache: gradle
       - run: chmod +x gradlew
-      - name: Verify the portable scenes against the committed manifest
+      - name: Verify every catalogued scene against the committed manifest
         run: ./gradlew --no-daemon :kalligraphie:e2e:iosSimulatorArm64Test
       - name: Run the portable rasterizer suite, which no other job executes
         run: ./gradlew --no-daemon :kalligraphie:raster-cpu:iosSimulatorArm64Test

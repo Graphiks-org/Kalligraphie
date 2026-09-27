@@ -19,7 +19,7 @@ import org.graphiks.kalligraphie.e2e.golden.VariationLadderScene
  * capability ratchet checks, and here it is also the only place they *can* live, since the facade
  * they call does not exist off the JVM.
  */
-internal object JvmSceneRenderers {
+internal object ParagraphSceneRenderers {
     /** Every paragraph-facade renderer, keyed by catalog entry id. */
     val byId: Map<String, CatalogSceneRenderer> = mapOf(
         "script.latin.composed-line" to CatalogSceneRenderer(LIBERATION_SANS, CatalogRoute.PARAGRAPH_LAYOUT, sceneId = "line.latin.48") { corpus ->

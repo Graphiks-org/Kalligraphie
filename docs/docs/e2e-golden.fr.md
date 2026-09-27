@@ -26,21 +26,26 @@ activé.
 
 Ses dépendances le tiennent hors du graphe consommateur : `commonMain` ne dépend
 que de `:kalligraphie:api`, et les source sets de test ajoutent `:kalligraphie`,
-`:kalligraphie:conformance`, `:kalligraphie:raster-cpu`, `:kalligraphie:font:core`
-et `:kalligraphie:font:sfnt` — plus `:kalligraphie:layout`, `:kalligraphie:shaping`
-et `:kalligraphie:unicode` sur la JVM, où tournent les scènes de façade de
-paragraphe. Rien en production ne dépend de ce module, et il n'est jamais publié.
+`:kalligraphie:conformance` et `:kalligraphie:raster-cpu` — plus
+`:kalligraphie:layout`, `:kalligraphie:shaping`, `:kalligraphie:unicode` et les
+modules de police sur la JVM, dont les écrivains et les parcours ont besoin. Rien
+en production ne dépend de ce module, et il n'est jamais publié.
 
 Le modèle pur — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` et le digest SHA-256 — vit dans
 `commonMain`, sans type plateforme. Le catalogue, le matérialiseur de scènes, les
-renderers portables, le vérificateur, les ratchets de capacités et les fixtures
+deux registres de renderers — y compris ceux qui composent du texte à travers la
+façade de paragraphe — le vérificateur, les ratchets de capacités et les fixtures
 sont des sources de test partagées, compilées dans chaque cible de test qui peut
 les exécuter et lisant leurs octets via un `FixtureCorpus` injecté plutôt que par
-le class path ; seuls les renderers de la façade de paragraphe, les écrivains et
-les parcours restent dans `jvmTest`. Une scène déclare la `CatalogRoute` dont
-elle a besoin, la plateforme déclare ses capacités portables, et le ratchet
-refuse un registre qui ne serait pas exactement ce que ces capacités impliquent.
+le class path ; seuls les écrivains et les parcours restent dans `jvmTest`. Une
+scène déclare la `CatalogRoute` dont elle a besoin, la plateforme déclare ses
+capacités portables, et le ratchet refuse un registre qui ne serait pas
+exactement ce que ces capacités impliquent. La compilation Android *host* est le
+seul endroit où ces deux diffèrent de la plateforme : elle s'exécute sur une JVM
+et ne peut pas charger la bibliothèque partagée dont la route de façonnage a
+besoin, donc elle déclare l'analyse portable et la route portable des glyphes, et
+ne porte que les scènes portables.
 
 La protection est gratuite sur la plateforme de référence : le `check` racine
 exécute `:kalligraphie:e2e:jvmTest` comme tout sous-projet, et le workflow de pull
@@ -217,10 +222,11 @@ de fixtures partagé.
 
 ## Limites connues
 
-- Les scènes composées — lignes composées, échelle de graisses et mosaïque — ne
-  s'exécutent que sur la JVM. Elles attendent un moteur portable d'analyse
-  Unicode, et le ratchet de capacités les exigera sur chaque cible le jour où il
-  arrivera.
+- La compilation Android *host* ne vérifie que les scènes portables. Elle
+  s'exécute sur une JVM et ne peut pas charger la bibliothèque partagée dont la
+  route de façonnage a besoin, donc elle déclare l'analyse Unicode portable et la
+  route portable des glyphes ; le runtime de l'appareil porte la déclaration
+  complète et les scènes composées, tout comme la JVM et le simulateur iOS.
 - `iosArm64` compile mais n'exécute rien : aucun runner hébergé ne peut fournir
   d'appareil.
 - La comparaison est exacte ; une route de rendu non déterministe exigerait

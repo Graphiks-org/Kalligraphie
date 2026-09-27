@@ -7,20 +7,16 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class PlatformCapabilityConformanceTest {
+    /**
+     * Every platform now declares the complete portable surface, and the matrix is written out per
+     * platform rather than derived from the entries, so a declaration that silently gained or lost
+     * a capability fails here instead of agreeing with itself.
+     */
     private fun expectedAvailability(platformId: String): Map<PortableCapability, Boolean> = when (platformId) {
-        "jvm" -> PortableCapability.entries.associateWith { true }
-        // iOS ships the bundled HarfBuzz shaping backend; analysis and layout stay absent.
-        "ios" -> mapOf(
-            PortableCapability.UNICODE_ANALYSIS to false,
+        "jvm", "ios", "android" -> mapOf(
+            PortableCapability.UNICODE_ANALYSIS to true,
             PortableCapability.SHAPING to true,
-            PortableCapability.END_TO_END_LAYOUT to false,
-            PortableCapability.GLYPH_REPRESENTATION_VARIANTS to true,
-        )
-        // Android ships the bundled HarfBuzz shaping backend (API 28+); analysis and layout stay absent.
-        "android" -> mapOf(
-            PortableCapability.UNICODE_ANALYSIS to false,
-            PortableCapability.SHAPING to true,
-            PortableCapability.END_TO_END_LAYOUT to false,
+            PortableCapability.END_TO_END_LAYOUT to true,
             PortableCapability.GLYPH_REPRESENTATION_VARIANTS to true,
         )
         else -> error("Unexpected platform identity: $platformId")
