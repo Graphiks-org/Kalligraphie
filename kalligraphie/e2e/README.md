@@ -18,20 +18,22 @@ code lives and why.
 | `commonTest` | The tests of that model, which need no font and no host. | `jvmTest`, `androidHostTest` and `iosSimulatorArm64Test`. `androidDeviceTest` cannot see `commonTest` in this repository, so the device run executes the shared harness — scenes, verifier and ratchets — and not the model tests. |
 | `sharedTest` | The whole harness: the corpus seam (`FixtureCorpus`), both registries of scene renderers — the portable glyph route and the paragraph route, which every platform can now serve — the scene materializer and its catalog, the probes, the golden verifier, the capability ratchets, and the tests of all of them. | `jvmTest`, `androidHostTest`, `androidDeviceTest`, `iosSimulatorArm64Test` |
 | `classpathTest` | The corpus implementation of the JVM and Android family: fonts and committed resources read through the class loader. | `jvmTest` and the two Android test compilations |
+| `journeyTest` | The end-to-end journeys — `AdvancedTypographyJourneyTest`, `CffOpenTypeJourneyTest` and their support — which assert behaviour through the facades instead of a fingerprint. Their sources are portable and read every byte through the corpus seam; what keeps them off one compilation is its runtime, since every journey composes text. | `jvmTest`, `androidDeviceTest`, `iosSimulatorArm64Test` |
 | `androidHostTest`, `androidDeviceTest` | The Android test environments, one per compilation. They share the harness but not the declaration: the device runs on ART and declares the platform's full capability surface, while the host runs on a JVM and cannot load the shared library the shaping route needs, so it declares the portable analysis and the portable glyph route alone. | the respective Android test compilation |
 | `harnessResources` | The committed harness resources: the golden manifest, the auto-sizing exemptions, the claims export. Wired as a resource directory where the platform has a class path, embedded where it does not. | Every test target |
-| `jvmTest` | What genuinely needs this platform: the writers (`updateE2eGolden`, the matrix, the claims, the dumps), the journeys, and the reference platform's declaration (`E2eTestEnvironment`). | JVM only |
+| `jvmTest` | What genuinely needs this platform: the writers (`updateE2eGolden`, the matrix, the claims, the dumps) and the reference platform's declaration (`E2eTestEnvironment`). | JVM only |
 | `iosSimulatorArm64Test` | The embedded corpus (`EmbeddedFixtureCorpus`, fed by the generated `E2eFixtureCorpus` source) and the iOS declaration, which now carries the composed scenes too. | iOS simulator |
 
-`sharedTest`, `classpathTest`, `androidHostTest` and `androidDeviceTest` are not Kotlin source sets
-of their own: they are directories added to test compilations with `kotlin.srcDir`. That is
-deliberate.
+`sharedTest`, `classpathTest`, `journeyTest`, `androidHostTest` and `androidDeviceTest` are not Kotlin
+source sets of their own: they are directories added to test compilations with `kotlin.srcDir`. That
+is deliberate.
 `androidDeviceTest` cannot see `commonTest` in this repository, so a shared directory is the only
 way to compile one copy of the portable harness into every test target — the same arrangement
 `:kalligraphie:shaping` uses for its device goldens.
 
 The rule for new code: **every scene belongs in `sharedTest` and reads its font bytes from the
-injected `FixtureCorpus`; anything that writes into the repository belongs in `jvmTest`.** Two facts fix that boundary:
+injected `FixtureCorpus`; a journey belongs in `journeyTest`, which only the shaping-capable targets
+compile; anything that writes into the repository belongs in `jvmTest`.** Two facts fix that boundary:
 
 - **Font bytes reach the harness through the corpus seam, never through the class path.**
   `FixtureCorpus` has one implementation per platform family — `ClasspathFixtureCorpus` for JVM and
@@ -71,7 +73,9 @@ both, so an entry a platform does not render is named rather than reported as a 
 entry — and one that is neither rendered nor excused is still stale.
 
 The journeys are not on this axis: they assert behaviour through the facade with their own fixture
-access and stay on the reference platform.
+access, so no capability derives them and the ratchet does not govern them. They run wherever the
+shaping route can — the same three targets that verify the composed scenes — and the compilation
+that cannot shape carries none of them.
 
 ## What each target verifies
 

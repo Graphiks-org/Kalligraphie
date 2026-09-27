@@ -9,6 +9,10 @@ name: Golden portability
 # One compilation verifies less than its platform declares: the Android unit test runs on a JVM and
 # cannot load the shared library the shaping route needs, so it carries the portable scenes alone and
 # declares exactly that. The device runtime carries the rest.
+#
+# The three jobs whose runtime can compose text — the JVM, the Android device and the iOS simulator —
+# also execute the module's behavioural journeys, which live in `src/journeyTest` for that reason.
+# The Android unit test carries none of them, for the same missing shared library.
 
 on:
   pull_request:

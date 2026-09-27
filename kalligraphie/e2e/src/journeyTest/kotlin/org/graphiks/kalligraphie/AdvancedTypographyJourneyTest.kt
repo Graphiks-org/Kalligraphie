@@ -1,8 +1,6 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
-import java.nio.file.Files
-import java.nio.file.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -56,7 +54,7 @@ import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
 import org.graphiks.kalligraphie.api.WritingMode
-import org.graphiks.kalligraphie.unicode.JvmPatternHyphenationService
+import org.graphiks.kalligraphie.unicode.PortablePatternHyphenationService
 
 /**
  * Business scenarios for advanced typography and derived content published
@@ -387,7 +385,7 @@ class AdvancedTypographyJourneyTest {
             constraints(width = 4_300f, top = 50f, height = 2_400f),
             language = "en",
             hyphenationMode = HyphenationMode.AUTO,
-            hyphenationService = JvmPatternHyphenationService.english(),
+            hyphenationService = PortablePatternHyphenationService.english(),
         )
         val layout = assertIs<ParagraphLayoutResult.Success>(result)
 
@@ -420,7 +418,7 @@ class AdvancedTypographyJourneyTest {
     fun automaticHyphenationRejectsSyntheticGlyphBeyondTheOperationBudgetAndRetriesExactly() {
         val fixture = dejavuFixture("hyphenation")
         val geometry = constraints(width = 4_300f, top = 50f, height = 2_400f)
-        val service = JvmPatternHyphenationService.english()
+        val service = PortablePatternHyphenationService.english()
 
         val limited = assertIs<ParagraphLayoutResult.Failure>(
             layout(
@@ -1284,7 +1282,7 @@ class AdvancedTypographyJourneyTest {
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
                         language = "en",
                         hyphenationMode = HyphenationMode.AUTO,
-                        hyphenationService = JvmPatternHyphenationService.english(),
+                        hyphenationService = PortablePatternHyphenationService.english(),
                     ),
                 ),
             )
@@ -1316,7 +1314,7 @@ class AdvancedTypographyJourneyTest {
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
                         language = "en",
                         hyphenationMode = HyphenationMode.AUTO,
-                        hyphenationService = JvmPatternHyphenationService.english(),
+                        hyphenationService = PortablePatternHyphenationService.english(),
                     ),
                 ),
             )
@@ -1327,7 +1325,7 @@ class AdvancedTypographyJourneyTest {
                 constraints(width = 4_300f, top = 50f, height = 2_400f),
                 language = "en",
                 hyphenationMode = HyphenationMode.AUTO,
-                hyphenationService = JvmPatternHyphenationService.english(),
+                hyphenationService = PortablePatternHyphenationService.english(),
             ).lines
             assertEquals(fullLines.map(::lineFingerprint), incrementalLines.map(::lineFingerprint))
         } finally {
