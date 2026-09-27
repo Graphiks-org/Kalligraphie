@@ -46,6 +46,8 @@ public open class ParagraphBenchmark {
         "FontAssetRetainReopenCold",
         "FontAssetRetainReopenWarm",
         "ConcurrentResolveWarm",
+        "StyledSpanParagraphCold",
+        "StyledSpanParagraphWarm",
     )
     public var scenarioName: String = ""
 
