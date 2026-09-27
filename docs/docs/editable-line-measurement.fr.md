@@ -1,13 +1,19 @@
 # Mesure de ligne éditable
 
-Kalligraphie fournit un `runner` (programme d’exécution) JVM `opt-in`
-(à activation explicite) pour le parcours consommateur public d’une ligne
-éditable. Il émet des observations non publiées issues d’une exécution
-explicitement configurée ; ce n’est pas un `benchmark` (mesure comparative de
-référence) et il ne contient aucun seuil de latence ni aucune affirmation de
-performance. Cet outil appartient aux sources de test, reste exclu de `jvmTest`
-et de `check` par défaut, et s’exécute uniquement avec la tâche dédiée
-`:kalligraphie:editableLineMeasurement`.
+Kalligraphie mesure le parcours consommateur public d’une ligne éditable dans le
+module non publié `:kalligraphie:bench`. Il émet des observations non publiées
+issues d’une exécution explicitement configurée ; ce n’est pas un `benchmark`
+(mesure comparative de référence) et il ne contient aucun seuil de latence ni
+aucune affirmation de performance. La mesure est `opt-in` (à activation
+explicite) : elle s’exécute uniquement avec la tâche `jvmBenchmarkBenchmark` du
+module et jamais dans le cadre de `check`.
+
+Les profils de ligne éditable appartiennent à la moitié « paragraphe » du
+module. Ils composent le texte à travers la façade de paragraphe, qui exige la
+capacité `END_TO_END_LAYOUT` ; cette capacité est déclarée absente sur Android et
+iOS, ces profils sont donc réservés à la JVM, et le module les liste comme
+différés sur les plateformes qui ne peuvent pas les servir au lieu de publier
+silencieusement moins de profils.
 
 Le corpus de texte réel fixe est `Edit سلام 😀 café`. Les profils de décodage
 UTF-8 et UTF-16 empruntent un stockage immuable appartenant à l’application au
@@ -60,55 +66,46 @@ directions LTR et RTL, les identifiants et avances de glyphes DejaVu contrôlés
 indépendamment avec `hb-shape` 14.4.0, la provenance directe des glyphes et tous les
 carets aux frontières de scalaires.
 
-## Invocation légère reproductible
+## Exécution reproductible
 
-L’activation explicite et un chemin Markdown absolu hors du dépôt sont
-obligatoires. L’option `--rerun-tasks` (réexécution forcée des tâches) empêche
-Gradle de réutiliser un résultat antérieur lorsque les variables d’environnement
-changent. Un échauffement et deux itérations forment un `smoke run` (exécution
-légère de validation) de tout le programme, mais ne produisent pas
-d’observations adaptées à une comparaison :
+Le module mesure avec kotlinx-benchmark (JMH sur la JVM) : échauffement,
+itérations, durée d’itération d’une seconde et format JSON du rapport viennent de
+sa configuration de `benchmark`, pas de variables d’environnement. Une seule
+commande mesure tous les profils que la plateforme sert — les profils de ligne
+éditable sont quatre des trente-sept que la JVM exécute. Résultats et compteurs
+sont écrits sous le répertoire `build` du module, que git ignore :
 
 ```bash
-env \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT=true \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT_WARMUP=1 \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT_ITERATIONS=2 \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT_OUTPUT=/tmp/kalligraphie-editable-line.md \
-  ./gradlew :kalligraphie:editableLineMeasurement \
-  --rerun-tasks --no-daemon
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
 ```
 
-Utilisez des nombres positifs plus élevés uniquement pour consigner une
-observation locale volontaire. Un rapport reste lié à l’environnement qu’il
-enregistre et ne constitue pas un objectif de performance du projet.
+`./gradlew :kalligraphie:bench:measurementReport` joint ensuite cette exécution
+aux autres plateformes dans `build/bench/report-jvm.md` et un comparatif. Aucune
+des deux tâches n’appartient à `check` : une mesure se demande, elle ne se
+planifie pas, et aucun test fonctionnel n’affirme une durée.
+
+Un rapport reste lié à l’environnement qu’il enregistre et ne constitue pas un
+objectif de performance du projet.
 
 ## Contenu et limites du rapport
 
-Le rapport Markdown enregistre :
+Le rapport Markdown enregistre, pour l’exécution entière :
 
-- le commit Git, la machine, le système d’exploitation, l’architecture et la
-  JVM ;
-- les versions des données Unicode, d’ICU4J et de HarfBuzz embarqué ;
-- le SHA-256 de la fonte DejaVu versionnée ;
-- l’identité, la description, l’encodage, les tailles en unités source et en
-  scalaires, ainsi que la fragmentation exacte du corpus ;
-- la frontière chronométrée et l’état froid, chaud ou sans état de chaque
-  profil ;
-- le nombre d’échauffements et d’itérations mesurées ;
-- les latences p50, p95 et p99 selon `nearest-rank` (rang le plus proche), en
-  nanosecondes ;
-- la moyenne des octets alloués par le thread (fil d’exécution) mesuré lorsque
-  la JVM expose ce compteur ;
-- la variation signée du `heap` (tas mémoire) utilisé, après deux demandes
-  explicites `System.gc()` avant et après chaque profil et sans demande de GC
-  (ramasse-miettes) entre les itérations mesurées ;
-- la mémoire native explicitement marquée `unavailable` (indisponible), car le
-  parcours JVM public n’expose aucune frontière fiable pour les octets natifs
-  conservés.
+- le commit mesuré, la machine, le système d’exploitation, le runtime et la
+  politique de cache/GC ;
+- l’identité et la description du corpus, ainsi que le SHA-256 de chaque fixture
+  réellement lue ;
+- et, pour chaque profil : sa route, sa frontière chronométrée, son état de
+  cache, ses nombres d’échauffements et d’itérations mesurées, les latences p50,
+  p95 et p99 selon `nearest-rank` (rang le plus proche) en nanosecondes, les
+  compteurs prouvant ce que l’opération chronométrée a consommé, et des valeurs
+  de mémoire étiquetées `measured`, `estimated` ou `unavailable`.
 
-Les champs d’allocation et de tas décrivent ce petit programme, pas une
-comptabilité universelle du processus ou du cache. La variation signée du tas
-peut être négative après la politique GC documentée. La mémoire native n’est
-pas estimée. Le rapport ne contient aucun compteur d’appels, aucun compteur
-interne de cache, aucun seuil de succès ni aucune mesure de rendu.
+Les profils de ligne éditable publient les scalaires, glyphes et mises en page
+qu’ils ont consommés à côté de la latence, car un programme de mesure ne peut pas
+distinguer une opération rapide d’une opération qui n’a rien fait : le module
+refuse un profil dont les compteurs sont absents ou vides. Les valeurs
+d’allocation et de tas décrivent ce petit programme, pas une comptabilité
+universelle du processus ou du cache. La mémoire native est publiée
+`unavailable` avec sa raison, jamais estimée ni présentée comme une mesure. Le
+rapport ne contient aucun seuil de succès ni aucune mesure de rendu.

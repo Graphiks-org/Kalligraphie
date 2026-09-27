@@ -1,11 +1,17 @@
 # Editable-line measurement
 
-Kalligraphie includes an opt-in JVM runner for the public editable-line consumer
-journey. It emits unpublished observations from one explicitly configured run;
-it is not a reference benchmark and contains no latency threshold or performance
-assertion. The runner is test-source tooling, is excluded from `jvmTest` and
-`check` by default, and runs only through the dedicated
-`:kalligraphie:editableLineMeasurement` task.
+Kalligraphie measures the public editable-line consumer journey in the
+non-published `:kalligraphie:bench` module. It emits unpublished observations
+from one explicitly configured run; it is not a reference benchmark and contains
+no latency threshold or performance assertion. The measurement is opt-in: it
+runs only through the module's `jvmBenchmarkBenchmark` task and never as part of
+`check`.
+
+The editable-line profiles belong to the module's paragraph half. They compose
+text through the paragraph facade, which needs the `END_TO_END_LAYOUT`
+capability; that capability is declared absent on Android and iOS, so these
+profiles are JVM-only, and the module lists them as deferred on the platforms
+that cannot serve them instead of silently publishing fewer profiles.
 
 The fixed real-text corpus is `Edit سلام 😀 café`. Its UTF-8 and UTF-16 decode
 profiles borrow immutable application-owned storage through four fragments:
@@ -50,46 +56,43 @@ partitioning, both LTR and RTL directions, checked-in DejaVu glyph identifiers
 and advances independently audited with `hb-shape` 14.4.0, direct glyph provenance,
 and all scalar-boundary carets.
 
-## Reproducible smoke invocation
+## Reproducible invocation
 
-Explicit activation and an absolute Markdown output path outside the repository
-are mandatory. Use `--rerun-tasks` so Gradle cannot reuse an earlier result when
-environment variables change. One warmup and two iterations exercise the whole
-runner but do not produce observations suitable for comparison:
+The module measures with kotlinx-benchmark (JMH on the JVM): warm-up, iterations,
+the one-second iteration time and the JSON report format come from its benchmark
+configuration, not from environment variables. One command measures every
+profile the platform serves — the editable-line profiles are four of the
+thirty-seven the JVM runs. Results and counters are written under the module's
+`build` directory, which git ignores:
 
 ```bash
-env \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT=true \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT_WARMUP=1 \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT_ITERATIONS=2 \
-  KALLIGRAPHIE_EDITABLE_LINE_MEASUREMENT_OUTPUT=/tmp/kalligraphie-editable-line.md \
-  ./gradlew :kalligraphie:editableLineMeasurement \
-  --rerun-tasks --no-daemon
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
 ```
 
-Use larger positive warmup and iteration counts only when recording a deliberate
-local observation. A report remains tied to its recorded environment and is not
-a project performance target.
+`./gradlew :kalligraphie:bench:measurementReport` then joins that run with the
+other platforms into `build/bench/report-jvm.md` and a comparison. Neither task
+is in `check`: a measurement is requested, never scheduled, and no functional
+test asserts an elapsed time.
+
+A report remains tied to the environment it recorded and is not a project
+performance target.
 
 ## Report contents and limits
 
-The Markdown report records:
+The Markdown report records, for the whole run:
 
-- Git commit, machine, operating system, architecture, and JVM;
-- Unicode data, ICU4J, and embedded HarfBuzz versions;
-- SHA-256 of the checked-in DejaVu font;
-- corpus identity, description, encoding, source-unit and scalar sizes, and
-  exact fragmentation;
-- timed boundary and cold, warm, or stateless state for every profile;
-- warmup and measured iteration counts;
-- nearest-rank p50, p95, and p99 latency in nanoseconds;
-- average measured-thread allocated bytes when the JVM exposes that counter;
-- signed used-heap change after two explicit `System.gc()` requests before and
-  after each profile, with no requested GC between measured iterations;
-- native memory as explicitly `unavailable` because the public JVM journey has
-  no reliable retained-native-byte boundary.
+- measured commit, machine, operating system, runtime, and cache/GC policy;
+- corpus identifier, description, and the SHA-256 of every fixture actually
+  read;
+- and, for every profile: its route, timed boundary, cache state, warm-up and
+  measured iteration counts, nearest-rank p50, p95, and p99 latency in
+  nanoseconds, the counters proving what the timed operation consumed, and
+  memory figures each labelled `measured`, `estimated` or `unavailable`.
 
-Allocation and heap fields describe this small runner, not universal process or
-cache accounting. The signed heap change can be negative after the documented
-GC policy. Native memory is not estimated. The report contains no call counter,
-cache-internal counter, success threshold, or renderer measurement.
+The editable-line profiles publish the scalars, glyphs and layouts they consumed
+alongside the latency, because a harness cannot tell a fast operation from an
+operation that did nothing: the module refuses a profile whose counters are
+missing or empty. Allocation and heap figures describe this small harness, not
+universal process or cache accounting. Native memory is published as
+`unavailable` with its reason rather than estimated — never as a measurement.
+The report contains no success threshold and no renderer measurement.

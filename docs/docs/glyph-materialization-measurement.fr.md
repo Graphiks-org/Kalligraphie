@@ -1,32 +1,41 @@
 # Mesure de matérialisation des glyphes
 
-Kalligraphie fournit un runner (programme de mesure) JVM opt-in (activé
-explicitement) pour la matérialisation portable des glyphes. Il vit dans les
-sources de test : ce n’est ni un test fonctionnel de latence, ni un résultat de
-benchmark (mesure comparative) publié. Il exécute les fixtures (données de test
-fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1 et Liberation Sans TrueType
-auditées et versionnées, à travers les parcours publics catalogue, resolver
-(résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`.
+Kalligraphie mesure la matérialisation portable des glyphes dans le module non
+publié `:kalligraphie:bench`. Ce n’est ni un test fonctionnel de latence, ni un
+résultat de benchmark (mesure comparative) publié. Le module exécute les fixtures
+(données de test fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1 et Liberation
+Sans TrueType auditées et versionnées, à travers les parcours publics catalogue,
+resolver (résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`
+`.
 
-Le runner enregistre trente profils, dans cet ordre :
+Le module enregistre trente-sept profils au total ; cette page couvre les trente
+qui lui appartiennent. Dix-neuf d’entre eux sont du travail portable sur les
+glyphes — les neuf profils de représentation et les dix étapes portables TrueType
+— et s’exécutent sur toutes les plateformes. Les onze autres composent le texte à
+travers la façade de paragraphe, qui exige la capacité `END_TO_END_LAYOUT` : ils
+sont réservés à la JVM, et le module les liste comme différés sur Android et iOS
+au lieu de publier silencieusement moins de profils. Les profils de ligne
+éditable et de layout incrémental sont documentés dans leurs propres pages.
 
-- normalisation COLR v0 / CPAL v0 froide et chaude ;
-- normalisation SVG-in-OpenType froide et chaude ;
-- décodage bitmap (image matricielle) EBLC v2 / EBDT v2 format 1 froid et chaud ;
-- sélection de palette CPAL 0 vers palette 1 ;
+Le module enregistre les trente profils de cette page dans cet ordre :
+
+- normalisation COLR v0 / CPAL v0 froide et chaude ; *(portable)*
+- normalisation SVG-in-OpenType froide et chaude ; *(portable)*
+- décodage bitmap (image matricielle) EBLC v2 / EBDT v2 format 1 froid et chaud ; *(portable)*
+- sélection de palette CPAL 0 vers palette 1 ; *(portable)*
 - pression par clé de profil SVG, éviction LRU (least recently used, moins
-  récemment utilisé) puis nouvelle résolution ;
-- annulation coopérative pendant une matérialisation COLR réelle à deux couches.
+  récemment utilisé) puis nouvelle résolution ; *(portable)*
+- annulation coopérative pendant une matérialisation COLR réelle à deux couches ; *(portable)*
 - parcours consommateur public `RENDERABLE` froid et chaud avec un glyphe latin
   Bungee Color ;
 - parcours consommateur public `RENDERABLE` froid et chaud avec un paragraphe
   BiDi (bidirectionnel) mêlant Bungee Color latin et le fallback (police de
-  repli) hébreu Liberation Sans.
+  repli) hébreu Liberation Sans ;
 - sessions incrémentales réutilisables froides et chaudes pour les mêmes
   paragraphes mono-police et BiDi multi-police ;
 - étapes portables TrueType froides et chaudes de préparation, correspondance
   texte-glyphe, métriques, contours et détachement sur un paragraphe d’éditeur
-  Liberation Sans stable ;
+  Liberation Sans stable ; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, puis
   `ConcurrentResolveWarm` sur ce même paragraphe.
 
@@ -226,55 +235,78 @@ est une observation sur une machine, pas une promesse universelle.
 
 ## Exécution reproductible
 
-Le rapport doit être écrit hors du dépôt. `--rerun-tasks` empêche un ancien
-résultat Gradle de masquer une mesure explicitement demandée.
+Le module mesure avec l’outil propre à chaque plateforme : kotlinx-benchmark
+(JMH) sur la JVM, un binaire de simulateur lié sur iOS, et androidx.benchmark sur
+un appareil ou émulateur Android. Warmup, itérations, durée d’itération d’une
+seconde et format du rapport viennent de cette configuration, pas de variables
+d’environnement. Résultats et compteurs sont écrits sous le répertoire `build` du
+module, que git ignore :
 
 ```bash
-env \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_MEASUREMENT=true \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_WARMUP=5 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_ITERATIONS=20 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_OUTPUT=/tmp/kalligraphie-glyph-materialization.md \
-  ./gradlew :kalligraphie:glyphMaterializationMeasurement \
-  --rerun-tasks --no-daemon
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
+./gradlew :kalligraphie:bench:iosSimulatorArm64Benchmark
+./gradlew --no-parallel :kalligraphie:bench:mediumPhoneAndroidDeviceTest
+./gradlew :kalligraphie:bench:measurementReport
 ```
 
-Utilisez un warmup (préchauffage) et deux itérations seulement pour un smoke run
-(exécution de fumée). Il vérifie que chaque route peut produire un rapport,
-mais ne permet pas de comparaison.
+Les trois premières tâches sont opt-in : aucune n’appartient à `check`, aucune ne
+se planifie d’elle-même. La commande JVM mesure les trente-sept profils qu’elle
+peut servir ; les commandes iOS et Android mesurent les dix-neuf profils
+portables, car la moitié « paragraphe » exige `END_TO_END_LAYOUT`. La dernière
+joint les exécutions disponibles dans `build/bench/report-jvm.md`,
+`report-ios.md`, `report-android.md` et `report-comparison.md`, et échoue en
+nommant le chemin manquant lorsqu’une entrée est absente, plutôt que de publier
+un rapport auquel une plateforme manquerait en silence.
+
+Les deux objectifs de latence nommés ci-dessous restent des observations qu’un
+opérateur lit dans le rapport ; ils ne peuvent faire échouer une exécution.
 
 ## Contenu du rapport et limites
 
-Chaque rapport consigne le commit (révision) mesuré, la machine, l’OS,
-l’architecture, la JVM, les empreintes SHA-256 des fixtures, le corpus, la
-route exacte, la frontière chronométrée, l’état du cache (mémoire interne de
-réutilisation), le warmup, le nombre d’itérations, les percentiles nearest-rank
-(rang supérieur), les allocations du thread de mesure et une
-variation signée du tas JVM relevée après les demandes de GC (ramasse-miettes)
-documentées. Il inclut aussi les octets source fournis au catalogue pendant
-l’intervalle, les octets et pixels bitmap décodés, ainsi que le nombre de
+Chaque rapport consigne le commit mesuré, la machine, l’OS, le runtime, la
+politique de cache/GC, l’empreinte SHA-256 de chaque fixture réellement lue et,
+par profil, la route exacte, la frontière chronométrée, l’état du cache, les
+nombres de warmup et d’itérations mesurées, les percentiles de latence
+nearest-rank (rang supérieur) et les compteurs prouvant ce que l’opération
+chronométrée a consommé. Il inclut aussi les octets source fournis au catalogue
+pendant l’intervalle, les octets et pixels bitmap décodés, ainsi que le nombre de
 nœuds de peinture normalisés.
 
-Les quatre champs d’assets d’opération sont disponibles pour les profils
-consommateurs publics de paragraphe et de session. Les profils directs de glyphes et
-les étapes TrueType portables les indiquent comme `unavailable` (indisponibles),
-car ces routes n’exécutent pas une composition de paragraphe bornée par une
-opération.
+Chaque valeur de mémoire ou d’allocation porte son propre état — `measured`,
+`estimated`, ou `unavailable` avec sa raison. Une estimation n’est jamais
+présentée comme une mesure : la JVM publie la valeur de la sonde d’allocation par
+thread comme mesurée, tandis que les routes portables n’exposent aucune frontière
+fiable de comptabilité de mémoire ou d’allocations natives et les publient
+`unavailable`. Un profil dont les compteurs sont absents ou vides est refusé,
+car un programme de mesure ne peut pas distinguer une opération rapide d’une
+opération qui n’a rien fait.
 
-Les octets source sont la taille du buffer (tampon mémoire) de fixture donné au catalogue
-portable ; ce ne sont pas des compteurs d’entrées/sorties fichier. Un profil
-chaud rapporte zéro octet source car son catalogue est volontairement ouvert
-avant la frontière chronométrée. Les routes portables de ce runner n’exposent
-pas de frontière fiable de comptabilité de mémoire ou d’allocations natives :
-ces champs indiquent donc explicitement `unavailable` plutôt qu’une estimation
-de plateforme. Le champ de mémoire JVM retenue est une observation du tas pour
-ce runner, non une comptabilité du cache ou de toute la mémoire du processus ;
-il peut être négatif après GC.
+Les noms de compteurs diffèrent d’une plateforme à l’autre là où l’outillage
+diffère, et le rapport le dit : la JVM publie l’allocation par opération dérivée
+de la sonde, iOS et Android publient leurs propres valeurs lorsqu’un instrument
+existe, et le benchmark d’instrumentation Android publie une médiane et un
+compte d’allocations plutôt que des percentiles — le rapport Android garde cette
+médiane étiquetée comme médiane et ses p95/p99 manquants étiquetés
+`unavailable`, au lieu de promouvoir la médiane en percentile.
 
-Le runner n’impose aucun seuil de latence. `check` exclut la tâche de mesure,
-même si la variable opt-in est définie, et ce travail n’ajoute ni renderer (moteur
-de rendu), ni rasterizer (moteur de pixellisation), ni API GPU, ni bridge
-(pont) natif.
+Les quatre compteurs d’assets d’opération — maximum d’assets de rendu vivants
+simultanément, leur estimation conservatrice en octets, les ouvertures d’asset
+distinctes et les preuves de glyphes finaux réutilisées depuis une
+matérialisation antérieure dans la même opération — sont publiés pour les profils
+consommateurs publics de paragraphe et de session. Les profils directs de glyphes
+et les étapes TrueType portables n’exécutent pas de composition de paragraphe
+bornée par une opération : ces compteurs n’apparaissent pas plutôt que
+d’apparaître vides.
+
+Les octets source sont la taille du buffer (tampon mémoire) de fixture donné au
+catalogue portable ; ce ne sont pas des compteurs d’entrées/sorties fichier. Un
+profil chaud rapporte zéro octet source car son catalogue est volontairement
+ouvert avant la frontière chronométrée. Les valeurs d’allocation et de tas
+décrivent ce programme de mesure, pas une comptabilité universelle du processus.
+
+Le module n’impose aucun seuil de latence, aucun test fonctionnel n’affirme une
+durée, et il n’ajoute ni renderer (moteur de rendu), ni rasterizer (moteur de
+pixellisation), ni API GPU, ni bridge (pont) natif.
 
 ## Rétention partagée et propriété native
 

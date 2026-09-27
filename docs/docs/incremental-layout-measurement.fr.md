@@ -1,12 +1,16 @@
 # Mesure du layout (mise en page) incrémental
 
-Kalligraphie fournit un point d’entrée JVM opt-in (activé explicitement) pour
-une mesure engine-only (moteur uniquement) du layout incrémental. Cet outil
-reste dans les sources de test : ce n’est ni un test fonctionnel de latence, ni
-un résultat de benchmark (mesure comparative) publié. Il exécute la vraie
-`JvmIncrementalParagraphLayoutSession`, l’analyse ICU, HarfBuzz embarqué et les
-fixtures (données de test fixes) de fontes DejaVu et Amiri versionnées dans le
-dépôt.
+Kalligraphie mesure le layout incrémental dans le module non publié
+`:kalligraphie:bench`. Ce n’est ni un test fonctionnel de latence, ni un résultat
+de benchmark (mesure comparative) publié. Les profils exécutent la vraie
+`JvmIncrementalParagraphLayoutSession`, l’analyse Unicode, HarfBuzz embarqué et
+les fixtures (données de test fixes) de fontes DejaVu et Amiri versionnées dans
+le dépôt.
+
+Ils appartiennent à la moitié « paragraphe » du module : ils exigent la capacité
+`END_TO_END_LAYOUT`, déclarée absente sur Android et iOS. Ils sont donc réservés
+à la JVM, et le module les liste comme différés sur les plateformes qui ne
+peuvent pas les servir au lieu de publier silencieusement moins de profils.
 
 L’intervalle chronométré commence immédiatement avant
 `session.layout(...)`. Les snapshots (instantanés immuables), catalogues de
@@ -16,7 +20,7 @@ consommation des lignes, runs (séquences typographiques), glyphes, carets
 (repères d’insertion), diagnostics et état du suffixe. Le scheduling
 (ordonnancement applicatif) et le renderer (moteur de rendu) sont exclus. Pour
 `Cancellation`, la latence du profil couvre toujours l’entrée de l’appel
-jusqu’au retour d’annulation typé, tandis que le champ distinct de délai
+jusqu’au retour d’annulation typé, tandis que le compteur distinct de délai
 d’annulation couvre le premier signal d’annulation jusqu’à ce retour.
 
 ## Profils
@@ -40,75 +44,67 @@ avant et après chaque profil, jamais entre les itérations mesurées.
 
 ## Exécution reproductible
 
-Exécutez explicitement le point d’entrée JUnit opt-in. L’option
-`--rerun-tasks` force Gradle à relancer la mesure même si seules les variables
-d’environnement ont changé. Conservez le rapport produit hors du dépôt :
+Le module mesure avec kotlinx-benchmark (JMH sur la JVM) : warmup, itérations,
+durée d’itération d’une seconde et format JSON du rapport viennent de sa
+configuration de `benchmark`, pas de variables d’environnement. Une seule
+commande mesure tous les profils que la plateforme sert — ces trois profils font
+partie des trente-sept que la JVM exécute. Résultats et compteurs sont écrits
+sous le répertoire `build` du module, que git ignore :
 
 ```bash
-env \
-  KALLIGRAPHIE_MEASUREMENT=true \
-  KALLIGRAPHIE_MEASUREMENT_WARMUP=5 \
-  KALLIGRAPHIE_MEASUREMENT_ITERATIONS=20 \
-  KALLIGRAPHIE_MEASUREMENT_OUTPUT=/tmp/kalligraphie-incremental-layout.md \
-  ./gradlew :kalligraphie:jvmTest \
-  --tests org.graphiks.kalligraphie.IncrementalLayoutBenchmarkTest.runConfiguredMeasurementProfiles \
-  --rerun-tasks --no-daemon
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
 ```
 
-Pour un smoke run (exécution de fumée, courte vérification du parcours) des
-trois profils, utilisez un warmup de `1` et `2` itérations. Un tel rapport ne
-permet aucune revendication de cible de latence.
+`./gradlew :kalligraphie:bench:measurementReport` joint ensuite cette exécution
+aux autres plateformes dans `build/bench/report-jvm.md` et un comparatif. Aucune
+des deux tâches n’appartient à `check` : une mesure se demande, elle ne se
+planifie pas, et aucun test fonctionnel n’affirme une durée.
 
 ## Champs du rapport
 
-Le rapport Markdown contient :
+Le rapport Markdown enregistre, pour l’exécution entière :
 
-- le commit Git (révision) mesuré, la machine, l’OS, l’architecture et la JVM ;
-- la version des données Unicode, l’implémentation Unicode et sa version exacte,
-  ainsi que la version HarfBuzz ;
-- le hash SHA-256 (empreinte cryptographique) de chaque fonte ;
-- l’identité, la description et les nombres de scalaires et paragraphes du
-  corpus ;
-- la couverture, l’overscan, l’état du cache, la politique de GC (ramasse-miettes),
-  le warmup et le nombre d’itérations ;
-- les percentiles nearest-rank (rang supérieur) p50, p95 et p99 en nanosecondes ;
-- les octets alloués par thread (fil d’exécution) si la JVM fournit ce compteur ;
-- la variation signée du tas JVM après les demandes de GC documentées ;
-- un état explicitement indisponible pour la mémoire native retenue, que le
-  backend (composant d’exécution) n’expose pas ;
-- le délai p95 entre le premier signal d’annulation et le retour d’annulation
-  typé pour `Cancellation`, distinct de la latence totale du profil ;
-- les moyennes de scalaires, lignes et paragraphes rematérialisés pour les
-  profils réussis, ou un état indisponible lorsque l’annulation masque
-  volontairement les diagnostics partiels.
+- le commit mesuré, la machine, l’OS, le runtime et la politique de cache/GC
+  (ramasse-miettes) ;
+- l’identité et la description du corpus, ainsi que le SHA-256 (empreinte
+  cryptographique) de chaque fixture réellement lue ;
+- et, pour chaque profil : sa route, sa frontière chronométrée, son état de
+  cache, ses nombres de warmup et d’itérations mesurées, les percentiles
+  nearest-rank (rang supérieur) p50, p95 et p99 en nanosecondes, les compteurs
+  prouvant ce que l’opération chronométrée a consommé, et des valeurs de mémoire
+  étiquetées `measured`, `estimated` ou `unavailable`.
+
+Les compteurs incluent les scalaires, lignes et paragraphes rematérialisés par
+les profils réussis, ainsi que le délai d’annulation maximal observé par
+`Cancellation` entre le premier signal intervenant pendant l’opération et le
+retour d’annulation typé — distinct de la latence totale de ce profil. C’est le
+maximum qui est publié, pas la dernière lecture : sur des millions d’opérations,
+la dernière peut observer l’annulation sous la résolution de l’horloge, et un
+zéro serait refusé par le contrat de profil comme une absence d’opération.
 
 Utilisez ce modèle lors de la copie d’un résultat dans une description de
 revue :
 
 ```text
-Commit / machine / OS / JVM :
-Données Unicode / implémentation / version d’implémentation :
-HarfBuzz / SHA-256 des fontes :
-Corpus / couverture / overscan :
-État du cache / warmup / itérations / politique GC :
+Commit / machine / OS / runtime / politique de cache :
+Corpus / SHA-256 :
+Route du profil / frontière chronométrée / état du cache :
+Warmup / itérations :
 p50 / p95 / p99 :
-Allocations :
-Mémoire JVM retenue :
-Mémoire native retenue :
-Délai d’annulation :
-Texte / lignes / paragraphes rematérialisés :
-Limites et mesures indisponibles :
+Compteurs consommés :
+Valeurs de mémoire (measured / estimated / unavailable) :
+Limites :
 ```
 
-Les champs d’allocation et de mémoire retenue décrivent ce runner (programme
-de mesure) réduit ; ils ne constituent pas une comptabilité universelle de la
-mémoire JVM ou native. La variation du tas peut être négative après GC. Les
-octets natifs retenus restent indisponibles tant que le backend ne fournit pas
-une frontière de comptabilité fiable.
+Les champs d’allocation et de mémoire retenue décrivent ce programme de mesure
+réduit ; ils ne constituent pas une comptabilité universelle de la mémoire JVM
+ou native. La variation du tas peut être négative après la politique GC
+documentée. Les octets natifs retenus sont publiés `unavailable` avec leur
+raison, jamais estimés.
 
 ## Interprétation et limites
 
-Le runner publie des observations, sans seuil de réussite ou d’échec. Un
+La mesure publie des observations, sans seuil de réussite ou d’échec. Un
 résultat ne soutient une revendication de performance que si son environnement
 complet et sa politique de reference profile (profil de référence) sont
 identifiés séparément. Les contrôles fonctionnels Gradle ne vérifient jamais

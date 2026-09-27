@@ -147,18 +147,22 @@ No internal cache counters or native estimates are substituted.
 
 ## Reproduction and limits
 
+The numbers above were produced by the module's previous, hand-written runner at
+the commit named at the top of this page; that runner has since been retired, so
+they are a dated record rather than a run anyone can repeat byte for byte. The
+same profiles are now measured by the non-published `:kalligraphie:bench` module:
+
 ```sh
-env \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_MEASUREMENT=true \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_WARMUP=5 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_ITERATIONS=20 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_OUTPUT=/private/tmp/kalligraphie-font-asset-handoff-m2-max.md \
-  ./gradlew :kalligraphie:glyphMaterializationMeasurement --no-daemon --rerun-tasks
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
+./gradlew :kalligraphie:bench:measurementReport
 ```
 
-The run completed successfully, replaying 42 tasks. Twenty samples give limited
-tail evidence: nearest-rank p95 is the 19th sorted sample, p99 the maximum.
-Scheduling, JIT compilation, heap state and competing work can change results.
-The observations include no rendering, rasterization, GPU work or native bridge.
-Measurement remains opt-in and excluded from functional `check`, even when its
-environment variable is set. The reference does not impose timing thresholds.
+The new module measures with kotlinx-benchmark (JMH) and its own warm-up and
+iteration protocol, so its latencies are not comparable with this record's
+twenty-sample figures. Re-measure before quoting any number.
+
+This record's run completed successfully, replaying 42 tasks, with twenty samples
+per profile — limited tail evidence: nearest-rank p95 is the 19th sorted sample,
+p99 the maximum. Scheduling, JIT compilation, heap state and competing work can
+change results. The observations include no rendering, rasterization, GPU work or
+native bridge, and the reference imposes no timing threshold.
