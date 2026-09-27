@@ -26,6 +26,7 @@ import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.GlyphRepresentationProfile
@@ -35,6 +36,8 @@ import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
+import org.graphiks.kalligraphie.api.ParagraphStyleSnapshot
+import org.graphiks.kalligraphie.api.ParagraphStyleSpan
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -163,6 +166,7 @@ internal object FontFallbackResolver {
             writingMode = request.constraints.writingMode,
             shapingResourceProfile = context.profile.shapingResourceProfile,
             cancellationToken = context.cancellationToken,
+            styleSpans = request.styleSpans,
         ),
         proofs,
         context,
@@ -323,6 +327,33 @@ internal object FontFallbackResolver {
         }
     }
 
+    private fun styleFor(unit: FallbackUnit, request: ResolutionRequest): ParagraphStyleSpan? =
+        request.styleSpans?.styleAt(unit.range.start)
+
+    /**
+     * The span-preferred face when it may be promoted, or `null`.
+     *
+     * The explicit last-resort face is never promoted: it stays at the end of the policy order.
+     */
+    private fun preferredFace(unit: FallbackUnit, request: ResolutionRequest): FontFaceId? =
+        styleFor(unit, request)?.face?.takeUnless { it == request.resolutionPolicy.lastResortFace }
+
+    /**
+     * The single deterministic candidate order used for one fallback unit.
+     *
+     * A span-preferred face is promoted to the front, deduplicated against the policy, while the
+     * last-resort face stays last because [preferredFace] never returns it.
+     */
+    private fun effectiveCandidates(unit: FallbackUnit, request: ResolutionRequest): List<FontResolutionCandidate> {
+        val preferred = preferredFace(unit, request)
+        val policy = request.resolutionPolicy
+        return if (preferred == null) {
+            policy.candidates
+        } else {
+            listOf(FontResolutionCandidate(preferred)) + policy.candidates.filterNot { it.faceId == preferred }
+        }
+    }
+
     private fun selectCandidate(
         unit: FallbackUnit,
         catalog: FontCatalogSnapshot,
@@ -338,7 +369,15 @@ internal object FontFallbackResolver {
         val glyphless = unit.isGlyphless(request.snapshot)
         // Controls need an instance for layout, but never negotiate a glyph representation.
         val candidateRequirements = if (glyphless) FontAccessRequirementsSnapshot.layoutOnly() else requirements
-        policy.candidates.forEach { candidate ->
+        val spanPreferredFace = preferredFace(unit, request)
+        // The preferred face is always tried first, so a different selection means it was rejected.
+        fun selected(assigned: AssignedUnit): CandidateSelection {
+            if (spanPreferredFace != null && assigned.record.id != spanPreferredFace) {
+                diagnostics += spanFaceUnavailableDiagnostic(spanPreferredFace)
+            }
+            return CandidateSelection.Selected(assigned)
+        }
+        effectiveCandidates(unit, request).forEach { candidate ->
             if (request.cancellationToken.isCancellationRequested()) {
                 return CandidateSelection.Cancelled(emptyList())
             }
@@ -389,10 +428,10 @@ internal object FontFallbackResolver {
                 }
             }
             if (glyphless) {
-                return CandidateSelection.Selected(AssignedUnit(unit, record, instance, glyphless = true))
+                return selected(AssignedUnit(unit, record, instance, glyphless = true))
             }
             when (val mapping = mapsAllRequiredScalars(unit, request, instance)) {
-                ScalarMapping.Supported -> return CandidateSelection.Selected(AssignedUnit(unit, record, instance))
+                ScalarMapping.Supported -> return selected(AssignedUnit(unit, record, instance))
                 is ScalarMapping.Cancelled -> return CandidateSelection.Cancelled(mapping.diagnostics)
                 is ScalarMapping.Failed -> return CandidateSelection.Failed(mapping.error, mapping.diagnostics)
                 is ScalarMapping.Unsupported -> {
@@ -885,7 +924,7 @@ internal object FontFallbackResolver {
         contributingFragments = unit.fragments,
         faceId = face,
         representationProfile = profile,
-        candidateRank = resolutionPolicy.candidates.indexOfFirst { it.faceId == face },
+        candidateRank = effectiveCandidates(unit, this).indexOfFirst { it.faceId == face },
         profileRank = profile?.let { requirementsFor(materialization).acceptedProfiles.indexOf(it) },
         stage = stage,
         reason = reason,
@@ -894,6 +933,13 @@ internal object FontFallbackResolver {
             selected -> FontFallbackLastResortState.Selected
             else -> FontFallbackLastResortState.Rejected
         },
+    )
+
+    private fun spanFaceUnavailableDiagnostic(faceId: FontFaceId): FontDiagnostic = FontDiagnostic(
+        code = "font.fallback.span-face-unavailable",
+        severity = FontDiagnosticSeverity.WARNING,
+        location = FontDiagnosticLocation.FaceId(faceId),
+        message = "The span-preferred face $faceId could not shape the complete fallback unit; a later candidate was selected.",
     )
 
     private fun rejectedCandidateDiagnostic(faceId: FontFaceId, reason: String): FontDiagnostic = FontDiagnostic(
@@ -1005,6 +1051,7 @@ internal object FontFallbackResolver {
         val writingMode: WritingMode,
         val shapingResourceProfile: ShapingResourceProfile,
         val cancellationToken: CancellationToken,
+        val styleSpans: ParagraphStyleSnapshot? = null,
     ) {
         init {
             require(sourceRange.start >= snapshot.range.start && sourceRange.endExclusive <= snapshot.range.endExclusive)
