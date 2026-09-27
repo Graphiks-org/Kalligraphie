@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class ParagraphLayoutContractsTest {
     @Test
@@ -250,6 +251,33 @@ class ParagraphLayoutContractsTest {
         )
     }
 
+    @Test
+    fun paragraphRequestRetainsTheStyleSnapshotAndBindsItToItsVersion() {
+        val fixture = fixture("ab")
+        val styles = ParagraphStyleSnapshot(
+            listOf(ParagraphStyleSpan(TextRange(fixture.snapshot.textIndexAtScalarBoundary(0), fixture.snapshot.textIndexAtScalarBoundary(1)), face = fixture.faceId)),
+        )
+
+        val request = fixture.request(styleSpans = styles)
+
+        assertSame(styles, request.styleSpans)
+    }
+
+    @Test
+    fun resumedRequestRejectsAContinuationWithDifferentStyleSpans() {
+        val fixture = fixture("ab")
+        val styles = ParagraphStyleSnapshot(
+            listOf(ParagraphStyleSpan(TextRange(fixture.snapshot.textIndexAtScalarBoundary(0), fixture.snapshot.textIndexAtScalarBoundary(1)), face = fixture.faceId)),
+        )
+        val continuation = LayoutContinuation.create(fixture.request(), fixture.snapshot.range)
+
+        val failure = assertFailsWith<IllegalArgumentException> {
+            fixture.request(continuation = continuation, styleSpans = styles)
+        }
+
+        assertTrue(failure.message.orEmpty().contains("style spans"))
+    }
+
     private class TestParagraphLayout(
         snapshot: TextSnapshot,
         lineBreakAnalysis: LineBreakAnalysis,
@@ -273,6 +301,7 @@ class ParagraphLayoutContractsTest {
         val lineMetrics: LineVerticalMetrics,
         val constraints: HorizontalParagraphConstraints,
         private val fontKey: FontInstanceKey,
+        val faceId: FontFaceId,
     ) {
         fun request(
             sourceRange: TextRange = snapshot.range,
@@ -280,6 +309,7 @@ class ParagraphLayoutContractsTest {
             features: List<OpenTypeFeature> = emptyList(),
             materializationIdentity: ParagraphMaterializationIdentity = ParagraphMaterializationIdentity.LayoutOnly,
             continuation: LayoutContinuation? = null,
+            styleSpans: ParagraphStyleSnapshot? = null,
         ): ParagraphLayoutRequest = ParagraphLayoutRequest(
             snapshot = snapshot,
             sourceRange = sourceRange,
@@ -296,6 +326,8 @@ class ParagraphLayoutContractsTest {
             shapingBackend = backend,
             materializationIdentity = materializationIdentity,
             continuation = continuation,
+            styleSpans = styleSpans,
+            operationProfile = EditorOperationProfile.unbounded,
         )
 
         fun lineLayout(
@@ -481,7 +513,7 @@ class ParagraphLayoutContractsTest {
             LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(100f), LayoutUnit(60f)),
             metrics,
         )
-        return Fixture(snapshot, analysis, lineBreaks, catalog, policy, backend, metrics, constraints, fontKey)
+        return Fixture(snapshot, analysis, lineBreaks, catalog, policy, backend, metrics, constraints, fontKey, faceId)
     }
 
     private companion object {
