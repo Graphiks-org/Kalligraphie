@@ -267,6 +267,18 @@ est absente, plutôt que de publier un rapport auquel une plateforme manquerait 
 silence. Elle refuse aussi un rapport qui mesure moins de profils que sa
 plateforme n’en sert sans en nommer la raison.
 
+androidx.benchmark enregistre une trace perfetto de plusieurs dizaines de mégaoctets
+par profil et la remet au pull côté hôte de l’appareil géré. Aucun argument
+d’instrumentation ne supprime cette trace sans supprimer aussi les fichiers
+mesurés, le mode de profilage gouverne le traçage de méthodes et
+l’échantillonnage de pile plutôt qu’elle, et un appareil à qui l’on demande
+trente-sept de ces traces se remplit : pendant l’exécution, supprimez les traces
+que l’hôte a déjà tirées, pour que le pull d’un profil suivant n’échoue pas et
+n’emporte pas le reste de l’exécution. Le fichier de résultats de l’outil fait foi
+— trente-sept tests, aucun échec, aucune erreur, aucun test ignoré — et le code de
+sortie de la tâche peut encore signaler la démolition du pilote de test, qui est
+hors mesure.
+
 Les deux objectifs de latence nommés ci-dessous restent des observations qu’un
 opérateur lit dans le rapport ; ils ne peuvent faire échouer une exécution.
 

@@ -235,6 +235,17 @@ when an input is absent rather than publishing a report with a platform silently
 missing. It also refuses a report that measures fewer profiles than its platform
 serves without naming the reason.
 
+androidx.benchmark records a perfetto trace of tens of megabytes for every
+profile and hands it to the managed device's host-side pull. No instrumentation
+argument suppresses that trace without also suppressing the measured files, the
+profiling mode governs method tracing and stack sampling rather than it, and a
+device asked for thirty-seven of them fills up: while the run proceeds, delete the
+traces the host has already pulled, so that the pull of a later profile does not
+fail and take the rest of the run with it. The tool's own results file is the
+verdict — thirty-seven tests, no failure, no error, no skip — and the task's exit
+status can still report the test driver's teardown, which is outside the
+measurement.
+
 The two named latency objectives below remain observations an operator reads in
 the report; they cannot fail a run.
 
