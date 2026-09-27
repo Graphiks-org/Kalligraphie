@@ -106,6 +106,21 @@ class EllipsisMixedInstanceTest {
         assertTrue(markerRun.fontInstanceKey.geometry.normalizedAxes.single().value > 0f)
     }
 
+    @Test
+    fun inlineStartEllipsisKeepsTheSmallestVisibleSuffixWithOneInstance() {
+        val fixture = fixture("ABCDE", width = 2_300f, overflowPolicy = OverflowPolicy.Ellipsis(EllipsisSide.INLINE_START))
+
+        val result = compose(fixture)
+        val truncation = assertNotNull(result.truncation)
+
+        // Both the last cluster and the last two clusters fit at this width, so the published
+        // boundary pins the selection order: the legacy single-instance behavior keeps the smallest
+        // visible suffix (the final cluster only), hiding the rest.
+        assertEquals(fixture.snapshot.textIndexAtScalarBoundary(4), truncation.anchor)
+        assertEquals(range(fixture.snapshot, 0, 4), truncation.hiddenRange)
+        assertEquals(EllipsisSide.INLINE_START, truncation.side)
+    }
+
     private fun compose(fixture: Fixture): ParagraphCompositionResult.Success =
         assertIs(ParagraphComposer.compose(fixture.request, EditableLineMaterialization.LayoutOnly))
 
@@ -148,7 +163,11 @@ class EllipsisMixedInstanceTest {
         )
     }
 
-    private fun fixture(value: String, width: Float): Fixture {
+    private fun fixture(
+        value: String,
+        width: Float,
+        overflowPolicy: OverflowPolicy = OverflowPolicy.Ellipsis(EllipsisSide.INLINE_END),
+    ): Fixture {
         val snapshot = TextSnapshots.decodeUtf16(
             version = TextVersion.create(),
             slices = listOf(TextSlice.Utf16(value.toCharArray())),
@@ -192,7 +211,7 @@ class EllipsisMixedInstanceTest {
             shapingBackend = backend,
             materializationIdentity = ParagraphMaterializationIdentity.LayoutOnly,
             operationProfile = EditorOperationProfile.unbounded,
-            overflowPolicy = OverflowPolicy.Ellipsis(EllipsisSide.INLINE_END),
+            overflowPolicy = overflowPolicy,
         )
         return Fixture(snapshot, request)
     }

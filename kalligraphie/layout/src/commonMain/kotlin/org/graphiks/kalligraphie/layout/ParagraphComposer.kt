@@ -1716,10 +1716,10 @@ public object ParagraphComposer : ParagraphLayouter {
             return if (markerWidthAt(anchor) <= width) publish(completeRange) else null
         }
 
-        // Each candidate hides one more cluster than its predecessor while keeping the marker
-        // measured with the instance that renders it at that candidate's anchor. The published
+        // Candidates are ordered in the legacy selection order for each side, with the marker
+        // measured using the instance that renders it at that candidate's anchor. The published
         // line is re-validated against the region so a residual measurement mismatch falls back to
-        // the next admissible boundary instead of overflowing.
+        // the next admissible candidate instead of overflowing.
         val admissible: List<TextRange> = when (side) {
             EllipsisSide.INLINE_END -> measureBoundaries.asReversed()
                 .filter { boundary -> boundary < terminal && prefixWidths.containsKey(boundary) }
@@ -1730,7 +1730,6 @@ public object ParagraphComposer : ParagraphLayouter {
                 .filter { boundary ->
                     (terminalWidth - prefixWidths.getValue(boundary)) + markerWidthAt(boundary) <= width
                 }
-                .asReversed()
                 .map { boundary -> TextRange(lineStart, boundary) }
             EllipsisSide.MIDDLE -> {
                 val widestMarker = (measureBoundaries + lineStart).maxOf { boundary -> markerWidthAt(boundary) }
