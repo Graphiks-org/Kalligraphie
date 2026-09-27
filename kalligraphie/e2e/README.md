@@ -79,8 +79,8 @@ access and stay on the reference platform.
 | --- | --- | --- |
 | JVM | `./gradlew :kalligraphie:e2e:jvmTest` | Every catalogued scene |
 | Android (host, JVM runtime) | `./gradlew :kalligraphie:e2e:testAndroidHostTest` | The portable scenes |
-| Android (device, ART) | `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | The portable scenes |
-| iOS simulator | `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | The portable scenes |
+| Android (device, ART) | `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Every catalogued scene |
+| iOS simulator | `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | Every catalogued scene |
 
 Every one of them compares against the same committed `manifest.tsv`, exactly, with no numeric
 tolerance. `iosArm64` compiles but executes nothing: no hosted runner can supply a device.

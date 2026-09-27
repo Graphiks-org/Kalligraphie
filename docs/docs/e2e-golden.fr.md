@@ -60,16 +60,18 @@ n'est jamais regelé pour lui plaire.
 ## Quelles scènes chaque plateforme vérifie
 
 Chaque scène déclare la `CatalogRoute` dont elle a besoin, et chaque plateforme
-vérifie les scènes que ses propres capacités déclarées peuvent servir. Sur la JVM,
-c'est tout le catalogue ; sur Android et iOS, c'est la route portable des glyphes.
-Le tableau ci-dessous suit la route déclarée et le manifeste committé.
+vérifie les scènes que ses propres capacités déclarées peuvent servir. C'est tout
+le catalogue sur la JVM, sur le runtime Android de l'appareil et sur le simulateur
+iOS, puisque les trois déclarent la surface portable complète ; la compilation
+Android *host*, qui s'exécute sur une JVM, ne sert que la route portable. Le
+tableau ci-dessous suit la route déclarée et le manifeste committé.
 
 | Commande | Plateforme | Scènes |
 | --- | --- | --- |
 | `./gradlew :kalligraphie:e2e:jvmTest` | JVM, tous les runners | Toutes les scènes cataloguées |
 | `./gradlew :kalligraphie:e2e:testAndroidHostTest` | Test unitaire Android, exécution JVM | Les scènes portables |
-| `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Émulateur Android, ART | Les scènes portables |
-| `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | Simulateur iOS, Kotlin/Native | Les scènes portables |
+| `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Émulateur Android, ART | Toutes les scènes cataloguées |
+| `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | Simulateur iOS, Kotlin/Native | Toutes les scènes cataloguées |
 
 Les quatre comparent le même manifeste committé, octet pour octet, sans tolérance
 numérique : l'empreinte d'une scène est un fait du rastériseur, pas de la

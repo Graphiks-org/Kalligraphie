@@ -7,11 +7,12 @@ import org.graphiks.kalligraphie.e2e.catalog.ParagraphSceneRenderers
 import org.graphiks.kalligraphie.e2e.catalog.PortableSceneRenderers
 
 /**
- * The iOS simulator test environment: the embedded corpus, the portable scenes, and the capabilities
- * iOS declares.
+ * The iOS simulator test environment: the embedded corpus, both halves of the harness, and the
+ * capabilities iOS declares.
  *
- * iOS declares `END_TO_END_LAYOUT` absent, so the paragraph-facade scenes are not registered — and
- * could not be, since the facade they call is not compiled for this target.
+ * iOS declares the complete portable capability surface, end-to-end layout included, so the
+ * paragraph-facade scenes are registered alongside the portable ones: the capability ratchet
+ * requires the registry to match that declaration exactly, and no scene is deferred here.
  */
 internal object E2eTestEnvironment {
     /** The fixture corpus embedded in this test binary at build time. */

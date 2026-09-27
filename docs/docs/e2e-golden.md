@@ -58,17 +58,18 @@ re-frozen to match.
 ## Which scenes each platform verifies
 
 Every scene declares the `CatalogRoute` it needs, and each platform verifies the
-scenes its own declared capabilities can serve. On the JVM that is the whole
-catalog; on Android and iOS it is the portable glyph route. The `Sources` column
-below is derived from the route, and the `Manifest` column from the committed
-record.
+scenes its own declared capabilities can serve. That is the whole catalog on the
+JVM, on the Android device runtime and on the iOS simulator, since all three
+declare the complete portable capability surface; the Android host compilation,
+which runs on a JVM, serves the portable route alone. The `Sources` column below
+is derived from the route, and the `Manifest` column from the committed record.
 
 | Command | Platform | Scenes |
 | --- | --- | --- |
 | `./gradlew :kalligraphie:e2e:jvmTest` | JVM, all runners | Every catalogued scene |
 | `./gradlew :kalligraphie:e2e:testAndroidHostTest` | Android unit test, JVM runtime | The portable scenes |
-| `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Android emulator, ART | The portable scenes |
-| `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | iOS simulator, Kotlin/Native | The portable scenes |
+| `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Android emulator, ART | Every catalogued scene |
+| `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | iOS simulator, Kotlin/Native | Every catalogued scene |
 
 All four compare against the same committed manifest, byte for byte, with no
 numeric tolerance: the fingerprint of a scene is a fact about the rasterizer, not

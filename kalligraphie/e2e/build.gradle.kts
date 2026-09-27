@@ -38,14 +38,13 @@ fun renderEmbeddedCorpus(entries: List<Pair<String, File>>): String {
 }
 
 /**
- * The corpus the portable harness reads, and nowhere else: the families the portable scenes and the
- * probes load, plus the committed resources the verifier and the ratchet read. The paragraph-facade
- * scenes are absent on purpose — they do not run on this target, so their fonts would only bloat the
- * binary.
+ * The corpus the iOS harness reads, and nowhere else: the families both registries of renderers and
+ * the probes load, plus the committed resources the verifier and the ratchet read. Every entry is
+ * named by a scene or a probe the suite runs on this target.
  */
 val iosFixtureCorpus by tasks.registering {
     group = "verification"
-    description = "Embeds the portable harness corpus into the iosSimulatorArm64Test binary."
+    description = "Embeds the iOS harness corpus into the iosSimulatorArm64Test binary."
     val fixtures = rootProject.layout.projectDirectory.dir("test-fixtures")
     val resources = layout.projectDirectory.dir("src/harnessResources")
     val entries = listOf(
@@ -125,7 +124,7 @@ kotlin {
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
             resources.srcDir(layout.projectDirectory.dir("src/harnessResources"))
-            // The harness is shared, not duplicated: one copy of the portable scenes, of the
+            // The harness is shared, not duplicated: one copy of the scenes, of the
             // verification and of the ratchets compiles into every test target that can run it.
             sharedHarnessDirs.forEach { directory -> kotlin.srcDir(directory) }
             kotlin.srcDir(classpathCorpusDir)

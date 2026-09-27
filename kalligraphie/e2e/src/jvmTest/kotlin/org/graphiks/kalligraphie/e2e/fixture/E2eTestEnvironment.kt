@@ -13,10 +13,11 @@ import org.graphiks.kalligraphie.e2e.catalog.PortableSceneRenderers
  * fixtures nor another's scene registry: the shared harness reads this declaration and would not
  * compile without it.
  *
- * The reference platform registers both halves — the portable scenes and the paragraph-facade ones —
- * because its capability identity declares every portable capability present. A platform that
- * declares end-to-end layout absent registers the portable half only, and the ratchet refuses a
- * registry that does not match its own declaration.
+ * Every platform registers both halves — the portable scenes and the paragraph-facade ones — since
+ * each declares the complete portable capability surface. One compilation does not: the Android
+ * host, which runs on a JVM and cannot load the shared library the shaping route needs, registers
+ * the portable half alone. The ratchet refuses a registry that does not match its own declaration
+ * in either case.
  */
 internal object E2eTestEnvironment {
     /** The fixture corpus of this platform. */
