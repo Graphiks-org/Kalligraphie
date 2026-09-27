@@ -26,13 +26,18 @@ import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TextRange
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
-import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
 import org.graphiks.kalligraphie.bench.fixture.FixtureCorpus
 
 /**
- * The JVM paragraph scenarios, in canonical order: the incremental-layout profiles, the
- * editable-line decode and layout profiles, the consumer and session journeys, and the font-asset
- * handoff and concurrent waves. All of them need `END_TO_END_LAYOUT`.
+ * The paragraph scenarios, in canonical order: the incremental-layout profiles, the editable-line
+ * decode and layout profiles, the consumer and session journeys, and the font-asset handoff. All of
+ * them need `END_TO_END_LAYOUT`, which every platform of `:kalligraphie:conformance` now declares.
+ *
+ * Nothing here is platform-specific any more: the facades and the portable Unicode analysis they
+ * compose through are `commonMain` code, so these profiles measure the same routes on the JVM, on
+ * ART and on the iOS simulator. The one profile that does not travel, `ConcurrentResolveWarm`, needs
+ * a harness instrument rather than a product capability, and lives with that instrument in the
+ * Java-family source set, declared through [org.graphiks.kalligraphie.bench.MeasurementInstrument].
  */
 
 private const val INCREMENTAL_SOURCE_TEXT: String =
@@ -46,7 +51,7 @@ private val INCREMENTAL_FONTS = listOf(
     "amiri/Amiri-Regular.ttf" to "Amiri Regular",
 )
 
-private class InteractiveEdit(private val corpus: FixtureCorpus) : PortableScenario(
+private class InteractiveEdit(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "InteractiveEdit",
     route = "incremental paragraph layout through one session, alternating edit and unedit",
     timedBoundary = "starts before the session layout of the prepared delta and ends after the complete certified result is consumed",
@@ -98,7 +103,7 @@ private class InteractiveEdit(private val corpus: FixtureCorpus) : PortableScena
     }
 }
 
-private class ViewportLayout(private val corpus: FixtureCorpus) : PortableScenario(
+private class ViewportLayout(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "ViewportLayout",
     route = "incremental paragraph layout through one session, alternating viewport ranges",
     timedBoundary = "starts before the session layout of the prepared viewport move and ends after the complete certified result is consumed",
@@ -145,7 +150,7 @@ private class ViewportLayout(private val corpus: FixtureCorpus) : PortableScenar
     }
 }
 
-private class IncrementalCancellation(private val corpus: FixtureCorpus) : PortableScenario(
+private class IncrementalCancellation(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "Cancellation",
     route = "incremental paragraph layout cancelled from a cooperative in-layout signal",
     timedBoundary =
@@ -212,7 +217,7 @@ private val UTF8_FRAGMENT_LENGTHS = listOf(5, 9, 5, 5)
 
 private val UTF16_FRAGMENT_LENGTHS = listOf(5, 5, 3, 4)
 
-private class BorrowedFragmentedUtf8Decode(private val corpus: FixtureCorpus) : PortableScenario(
+private class BorrowedFragmentedUtf8Decode(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "BorrowedFragmentedUtf8Decode",
     route = "public decodeUtf8 over four borrowed storage-backed slices of mixed-script text",
     timedBoundary =
@@ -257,7 +262,7 @@ private class BorrowedFragmentedUtf8Decode(private val corpus: FixtureCorpus) : 
     }
 }
 
-private class BorrowedFragmentedUtf16Decode(private val corpus: FixtureCorpus) : PortableScenario(
+private class BorrowedFragmentedUtf16Decode(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "BorrowedFragmentedUtf16Decode",
     route = "public decodeUtf16 over four borrowed storage-backed slices of mixed-script text",
     timedBoundary =
@@ -330,7 +335,7 @@ private val FROZEN_GLYPH_IDS = listOf(
     70, 68, 73, 171,
 )
 
-private class ColdMixedBidiLine(private val corpus: FixtureCorpus) : PortableScenario(
+private class ColdMixedBidiLine(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "ColdMixedBidiLine",
     route = "mixed-script editable line through a fresh font catalog, instance, and session",
     timedBoundary =
@@ -369,7 +374,7 @@ private class ColdMixedBidiLine(private val corpus: FixtureCorpus) : PortableSce
     }
 }
 
-private class WarmMixedBidiLine(private val corpus: FixtureCorpus) : PortableScenario(
+private class WarmMixedBidiLine(private val corpus: FixtureCorpus) : ParagraphScenario(
     name = "WarmMixedBidiLine",
     route = "mixed-script editable line through one reusable session",
     timedBoundary =
@@ -422,9 +427,9 @@ private class WarmMixedBidiLine(private val corpus: FixtureCorpus) : PortableSce
 
 private class ConsumerCold(
     private val scenario: ConsumerScenario,
-) : PortableScenario(
+) : ParagraphScenario(
     name = "RenderableConsumerCold${scenario.profileSuffix}",
-    route = "JVM RENDERABLE consumer journey (${scenario.routeDescription})",
+    route = "RENDERABLE consumer journey (${scenario.routeDescription})",
     timedBoundary =
         "starts before embedded catalog creation and ends after the certified paragraph layout is " +
             "consumed; resolver closure is excluded, matching the original harness",
@@ -440,9 +445,9 @@ private class ConsumerCold(
     }
 }
 
-private class ConsumerWarm(private val scenario: ConsumerScenario) : PortableScenario(
+private class ConsumerWarm(private val scenario: ConsumerScenario) : ParagraphScenario(
     name = "RenderableConsumerWarm${scenario.profileSuffix}",
-    route = "JVM RENDERABLE consumer journey (${scenario.routeDescription})",
+    route = "RENDERABLE consumer journey (${scenario.routeDescription})",
     timedBoundary =
         "starts immediately before the public paragraph facade and ends after the certified layout is " +
             "consumed; setup and resolver closure are excluded",
@@ -469,9 +474,9 @@ private class ConsumerWarm(private val scenario: ConsumerScenario) : PortableSce
 private class ParagraphSession(
     private val scenario: ConsumerScenario,
     private val warm: Boolean,
-) : PortableScenario(
+) : ParagraphScenario(
     name = "Session${if (warm) "Warm" else "Cold"}${scenario.profileSuffix}",
-    route = "reusable JVM RENDERABLE incremental session (${scenario.routeDescription})",
+    route = "reusable RENDERABLE incremental session (${scenario.routeDescription})",
     timedBoundary = if (warm) {
         "new text revision, session layout and certified-result consumption; catalog, resolver, session setup and closure excluded"
     } else {
@@ -576,7 +581,7 @@ private class Handoff(
     private val corpus: FixtureCorpus,
     private val fixture: CorpusFixture,
     private val warm: Boolean,
-) : PortableScenario(
+) : ParagraphScenario(
     name = if (warm) "FontAssetRetainReopenWarm" else "FontAssetRetainReopenCold",
     route = "Liberation Sans stable text as one EditableLine -> public JvmEditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset by complete key -> resolve every final certified glyph",
     timedBoundary = if (warm) {
@@ -647,48 +652,13 @@ private class Handoff(
     }
 }
 
-private class ConcurrentResolve(private val corpus: FixtureCorpus, private val fixture: CorpusFixture) : PortableScenario(
-    name = "ConcurrentResolveWarm",
-    route = "one renderer-owned Liberation Sans asset from public JvmEditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset; 35 fixed distinct nonzero glyphs partitioned round-robin over four persistent workers",
-    timedBoundary = "whole-wave wall time from dispatch until all four workers resolve and consume every corpus glyph exactly once; never divided by operations; allocation probes run inside workers",
-    cacheState = "session/backend, resolver and layout handle closed before warmup; all corpus glyphs pre-resolved; workers started before timing; shared renderer asset closed after all waves",
-) {
-    private var asset: org.graphiks.kalligraphie.api.FontRenderAssetHandle? = null
-    private var workers: List<java.util.concurrent.ThreadPoolExecutor> = emptyList()
-
-    override fun prepare() {
-        validateHandoffFixture(this, corpus, fixture)
-        val opened = rendererAssetFromLayout(fixture)
-        consumeOutlines(this, opened, HANDOFF_GLYPH_CORPUS)
-        asset = opened
-        workers = newPersistentWorkers()
-    }
-
-    override fun operation() {
-        val results = dispatchConcurrentWave(checkNotNull(asset), workers)
-        results.forEach { sink(it.checksum) }
-        val workerAllocations = if (results.all { it.allocatedBytes != null }) {
-            results.sumOf { checkNotNull(it.allocatedBytes) }
-        } else {
-            null
-        }
-        if (workerAllocations != null) record("workerAllocatedBytes", workerAllocations)
-        count("waves")
-    }
-
-    override fun release() {
-        workers.forEach(::closeWorker)
-        workers = emptyList()
-        success(checkNotNull(asset).close())
-        asset = null
-    }
-}
-
 /**
- * The JVM paragraph scenarios in canonical order. The consumer/session fixtures come from the same
- * corpus seam as the portable ones.
+ * The paragraph scenarios in canonical order. The consumer/session fixtures come from the same
+ * corpus seam as the portable ones. `ConcurrentResolveWarm` is not here: it belongs to a harness
+ * instrument the Java family provides, so it is contributed by
+ * `threadedInstrumentScenarios(...)` where that instrument exists.
  */
-public fun paragraphScenariosJvm(corpus: FixtureCorpus): List<org.graphiks.kalligraphie.bench.MeasurementScenario> {
+public fun paragraphScenarios(corpus: FixtureCorpus): List<org.graphiks.kalligraphie.bench.MeasurementScenario> {
     val colr = CorpusFixture("BungeeColor-Regular.ttf", "Bungee Color COLR v0", org.graphiks.kalligraphie.api.GlyphId(43), corpus.bytes("/fonts/bungee-color/BungeeColor-Regular.ttf"))
     val liberation = CorpusFixture("LiberationSans-Regular.ttf", "Liberation Sans Regular", org.graphiks.kalligraphie.api.GlyphId(36), corpus.bytes(LIBERATION_BYTES_PATH))
     val consumerSingle = ConsumerScenario(
@@ -728,6 +698,5 @@ public fun paragraphScenariosJvm(corpus: FixtureCorpus): List<org.graphiks.kalli
         ParagraphSession(consumerMixedBidi, warm = true),
         Handoff(corpus, liberation, warm = false),
         Handoff(corpus, liberation, warm = true),
-        ConcurrentResolve(corpus, liberation),
     )
 }

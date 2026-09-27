@@ -16,10 +16,11 @@ import platform.posix.fopen
 import platform.posix.fputs
 import platform.posix.getenv
 
-private const val CORPUS_ID = "portable-glyphs"
+private const val CORPUS_ID = "portable-glyphs-and-paragraph-layout"
 
 private const val CORPUS_DESCRIPTION =
-    "the four fixtures the portable glyph scenarios read: COLR v0, SVG-in-OT, EBDT bitmap and TrueType"
+    "the six fixtures the glyph and paragraph profiles read: COLR v0, SVG-in-OT, EBDT bitmap, " +
+        "TrueType, DejaVu and Amiri"
 
 private const val WARMUP_ITERATIONS = 3
 
@@ -45,7 +46,7 @@ public fun main() {
     val capabilities = currentPortableCapabilityIdentity()
     val selected = ScenarioRegistry.select(corpus, capabilities)
     check(selected.isNotEmpty()) { "The iOS capability identity selects no scenario to measure." }
-    val deferred = ScenarioRegistry.deferred(corpus, capabilities)
+    val deferred = ScenarioRegistry.deferred(corpus, capabilities) + ScenarioRegistry.deferredInstruments()
     val fontHashes = IosFixtureCorpus.paths.sorted().associateWith { path -> corpus.sha256Hex(path) }
     val profiles = selected.map { scenario -> measure(scenario) }
     val report = MeasurementReport(
@@ -57,7 +58,9 @@ public fun main() {
     println(report.toMarkdown())
     if (deferred.isNotEmpty()) {
         println()
-        println("Deferred on this platform: ${deferred.joinToString(", ") { it.name }}")
+        deferred.forEach { scenario ->
+            println("Deferred on this platform: ${scenario.name} — ${scenario.reason}")
+        }
     }
 }
 

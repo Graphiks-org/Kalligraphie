@@ -20,3 +20,15 @@ public expect fun measurementIdentity(
  * [MeasurementState.UNAVAILABLE] with the reason, and never an estimate presented as a measurement.
  */
 public expect fun allocationFigures(allocatedBytes: Long?): Map<String, MeasurementValue>
+
+/**
+ * What this harness's allocation instrument can say about a thread.
+ *
+ * The JVM answers from `com.sun.management.ThreadMXBean`. ART and Kotlin/Native expose no
+ * per-thread allocator counter, so they answer null — a figure taken there would be an estimate
+ * wearing a measurement's name, and the profile would publish the unavailable state instead.
+ */
+public expect object ThreadAllocationProbe {
+    /** The calling thread's allocated bytes so far, or null when this platform counts none. */
+    public fun currentBytes(): Long?
+}

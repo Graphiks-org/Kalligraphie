@@ -10,29 +10,26 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.long
 import org.graphiks.kalligraphie.bench.fixture.FixtureCorpus
 import org.graphiks.kalligraphie.bench.fixture.sha256Hex
+import org.graphiks.kalligraphie.bench.scenarios.threadedInstrumentScenarios
 
 private val JSON = Json { ignoreUnknownKeys = true }
 
-/** The four fixtures the portable glyph scenarios read, on every platform. */
-private val PORTABLE_CORPUS_PATHS = listOf(
+/** The corpus id every platform publishes, so a report names the corpus it actually measured. */
+private const val CORPUS_ID = "portable-glyphs-and-paragraph-layout"
+
+/** The six fixtures the glyph and paragraph profiles read, on every platform that serves them. */
+private val MEASURED_CORPUS_PATHS = listOf(
     "/fonts/bungee-color/BungeeColor-Regular.ttf",
     "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
     "/fonts/skia-ebdt-format1/ebdt_fmt1.ttf",
     "/fonts/liberation/LiberationSans-Regular.ttf",
-)
-
-/** The two extra fixtures the JVM-only paragraph scenarios read. */
-private val PARAGRAPH_CORPUS_PATHS = listOf(
     "/fonts/dejavu/DejaVuSans.ttf",
     "/fonts/amiri/Amiri-Regular.ttf",
 )
 
-private const val PORTABLE_CORPUS_DESCRIPTION =
-    "the four fixtures the portable glyph scenarios read: COLR v0, SVG-in-OT, EBDT bitmap and TrueType"
-
-private const val JVM_CORPUS_DESCRIPTION =
-    "the six fixtures the portable glyph and paragraph-layout scenarios read: COLR v0, SVG-in-OT, " +
-        "EBDT bitmap, TrueType, DejaVu and Amiri"
+private const val CORPUS_DESCRIPTION =
+    "the six fixtures the glyph and paragraph profiles read: COLR v0, SVG-in-OT, EBDT bitmap, " +
+        "TrueType, DejaVu and Amiri"
 
 /** Warm-up and measured iterations the iOS driver runs, in one-second iterations. */
 private const val IOS_WARMUP_ITERATIONS = 3
@@ -53,13 +50,20 @@ private const val IOS_MEASURED_ITERATIONS = 5
 public fun main(args: Array<String>) {
     val options = parseOptions(args)
     val corpus = ReportCorpus()
-    val metadata = ScenarioRegistry.all(corpus).associateBy { it.name }
+    // The catalogue is the whole module's, worker-pool profile included: it is the JVM that builds
+    // this report, and that is where the instrument lives. Every platform's coverage is then checked
+    // against it, so "this platform serves one profile fewer" is a named deferral, never a gap.
+    val catalogue = ScenarioRegistry.all(corpus, threadedInstrumentScenarios(corpus))
+    val metadata = catalogue.associateBy { it.name }
     check(metadata.isNotEmpty()) { "The scenario registry resolved no measurement metadata." }
 
     val jvmReport = renderJvmReport(options, metadata, corpus)
     val iosReport = renderIosReport(options, metadata)
     val androidReport = renderAndroidReport(options, metadata)
-    val comparison = renderComparison(jvmReport, iosReport, androidReport)
+    requireCoverage(jvmReport, metadata.keys)
+    requireCoverage(iosReport, metadata.keys)
+    requireCoverage(androidReport, metadata.keys)
+    val comparison = renderComparison(jvmReport, iosReport, androidReport, corpus)
 
     val out = File(options.getValue("out"))
     out.mkdirs()
@@ -72,6 +76,31 @@ public fun main(args: Array<String>) {
             "jvm=${jvmReport.profileCount}, ios=${iosReport.profileCount}, " +
             "android=${androidReport.profileCount} profiles.",
     )
+    listOf(jvmReport, iosReport, androidReport).forEach { report ->
+        if (report.deferred.isNotEmpty()) {
+            println("Deferred on ${report.platformId}: ${report.deferred.sorted().joinToString(", ")}")
+        }
+    }
+}
+
+/**
+ * Refuses a report that silently measures less than the module knows.
+ *
+ * A platform may leave a profile out only by saying so — through its capability identity or through
+ * a harness instrument it does not have — and its own report is where that statement lands. A
+ * missing profile that is not named is a gap, and a report with one would look complete.
+ */
+private fun requireCoverage(report: AggregatedReport, catalogue: Set<String>) {
+    val published = report.measured
+    val unexplained = catalogue - published - report.deferred
+    check(unexplained.isEmpty()) {
+        "The ${report.platformId} report measures ${published.size} of ${catalogue.size} profiles and " +
+            "names no reason for: ${unexplained.sorted()}. Run its measurement again or publish the deferral."
+    }
+    val measuredAndDeferred = published intersect report.deferred
+    check(measuredAndDeferred.isEmpty()) {
+        "The ${report.platformId} report defers ${measuredAndDeferred.sorted()} and measures them anyway."
+    }
 }
 
 private fun parseOptions(args: Array<String>): Map<String, String> = args.associate { argument ->
@@ -100,8 +129,12 @@ internal data class AggregatedReport(
     val commit: String,
     val runtime: String,
     val profileCount: Int,
-    /** p50 per portable scenario, for the comparison table. */
-    val portableP50Nanos: Map<String, Long>,
+    /** The profiles this platform's report actually publishes. */
+    val measured: Set<String>,
+    /** The profiles this platform named as deferred in its own run outputs. */
+    val deferred: Set<String>,
+    /** p50 per measured profile, for the comparison table. */
+    val p50Nanos: Map<String, Long>,
     val markdown: String,
 )
 
@@ -168,15 +201,13 @@ private fun renderJvmReport(
 
     val identity = measurementIdentity(
         platformId = "jvm",
-        corpusId = "portable-glyphs-and-paragraph-layout",
-        fontHashes = (PORTABLE_CORPUS_PATHS + PARAGRAPH_CORPUS_PATHS).associateWith { path ->
-            corpus.sha256Hex(path)
-        },
+        corpusId = CORPUS_ID,
+        fontHashes = MEASURED_CORPUS_PATHS.associateWith { path -> corpus.sha256Hex(path) },
     )
     val markdown = MeasurementReport(
         identity = identity,
-        corpusId = "portable-glyphs-and-paragraph-layout",
-        corpusDescription = JVM_CORPUS_DESCRIPTION,
+        corpusId = CORPUS_ID,
+        corpusDescription = CORPUS_DESCRIPTION,
         profiles = profiles,
     ).toMarkdown()
     return AggregatedReport(
@@ -184,7 +215,10 @@ private fun renderJvmReport(
         commit = identity.commit,
         runtime = identity.runtime,
         profileCount = profiles.size,
-        portableP50Nanos = profiles.associate { it.name to it.latency.p50Nanos },
+        measured = profiles.map { profile -> profile.name }.toSet(),
+        // The JVM serves the whole catalogue: it is where the worker instrument runs.
+        deferred = emptySet(),
+        p50Nanos = profiles.associate { it.name to it.latency.p50Nanos },
         markdown = markdown,
     )
 }
@@ -212,14 +246,14 @@ private fun renderIosReport(options: Map<String, String>, metadata: Map<String, 
             iterations = samples.size,
             latency = Percentiles.of(samples),
             consumed = counters,
-            figures = allocationFigures(null),
+            figures = iosFigures(),
         )
     }.sortedBy { profile -> metadata.keys.indexOfFirst { it == profile.name } }
 
     val markdown = MeasurementReport(
         identity = identity,
-        corpusId = "portable-glyphs",
-        corpusDescription = PORTABLE_CORPUS_DESCRIPTION,
+        corpusId = CORPUS_ID,
+        corpusDescription = CORPUS_DESCRIPTION,
         profiles = profiles,
     ).toMarkdown()
     return AggregatedReport(
@@ -227,10 +261,46 @@ private fun renderIosReport(options: Map<String, String>, metadata: Map<String, 
         commit = identity.commit,
         runtime = identity.runtime,
         profileCount = profiles.size,
-        portableP50Nanos = profiles.associate { it.name to it.latency.p50Nanos },
+        measured = profiles.map { profile -> profile.name }.toSet(),
+        deferred = parseDeferredProfiles(markdownReport),
+        p50Nanos = profiles.associate { it.name to it.latency.p50Nanos },
         markdown = markdown,
     )
 }
+
+/**
+ * The profiles the driver declared deferred, read back from its own report tail — the line
+ * `Deferred on this platform: <name> — <reason>`. Reading them from the run, rather than restating
+ * the capability rules here, is what makes the coverage check a check: the aggregator compares what
+ * each platform says it left out against what it published, and fails on anything unexplained.
+ */
+private fun parseDeferredProfiles(markdown: String): Set<String> = markdown.lineSequence()
+    .filter { it.startsWith(DEFERRED_PREFIX) }
+    .map { line -> line.removePrefix(DEFERRED_PREFIX).substringBefore(" — ").trim() }
+    .filter { it.isNotEmpty() }
+    .toSet()
+
+/**
+ * The figures for a platform the aggregator does not run on, in that platform's own words.
+ *
+ * [allocationFigures] is a platform declaration and the aggregator is a JVM program: calling it
+ * would publish the JVM harness's reasons — "no native allocator instrument on the JVM harness",
+ * "JMH reports allocation rate" — inside an iOS or Android report, which says the wrong harness lost
+ * the figure. Each set below restates what that platform's own `allocationFigures` publishes.
+ */
+private fun iosFigures(): Map<String, MeasurementValue> = mapOf(
+    "Allocated bytes" to MeasurementValue.unavailable("no allocation instrument in the Kotlin/Native harness"),
+    "Retained heap" to MeasurementValue.unavailable("no live-set instrument in the Kotlin/Native harness"),
+    "Native memory" to MeasurementValue.unavailable("no native allocator instrument in the Kotlin/Native harness"),
+)
+
+private fun androidFigures(): Map<String, MeasurementValue> = mapOf(
+    "Allocated bytes" to MeasurementValue.unavailable("no allocation metric in the instrumentation benchmark"),
+    "Retained heap" to MeasurementValue.unavailable("no live-set instrument on the Android harness"),
+    "Native memory" to MeasurementValue.unavailable("no native allocator instrument on the Android harness"),
+)
+
+private const val DEFERRED_PREFIX = "Deferred on this platform: "
 
 /**
  * Reads the driver JSONL lines: each is `{"scenario":b64url,"evidence":N,"counters":{…}}`, and the
@@ -300,9 +370,9 @@ private fun parseIosIdentity(markdown: String): MeasurementIdentity {
 
 private fun renderAndroidReport(options: Map<String, String>, metadata: Map<String, MeasurementScenario>): AggregatedReport {
     val raw = readInput("the Android observations", options.getValue("android-obs"))
-    val identityLine = raw.lineSequence().firstOrNull { it.startsWith(IDENTITY_MARKER) }
+    val identityLine = raw.lineSequence().mapNotNull { line -> markerPayload(line, IDENTITY_MARKER) }.firstOrNull()
         ?: error("The Android observations carry no '$IDENTITY_MARKER' identity line — the run's logcat capture is incomplete.")
-    val identityEntry = JSON.parseToJsonElement(identityLine.removePrefix(IDENTITY_MARKER)).jsonObject
+    val identityEntry = JSON.parseToJsonElement(identityLine).jsonObject
     val identity = MeasurementIdentity(
         commit = identityEntry["commit"]!!.jsonPrimitive.content,
         machine = identityEntry["machine"]!!.jsonPrimitive.content,
@@ -315,9 +385,9 @@ private fun renderAndroidReport(options: Map<String, String>, metadata: Map<Stri
         gcPolicy = identityEntry["gcPolicy"]!!.jsonPrimitive.content,
     )
     val counters = raw.lineSequence()
-        .filter { it.startsWith(JSONL_MARKER) }
-        .associate { line ->
-            val entry = JSON.parseToJsonElement(line.removePrefix(JSONL_MARKER)).jsonObject
+        .mapNotNull { line -> markerPayload(line, JSONL_MARKER) }
+        .associate { payload ->
+            val entry = JSON.parseToJsonElement(payload).jsonObject
             val name = decodeKey(entry["scenario"]!!.jsonPrimitive.content)
             name to entry["counters"]!!.jsonObject.entries.associate { (key, value) ->
                 decodeKey(key) to value.jsonPrimitive.long
@@ -360,7 +430,7 @@ private fun renderAndroidReport(options: Map<String, String>, metadata: Map<Stri
         appendLine("- OS: ${identity.operatingSystem}")
         appendLine("- Runtime: ${identity.runtime}")
         appendLine("- Cache policy: ${identity.gcPolicy}")
-        appendLine("- Corpus: `portable-glyphs` — $PORTABLE_CORPUS_DESCRIPTION")
+        appendLine("- Corpus: `$CORPUS_ID` — $CORPUS_DESCRIPTION")
         appendLine("- Corpus SHA-256:")
         identity.fontHashes.entries.sortedBy { it.key }.forEach { (path, hash) ->
             appendLine("  - `$path`: `$hash`")
@@ -383,7 +453,7 @@ private fun renderAndroidReport(options: Map<String, String>, metadata: Map<Stri
             profile.allocationCount?.let { allocations ->
                 appendLine("- Allocation count: measured $allocations (androidx.benchmark allocation count per operation)")
             }
-            allocationFigures(null).entries.sortedBy { it.key }.forEach { (label, figure) ->
+            androidFigures().entries.sortedBy { it.key }.forEach { (label, figure) ->
                 appendLine("- $label: ${figure.state.name.lowercase()} — ${figure.detail}")
             }
         }
@@ -393,7 +463,11 @@ private fun renderAndroidReport(options: Map<String, String>, metadata: Map<Stri
         commit = identity.commit,
         runtime = identity.runtime,
         profileCount = ordered.size,
-        portableP50Nanos = ordered.mapNotNull { profile ->
+        measured = ordered.map { profile -> profile.metadata.name }.toSet(),
+        // The device declares every portable capability and ART has the worker instrument, so the
+        // Android report names no deferral; the coverage check holds it to that.
+        deferred = emptySet(),
+        p50Nanos = ordered.mapNotNull { profile ->
             profile.medianNanos?.let { profile.metadata.name to it }
         }.toMap(),
         markdown = markdown,
@@ -412,6 +486,19 @@ private fun readMedian(file: File): Pair<Long, Long> {
 private const val JSONL_MARKER = "KALLIGRAPHIE-BENCH-JSONL:"
 private const val IDENTITY_MARKER = "KALLIGRAPHIE-BENCH-IDENTITY:"
 
+/**
+ * What follows [marker] on a logcat line, or null when the line carries none.
+ *
+ * The Android channel is the instrumentation log, and a capture keeps logcat's own prefix —
+ * `09-27 15:40:55.648 2439 2458 I System.out: KALLIGRAPHIE-BENCH-…` — while a capture made with
+ * `-v raw` carries the payload alone. Both are the same measurement, so the marker is searched for
+ * rather than required at the start of the line.
+ */
+private fun markerPayload(line: String, marker: String): String? {
+    val at = line.indexOf(marker)
+    return if (at < 0) null else line.substring(at + marker.length)
+}
+
 private class AndroidProfile(
     val metadata: MeasurementScenario,
     val counters: Map<String, Long>,
@@ -420,32 +507,37 @@ private class AndroidProfile(
 )
 
 // -------------------------------------------------------------------------------------------------
-// Comparison: the 19 portable scenarios across the three platforms, with each platform's caveats.
+// Comparison: every profile the module knows, across the three platforms, with their caveats.
 // -------------------------------------------------------------------------------------------------
 
 private fun renderComparison(
     jvm: AggregatedReport,
     ios: AggregatedReport,
     android: AggregatedReport,
+    corpus: ReportCorpus,
 ): String = buildString {
     appendLine("# measurement comparison")
     appendLine()
     appendLine("- JVM `${jvm.commit.take(12)}` (${jvm.runtime}), ${jvm.profileCount} profiles")
     appendLine("- iOS `${ios.commit.take(12)}` (${ios.runtime}), ${ios.profileCount} profiles")
     appendLine("- Android `${android.commit.take(12)}` (${android.runtime}), ${android.profileCount} profiles")
-    appendLine("- The 18 paragraph profiles are JVM-only: `END_TO_END_LAYOUT` is absent on Android and iOS.")
+    listOf(jvm, ios, android).filter { report -> report.deferred.isNotEmpty() }.forEach { report ->
+        appendLine(
+            "- ${report.platformId} declares ${report.deferred.sorted().joinToString(", ")} deferred: " +
+                "this harness has no instrument for the pattern that profile exercises, and running a " +
+                "different pattern under the same name would publish another measurement.",
+        )
+    }
     appendLine()
     appendLine("| Scenario | JVM p50 (ns/op) | iOS p50 (ns/op) | Android median (ns/op) |")
     appendLine("| --- | --- | --- | --- |")
-    ScenarioRegistry.all(ReportCorpus())
-        .filter { it.scenarioRoute == ScenarioRoute.PORTABLE_GLYPHS }
-        .forEach { scenario ->
-            val name = scenario.name
-            appendLine(
-                "| $name | ${jvm.portableP50Nanos[name] ?: "—"} | " +
-                    "${ios.portableP50Nanos[name] ?: "—"} | ${android.portableP50Nanos[name] ?: "—"} |",
-            )
-        }
+    ScenarioRegistry.all(corpus, threadedInstrumentScenarios(corpus)).forEach { scenario ->
+        val name = scenario.name
+        appendLine(
+            "| $name | ${jvm.p50Nanos[name] ?: "—"} | " +
+                "${ios.p50Nanos[name] ?: "—"} | ${android.p50Nanos[name] ?: "—"} |",
+        )
+    }
     appendLine()
     appendLine("The Android column is androidx.benchmark's median (the tool publishes no percentiles in this mode), measured on a debuggable APK on an emulator with the tool's refusals suppressed; the iOS column is measured on the simulator; neither is a like-for-like number against the JVM.")
 }

@@ -15,7 +15,8 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import kotlin.io.encoding.Base64
 import org.graphiks.kalligraphie.bench.fixture.JvmBenchmarkFixtureCorpus
-import org.graphiks.kalligraphie.bench.scenarios.paragraphScenariosJvm
+import org.graphiks.kalligraphie.bench.scenarios.threadedInstrumentScenarios
+import org.graphiks.kalligraphie.conformance.currentPortableCapabilityIdentity
 
 /**
  * The JVM entry point of the paragraph scenarios (`END_TO_END_LAYOUT`). Same shape as
@@ -52,7 +53,17 @@ public open class ParagraphBenchmark {
 
     @Setup
     public fun setup() {
-        val selected = paragraphScenariosJvm(JvmBenchmarkFixtureCorpus).firstOrNull { it.name == scenarioName }
+        // The resolution goes through the registry, so a scenario this platform stops serving fails
+        // here by name instead of being measured from a hand-written list that drifted.
+        val corpus = JvmBenchmarkFixtureCorpus
+        val selected = ScenarioRegistry
+            .select(
+                corpus = corpus,
+                identity = currentPortableCapabilityIdentity(),
+                platformScenarios = threadedInstrumentScenarios(corpus),
+            )
+            .filter { scenario -> scenario.scenarioRoute == ScenarioRoute.PARAGRAPH_LAYOUT }
+            .firstOrNull { it.name == scenarioName }
             ?: error("Unknown paragraph scenario: $scenarioName")
         selected.prepare()
         scenario = selected

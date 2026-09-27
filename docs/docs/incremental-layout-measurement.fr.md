@@ -7,11 +7,12 @@ de benchmark (mesure comparative) publié. Les profils exécutent la vraie
 les fixtures (données de test fixes) de fontes DejaVu et Amiri versionnées dans
 le dépôt.
 
-Ils appartiennent à la moitié « paragraphe » du module, mesurée sur la JVM
-aujourd'hui : les scénarios de paragraphe et le support qu'ils utilisent sont
-encore des sources JVM, donc les autres plateformes n'en ont aucun à exécuter.
-Une capacité manquante n'est plus la raison : chaque plateforme
-déclare `END_TO_END_LAYOUT` présente.
+Ils appartiennent à la moitié « paragraphe » du module : ils exigent la capacité
+`END_TO_END_LAYOUT`, que toutes les plateformes déclarent depuis que les façades
+et l’analyse Unicode portable sont passées dans `commonMain` : ils s’exécutent
+donc sur la JVM, sur Android et sur le simulateur iOS. Le seul profil qu’une
+plateforme ne peut pas servir est nommé comme différé, au lieu que le module
+publie silencieusement moins de profils.
 
 L’intervalle chronométré commence immédiatement avant
 `session.layout(...)`. Les snapshots (instantanés immuables), catalogues de
@@ -49,7 +50,8 @@ Le module mesure avec kotlinx-benchmark (JMH sur la JVM) : warmup, itérations,
 durée d’itération d’une seconde et format JSON du rapport viennent de sa
 configuration de `benchmark`, pas de variables d’environnement. Une seule
 commande mesure tous les profils que la plateforme sert — ces trois profils font
-partie des trente-sept que la JVM exécute. Résultats et compteurs sont écrits
+partie des trente-sept que le module enregistre, et le simulateur iOS en exécute
+trente-six. Résultats et compteurs sont écrits
 sous le répertoire `build` du module, que git ignore :
 
 ```bash

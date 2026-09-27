@@ -8,10 +8,12 @@ runs only through the module's `jvmBenchmarkBenchmark` task and never as part of
 `check`.
 
 The editable-line profiles belong to the module's paragraph half. They compose
-text through the paragraph facade. That half is measured on the JVM today: the
-paragraph scenarios and the support they use are still JVM sources, so the other
-platforms have none to run. A missing capability is no longer the reason: every
-platform declares `END_TO_END_LAYOUT` present.
+text through the paragraph facade, which needs the `END_TO_END_LAYOUT`
+capability; every platform declares that capability since the facades and the
+portable Unicode analysis became `commonMain` code, so these profiles run on the
+JVM, on Android and on the iOS simulator. The one profile a platform cannot serve
+is reported as deferred, by name, instead of the module silently publishing
+fewer profiles.
 
 The fixed real-text corpus is `Edit سلام 😀 café`. Its UTF-8 and UTF-16 decode
 profiles borrow immutable application-owned storage through four fragments:
@@ -62,7 +64,8 @@ The module measures with kotlinx-benchmark (JMH on the JVM): warm-up, iterations
 the one-second iteration time and the JSON report format come from its benchmark
 configuration, not from environment variables. One command measures every
 profile the platform serves — the editable-line profiles are four of the
-thirty-seven the JVM runs. Results and counters are written under the module's
+thirty-seven the module records, and the iOS simulator runs thirty-six of them.
+Results and counters are written under the module's
 `build` directory, which git ignores:
 
 ```bash

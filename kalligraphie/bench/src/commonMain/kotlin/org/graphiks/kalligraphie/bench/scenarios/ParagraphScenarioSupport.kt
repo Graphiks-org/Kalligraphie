@@ -1,9 +1,5 @@
 package org.graphiks.kalligraphie.bench.scenarios
 
-import java.util.concurrent.Callable
-import java.util.concurrent.Executors
-import java.util.concurrent.ThreadPoolExecutor
-import java.util.concurrent.TimeUnit
 import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
 import org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutSession
 import org.graphiks.kalligraphie.Kalligraphie
@@ -46,14 +42,30 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.TypographySnapshot
 import org.graphiks.kalligraphie.api.TypographyVersion
 import org.graphiks.kalligraphie.api.createIncrementalLayoutRequest
-import org.graphiks.kalligraphie.bench.ThreadAllocationProbe
+import org.graphiks.kalligraphie.bench.ScenarioRoute
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
- * JVM-only support for the paragraph scenarios: the consumer, session, handoff and concurrent
- * profiles of `GlyphMaterializationBenchmark`, plus the incremental-layout machinery of
- * `IncrementalLayoutBenchmark`. Everything here needs `END_TO_END_LAYOUT`.
+ * The paragraph half's base class: every profile on these pages composes text through the paragraph
+ * facade, so the route — and the `END_TO_END_LAYOUT` capability the registry derives from it — is
+ * declared once here instead of once per scenario.
+ */
+internal abstract class ParagraphScenario(
+    name: String,
+    route: String,
+    timedBoundary: String,
+    cacheState: String,
+) : PortableScenario(name, route, timedBoundary, cacheState) {
+    final override val scenarioRoute: ScenarioRoute = ScenarioRoute.PARAGRAPH_LAYOUT
+}
+
+/**
+ * Support for the paragraph scenarios: the consumer, session and handoff profiles of
+ * `GlyphMaterializationBenchmark`, plus the incremental-layout machinery of
+ * `IncrementalLayoutBenchmark`. Everything here needs `END_TO_END_LAYOUT`, and nothing here is
+ * platform-specific — the worker-pool profile that cannot travel lives in the Java-family source
+ * set beside its instrument.
  */
 internal class OpenConsumerScenario(
     val scenario: ConsumerScenario,
@@ -444,53 +456,6 @@ internal fun validateHandoffFixture(scenario: PortableScenario, corpus: org.grap
         consumeOutlineRepresentation(scenario, GlyphId(36), GlyphRepresentation.Outline(outline))
     } finally {
         success(asset.close())
-    }
-}
-
-internal class WorkerObservation(val checksum: Long, val allocatedBytes: Long?)
-
-internal fun closeWorker(executor: ThreadPoolExecutor) {
-    executor.shutdownNow()
-    var interrupted = false
-    while (!executor.isTerminated) {
-        try {
-            executor.awaitTermination(1, TimeUnit.SECONDS)
-        } catch (_: InterruptedException) {
-            interrupted = true
-        }
-    }
-    if (interrupted) Thread.currentThread().interrupt()
-}
-
-internal fun dispatchConcurrentWave(asset: FontRenderAssetHandle, executors: List<ThreadPoolExecutor>): List<WorkerObservation> {
-    val partitions = List(4) { worker -> HANDOFF_GLYPH_CORPUS.filterIndexed { index, _ -> index % 4 == worker } }
-    return partitions.mapIndexed { worker, glyphs ->
-        executors[worker].submit(
-            Callable {
-                val before = ThreadAllocationProbe.currentBytes()
-                var checksum = 0L
-                glyphs.forEach { glyph ->
-                    val representation = success(asset.resolveGlyph(FontGlyphRequest(glyph)))
-                    checksum += when (representation) {
-                        is GlyphRepresentation.Outline -> representation.outline.let { outline ->
-                            outline.glyphId.toLong() + outline.unitsPerEm + outline.bounds.minX + outline.bounds.minY +
-                                outline.bounds.maxX + outline.bounds.maxY + outline.contours.size + outline.commands.size
-                        }
-
-                        GlyphRepresentation.Empty -> glyph.value.toLong()
-                        else -> error("Concurrent outline measurement received $representation")
-                    }
-                }
-                val after = ThreadAllocationProbe.currentBytes()
-                WorkerObservation(checksum, if (before != null && after != null && after >= before) after - before else null)
-            },
-        )
-    }.map { future -> future.get() }
-}
-
-internal fun newPersistentWorkers(): List<ThreadPoolExecutor> = List(4) {
-    (Executors.newFixedThreadPool(1) as ThreadPoolExecutor).also { executor ->
-        executor.prestartAllCoreThreads()
     }
 }
 

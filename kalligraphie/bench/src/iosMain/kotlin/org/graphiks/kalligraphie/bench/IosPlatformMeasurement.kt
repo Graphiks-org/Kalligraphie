@@ -55,3 +55,16 @@ public actual fun allocationFigures(allocatedBytes: Long?): Map<String, Measurem
     "Retained heap" to MeasurementValue.unavailable("no live-set instrument in the Kotlin/Native harness"),
     "Native memory" to MeasurementValue.unavailable("no native allocator instrument in the Kotlin/Native harness"),
 )
+
+/**
+ * No instrument of this harness exists on Kotlin/Native: the standard library has no thread pool to
+ * start persistent workers from, and the allocation probe is the JVM's own `com.sun.management`
+ * extension. `ConcurrentResolveWarm` is therefore reported as deferred here, by name, rather than
+ * replayed as a sequential loop under an unchanged profile name.
+ */
+public actual val measurementInstruments: Set<MeasurementInstrument> = emptySet()
+
+/** Kotlin/Native exposes no per-thread allocator counter; the profiles publish the unavailable state. */
+public actual object ThreadAllocationProbe {
+    public actual fun currentBytes(): Long? = null
+}

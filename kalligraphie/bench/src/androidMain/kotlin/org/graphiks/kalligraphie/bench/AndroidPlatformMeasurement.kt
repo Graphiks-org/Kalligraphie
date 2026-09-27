@@ -50,3 +50,17 @@ public actual fun allocationFigures(allocatedBytes: Long?): Map<String, Measurem
     "Retained heap" to MeasurementValue.unavailable("no live-set instrument on the Android harness"),
     "Native memory" to MeasurementValue.unavailable("no native allocator instrument on the Android harness"),
 )
+
+/**
+ * The instruments ART provides: `java.util.concurrent` supplies the same persistent worker threads
+ * the JVM harness uses, so a profile measured from workers runs here too. The per-thread allocation
+ * counter is the JVM's own `com.sun.management` extension and is absent from ART, so that one figure
+ * stays unavailable rather than estimated.
+ */
+public actual val measurementInstruments: Set<MeasurementInstrument> =
+    setOf(MeasurementInstrument.PARALLEL_WORKERS)
+
+/** ART exposes no per-thread allocator counter; the profile publishes the unavailable state. */
+public actual object ThreadAllocationProbe {
+    public actual fun currentBytes(): Long? = null
+}

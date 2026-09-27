@@ -53,20 +53,23 @@ fun renderEmbeddedCorpus(entries: List<Pair<String, File>>): String {
 }
 
 /**
- * The corpus the portable glyph scenarios read, and nothing else: the four fixtures behind the
- * COLR, SVG-in-OT, EBDT bitmap and TrueType scenarios. The paragraph-facade fixtures are absent on
- * purpose — `END_TO_END_LAYOUT` is absent on this target, so their fonts would only bloat the
- * binary.
+ * The corpus the measurement reads, and nothing else: the four fixtures behind the COLR, SVG-in-OT,
+ * EBDT bitmap and TrueType scenarios, plus the DejaVu and Amiri faces the paragraph profiles compose
+ * with. `END_TO_END_LAYOUT` is declared present on iOS since the facades and the portable Unicode
+ * analysis became `commonMain` code, so those profiles run here too and their fonts must travel with
+ * them.
  */
 val iosBenchmarkCorpus by tasks.registering {
     group = "benchmark"
-    description = "Embeds the portable measurement corpus into the iOS benchmark binary."
+    description = "Embeds the measurement corpus into the iOS benchmark binary."
     val fixtures = rootProject.layout.projectDirectory.dir("test-fixtures")
     val entries = listOf(
         "/fonts/bungee-color/BungeeColor-Regular.ttf" to fixtures.file("fonts/bungee-color/BungeeColor-Regular.ttf").asFile,
         "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64" to fixtures.file("fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64").asFile,
         "/fonts/skia-ebdt-format1/ebdt_fmt1.ttf" to fixtures.file("fonts/skia-ebdt-format1/ebdt_fmt1.ttf").asFile,
         "/fonts/liberation/LiberationSans-Regular.ttf" to fixtures.file("fonts/liberation/LiberationSans-Regular.ttf").asFile,
+        "/fonts/dejavu/DejaVuSans.ttf" to fixtures.file("fonts/dejavu/DejaVuSans.ttf").asFile,
+        "/fonts/amiri/Amiri-Regular.ttf" to fixtures.file("fonts/amiri/Amiri-Regular.ttf").asFile,
     )
     inputs.files(entries.map { (_, file) -> file }).withPropertyName("fixtureFiles")
     val outputDirectory = layout.buildDirectory.dir("generated/ios-benchmark-corpus/kotlin")
@@ -89,12 +92,17 @@ val androidBenchmarkIdentity by tasks.registering {
     group = "benchmark"
     description = "Writes the measured commit into the Android device-test APK."
     val outputDirectory = layout.buildDirectory.dir("generated/android-benchmark-identity")
+    // The measured commit is an input, not a value read inside the action: with no input the task
+    // stayed up to date across revisions, and an APK built at the next revision published the
+    // previous one's name — measured, once, before this line existed.
+    val measuredCommit = providers.exec {
+        commandLine("git", "rev-parse", "HEAD")
+        workingDir(rootDir)
+    }.standardOutput.asText.map { it.trim() }
+    inputs.property("measuredCommit", measuredCommit)
     outputs.dir(outputDirectory)
     doLast {
-        val commit = providers.exec {
-            commandLine("git", "rev-parse", "HEAD")
-            workingDir(rootDir)
-        }.standardOutput.asText.get().trim()
+        val commit = measuredCommit.get()
         check(commit.matches(Regex("[0-9a-f]{40}"))) {
             "Could not identify the measured commit for the Android benchmark: $commit"
         }
@@ -118,13 +126,15 @@ kotlin {
             // AGP 9's KMP device-test DSL offers no build-type lever, so the instrumentation APK is
             // debuggable, and the measurement runs on the managed emulator. androidx.benchmark
             // refuses both conditions; suppressing them is the tool's own sanctioned escape hatch,
-            // and the identity discloses the bias instead of hiding it. The per-test method and
-            // perfetto traces are disabled as well — the publication contract needs the measured
-            // medians and counters, not tens of megabytes of trace per profile.
+            // and the identity discloses the bias instead of hiding it.
             instrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "DEBUGGABLE,EMULATOR"
-            // The per-test method and perfetto traces weigh tens of megabytes each and their
-            // device-to-host pull has repeatedly aborted the run mid-way; the publication contract
-            // needs the measured medians and counters, not the traces.
+            // Method tracing and stack sampling are off — `profiling.mode` governs those, and a
+            // profile is not what the publication contract needs. It does **not** govern the
+            // perfetto trace the runner records per profile and hands to the managed device's
+            // host-side pull: that trace weighs tens of megabytes, no argument turns it off without
+            // also suppressing the measured files, and its pull has aborted runs part-way. The
+            // device's own storage fills up with those traces while the run proceeds, so the run
+            // procedure deletes the ones already pulled (see the module's measurement pages).
             instrumentationRunnerArguments["androidx.benchmark.profiling.mode"] = "none"
             managedDevices {
                 localDevices {
@@ -164,6 +174,13 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinx.serialization.json)
             }
+            // The worker-pool profile needs java.util.concurrent, so it is not common code: one
+            // directory, compiled into both Java-family source sets, and absent from the iOS
+            // compilation where the instrument does not exist.
+            kotlin.srcDir("src/threadedMain/kotlin")
+        }
+        getByName("androidMain") {
+            kotlin.srcDir("src/threadedMain/kotlin")
         }
         getByName("jvmBenchmark") {
             dependencies {
