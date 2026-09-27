@@ -162,19 +162,24 @@ Aucun compteur interne de cache ni aucune estimation native ne les remplace.
 
 ## Reproduction et limites
 
+Les nombres ci-dessus ont été produits par l’ancien runner (programme de mesure)
+écrit à la main, au commit nommé en tête de cette page ; ce runner a depuis été
+retiré, ce sont donc des archives datées plutôt qu’une exécution reproductible
+octet pour octet. Les mêmes profils sont désormais mesurés par le module non
+publié `:kalligraphie:bench` :
+
 ```sh
-env \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_MEASUREMENT=true \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_WARMUP=5 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_ITERATIONS=20 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_OUTPUT=/private/tmp/kalligraphie-font-asset-handoff-m2-max.md \
-  ./gradlew :kalligraphie:glyphMaterializationMeasurement --no-daemon --rerun-tasks
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
+./gradlew :kalligraphie:bench:measurementReport
 ```
 
-L’exécution a réussi avec 42 tâches rejouées. Vingt échantillons donnent peu
-d’information sur les valeurs extrêmes : le p95 est le 19e échantillon trié,
-le p99 le maximum. Ordonnancement, compilation JIT (à la volée), état du tas et
-travaux concurrents peuvent modifier les résultats. L’observation n’inclut ni
-rendu, ni pixellisation, ni travail GPU, ni bridge (pont) natif. La mesure reste
-opt-in et exclue du `check` fonctionnel, même lorsque sa variable d’environnement
-est définie. La référence n’impose aucun seuil temporel.
+Le nouveau module mesure avec kotlinx-benchmark (JMH) et son propre protocole de
+warmup et d’itérations : ses latences ne sont pas comparables aux chiffres à
+vingt échantillons de ces archives. Remesurez avant de citer un nombre.
+
+L’exécution archivée a réussi avec 42 tâches rejouées, à vingt échantillons par
+profil — peu d’information sur les valeurs extrêmes : le p95 est le 19e
+échantillon trié, le p99 le maximum. Ordonnancement, compilation JIT (à la
+volée), état du tas et travaux concurrents peuvent modifier les résultats.
+L’observation n’inclut ni rendu, ni pixellisation, ni travail GPU, ni bridge
+(pont) natif, et cette référence n’impose aucun seuil temporel.

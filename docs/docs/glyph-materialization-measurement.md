@@ -1,28 +1,36 @@
 # Glyph materialization measurement
 
-Kalligraphie provides an opt-in JVM measurement runner for portable glyph
-materialization. It is test-source tooling, not a functional latency test and
-not a published benchmark result. It exercises the checked-in, audited COLR/
-CPAL, SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures
-through the public catalog, resolver, instance, asset, and `resolveGlyph(...)`
-paths.
+Kalligraphie measures portable glyph materialization in the non-published
+`:kalligraphie:bench` module. It is not a functional latency test and not a
+published benchmark result. It exercises the checked-in, audited COLR/CPAL,
+SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures through the
+public catalog, resolver, instance, asset, and `resolveGlyph(...)` paths.
 
-The runner records thirty profiles, in this order:
+The module records thirty-seven profiles in total; this page covers the thirty
+that belong here. Nineteen of them are portable glyph work — the nine
+representation profiles and the ten portable TrueType stages — and they run on
+every platform. The remaining eleven compose text through the paragraph facade,
+which needs the `END_TO_END_LAYOUT` capability: they are JVM-only, and the module
+lists them as deferred on Android and iOS rather than silently publishing fewer
+profiles. The editable-line and incremental-layout profiles are documented in
+their own pages.
 
-- cold and warm COLR v0 / CPAL v0 normalization;
-- cold and warm SVG-in-OpenType normalization;
-- cold and warm EBLC v2 / EBDT v2 format 1 bitmap decoding;
-- CPAL palette 0 to palette 1 selection;
-- SVG profile-key pressure followed by LRU eviction and re-resolution;
-- cooperative cancellation during a real two-layer COLR materialization.
+The module records the thirty profiles of this page in this order:
+
+- cold and warm COLR v0 / CPAL v0 normalization; *(portable)*
+- cold and warm SVG-in-OpenType normalization; *(portable)*
+- cold and warm EBLC v2 / EBDT v2 format 1 bitmap decoding; *(portable)*
+- CPAL palette 0 to palette 1 selection; *(portable)*
+- SVG profile-key pressure followed by LRU eviction and re-resolution; *(portable)*
+- cooperative cancellation during a real two-layer COLR materialization; *(portable)*
 - cold and warm public `RENDERABLE` consumer journeys with one Bungee Color
   Latin glyph;
 - cold and warm public `RENDERABLE` consumer journeys with Bungee Color Latin
-  plus Liberation Sans Hebrew fallback in one BiDi paragraph.
+  plus Liberation Sans Hebrew fallback in one BiDi paragraph;
 - cold and warm reusable incremental sessions for the same single-font and
   mixed-BiDi paragraphs;
 - cold and warm portable TrueType preparation, text mapping, metrics, outlines,
-  and detachment stages over one stable Liberation Sans editor paragraph;
+  and detachment stages over one stable Liberation Sans editor paragraph; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, then
   `ConcurrentResolveWarm` over that same paragraph.
 
@@ -197,49 +205,72 @@ for one machine observation, not a universal performance promise.
 
 ## Reproducible invocation
 
-The report must be written outside the repository. `--rerun-tasks` prevents a
-previous Gradle result from suppressing an explicitly requested measurement.
+The module measures with the platform's own tool: kotlinx-benchmark (JMH) on the
+JVM, a linked simulator binary on iOS, and androidx.benchmark on an Android
+device or emulator. Warm-up, iterations, the one-second iteration time and the
+report format come from that configuration, not from environment variables.
+Results and counters are written under the module's `build` directory, which git
+ignores:
 
 ```bash
-env \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_MEASUREMENT=true \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_WARMUP=5 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_ITERATIONS=20 \
-  KALLIGRAPHIE_GLYPH_MATERIALIZATION_OUTPUT=/tmp/kalligraphie-glyph-materialization.md \
-  ./gradlew :kalligraphie:glyphMaterializationMeasurement \
-  --rerun-tasks --no-daemon
+./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark
+./gradlew :kalligraphie:bench:iosSimulatorArm64Benchmark
+./gradlew --no-parallel :kalligraphie:bench:mediumPhoneAndroidDeviceTest
+./gradlew :kalligraphie:bench:measurementReport
 ```
 
-Use one warmup and two iterations only as a smoke run. It verifies that every
-route can produce a report but is not suitable for comparisons.
+The first three are opt-in: none of them is part of `check`, and none schedules
+itself. The JVM command measures all thirty-seven profiles it can serve;
+the iOS and Android commands measure the nineteen portable ones, because the
+paragraph half needs `END_TO_END_LAYOUT`. The last command joins whatever runs
+have produced into `build/bench/report-jvm.md`, `report-ios.md`,
+`report-android.md` and `report-comparison.md`, and fails naming the missing path
+when an input is absent rather than publishing a report with a platform silently
+missing.
+
+The two named latency objectives below remain observations an operator reads in
+the report; they cannot fail a run.
 
 ## Report contents and limits
 
-Every report records the measured commit, machine, OS, architecture, JVM,
-fixture SHA-256 hashes, corpus, exact route, timed boundary, cache state,
-warmup count, iteration count, nearest-rank latency percentiles, measured-thread
-allocations, and a signed used-heap delta sampled after the documented forced
-GC requests. It also records the input source bytes supplied to an embedded
-catalog in the timed interval, decoded bitmap bytes and pixels, and normalized
-paint-node counts.
+Every report records the measured commit, machine, operating system, runtime,
+cache/GC policy, the SHA-256 of every fixture actually read, and, per profile,
+the exact route, timed boundary, cache state, warm-up and measured iteration
+counts, nearest-rank latency percentiles, and the counters proving what the
+timed operation consumed. It also records the input source bytes supplied to an
+embedded catalog in the timed interval, decoded bitmap bytes and pixels, and
+normalized paint-node counts.
 
-The four operation-asset fields are available for public paragraph consumer
-and session profiles. Direct-glyph and portable TrueType stage profiles report
-them as `unavailable` because those routes do not execute an operation-scoped
-paragraph composition.
+Each memory or allocation figure carries its own state — `measured`,
+`estimated`, or `unavailable` with a reason. An estimate is never presented as a
+measurement: the JVM publishes the per-thread allocation probe's figure as
+measured, while the portable routes expose no trustworthy native-memory or
+native-allocation accounting boundary and publish those as `unavailable`. A
+profile whose counters are missing or empty is refused outright, because a
+harness cannot tell a fast operation from one that did nothing.
+
+The counter names differ per platform where the tooling does, and the report
+says which: the JVM publishes the per-operation allocation derived from the
+probe, iOS and Android publish their own figures where an instrument exists, and
+Android's instrumentation benchmark publishes a median and an allocation count
+rather than percentiles — the Android report keeps that median labelled as a
+median and its missing p95/p99 labelled `unavailable` instead of promoting the
+median into a percentile.
+
+The four operation-asset counters — maximum simultaneously live render assets,
+their conservative estimated bytes, distinct asset openings, and final-glyph
+proofs reused from earlier materialization in the same operation — are published
+for the public paragraph consumer and session profiles. The direct-glyph and
+portable TrueType stage profiles do not execute an operation-scoped paragraph
+composition, so those counters never appear rather than appearing empty.
 
 Source-byte values are fixture buffer sizes supplied to the portable catalog;
 they are not filesystem-I/O counters. A warm profile reports zero source bytes
-because its catalog is intentionally opened before the timed boundary. The
-portable routes in this runner expose no trustworthy native-memory or
-native-allocation accounting boundary, so those fields explicitly report
-`unavailable` rather than estimate a platform value. The retained JVM-memory
-field is a runner-scoped heap observation, not cache accounting or a universal
-process-memory measurement; it can be negative after GC.
+because its catalog is intentionally opened before the timed boundary. Heap and
+allocation figures describe this harness, not universal process accounting.
 
-The runner has no latency threshold. Functional `check` runs exclude the
-measurement task even when the opt-in variable is set, and the runner does
-not add a renderer, rasterizer, GPU API, or native bridge.
+The module has no latency threshold, no functional test asserts an elapsed time,
+and it adds no renderer, rasterizer, GPU API, or native bridge.
 
 ## Shared retention and native ownership
 
