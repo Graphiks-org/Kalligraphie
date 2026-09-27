@@ -73,6 +73,13 @@ public object IncrementalFlowLayoutEngine {
         context.scalarLimit(request.input.text)?.let {
             return FlowCompositionResult.Failure(FlowCompositionError.OperationLimitExceeded(it))
         }
+        if (paragraph.styleSpans != null) {
+            return FlowCompositionResult.Failure(
+                FlowCompositionError.IncompatibleState(
+                    "Incremental flow composition does not accept per-span paragraph styles.",
+                ),
+            )
+        }
         validatePreparedParagraph(request, paragraph)?.let { return FlowCompositionResult.Failure(it) }
         if (request.cancellationToken.isCancellationRequested()) {
             return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)

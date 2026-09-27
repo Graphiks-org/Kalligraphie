@@ -245,6 +245,7 @@ public object ParagraphComposer : ParagraphLayouter {
             )
         }
         if (request.cancellationToken.isCancellationRequested()) return ParagraphCompositionResult.Cancelled()
+        validateStyleSpans(request)?.let { return ParagraphCompositionResult.Failure(it) }
         val sourceClusters = request.unicodeAnalysis.graphemeClusters.filter { cluster ->
             cluster.start >= request.sourceRange.start && cluster.endExclusive <= request.sourceRange.endExclusive
         }
@@ -396,6 +397,49 @@ public object ParagraphComposer : ParagraphLayouter {
             }
         }
         return ParagraphCompositionResult.Success(placed, remainingSourceRange = null)
+    }
+
+    /**
+     * Rejects a style snapshot that cannot affect one deterministic paragraph composition.
+     *
+     * Every span must belong to the request snapshot version, lie inside that snapshot, name a face
+     * present in the resolution policy, avoid combining a design variation with paragraph normalized
+     * axes, and begin and end at extended grapheme boundaries. The check runs before any shaping,
+     * fallback, or geometry work so an invalid style snapshot never reaches the font stack.
+     */
+    private fun validateStyleSpans(request: ParagraphLayoutRequest): EditableLineError.InvalidInput? {
+        val styles = request.styleSpans ?: return null
+        styles.spans.forEach { span ->
+            if (!span.range.start.sharesVersionWith(request.snapshot.range.start)) {
+                return EditableLineError.InvalidInput("Paragraph style spans must belong to the request snapshot version.")
+            }
+            if (span.range.start < request.snapshot.range.start || span.range.endExclusive > request.snapshot.range.endExclusive) {
+                return EditableLineError.InvalidInput("Paragraph style spans must lie inside the request snapshot.")
+            }
+            val face = span.face
+            if (face != null && request.resolutionPolicy.candidates.none { it.faceId == face }) {
+                return EditableLineError.InvalidInput("A paragraph style face must be a resolution policy candidate.")
+            }
+            val variation = span.variation
+            if (variation != null && variation.coordinates.isNotEmpty() &&
+                request.fontInstanceDescriptor.geometry.normalizedAxes.isNotEmpty()
+            ) {
+                return EditableLineError.InvalidInput(
+                    "A per-span design variation cannot be combined with paragraph normalized axes.",
+                )
+            }
+        }
+        val clusters = request.unicodeAnalysis.graphemeClusters
+        val clusterStarts = clusters.mapTo(mutableSetOf()) { it.start }
+        val clusterEnds = clusters.mapTo(mutableSetOf()) { it.endExclusive }
+        styles.spans.forEach { span ->
+            if (span.range.start !in clusterStarts || span.range.endExclusive !in clusterEnds) {
+                return EditableLineError.InvalidInput(
+                    "Paragraph style spans must begin and end at extended grapheme boundaries.",
+                )
+            }
+        }
+        return null
     }
 
     /**
