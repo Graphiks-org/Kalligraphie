@@ -43,8 +43,8 @@ iterations.
 The module measures with kotlinx-benchmark (JMH on the JVM): warm-up, iterations,
 the one-second iteration time and the JSON report format come from its benchmark
 configuration, not from environment variables. One command measures every
-profile the platform serves — these three are part of the thirty-seven the module
-records, and the iOS simulator runs thirty-six of them. Results and counters are
+profile the platform serves — these three are part of the thirty-nine the module
+records, and the iOS simulator runs thirty-eight of them. Results and counters are
 written under the module's `build` directory, which git ignores:
 
 ```bash

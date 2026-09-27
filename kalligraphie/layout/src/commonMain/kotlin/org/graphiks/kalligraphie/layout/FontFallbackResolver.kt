@@ -14,6 +14,7 @@ import org.graphiks.kalligraphie.api.FontDiagnostic
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontDiagnosticSeverity
 import org.graphiks.kalligraphie.api.FontError
+import org.graphiks.kalligraphie.api.FontFace
 import org.graphiks.kalligraphie.api.FontFallbackDiagnostic
 import org.graphiks.kalligraphie.api.FontFallbackStage
 import org.graphiks.kalligraphie.api.FontFallbackReason
@@ -26,8 +27,10 @@ import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.api.FontResolutionCandidate
 import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
 import org.graphiks.kalligraphie.api.GlyphRepresentationProfile
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphMaterializationRoute
@@ -35,6 +38,8 @@ import org.graphiks.kalligraphie.api.MultiFontEditableLineRequest
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OpenTypeScript
 import org.graphiks.kalligraphie.api.ParagraphLayoutRequest
+import org.graphiks.kalligraphie.api.ParagraphStyleSnapshot
+import org.graphiks.kalligraphie.api.ParagraphStyleSpan
 import org.graphiks.kalligraphie.api.ShaperCluster
 import org.graphiks.kalligraphie.api.ShaperClusterToken
 import org.graphiks.kalligraphie.api.ShapedGlyphRun
@@ -163,6 +168,7 @@ internal object FontFallbackResolver {
             writingMode = request.constraints.writingMode,
             shapingResourceProfile = context.profile.shapingResourceProfile,
             cancellationToken = context.cancellationToken,
+            styleSpans = request.styleSpans,
         ),
         proofs,
         context,
@@ -185,6 +191,8 @@ internal object FontFallbackResolver {
         val records = request.fontCatalog.faces.associateBy(FontFaceRecord::id)
         val rejectedAttempts = mutableSetOf<RejectedAttempt>()
         val instances = mutableMapOf<InstanceAccessKey, FontInstance>()
+        val resolvedFaces = mutableMapOf<FaceAccessKey, FontFace>()
+        val variationAxes = mutableMapOf<FontFaceId, VariationAxisLookup>()
         val shapedGroups = mutableMapOf<GroupSignature, List<ShapedGlyphRun>>()
         val diagnostics = mutableListOf<FontDiagnostic>()
         val fallbackDiagnostics = mutableListOf<FontFallbackDiagnostic>()
@@ -204,6 +212,8 @@ internal object FontFallbackResolver {
                     rejectedAttempts,
                     diagnostics,
                     fallbackDiagnostics,
+                    resolvedFaces,
+                    variationAxes,
                 )
             ) {
                 is CandidateSelection.Selected -> selection.assigned
@@ -309,6 +319,8 @@ internal object FontFallbackResolver {
                             rejectedAttempts,
                             diagnostics,
                             fallbackDiagnostics,
+                            resolvedFaces,
+                            variationAxes,
                         )
                     ) {
                         is CandidateSelection.Selected -> selection.assigned
@@ -323,6 +335,33 @@ internal object FontFallbackResolver {
         }
     }
 
+    private fun styleFor(unit: FallbackUnit, request: ResolutionRequest): ParagraphStyleSpan? =
+        request.styleSpans?.styleAt(unit.range.start)
+
+    /**
+     * The span-preferred face when it may be promoted, or `null`.
+     *
+     * The explicit last-resort face is never promoted: it stays at the end of the policy order.
+     */
+    private fun preferredFace(unit: FallbackUnit, request: ResolutionRequest): FontFaceId? =
+        styleFor(unit, request)?.face?.takeUnless { it == request.resolutionPolicy.lastResortFace }
+
+    /**
+     * The single deterministic candidate order used for one fallback unit.
+     *
+     * A span-preferred face is promoted to the front, deduplicated against the policy, while the
+     * last-resort face stays last because [preferredFace] never returns it.
+     */
+    private fun effectiveCandidates(unit: FallbackUnit, request: ResolutionRequest): List<FontResolutionCandidate> {
+        val preferred = preferredFace(unit, request)
+        val policy = request.resolutionPolicy
+        return if (preferred == null) {
+            policy.candidates
+        } else {
+            listOf(FontResolutionCandidate(preferred)) + policy.candidates.filterNot { it.faceId == preferred }
+        }
+    }
+
     private fun selectCandidate(
         unit: FallbackUnit,
         catalog: FontCatalogSnapshot,
@@ -334,11 +373,27 @@ internal object FontFallbackResolver {
         rejectedAttempts: MutableSet<RejectedAttempt>,
         diagnostics: MutableList<FontDiagnostic>,
         fallbackDiagnostics: MutableList<FontFallbackDiagnostic>,
+        resolvedFaces: MutableMap<FaceAccessKey, FontFace>,
+        variationAxes: MutableMap<FontFaceId, VariationAxisLookup>,
     ): CandidateSelection {
         val glyphless = unit.isGlyphless(request.snapshot)
         // Controls need an instance for layout, but never negotiate a glyph representation.
         val candidateRequirements = if (glyphless) FontAccessRequirementsSnapshot.layoutOnly() else requirements
-        policy.candidates.forEach { candidate ->
+        val spanPreferredFace = preferredFace(unit, request)
+        val span = styleFor(unit, request)
+        val effectiveOrder = effectiveCandidates(unit, request)
+        // The primary candidate is the span-preferred face when the span names one, otherwise the
+        // first candidate of the effective order (the paragraph default). Strictness applies to it
+        // even for a variation-only span that names no face.
+        val primaryFace = spanPreferredFace ?: effectiveOrder.first().faceId
+        // The preferred face is always tried first, so a different selection means it was rejected.
+        fun selected(assigned: AssignedUnit): CandidateSelection {
+            if (spanPreferredFace != null && assigned.record.id != spanPreferredFace) {
+                diagnostics += spanFaceUnavailableDiagnostic(spanPreferredFace)
+            }
+            return CandidateSelection.Selected(assigned)
+        }
+        effectiveOrder.forEach { candidate ->
             if (request.cancellationToken.isCancellationRequested()) {
                 return CandidateSelection.Cancelled(emptyList())
             }
@@ -357,23 +412,50 @@ internal object FontFallbackResolver {
                 accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
                 return@forEach
             }
-            val instanceAccess = InstanceAccessKey(record.id, candidateRequirements)
-            val instance = instances[instanceAccess] ?: run {
-                val face = when (val resolved = catalog.resolveFace(record.id, candidateRequirements)) {
-                    is FontOperationResult.Success -> resolved.value
-                    is FontOperationResult.Failure -> {
-                        if (resolved.error.isTerminal()) return CandidateSelection.Failed(resolved.error, resolved.diagnostics)
-                        fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.FaceResolution, FontFallbackReason.FaceUnavailable)
-                        accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
-                        diagnostics += resolved.diagnostics + resolved.error.toDiagnostic()
-                        diagnostics += rejectedCandidateDiagnostic(record.id, "Face resolution did not meet the required capabilities.")
-                        if (record.id == policy.lastResortFace) diagnostics += rejectedLastResortDiagnostic(record.id)
-                        return@forEach
-                    }
-
-                    is FontOperationResult.Cancelled -> return CandidateSelection.Cancelled(resolved.diagnostics)
+            val face = when (val resolved = resolveCandidateFace(record, candidateRequirements, catalog, resolvedFaces)) {
+                is FontOperationResult.Success -> resolved.value
+                is FontOperationResult.Failure -> {
+                    if (resolved.error.isTerminal()) return CandidateSelection.Failed(resolved.error, resolved.diagnostics)
+                    fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.FaceResolution, FontFallbackReason.FaceUnavailable)
+                    accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
+                    diagnostics += resolved.diagnostics + resolved.error.toDiagnostic()
+                    diagnostics += rejectedCandidateDiagnostic(record.id, "Face resolution did not meet the required capabilities.")
+                    if (record.id == policy.lastResortFace) diagnostics += rejectedLastResortDiagnostic(record.id)
+                    return@forEach
                 }
-                when (val instantiated = face.instantiate(request.fontInstanceDescriptor)) {
+
+                is FontOperationResult.Cancelled -> return CandidateSelection.Cancelled(resolved.diagnostics)
+            }
+            // Project the effective descriptor before the instance cache so a cached instance can
+            // never hide a different span selection, and projection diagnostics are emitted
+            // independently of a cache hit or miss.
+            val effectiveDescriptor = when (val applicability = variationApplicability(
+                face = record.id,
+                preferred = primaryFace,
+                span = span,
+                base = request.fontInstanceDescriptor,
+                lookup = { variationAxisLookup(record.id, face, variationAxes) },
+            )) {
+                is VariationApplicability.Apply -> applicability.descriptor
+                is VariationApplicability.DropUnsupported -> {
+                    diagnostics += spanVariationProjectedDiagnostic(record.id, applicability.droppedAxes)
+                    applicability.descriptor
+                }
+
+                is VariationApplicability.Reject -> {
+                    if (applicability.error is FontError.Cancelled) return CandidateSelection.Cancelled(applicability.diagnostics)
+                    if (applicability.error.isTerminal()) return CandidateSelection.Failed(applicability.error, applicability.diagnostics)
+                    fallbackDiagnostics += request.decision(unit, record.id, FontFallbackStage.Instantiation, FontFallbackReason.InstantiationFailed)
+                    accesses.forEach { access -> rejectedAttempts += RejectedAttempt(unit.range, record.id, access) }
+                    diagnostics += applicability.diagnostics + applicability.error.toDiagnostic()
+                    diagnostics += rejectedCandidateDiagnostic(record.id, "Face instantiation failed for the requested instance descriptor.")
+                    if (record.id == policy.lastResortFace) diagnostics += rejectedLastResortDiagnostic(record.id)
+                    return@forEach
+                }
+            }
+            val instanceAccess = InstanceAccessKey(record.id, candidateRequirements, effectiveDescriptor.variation)
+            val instance = instances[instanceAccess] ?: run {
+                when (val instantiated = face.instantiate(effectiveDescriptor)) {
                     is FontOperationResult.Success -> instantiated.value.also { instances[instanceAccess] = it }
                     is FontOperationResult.Failure -> {
                         if (instantiated.error.isTerminal()) return CandidateSelection.Failed(instantiated.error, instantiated.diagnostics)
@@ -389,10 +471,10 @@ internal object FontFallbackResolver {
                 }
             }
             if (glyphless) {
-                return CandidateSelection.Selected(AssignedUnit(unit, record, instance, glyphless = true))
+                return selected(AssignedUnit(unit, record, instance, glyphless = true))
             }
             when (val mapping = mapsAllRequiredScalars(unit, request, instance)) {
-                ScalarMapping.Supported -> return CandidateSelection.Selected(AssignedUnit(unit, record, instance))
+                ScalarMapping.Supported -> return selected(AssignedUnit(unit, record, instance))
                 is ScalarMapping.Cancelled -> return CandidateSelection.Cancelled(mapping.diagnostics)
                 is ScalarMapping.Failed -> return CandidateSelection.Failed(mapping.error, mapping.diagnostics)
                 is ScalarMapping.Unsupported -> {
@@ -405,6 +487,26 @@ internal object FontFallbackResolver {
             if (record.id == policy.lastResortFace) diagnostics += rejectedLastResortDiagnostic(record.id)
         }
         return CandidateSelection.Exhausted
+    }
+
+    /** Resolves a candidate face once per resolution and reuses the immutable handle. */
+    private fun resolveCandidateFace(
+        record: FontFaceRecord,
+        requirements: FontAccessRequirementsSnapshot,
+        catalog: FontCatalogSnapshot,
+        resolvedFaces: MutableMap<FaceAccessKey, FontFace>,
+    ): FontOperationResult<FontFace> {
+        val key = FaceAccessKey(record.id, requirements)
+        resolvedFaces[key]?.let { return FontOperationResult.Success(it) }
+        return when (val resolved = catalog.resolveFace(record.id, requirements)) {
+            is FontOperationResult.Success -> {
+                resolvedFaces[key] = resolved.value
+                resolved
+            }
+
+            is FontOperationResult.Failure -> resolved
+            is FontOperationResult.Cancelled -> resolved
+        }
     }
 
     private fun mapsAllRequiredScalars(
@@ -789,6 +891,7 @@ internal object FontFallbackResolver {
             if (
                 previous != null &&
                 previous.record.id == assigned.record.id &&
+                previous.instance.key == assigned.instance.key &&
                 previous.unit.hasSameFragmentClassifications(assigned.unit) &&
                 previous.glyphless == assigned.glyphless &&
                 previous.unit.range.endExclusive == assigned.unit.range.start
@@ -885,7 +988,7 @@ internal object FontFallbackResolver {
         contributingFragments = unit.fragments,
         faceId = face,
         representationProfile = profile,
-        candidateRank = resolutionPolicy.candidates.indexOfFirst { it.faceId == face },
+        candidateRank = effectiveCandidates(unit, this).indexOfFirst { it.faceId == face },
         profileRank = profile?.let { requirementsFor(materialization).acceptedProfiles.indexOf(it) },
         stage = stage,
         reason = reason,
@@ -894,6 +997,105 @@ internal object FontFallbackResolver {
             selected -> FontFallbackLastResortState.Selected
             else -> FontFallbackLastResortState.Rejected
         },
+    )
+
+    private fun spanFaceUnavailableDiagnostic(faceId: FontFaceId): FontDiagnostic = FontDiagnostic(
+        code = "font.fallback.span-face-unavailable",
+        severity = FontDiagnosticSeverity.WARNING,
+        location = FontDiagnosticLocation.FaceId(faceId),
+        message = "The span-preferred face $faceId could not shape the complete fallback unit; a later candidate was selected.",
+    )
+
+    /**
+     * Projects the span variation selection onto one candidate.
+     *
+     * The lookup is evaluated lazily so a `null` or empty selection never reads `fvar`. A static
+     * face is accepted for a fallback by dropping the undeclared axes; the same selection on the
+     * primary candidate (the span-preferred face, or the first candidate of the effective order
+     * when the span names no face) is rejected because the preference must be honoured or not at
+     * all. Any unreadable `fvar` rejects the candidate for a non-empty selection, primary or
+     * fallback, so a malformed table is never silently treated as "no axes".
+     */
+    private fun variationApplicability(
+        face: FontFaceId,
+        preferred: FontFaceId?,
+        span: ParagraphStyleSpan?,
+        base: FontInstanceDescriptor,
+        lookup: () -> VariationAxisLookup,
+    ): VariationApplicability {
+        val variation = span?.variation ?: return VariationApplicability.Apply(base)
+        if (variation.coordinates.isEmpty()) return VariationApplicability.Apply(base.copy(variation = variation))
+        return when (val axes = lookup()) {
+            is VariationAxisLookup.Unreadable -> VariationApplicability.Reject(axes.error, axes.diagnostics)
+            is VariationAxisLookup.Absent -> if (face == preferred) {
+                VariationApplicability.Reject(staticFaceCannotHonourVariation(face), emptyList())
+            } else {
+                VariationApplicability.DropUnsupported(base, variation.coordinates.map { it.tag })
+            }
+
+            is VariationAxisLookup.Axes -> {
+                val kept = variation.coordinates.filter { coordinate -> coordinate.tag in axes.tags }
+                val dropped = variation.coordinates.filterNot { coordinate -> coordinate.tag in axes.tags }
+                when {
+                    face == preferred && dropped.isNotEmpty() ->
+                        VariationApplicability.Reject(undeclaredAxis(face, dropped.first().tag), emptyList())
+
+                    dropped.isEmpty() -> VariationApplicability.Apply(base.copy(variation = variation))
+                    else -> VariationApplicability.DropUnsupported(
+                        descriptor = base.copy(variation = FontVariationCoordinates(kept)),
+                        droppedAxes = dropped.map { it.tag },
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolves the face's declared `fvar` state once per face per resolution.
+     *
+     * [FontFace.normalize] surfaces the same `fvar` read as the face's internal `readFvarResult`:
+     * a face without `fvar` fails with `font.variation.not-variable`, while an unreadable table
+     * returns its stored data failure. `variationAxes()` alone cannot make that distinction because
+     * it collapses both to an empty list.
+     */
+    private fun variationAxisLookup(
+        faceId: FontFaceId,
+        face: FontFace,
+        cache: MutableMap<FontFaceId, VariationAxisLookup>,
+    ): VariationAxisLookup = cache.getOrPut(faceId) { readVariationAxisLookup(face) }
+
+    private fun readVariationAxisLookup(face: FontFace): VariationAxisLookup =
+        when (val probe = face.normalize(FontVariationCoordinates.default)) {
+            is FontOperationResult.Success -> VariationAxisLookup.Axes(face.variationAxes().map { axis -> axis.tag }.toSet())
+            is FontOperationResult.Failure -> if (probe.error.code == NOT_VARIABLE_CODE) {
+                VariationAxisLookup.Absent
+            } else {
+                VariationAxisLookup.Unreadable(probe.error, probe.diagnostics)
+            }
+
+            is FontOperationResult.Cancelled -> VariationAxisLookup.Unreadable(
+                error = FontError.Cancelled("Variation metadata normalization was cancelled."),
+                diagnostics = probe.diagnostics,
+            )
+        }
+
+    private fun staticFaceCannotHonourVariation(faceId: FontFaceId): FontError = FontError.FontDataFailure(
+        code = NOT_VARIABLE_CODE,
+        message = "This face has no usable fvar table.",
+        location = FontDiagnosticLocation.FaceId(faceId),
+    )
+
+    private fun undeclaredAxis(faceId: FontFaceId, tag: String): FontError = FontError.FontDataFailure(
+        code = UNKNOWN_AXIS_CODE,
+        message = "Axis $tag is not declared by the font.",
+        location = FontDiagnosticLocation.FaceId(faceId),
+    )
+
+    private fun spanVariationProjectedDiagnostic(faceId: FontFaceId, droppedAxes: List<String>): FontDiagnostic = FontDiagnostic(
+        code = "font.fallback.span-variation-projected",
+        severity = FontDiagnosticSeverity.WARNING,
+        location = FontDiagnosticLocation.FaceId(faceId),
+        message = "The fallback face $faceId does not declare variation axes ${droppedAxes.joinToString(", ")}; the paragraph variation is used instead.",
     )
 
     private fun rejectedCandidateDiagnostic(faceId: FontFaceId, reason: String): FontDiagnostic = FontDiagnostic(
@@ -917,11 +1119,49 @@ internal object FontFallbackResolver {
         val glyphless: Boolean = false,
     )
 
-    // Access requirements can affect provider instances even when their geometry keys match.
+    // Access requirements can affect provider instances even when their geometry keys match, and a
+    // projected span selection changes the instance identity on the same face and requirements.
     private data class InstanceAccessKey(
         val faceId: FontFaceId,
         val requirements: FontAccessRequirementsSnapshot,
+        val variation: FontVariationCoordinates?,
     )
+
+    /** Face-resolution cache key: one immutable face handle per face and access requirement set. */
+    private data class FaceAccessKey(
+        val faceId: FontFaceId,
+        val requirements: FontAccessRequirementsSnapshot,
+    )
+
+    /** The face's declared variation axes, or why they could not be read. */
+    private sealed interface VariationAxisLookup {
+        /** The face has no `fvar` table: it is static. */
+        data object Absent : VariationAxisLookup
+
+        /** The face declares these axis tags. */
+        data class Axes(val tags: Set<String>) : VariationAxisLookup
+
+        /** The face's `fvar` metadata is unreadable; the original error must be propagated. */
+        data class Unreadable(val error: FontError, val diagnostics: List<FontDiagnostic>) : VariationAxisLookup
+    }
+
+    /** Outcome of projecting a span variation selection onto one candidate descriptor. */
+    private sealed interface VariationApplicability {
+        /** The candidate accepts the requested descriptor unchanged (empty selection or all axes declared). */
+        data class Apply(val descriptor: FontInstanceDescriptor) : VariationApplicability
+
+        /** A fallback candidate received only the declared axes; dropped axes must be diagnosed. */
+        data class DropUnsupported(
+            val descriptor: FontInstanceDescriptor,
+            val droppedAxes: List<String>,
+        ) : VariationApplicability
+
+        /** A primary candidate cannot honour a non-empty selection, or the face metadata is unreadable. */
+        data class Reject(
+            val error: FontError,
+            val diagnostics: List<FontDiagnostic>,
+        ) : VariationApplicability
+    }
 
     private data class ShapingFragment(
         val range: TextRange,
@@ -1005,6 +1245,7 @@ internal object FontFallbackResolver {
         val writingMode: WritingMode,
         val shapingResourceProfile: ShapingResourceProfile,
         val cancellationToken: CancellationToken,
+        val styleSpans: ParagraphStyleSnapshot? = null,
     ) {
         init {
             require(sourceRange.start >= snapshot.range.start && sourceRange.endExclusive <= snapshot.range.endExclusive)
@@ -1085,6 +1326,8 @@ internal object FontFallbackResolver {
     private const val OBJECT_REPLACEMENT: Int = 0xFFFC
     private const val VERTICAL_ALTERNATES: String = "vert"
     private const val VERTICAL_ROTATION: String = "vrt2"
+    private const val NOT_VARIABLE_CODE: String = "font.variation.not-variable"
+    private const val UNKNOWN_AXIS_CODE: String = "font.variation.unknown-axis"
 
     private fun operationLimitFailure(exceeded: EditorOperationLimitExceeded): FontOperationResult.Failure {
         val error = FontError.EditorOperationLimitExceeded(exceeded)

@@ -6,6 +6,7 @@ import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import org.graphiks.kalligraphie.e2e.golden.ComposedLineScenes
 import org.graphiks.kalligraphie.e2e.golden.CompositionMosaicScene
+import org.graphiks.kalligraphie.e2e.golden.PerSpanStyleScene
 import org.graphiks.kalligraphie.e2e.golden.VariationLadderScene
 
 /**
@@ -65,6 +66,13 @@ internal object ParagraphSceneRenderers {
             ),
         ) { corpus ->
             composed { CompositionMosaicScene.mosaic(corpus) }
+        },
+        "composition.per-span-style" to CatalogSceneRenderer(
+            fontPath = WORK_SANS,
+            route = CatalogRoute.PARAGRAPH_LAYOUT,
+            additionalFontPaths = listOf(LIBERATION_SANS, AMIRI),
+        ) { corpus ->
+            composed { PerSpanStyleScene.scene(corpus) }
         },
     )
 

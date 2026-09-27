@@ -89,6 +89,9 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         region: FlowRegion,
         blockStart: Float,
     ): FlowCompositionResult<ParagraphFragment> {
+        if (request.styleSpans != null) {
+            return paragraphFailure("Flow composition does not accept per-span paragraph styles.")
+        }
         if (request.continuation != null) {
             return paragraphFailure("Line-level flow composition does not consume paragraph continuations.")
         }
@@ -178,6 +181,9 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
         flowConfiguration: FlowLayoutConfigurationSignature?,
         context: EditorOperationContext,
     ): FlowCompositionResult<ParagraphFragment> {
+        if (request.styleSpans != null) {
+            return paragraphFailure("Flow composition does not accept per-span paragraph styles.")
+        }
         require(maximumLines == null || maximumLines > 0) {
             "A bounded flow fragment must allow at least one complete line."
         }
@@ -1178,6 +1184,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             verticalMetricsPolicy = verticalMetricsPolicy,
             cancellationToken = cancellationToken,
             operationProfile = operationProfile,
+            styleSpans = styleSpans,
         )
     }
 
@@ -1210,6 +1217,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             verticalMetricsPolicy = verticalMetricsPolicy,
             cancellationToken = cancellationToken,
             operationProfile = operationProfile,
+            styleSpans = styleSpans,
         )
 
     private fun ComposedParagraphLine.atFlowPosition(

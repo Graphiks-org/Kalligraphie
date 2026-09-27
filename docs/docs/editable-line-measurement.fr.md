@@ -73,8 +73,8 @@ Le module mesure avec kotlinx-benchmark (JMH sur la JVM) : échauffement,
 itérations, durée d’itération d’une seconde et format JSON du rapport viennent de
 sa configuration de `benchmark`, pas de variables d’environnement. Une seule
 commande mesure tous les profils que la plateforme sert — les profils de ligne
-éditable sont quatre des trente-sept que le module enregistre, et le simulateur
-iOS en exécute trente-six. Résultats et compteurs
+éditable sont quatre des trente-neuf que le module enregistre, et le simulateur
+iOS en exécute trente-huit. Résultats et compteurs
 sont écrits sous le répertoire `build` du module, que git ignore :
 
 ```bash

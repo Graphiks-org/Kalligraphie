@@ -231,6 +231,16 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
         runScenario("ConcurrentResolveWarm")
     }
 
+    @Test
+    public fun styledSpanParagraphCold() {
+        runScenario("StyledSpanParagraphCold")
+    }
+
+    @Test
+    public fun styledSpanParagraphWarm() {
+        runScenario("StyledSpanParagraphWarm")
+    }
+
     private fun runScenario(name: String) {
         val target = scenarios[name]
             ?: error("The Android capability identity does not serve the scenario $name.")
@@ -284,7 +294,7 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
         /**
          * The derived catalogue, built once for the class run instead of once per JUnit instance:
          * the paragraph scenarios parse their DejaVu and Amiri fixtures in their constructors, which
-         * is untimed setup and must not repeat for every one of the thirty-seven tests.
+         * is untimed setup and must not repeat for every one of the thirty-nine tests.
          */
         val scenarios: Map<String, MeasurementScenario> = ClasspathFixtureCorpus().let { corpus ->
             ScenarioRegistry.select(
@@ -294,7 +304,7 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
             )
         }.associateBy { it.name }
 
-        /** The six fixtures the glyph and paragraph profiles read, and nothing else. */
+        /** The seven fixtures the glyph and paragraph profiles read, and nothing else. */
         val MEASURED_CORPUS_PATHS = listOf(
             "/fonts/bungee-color/BungeeColor-Regular.ttf",
             "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
@@ -302,11 +312,12 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
             "/fonts/liberation/LiberationSans-Regular.ttf",
             "/fonts/dejavu/DejaVuSans.ttf",
             "/fonts/amiri/Amiri-Regular.ttf",
+            "/fonts/worksans/WorkSans[wght].ttf",
         )
 
         /**
          * The publication contract refuses an unnamed commit and unknown corpus: the identity line
-         * prints once per class run, before any profile, with the hashes of the six fixtures the
+         * prints once per class run, before any profile, with the hashes of the seven fixtures the
          * profiles read.
          */
         @BeforeClass

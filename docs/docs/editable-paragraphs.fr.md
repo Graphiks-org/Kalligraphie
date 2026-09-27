@@ -96,6 +96,74 @@ succès du layout seul ne garantit pas une réouverture ultérieure. Consultez l
 [Gestion des fontes](font-management.fr.md#posseder-les-ressources-certifiees-pour-un-rendu-differe)
 pour la séquence complète et les frontières de durée de vie.
 
+## Styliser des plages individuelles
+
+Définissez `styleSpans` pour donner à une sous-plage sa propre face préférée
+et/ou sa propre variation d’axes de design. `ParagraphStyleSnapshot` contient
+une liste ordonnée et sans chevauchement de `ParagraphStyleSpan(range, face?,
+variation?)` sur une seule version de texte ; `styleAt(index)` retourne la plage
+couvrante ou `null` dans un trou, et les positions hors de toute plage emploient
+le style par défaut du paragraphe. Une plage doit être non vide, nommer au moins
+l’un de `face` et `variation`, et ses bornes doivent tomber sur des frontières de
+grappe de graphèmes étendue. Les deux types de requête portent le champ optionnel
+— `ParagraphLayoutRequest.styleSpans` et
+`JvmEditableParagraphFacadeRequest.styleSpans` — avec la valeur par défaut
+`null`, ce qui laisse le comportement du paragraphe strictement inchangé.
+
+### Préférence de face et repli
+
+La `face` d’une plage est une préférence résolue comme avec Skia : pour chaque
+unité de repli, la face préférée est essayée en premier, puis les candidats de
+la politique de résolution dans leur ordre déclaré. La face préférée doit être
+membre de `resolutionPolicy.candidates`. `lastResortFace` n’est jamais promue :
+la nommer, ou laisser `face` à `null`, laisse l’ordre de la politique intact.
+Quand la face préférée ne peut pas façonner toute l’unité mais qu’un candidat
+ultérieur y parvient, l’unité est tout de même résolue par repli et la ligne
+porte le diagnostic `WARNING` `font.fallback.span-face-unavailable`.
+
+### Héritage, défaut et tolérance de variation
+
+`variation` est une sélection `FontVariationCoordinates` appliquée à la face
+finalement retenue pour la plage :
+
+- `null` hérite de `fontInstanceDescriptor.variation` du paragraphe ;
+- `FontVariationCoordinates.default` ne demande aucun axe et ramène la face
+  retenue à sa propre instance par défaut, ce qui diffère de `null` ;
+- une sélection non vide est stricte sur le candidat primaire — chaque axe
+  demandé doit être déclaré par la face, sinon le candidat est rejeté — et
+  tolérante sur les candidats de repli : les axes que le repli ne déclare pas
+  sont ignorés et la ligne porte le diagnostic `WARNING`
+  `font.fallback.span-variation-projected`. Une face de repli statique reste
+  donc utilisable sous une plage de variation.
+
+Une variation de plage non vide ne peut pas être combinée avec un descripteur de
+paragraphe portant déjà des `geometry.normalizedAxes` non vides ; la requête est
+refusée comme entrée invalide. Une face dont la table `fvar` est présente mais
+illisible constitue un échec de données, jamais une face statique.
+
+### Frontières de la v1
+
+Une plage ne modifie que la face et la variation appliquées au run retenu : la
+taille de fonte, les fonctionnalités OpenType, la peinture et la matérialisation
+restent au niveau du paragraphe. Les parcours flow rejettent explicitement une
+requête dont `styleSpans` n’est pas `null`, avant toute requête de région ou
+réutilisation d’état : le flow au niveau ligne retourne un
+`FlowCompositionError.ParagraphFailure` portant un `ParagraphLayoutError.InvalidInput`,
+et le parcours flow incrémental retourne un `FlowCompositionError.IncompatibleState`.
+La façade de ligne éditable autonome compose une seule instance et ne porte
+aucune entrée de plage. La taille, les fonctionnalités et la peinture par plage
+sont reportées à une phase additive ultérieure.
+
+### Rythme des boîtes de ligne
+
+Changer la face ou la variation d’un run ne redimensionne pas le rythme des
+boîtes de ligne : `ParagraphConstraints.lineMetrics` fixe chaque boîte de ligne,
+tandis que l’enveloppe de contenu d’une ligne suit l’instance de chaque run. Des
+lignes à instances mixtes conservent donc un même pas de ligne, même lorsque
+leurs enveloppes de contenu diffèrent. Une `LayoutContinuation` capture et
+compare `styleSpans` : une reprise avec des plages différentes est refusée comme
+incompatible au lieu de réutiliser silencieusement le préfixe publié.
+
 ## Garanties de coupure et de composition
 
 Le parcours de paragraphe analyse les opportunités légales UAX #14 avec des frontières

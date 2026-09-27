@@ -2,25 +2,42 @@ package org.graphiks.kalligraphie.bench.scenarios
 
 import org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutSession
 import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
+import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
+import org.graphiks.kalligraphie.api.EditorOperationProfile
 import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
+import org.graphiks.kalligraphie.api.FontAssetResolverHandle
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontFaceId
 import org.graphiks.kalligraphie.api.FontGlyphRequest
 import org.graphiks.kalligraphie.api.FontInstance
 import org.graphiks.kalligraphie.api.FontInstanceDescriptor
 import org.graphiks.kalligraphie.api.FontMaterializationCachePolicy
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
+import org.graphiks.kalligraphie.api.FontResolutionCandidate
+import org.graphiks.kalligraphie.api.FontResolutionPolicySnapshot
+import org.graphiks.kalligraphie.api.FontSource
+import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.FontVariationCoordinate
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
+import org.graphiks.kalligraphie.api.HorizontalParagraphConstraints
 import org.graphiks.kalligraphie.api.IncrementalLayoutResult
 import org.graphiks.kalligraphie.api.LayoutDelta
 import org.graphiks.kalligraphie.api.LayoutRect
 import org.graphiks.kalligraphie.api.LayoutStateHandle
 import org.graphiks.kalligraphie.api.LayoutUnit
 import org.graphiks.kalligraphie.api.LineVerticalMetrics
+import org.graphiks.kalligraphie.api.ParagraphLayoutResult
+import org.graphiks.kalligraphie.api.ParagraphStyleSnapshot
+import org.graphiks.kalligraphie.api.ParagraphStyleSpan
+import org.graphiks.kalligraphie.api.PositionedGlyphRun
 import org.graphiks.kalligraphie.api.TextDecodingOutcome
 import org.graphiks.kalligraphie.api.TextDecodingProfile
+import org.graphiks.kalligraphie.api.TextIndex
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
@@ -652,6 +669,309 @@ private class Handoff(
     }
 }
 
+// -------------------------------------------------------------------------------------------------
+// Per-span styling: one paragraph over three faces, a face span and a `wght` variation span.
+// -------------------------------------------------------------------------------------------------
+
+/**
+ * The styled paragraph, in logical order, chosen so every span is one word and two words repeat.
+ *
+ * `Wide` (unprefixed, Work Sans 400), `Libre` (face span, Liberation Sans), `Wide` (variation span,
+ * Work Sans 700), `عربي` (Arabic, Amiri last resort).
+ */
+private const val STYLED_SPAN_TEXT = "Wide Libre Wide \u0639\u0631\u0628\u064A"
+
+private const val STYLED_DEFAULT_WORK_START = 0
+private const val STYLED_PREFERRED_LIBERATION_START = 5
+private const val STYLED_PREFERRED_LIBERATION_END = 10
+private const val STYLED_BOLD_WORK_START = 11
+private const val STYLED_BOLD_WORK_END = 15
+private const val STYLED_ARABIC_START = 16
+
+internal const val STYLED_SPAN_WORK_SANS_BYTES_PATH = "/fonts/worksans/WorkSans[wght].ttf"
+
+/** The audited SHA-256 of the variable Work Sans fixture the styled runs are shaped through. */
+internal const val STYLED_SPAN_WORK_SANS_SHA256 =
+    "f50f61f2ba738e239442d40bf1069adb195c224b6a5a73a581fc2f3ed62a9f63"
+
+private val STYLED_SPAN_FONTS = listOf(
+    STYLED_SPAN_WORK_SANS_BYTES_PATH to "Work Sans",
+    LIBERATION_BYTES_PATH to "Liberation Sans",
+    "/fonts/amiri/Amiri-Regular.ttf" to "Amiri Regular",
+)
+
+private val STYLED_BOLD_WGHT = FontVariationCoordinates(
+    listOf(FontVariationCoordinate(tag = "wght", value = 700f)),
+)
+
+/** The three-face catalog, resolver, policy, snapshot and styled spans one sample composes. */
+private class StyledSpanFixture(
+    val catalog: FontCatalogSnapshot,
+    val resolver: FontAssetResolverHandle,
+    val policy: FontResolutionPolicySnapshot,
+    val snapshot: TextSnapshot,
+    val spans: ParagraphStyleSnapshot,
+    val requirements: FontAccessRequirementsSnapshot,
+    val workSansFace: FontFaceId,
+    val liberationFace: FontFaceId,
+    val amiriFace: FontFaceId,
+    val sourceBytes: Long,
+) : AutoCloseable {
+    override fun close() {
+        success(resolver.close())
+    }
+}
+
+/** Proves the checked-in variable fixture is the audited Work Sans build before any timing. */
+internal fun validateStyledSpanFixture(corpus: FixtureCorpus) {
+    check(corpus.sha256Hex(STYLED_SPAN_WORK_SANS_BYTES_PATH) == STYLED_SPAN_WORK_SANS_SHA256) {
+        "The styled-span paragraph fixture is not the audited Work Sans variable build."
+    }
+}
+
+private fun TextSnapshot.styledSpanRange(start: Int, endExclusive: Int): TextRange = TextRange(
+    textIndexAtScalarBoundary(start),
+    textIndexAtScalarBoundary(endExclusive),
+)
+
+private fun openStyledSpanFixture(corpus: FixtureCorpus): StyledSpanFixture {
+    val captured = STYLED_SPAN_FONTS.map { (path, declaredName) -> corpus.bytes(path) to declaredName }
+    val sources = captured.map { (bytes, declaredName) -> FontSource(bytes, FontSourceProvenance(declaredName)) }
+    val catalog = success(Kalligraphie.embedded(sources = sources, cachePolicy = CACHE_POLICY))
+    val resolver = success(catalog.openAssetResolver())
+    return try {
+        val faces = sources.map { source -> FontFaceId(source.id, 0) }
+        val policy = FontResolutionPolicySnapshot(
+            generation = catalog.generation,
+            policyId = "styled-span-paragraph",
+            version = "1",
+            candidates = faces.map(::FontResolutionCandidate),
+            lastResortFace = faces.last(),
+        )
+        val snapshot = Kalligraphie.decodeUtf8(
+            TextVersion.create(),
+            listOf(TextSlice.Utf8(STYLED_SPAN_TEXT.encodeToByteArray())),
+        ).snapshot
+        val spans = ParagraphStyleSnapshot(
+            listOf(
+                ParagraphStyleSpan(
+                    range = snapshot.styledSpanRange(STYLED_PREFERRED_LIBERATION_START, STYLED_PREFERRED_LIBERATION_END),
+                    face = faces[1],
+                ),
+                ParagraphStyleSpan(
+                    range = snapshot.styledSpanRange(STYLED_BOLD_WORK_START, STYLED_BOLD_WORK_END),
+                    variation = STYLED_BOLD_WGHT,
+                ),
+            ),
+        )
+        StyledSpanFixture(
+            catalog = catalog,
+            resolver = resolver,
+            policy = policy,
+            snapshot = snapshot,
+            spans = spans,
+            requirements = trueTypeRequirements(),
+            workSansFace = faces[0],
+            liberationFace = faces[1],
+            amiriFace = faces[2],
+            sourceBytes = captured.sumOf { (bytes, _) -> bytes.size.toLong() },
+        )
+    } catch (failure: Throwable) {
+        resolver.close()
+        throw failure
+    }
+}
+
+private fun styledSpanRequest(fixture: StyledSpanFixture): JvmEditableParagraphFacadeRequest =
+    JvmEditableParagraphFacadeRequest(
+        snapshot = fixture.snapshot,
+        constraints = HorizontalParagraphConstraints(
+            region = LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(20_000f), LayoutUnit(2_000f)),
+            lineMetrics = LineVerticalMetrics(LayoutUnit(800f), LayoutUnit(200f)),
+        ),
+        baseDirection = BaseDirection.LEFT_TO_RIGHT,
+        language = "en",
+        fontCatalog = fixture.catalog,
+        resolutionPolicy = fixture.policy,
+        fontInstanceDescriptor = FontInstanceDescriptor(LayoutUnit(1_000f)),
+        materialization = EditableLineMaterialization.Renderable(
+            resolver = fixture.resolver,
+            renderVariant = FontRenderVariantSnapshot.default,
+            requirements = fixture.requirements,
+        ),
+        operationProfile = EditorOperationProfile.unbounded,
+        styleSpans = fixture.spans,
+    )
+
+private fun layoutStyledSpanParagraph(fixture: StyledSpanFixture): ParagraphLayoutResult =
+    org.graphiks.kalligraphie.JvmEditableParagraphFacade.layout(styledSpanRequest(fixture))
+
+private fun TextRange.overlapsStyledSpan(other: TextRange): Boolean =
+    start < other.endExclusive && other.start < endExclusive
+
+private fun List<PositionedGlyphRun>.singleRunCovering(index: TextIndex): PositionedGlyphRun {
+    val matches = filter { run -> run.sourceRun.range.start <= index && index < run.sourceRun.range.endExclusive }
+    check(matches.size == 1) { "Expected exactly one styled-span run to cover $index, found ${matches.size}." }
+    return matches.single()
+}
+
+/**
+ * Consumes one styled layout. The spans are asserted rather than assumed: the face span must really
+ * promote the middle candidate, the variation span must reach a distinct instance, and the same
+ * word must carry a different advance at the two weights.
+ */
+private fun observeStyledSpanLayout(
+    scenario: PortableScenario,
+    result: ParagraphLayoutResult,
+    fixture: StyledSpanFixture,
+    sourceBytes: Long,
+) {
+    val layout = when (result) {
+        is ParagraphLayoutResult.Success -> result.layout
+        is ParagraphLayoutResult.Failure -> error("Styled-span measurement failed: ${result.error}")
+        is ParagraphLayoutResult.Cancelled -> error("Styled-span measurement was unexpectedly cancelled.")
+    }
+    val runs = layout.lines.flatMap { line -> line.positionedGlyphRuns }
+    val glyphs = runs.flatMap { run -> run.glyphs }
+    check(glyphs.isNotEmpty()) { "The styled-span paragraph published no final glyphs." }
+    check(glyphs.all { glyph -> glyph.materializationCertificate != null }) {
+        "The styled-span paragraph must publish only certified glyphs in renderable mode."
+    }
+
+    val defaultRun = runs.singleRunCovering(fixture.snapshot.textIndexAtScalarBoundary(STYLED_DEFAULT_WORK_START))
+    val liberationRun = runs.singleRunCovering(fixture.snapshot.textIndexAtScalarBoundary(STYLED_PREFERRED_LIBERATION_START))
+    val boldRun = runs.singleRunCovering(fixture.snapshot.textIndexAtScalarBoundary(STYLED_BOLD_WORK_START))
+    val arabicRun = runs.singleRunCovering(fixture.snapshot.textIndexAtScalarBoundary(STYLED_ARABIC_START))
+
+    check(defaultRun.fontInstanceKey.face == fixture.workSansFace) {
+        "The unprefixed word resolved to ${defaultRun.fontInstanceKey.face} instead of Work Sans."
+    }
+    check(liberationRun.fontInstanceKey.face == fixture.liberationFace) {
+        "The face span resolved to ${liberationRun.fontInstanceKey.face} instead of the preferred Liberation Sans."
+    }
+    check(boldRun.fontInstanceKey.face == fixture.workSansFace) {
+        "The variation span resolved to ${boldRun.fontInstanceKey.face} instead of Work Sans."
+    }
+    check(arabicRun.fontInstanceKey.face == fixture.amiriFace) {
+        "The Arabic fragment resolved to ${arabicRun.fontInstanceKey.face} instead of the last-resort Amiri."
+    }
+    check(defaultRun.fontInstanceKey.geometry.normalizedAxes.isEmpty()) {
+        "The unprefixed Work Sans run carries a variation it never asked for."
+    }
+    check(boldRun.fontInstanceKey.geometry.normalizedAxes.isNotEmpty()) {
+        "The variation-styled Work Sans run carries no variation axis."
+    }
+    check(defaultRun.fontInstanceKey != boldRun.fontInstanceKey) {
+        "The two Work Sans runs share one instance key: the span variation did not reach the instance."
+    }
+
+    // The same word is shaped twice, so only the weight can explain an advance difference.
+    val defaultW = defaultRun.glyphs.single { glyph ->
+        glyph.mappedSourceRange.start == fixture.snapshot.textIndexAtScalarBoundary(STYLED_DEFAULT_WORK_START)
+    }
+    val boldW = boldRun.glyphs.single { glyph ->
+        glyph.mappedSourceRange.start == fixture.snapshot.textIndexAtScalarBoundary(STYLED_BOLD_WORK_START)
+    }
+    check(defaultW.shapedGlyph.glyphId == boldW.shapedGlyph.glyphId) {
+        "The two Wide runs no longer shape the same first glyph; the geometric comparison is meaningless."
+    }
+    check(boldW.advance.x.value > defaultW.advance.x.value) {
+        "The wght=700 span did not widen the same glyph: ${boldW.advance.x.value} and " +
+            "${defaultW.advance.x.value} layout units."
+    }
+
+    val selectedFaces = runs.map { run -> run.fontInstanceKey.face }.distinct()
+    check(selectedFaces.size == 3) {
+        "The styled-span paragraph drew ${selectedFaces.size} faces instead of the three policy faces."
+    }
+    val styledRuns = runs.count { run ->
+        fixture.spans.spans.any { span -> span.range.overlapsStyledSpan(run.sourceRun.range) }
+    }
+    check(styledRuns == 2) {
+        "The styled-span paragraph published $styledRuns styled runs instead of the two its spans name."
+    }
+
+    runs.forEach { run -> scenario.sink(run.fontInstanceKey.hashCode().toLong()) }
+    glyphs.forEach { glyph -> scenario.sink(glyph.shapedGlyph.glyphId.value.toLong()) }
+    scenario.count("shapedGlyphs", glyphs.size.toLong())
+    scenario.record("selectedFaces", selectedFaces.size.toLong())
+    scenario.record("styledRuns", styledRuns.toLong())
+    if (sourceBytes > 0) scenario.count("sourceBytes", sourceBytes)
+}
+
+/**
+ * Cold per-span styling: a fresh three-face catalog, resolver and materialization cache per sample.
+ *
+ * The public facade opens and closes its own HarfBuzz backend inside the timed boundary on every
+ * call; nothing here reuses a shaping session.
+ */
+private class StyledSpanParagraphCold(private val corpus: FixtureCorpus) : ParagraphScenario(
+    name = "StyledSpanParagraphCold",
+    route =
+        "one styled paragraph through a fresh three-face Work Sans/Liberation Sans/Amiri catalog and " +
+            "resolver, composed by the public paragraph facade",
+    timedBoundary =
+        "starts before embedded-catalog capture and ends after the certified styled layout is consumed " +
+            "and the resolver is closed; the public facade opens and closes its own HarfBuzz backend " +
+            "inside the boundary on every call, so no shaping session is reused across samples",
+    cacheState =
+        "cold: a new catalog, resolver and materialization cache are captured and closed for every " +
+            "sample; the public facade opens and closes its own HarfBuzz backend per call",
+) {
+    override fun prepare() {
+        validateStyledSpanFixture(corpus)
+    }
+
+    override fun operation() {
+        val opened = openStyledSpanFixture(corpus)
+        try {
+            observeStyledSpanLayout(this, layoutStyledSpanParagraph(opened), opened, opened.sourceBytes)
+        } finally {
+            opened.close()
+        }
+    }
+}
+
+/**
+ * Warm per-span styling: the three-face catalog, resolver and materialization cache are reused.
+ *
+ * Only those caches are warm. The public facade still opens and closes its own HarfBuzz backend on
+ * every call, so this profile never reuses a shaping session.
+ */
+private class StyledSpanParagraphWarm(private val corpus: FixtureCorpus) : ParagraphScenario(
+    name = "StyledSpanParagraphWarm",
+    route =
+        "one reused three-face Work Sans/Liberation Sans/Amiri catalog and resolver composing the same " +
+            "styled paragraph through repeated public paragraph facade calls",
+    timedBoundary =
+        "starts immediately before the public paragraph facade call and ends after the certified styled " +
+            "layout is consumed; catalog, resolver and materialization-cache capture, seed and closure " +
+            "are excluded, and the public facade still opens and closes its own HarfBuzz backend on " +
+            "every call",
+    cacheState =
+        "warm: one catalog, resolver and materialization cache are seeded outside timing and reused; the " +
+            "public facade opens and closes a fresh HarfBuzz backend per call, so only the catalog, " +
+            "resolver and materialization caches are warm - no HarfBuzz session is reused",
+) {
+    private var opened: StyledSpanFixture? = null
+
+    override fun prepare() {
+        validateStyledSpanFixture(corpus)
+        opened = openStyledSpanFixture(corpus)
+        observeStyledSpanLayout(this, layoutStyledSpanParagraph(checkNotNull(opened)), checkNotNull(opened), 0)
+    }
+
+    override fun operation() {
+        val active = checkNotNull(opened)
+        observeStyledSpanLayout(this, layoutStyledSpanParagraph(active), active, 0)
+    }
+
+    override fun release() {
+        opened?.close()
+        opened = null
+    }
+}
+
 /**
  * The paragraph scenarios in canonical order. The consumer/session fixtures come from the same
  * corpus seam as the portable ones. `ConcurrentResolveWarm` is not here: it belongs to a harness
@@ -698,5 +1018,7 @@ public fun paragraphScenarios(corpus: FixtureCorpus): List<org.graphiks.kalligra
         ParagraphSession(consumerMixedBidi, warm = true),
         Handoff(corpus, liberation, warm = false),
         Handoff(corpus, liberation, warm = true),
+        StyledSpanParagraphCold(corpus),
+        StyledSpanParagraphWarm(corpus),
     )
 }

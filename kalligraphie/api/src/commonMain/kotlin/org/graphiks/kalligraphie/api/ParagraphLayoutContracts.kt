@@ -695,6 +695,8 @@ public class LayoutContinuation private constructor(
     public val textOrientation: TextOrientation,
     /** Policy used when selected faces lack OpenType vertical metrics. */
     public val verticalMetricsPolicy: VerticalMetricsPolicy,
+    /** Optional per-range face and variation preferences used for the covered prefix. */
+    public val styleSpans: ParagraphStyleSnapshot?,
 ) {
     /** Portable shaping semantics required to resume this continuation. */
     public val shapingSemanticIdentity: ShapingSemanticIdentity = shapingBackendIdentity.semantic
@@ -736,7 +738,8 @@ public class LayoutContinuation private constructor(
             request.hyphenationService?.identity == hyphenationServiceIdentity &&
             request.inlineObjects == inlineObjects &&
             request.textOrientation == textOrientation &&
-            request.verticalMetricsPolicy == verticalMetricsPolicy
+            request.verticalMetricsPolicy == verticalMetricsPolicy &&
+            request.styleSpans == styleSpans
 
     internal fun incompatibilitySummary(request: ParagraphLayoutRequest): String = buildList {
         if (request.snapshot.version != originalVersion) add("snapshot version")
@@ -778,6 +781,7 @@ public class LayoutContinuation private constructor(
         if (request.inlineObjects != inlineObjects) add("inline objects")
         if (request.textOrientation != textOrientation) add("text orientation")
         if (request.verticalMetricsPolicy != verticalMetricsPolicy) add("vertical metrics policy")
+        if (request.styleSpans != styleSpans) add("style spans")
     }.joinToString()
 
     /** Factories that capture compatibility inputs from validated paragraph requests. */
@@ -852,6 +856,7 @@ public class LayoutContinuation private constructor(
                 inlineObjects = request.inlineObjects,
                 textOrientation = request.textOrientation,
                 verticalMetricsPolicy = request.verticalMetricsPolicy,
+                styleSpans = request.styleSpans,
             )
         }
     }
@@ -915,6 +920,8 @@ public class ParagraphLayoutRequest(
     public val cancellationToken: CancellationToken = CancellationToken.none,
     /** Shared finite resource policy for this complete paragraph operation. */
     public val operationProfile: EditorOperationProfile,
+    /** Optional per-range face and variation preferences; `null` means no span styling. */
+    public val styleSpans: ParagraphStyleSnapshot? = null,
 ) {
     /**
      * Creates a paragraph request through the historical unbounded constructor.

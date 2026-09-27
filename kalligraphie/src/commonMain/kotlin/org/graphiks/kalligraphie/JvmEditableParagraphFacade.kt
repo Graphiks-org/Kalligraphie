@@ -24,6 +24,7 @@ import org.graphiks.kalligraphie.api.InlineObjectSnapshot
 import org.graphiks.kalligraphie.api.HyphenationMode
 import org.graphiks.kalligraphie.api.HyphenationService
 import org.graphiks.kalligraphie.api.ParagraphPositioningPolicy
+import org.graphiks.kalligraphie.api.ParagraphStyleSnapshot
 import org.graphiks.kalligraphie.api.LayoutContinuation
 import org.graphiks.kalligraphie.api.OpenTypeFeature
 import org.graphiks.kalligraphie.api.OverflowPolicy
@@ -99,6 +100,8 @@ public class JvmEditableParagraphFacadeRequest(
     public val cancellationToken: CancellationToken = CancellationToken.none,
     /** Shared finite resource policy for this complete analysis-through-composition operation. */
     public val operationProfile: EditorOperationProfile,
+    /** Optional per-range face and variation preferences; `null` means no span styling. */
+    public val styleSpans: ParagraphStyleSnapshot? = null,
 ) {
     /** Creates a request through the historical constructor with an unbounded operation policy. */
     public constructor(
@@ -432,6 +435,7 @@ public object JvmEditableParagraphFacade {
             continuation = request.continuation,
             cancellationToken = context.cancellationToken,
             operationProfile = context.profile,
+            styleSpans = request.styleSpans,
         ))
     }
 
