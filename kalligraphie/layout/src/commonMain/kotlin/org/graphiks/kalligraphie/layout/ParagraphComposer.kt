@@ -1644,6 +1644,7 @@ public object ParagraphComposer : ParagraphLayouter {
         val width = inlineExtent(request).value.toDouble()
         val prefixWidths = mutableMapOf<TextIndex, Double>()
         val prefixInstances = mutableMapOf<TextIndex, List<FontInstance>>()
+        var completeLine: EditableLine? = null
         val measureBoundaries = (sourceClusters.map { it.endExclusive } + lineStart).distinct().sortedWith(TextIndex::compareTo)
             .filter { boundary -> boundary > lineStart && boundary <= terminal }
         measureBoundaries.asReversed().forEach { boundary ->
@@ -1662,6 +1663,7 @@ public object ParagraphComposer : ParagraphLayouter {
                 is FinalizationResult.Success -> {
                     prefixWidths[boundary] = inlineAdvance(finalized.line).value.toDouble()
                     prefixInstances[boundary] = finalized.fontInstances
+                    if (boundary == terminal) completeLine = finalized.line
                 }
                 is FinalizationResult.Failure -> {
                     finalized.throwIfTerminalMaterializationFailure()
@@ -1669,78 +1671,88 @@ public object ParagraphComposer : ParagraphLayouter {
                 is FinalizationResult.Cancelled -> throw ParagraphCompositionCancelled(finalized.diagnostics)
             }
         }
-        val markerWidth = widthOfEllipsisMarker(request, prefixInstances.values.firstOrNull().orEmpty())
         val terminalWidth = prefixWidths[terminal] ?: return null
+        val terminalInstances = prefixInstances[terminal].orEmpty()
         val side = ellipsis.side
         val completeRange = TextRange(lineStart, terminal)
-        fun markerOnly(): TruncatedLine? = if (markerWidth <= width) {
-            truncateWithPolicy(
-                request,
-                sourceClusters,
-                provisionalRuns,
-                materialization,
-                proofs,
-                context,
-                pool,
-                completeRange,
-                completeRange,
-                side,
-            )
-        } else {
-            null
-        }
-        return when (side) {
-            EllipsisSide.INLINE_END -> {
-                val b0 = measureBoundaries.asReversed().firstOrNull { boundary ->
-                    val prefixWidth = prefixWidths[boundary] ?: return@firstOrNull false
-                    prefixWidth + markerWidth <= width
-                } ?: lineStart.takeIf { markerWidth <= width } ?: return null
-                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs, context, pool,
-                    completeRange, TextRange(b0, terminal), side)
-            }
-            EllipsisSide.INLINE_START -> {
-                val suffixCandidates = measureBoundaries
-                var chosen = TextRange(lineStart, lineStart)
-                var suffixFound = false
-                suffixCandidates.asReversed().forEach { boundary ->
-                    if (suffixFound) return@forEach
-                    val suffixRange = TextRange(boundary, terminal)
-                    if (suffixRange.start == suffixRange.endExclusive) return@forEach
-                    if (prefixWidths[boundary] != null) {
-                        val suffixWidth = terminalWidth - (prefixWidths[boundary] ?: 0.0)
-                        if (suffixWidth + markerWidth <= width) {
-                            chosen = suffixRange
-                            suffixFound = true
-                        }
-                    }
+
+        // The ellipsis marker is attached to the run whose cluster ends at the truncation anchor, so
+        // its advance must be measured with that run's instance rather than the first instance of the
+        // line. The complete-line finalization exposes the exact run partition truncation will use.
+        fun anchorInstance(anchor: TextIndex): FontInstance? {
+            val runs = completeLine?.positionedGlyphRuns.orEmpty()
+            val run = runs.firstOrNull { candidate ->
+                candidate.sourceRun.clusters.any { cluster ->
+                    cluster.sourceRange.start < anchor && cluster.sourceRange.endExclusive == anchor
                 }
-                if (!suffixFound) return markerOnly()
-                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs, context, pool,
-                    completeRange, TextRange(lineStart, chosen.start), side)
-            }
+            } ?: runs.firstOrNull { candidate ->
+                candidate.sourceRun.clusters.any { cluster ->
+                    cluster.sourceRange.start <= anchor && anchor <= cluster.sourceRange.endExclusive
+                }
+            } ?: runs.firstOrNull()
+            return run?.fontInstanceKey?.let { key -> terminalInstances.firstOrNull { it.key == key } }
+                ?: terminalInstances.firstOrNull()
+        }
+
+        fun markerWidthAt(anchor: TextIndex): Double = widthOfEllipsisMarker(request, anchorInstance(anchor))
+
+        fun fits(line: EditableLine): Boolean = inlineAdvance(line).value <= width
+
+        fun publish(hiddenRange: TextRange): TruncatedLine? = truncateWithPolicy(
+            request,
+            sourceClusters,
+            provisionalRuns,
+            materialization,
+            proofs,
+            context,
+            pool,
+            completeRange,
+            hiddenRange,
+            side,
+        )
+
+        fun markerOnly(): TruncatedLine? {
+            val anchor = if (side == EllipsisSide.INLINE_START) terminal else lineStart
+            return if (markerWidthAt(anchor) <= width) publish(completeRange) else null
+        }
+
+        // Each candidate hides one more cluster than its predecessor while keeping the marker
+        // measured with the instance that renders it at that candidate's anchor. The published
+        // line is re-validated against the region so a residual measurement mismatch falls back to
+        // the next admissible boundary instead of overflowing.
+        val admissible: List<TextRange> = when (side) {
+            EllipsisSide.INLINE_END -> measureBoundaries.asReversed()
+                .filter { boundary -> boundary < terminal && prefixWidths.containsKey(boundary) }
+                .filter { boundary -> prefixWidths.getValue(boundary) + markerWidthAt(boundary) <= width }
+                .map { boundary -> TextRange(boundary, terminal) }
+            EllipsisSide.INLINE_START -> measureBoundaries.asReversed()
+                .filter { boundary -> boundary < terminal && prefixWidths.containsKey(boundary) }
+                .filter { boundary ->
+                    (terminalWidth - prefixWidths.getValue(boundary)) + markerWidthAt(boundary) <= width
+                }
+                .asReversed()
+                .map { boundary -> TextRange(lineStart, boundary) }
             EllipsisSide.MIDDLE -> {
-                var suffixStart: TextIndex? = null
-                var suffixWidth = 0.0
-                measureBoundaries.asReversed().forEach { boundary ->
-                    if (suffixStart != null) return@forEach
+                val widestMarker = (measureBoundaries + lineStart).maxOf { boundary -> markerWidthAt(boundary) }
+                val suffixStart = measureBoundaries.asReversed().firstOrNull { boundary ->
                     val suffixRange = TextRange(boundary, terminal)
-                    if (suffixRange.start == suffixRange.endExclusive) return@forEach
-                    val w = prefixWidths[boundary]?.let { terminalWidth - it } ?: 0.0
-                    if (w + markerWidth <= width) {
-                        suffixStart = boundary
-                        suffixWidth = w
-                    }
-                }
-                val startB0 = suffixStart ?: return markerOnly()
-                val b0 = prefixWidths.entries
-                    .sortedWith { left, right -> left.key.compareTo(right.key) }
-                    .lastOrNull { (_, w) -> w + markerWidth + suffixWidth <= width }?.key
-                    ?: lineStart.takeIf { markerWidth + suffixWidth <= width }
-                    ?: return markerOnly()
-                truncateWithPolicy(request, sourceClusters, provisionalRuns, materialization, proofs, context, pool,
-                    completeRange, TextRange(b0, startB0), side)
+                    suffixRange.start != suffixRange.endExclusive &&
+                        prefixWidths[boundary]?.let { terminalWidth - it + widestMarker <= width } == true
+                } ?: return markerOnly()
+                val suffixWidth = terminalWidth - (prefixWidths[suffixStart] ?: 0.0)
+                val prefixes = prefixWidths.entries
+                    .filter { (boundary, _) -> boundary < suffixStart }
+                    .sortedWith { left, right -> right.key.compareTo(left.key) }
+                    .filter { (boundary, prefixWidth) -> prefixWidth + markerWidthAt(boundary) + suffixWidth <= width }
+                    .map { (boundary, _) -> TextRange(boundary, suffixStart) }
+                if (markerWidthAt(lineStart) + suffixWidth <= width) prefixes + TextRange(lineStart, suffixStart) else prefixes
             }
         }
+        for (hiddenRange in admissible) {
+            val truncated = publish(hiddenRange)
+            if (truncated != null && fits(truncated.line)) return truncated
+        }
+        return markerOnly()
     }
 
     private fun truncateWithPolicy(
@@ -1798,9 +1810,9 @@ public object ParagraphComposer : ParagraphLayouter {
 
     private fun widthOfEllipsisMarker(
         request: ParagraphLayoutRequest,
-        instances: List<FontInstance>,
+        instance: FontInstance?,
     ): Double {
-        val instance = instances.firstOrNull() ?: return 0.0
+        if (instance == null) return 0.0
         val glyph = (instance.resolveGlyph(0x2026) as? FontOperationResult.Success)?.value
         if (glyph != null && glyph.glyphId.value != 0) {
             val adv = instance.inlineAdvanceFor(request, glyph.glyphId)
