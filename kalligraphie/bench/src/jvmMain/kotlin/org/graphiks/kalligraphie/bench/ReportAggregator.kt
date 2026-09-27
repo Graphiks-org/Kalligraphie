@@ -350,9 +350,9 @@ private fun parseIosIdentity(markdown: String): MeasurementIdentity {
 
 private fun renderAndroidReport(options: Map<String, String>, metadata: Map<String, MeasurementScenario>): AggregatedReport {
     val raw = readInput("the Android observations", options.getValue("android-obs"))
-    val identityLine = raw.lineSequence().firstOrNull { it.startsWith(IDENTITY_MARKER) }
+    val identityLine = raw.lineSequence().mapNotNull { line -> markerPayload(line, IDENTITY_MARKER) }.firstOrNull()
         ?: error("The Android observations carry no '$IDENTITY_MARKER' identity line — the run's logcat capture is incomplete.")
-    val identityEntry = JSON.parseToJsonElement(identityLine.removePrefix(IDENTITY_MARKER)).jsonObject
+    val identityEntry = JSON.parseToJsonElement(identityLine).jsonObject
     val identity = MeasurementIdentity(
         commit = identityEntry["commit"]!!.jsonPrimitive.content,
         machine = identityEntry["machine"]!!.jsonPrimitive.content,
@@ -365,9 +365,9 @@ private fun renderAndroidReport(options: Map<String, String>, metadata: Map<Stri
         gcPolicy = identityEntry["gcPolicy"]!!.jsonPrimitive.content,
     )
     val counters = raw.lineSequence()
-        .filter { it.startsWith(JSONL_MARKER) }
-        .associate { line ->
-            val entry = JSON.parseToJsonElement(line.removePrefix(JSONL_MARKER)).jsonObject
+        .mapNotNull { line -> markerPayload(line, JSONL_MARKER) }
+        .associate { payload ->
+            val entry = JSON.parseToJsonElement(payload).jsonObject
             val name = decodeKey(entry["scenario"]!!.jsonPrimitive.content)
             name to entry["counters"]!!.jsonObject.entries.associate { (key, value) ->
                 decodeKey(key) to value.jsonPrimitive.long
@@ -465,6 +465,19 @@ private fun readMedian(file: File): Pair<Long, Long> {
 
 private const val JSONL_MARKER = "KALLIGRAPHIE-BENCH-JSONL:"
 private const val IDENTITY_MARKER = "KALLIGRAPHIE-BENCH-IDENTITY:"
+
+/**
+ * What follows [marker] on a logcat line, or null when the line carries none.
+ *
+ * The Android channel is the instrumentation log, and a capture keeps logcat's own prefix —
+ * `09-27 15:40:55.648 2439 2458 I System.out: KALLIGRAPHIE-BENCH-…` — while a capture made with
+ * `-v raw` carries the payload alone. Both are the same measurement, so the marker is searched for
+ * rather than required at the start of the line.
+ */
+private fun markerPayload(line: String, marker: String): String? {
+    val at = line.indexOf(marker)
+    return if (at < 0) null else line.substring(at + marker.length)
+}
 
 private class AndroidProfile(
     val metadata: MeasurementScenario,

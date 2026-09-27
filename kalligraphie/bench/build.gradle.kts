@@ -92,12 +92,17 @@ val androidBenchmarkIdentity by tasks.registering {
     group = "benchmark"
     description = "Writes the measured commit into the Android device-test APK."
     val outputDirectory = layout.buildDirectory.dir("generated/android-benchmark-identity")
+    // The measured commit is an input, not a value read inside the action: with no input the task
+    // stayed up to date across revisions, and an APK built at the next revision published the
+    // previous one's name — measured, once, before this line existed.
+    val measuredCommit = providers.exec {
+        commandLine("git", "rev-parse", "HEAD")
+        workingDir(rootDir)
+    }.standardOutput.asText.map { it.trim() }
+    inputs.property("measuredCommit", measuredCommit)
     outputs.dir(outputDirectory)
     doLast {
-        val commit = providers.exec {
-            commandLine("git", "rev-parse", "HEAD")
-            workingDir(rootDir)
-        }.standardOutput.asText.get().trim()
+        val commit = measuredCommit.get()
         check(commit.matches(Regex("[0-9a-f]{40}"))) {
             "Could not identify the measured commit for the Android benchmark: $commit"
         }
