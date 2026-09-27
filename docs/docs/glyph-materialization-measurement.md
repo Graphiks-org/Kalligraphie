@@ -6,20 +6,20 @@ published benchmark result. It exercises the checked-in, audited COLR/CPAL,
 SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures through the
 public catalog, resolver, instance, asset, and `resolveGlyph(...)` paths.
 
-The module records thirty-seven profiles in total; this page covers the thirty
+The module records thirty-nine profiles in total; this page covers the thirty-two
 that belong here. Nineteen of them are portable glyph work — the nine
 representation profiles and the ten portable TrueType stages — and they run on
-every platform. The remaining eleven compose text through the paragraph facade,
+every platform. The remaining thirteen compose text through the paragraph facade,
 which needs the `END_TO_END_LAYOUT` capability: every platform declares that
 capability since the facades and the portable Unicode analysis became
-`commonMain` code, so those eleven run on Android and on the iOS simulator as
+`commonMain` code, so those thirteen run on Android and on the iOS simulator as
 well. One profile of the module does not travel — `ConcurrentResolveWarm` needs a
 harness instrument, four persistent OS threads with a per-thread allocation
 counter, and the iOS report names it as deferred rather than measuring a
 sequential loop under its name. The editable-line and incremental-layout profiles
 are documented in their own pages.
 
-The module records the thirty profiles of this page in this order:
+The module records the thirty-two profiles of this page in this order:
 
 - cold and warm COLR v0 / CPAL v0 normalization; *(portable)*
 - cold and warm SVG-in-OpenType normalization; *(portable)*
@@ -37,7 +37,9 @@ The module records the thirty profiles of this page in this order:
   and detachment stages over one stable Liberation Sans editor paragraph; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, then
   `ConcurrentResolveWarm` over that same paragraph; the last one runs on the JVM
-  and on Android, where the worker instrument exists.
+  and on Android, where the worker instrument exists;
+- cold and warm styled-span paragraphs that prefer a middle resolution candidate
+  for one run and apply a `wght` design-axis variation to another.
 
 For the six historical direct-glyph profiles, cold samples start before
 embedded-catalog creation and end after the returned immutable representation
@@ -141,7 +143,7 @@ API exposes no trustworthy accounting boundary for either value.
 
 ## Public font-asset handoff
 
-The final three profiles use the stable paragraph above and the audited
+These three profiles use the stable paragraph above and the audited
 Liberation Sans fixture. Before timing, the runner verifies the fixture hash
 and literal glyph 36 outline facts from its independent audit (2048 units per
 em, bounds `(4, 0, 1362, 1409)`, two contours). It also checks the paragraph's
@@ -225,9 +227,9 @@ ignores:
 ```
 
 The first three are opt-in: none of them is part of `check`, and none schedules
-itself. The JVM command measures all thirty-seven profiles the module records; the
-Android command measures the same thirty-seven on the device runtime; the iOS
-command measures thirty-six, because the simulator harness has no worker
+itself. The JVM command measures all thirty-nine profiles the module records; the
+Android command measures the same thirty-nine on the device runtime; the iOS
+command measures thirty-eight, because the simulator harness has no worker
 instrument and reports `ConcurrentResolveWarm` as deferred. The last command
 joins whatever runs have produced into `build/bench/report-jvm.md`, `report-ios.md`,
 `report-android.md` and `report-comparison.md`, and fails naming the missing path
@@ -239,10 +241,10 @@ androidx.benchmark records a perfetto trace of tens of megabytes for every
 profile and hands it to the managed device's host-side pull. No instrumentation
 argument suppresses that trace without also suppressing the measured files, the
 profiling mode governs method tracing and stack sampling rather than it, and a
-device asked for thirty-seven of them fills up: while the run proceeds, delete the
+device asked for thirty-nine of them fills up: while the run proceeds, delete the
 traces the host has already pulled, so that the pull of a later profile does not
 fail and take the rest of the run with it. The tool's own results file is the
-verdict — thirty-seven tests, no failure, no error, no skip — and the task's exit
+verdict — thirty-nine tests, no failure, no error, no skip — and the task's exit
 status can still report the test driver's teardown, which is outside the
 measurement.
 

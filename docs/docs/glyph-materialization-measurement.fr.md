@@ -8,13 +8,13 @@ Sans TrueType auditées et versionnées, à travers les parcours publics catalog
 resolver (résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`
 `.
 
-Le module enregistre trente-sept profils au total ; cette page couvre les trente
+Le module enregistre trente-neuf profils au total ; cette page couvre les trente-deux
 qui lui appartiennent. Dix-neuf d’entre eux sont du travail portable sur les
 glyphes — les neuf profils de représentation et les dix étapes portables TrueType
-— et s’exécutent sur toutes les plateformes. Les onze autres composent le texte à
+— et s’exécutent sur toutes les plateformes. Les treize autres composent le texte à
 travers la façade de paragraphe, qui exige la capacité `END_TO_END_LAYOUT` :
 toutes les plateformes déclarent cette capacité depuis que les façades et
-l’analyse Unicode portable sont passées dans `commonMain`, donc ces onze profils
+l’analyse Unicode portable sont passées dans `commonMain`, donc ces treize profils
 s’exécutent aussi sur Android et sur le simulateur iOS. Un profil du module ne
 voyage pas — `ConcurrentResolveWarm` exige un instrument de harnais, quatre
 threads OS persistants avec un compteur d’allocation par thread — et le rapport
@@ -22,7 +22,7 @@ iOS le nomme comme différé au lieu de mesurer une boucle séquentielle sous so
 nom. Les profils de ligne éditable et de layout incrémental sont documentés dans
 leurs propres pages.
 
-Le module enregistre les trente profils de cette page dans cet ordre :
+Le module enregistre les trente-deux profils de cette page dans cet ordre :
 
 - normalisation COLR v0 / CPAL v0 froide et chaude ; *(portable)*
 - normalisation SVG-in-OpenType froide et chaude ; *(portable)*
@@ -43,7 +43,10 @@ Le module enregistre les trente profils de cette page dans cet ordre :
   Liberation Sans stable ; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, puis
   `ConcurrentResolveWarm` sur ce même paragraphe ; le dernier s’exécute sur la JVM
-  et sur Android, là où l’instrument de workers existe.
+  et sur Android, là où l’instrument de workers existe ;
+- des paragraphes à plages stylisées froids et chauds qui préfèrent un candidat de
+  résolution intermédiaire pour un run et appliquent une variation d’axe `wght` à
+  un autre.
 
 Pour les six profils directs historiques, un échantillon froid commence avant
 la création du catalogue embarqué et se termine après consommation de la
@@ -164,7 +167,7 @@ valeurs.
 
 ## Transfert public des ressources de police
 
-Les trois derniers profils utilisent le paragraphe stable ci-dessus et la fixture
+Ces trois profils utilisent le paragraphe stable ci-dessus et la fixture
 Liberation Sans auditée. Hors chronomètre, le runner vérifie son empreinte et les
 faits littéraux de l’audit indépendant du glyphe 36 : 2048 unités par cadratin,
 limites `(4, 0, 1362, 1409)`, deux contours. Il vérifie aussi la séquence distincte
@@ -256,9 +259,9 @@ module, que git ignore :
 ```
 
 Les trois premières tâches sont opt-in : aucune n’appartient à `check`, aucune ne
-se planifie d’elle-même. La commande JVM mesure les trente-sept profils que le
-module enregistre ; la commande Android mesure les mêmes trente-sept sur le
-runtime de l’appareil ; la commande iOS en mesure trente-six, car le harnais du
+se planifie d’elle-même. La commande JVM mesure les trente-neuf profils que le
+module enregistre ; la commande Android mesure les mêmes trente-neuf sur le
+runtime de l’appareil ; la commande iOS en mesure trente-huit, car le harnais du
 simulateur n’a pas d’instrument de workers et déclare `ConcurrentResolveWarm`
 différé. La dernière joint les exécutions disponibles dans
 `build/bench/report-jvm.md`, `report-ios.md`, `report-android.md` et
@@ -272,10 +275,10 @@ par profil et la remet au pull côté hôte de l’appareil géré. Aucun argume
 d’instrumentation ne supprime cette trace sans supprimer aussi les fichiers
 mesurés, le mode de profilage gouverne le traçage de méthodes et
 l’échantillonnage de pile plutôt qu’elle, et un appareil à qui l’on demande
-trente-sept de ces traces se remplit : pendant l’exécution, supprimez les traces
+trente-neuf de ces traces se remplit : pendant l’exécution, supprimez les traces
 que l’hôte a déjà tirées, pour que le pull d’un profil suivant n’échoue pas et
 n’emporte pas le reste de l’exécution. Le fichier de résultats de l’outil fait foi
-— trente-sept tests, aucun échec, aucune erreur, aucun test ignoré — et le code de
+— trente-neuf tests, aucun échec, aucune erreur, aucun test ignoré — et le code de
 sortie de la tâche peut encore signaler la démolition du pilote de test, qui est
 hors mesure.
 

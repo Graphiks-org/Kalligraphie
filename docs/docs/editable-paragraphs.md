@@ -92,6 +92,69 @@ Layout success alone does not guarantee later reopening. See
 [Font Management](font-management.md#own-certified-assets-for-delayed-rendering)
 for the complete sequence and lifecycle boundaries.
 
+## Style individual spans
+
+Set `styleSpans` to give a sub-range its own preferred face and/or design-axis
+variation. `ParagraphStyleSnapshot` holds an ordered, non-overlapping list of
+`ParagraphStyleSpan(range, face?, variation?)` values over one text version;
+`styleAt(index)` returns the covering span or `null` in a gap, and positions
+outside every span use the paragraph default. A span must be non-empty, must
+name at least one of `face` and `variation`, and its bounds must fall on
+extended grapheme cluster boundaries. Both request types carry the optional
+field — `ParagraphLayoutRequest.styleSpans` and
+`JvmEditableParagraphFacadeRequest.styleSpans` — defaulting to `null`, which
+keeps the paragraph behavior exactly unchanged.
+
+### Face preference and fallback
+
+A span's `face` is a preference resolved like Skia: for each fallback unit the
+preferred face is tried first, then the resolution policy's candidates in their
+declared order. The preferred face must be a member of
+`resolutionPolicy.candidates`. `lastResortFace` is never promoted: naming it, or
+leaving `face` null, leaves the policy order untouched. When the preferred face
+cannot shape the whole unit but a later candidate can, the unit still resolves
+through fallback and the line carries the `font.fallback.span-face-unavailable`
+`WARNING` diagnostic.
+
+### Variation inheritance, default, and tolerance
+
+`variation` is a `FontVariationCoordinates` selection applied to the face that
+is finally selected for the span:
+
+- `null` inherits `fontInstanceDescriptor.variation` from the paragraph;
+- `FontVariationCoordinates.default` asks for no axes and resets the selected
+  face to its own default instance, which is distinct from `null`;
+- a non-empty selection is strict on the primary candidate — every requested
+  axis must be declared by the face, or the candidate is rejected — and
+  tolerant on fallback candidates: axes the fallback does not declare are
+  dropped and the line carries the `font.fallback.span-variation-projected`
+  `WARNING` diagnostic. A static fallback face therefore stays usable under a
+  variation span.
+
+A non-empty span variation cannot be combined with a paragraph descriptor that
+already carries non-empty `geometry.normalizedAxes`; the request is rejected as
+invalid input. A face whose `fvar` table is present but unreadable is a data failure,
+never treated as a static face.
+
+### v1 boundaries
+
+A span changes only the face and the variation applied to the selected run:
+font size, OpenType features, paint, and materialization remain paragraph-wide.
+The incremental and flow routes explicitly reject a request whose `styleSpans`
+is non-null with a typed invalid-input failure before any region query or state
+reuse, and the standalone editable-line facade composes a single instance and
+has no span input at all. Per-span size, features, and paint are deferred to an
+additive later phase.
+
+### Line-box rhythm
+
+Changing the face or variation of a run does not resize the line-box rhythm:
+`ParagraphConstraints.lineMetrics` fixes every line box, while a line's content
+envelope follows the instance of each run. Mixed-instance lines therefore keep
+one row pitch even when their content envelopes differ. A `LayoutContinuation`
+captures and compares `styleSpans`, so resuming with different spans is rejected
+as incompatible instead of silently reusing the published prefix.
+
 ## Line-breaking and shaping guarantees
 
 The paragraph route analyzes legal UAX #14 break opportunities with versioned
