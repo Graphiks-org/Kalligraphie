@@ -121,14 +121,17 @@ kotlin {
             // AGP 9's KMP device-test DSL offers no build-type lever, so the instrumentation APK is
             // debuggable, and the measurement runs on the managed emulator. androidx.benchmark
             // refuses both conditions; suppressing them is the tool's own sanctioned escape hatch,
-            // and the identity discloses the bias instead of hiding it. The per-test method and
-            // perfetto traces are disabled as well — the publication contract needs the measured
-            // medians and counters, not tens of megabytes of trace per profile.
+            // and the identity discloses the bias instead of hiding it.
             instrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "DEBUGGABLE,EMULATOR"
-            // The per-test method and perfetto traces weigh tens of megabytes each and their
-            // device-to-host pull has repeatedly aborted the run mid-way; the publication contract
-            // needs the measured medians and counters, not the traces.
+            // Method tracing and stack sampling are off: `profiling.mode` governs those, and the
+            // publication contract needs the measured medians and counters, not profiles.
             instrumentationRunnerArguments["androidx.benchmark.profiling.mode"] = "none"
+            // Full tracing is governed by its own argument, not by the profiling mode: with the
+            // default the tool writes a perfetto trace of tens of megabytes per profile, and the
+            // managed device's host-side pull of those files aborts the run part-way — measured
+            // twice before this line existed, once at the 25th profile and once at the 32nd. Turning
+            // it off leaves the measured medians, the allocation counts and the counters intact.
+            instrumentationRunnerArguments["androidx.benchmark.fullTracing.enable"] = "false"
             managedDevices {
                 localDevices {
                     create("mediumPhone") {
