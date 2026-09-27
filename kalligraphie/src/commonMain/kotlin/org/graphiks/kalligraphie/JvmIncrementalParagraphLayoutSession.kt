@@ -126,6 +126,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     private var publication: IncrementalLayoutResult.Success? = null
     private var publicationMetadata: PublishedWorkMetadata? = null
     private var closed: Boolean = false
+    private val lifecycle = PortableLock()
 
     /**
      * Computes and atomically publishes one complete incremental result.
@@ -136,8 +137,10 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
      *
      * @throws IllegalStateException when the session has already been closed.
      */
-    @Synchronized
-    public fun layout(request: JvmIncrementalParagraphLayoutRequest): IncrementalLayoutResult {
+    public fun layout(request: JvmIncrementalParagraphLayoutRequest): IncrementalLayoutResult =
+        lifecycle.withLock { layoutLocked(request) }
+
+    private fun layoutLocked(request: JvmIncrementalParagraphLayoutRequest): IncrementalLayoutResult {
         check(!closed) { "The JVM incremental paragraph layout session is closed." }
         val generation = ++nextGeneration
         latestAttempt = generation
@@ -173,8 +176,8 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     }
 
     /** Returns the latest complete immutable publication atomically, or `null` before first success. */
-    @Synchronized
-    public fun currentLayout(): IncrementalLayoutResult.Success? = publication
+    public fun currentLayout(): IncrementalLayoutResult.Success? =
+        lifecycle.withLock { publication }
 
     /**
      * Closes the owned HarfBuzz backend once.
@@ -182,24 +185,26 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
      * The operation is idempotent and serialized with computation and publication. Backend close
      * diagnostics cannot invalidate resource-free layouts that were already published.
      */
-    @Synchronized
-    override fun close() {
+    override fun close() = lifecycle.withLock { closeLocked() }
+
+    private fun closeLocked() {
         if (closed) return
         closed = true
         backend.close()
     }
 
     /** Exercises the same generation gate as normal publication for deterministic stale-result tests. */
-    @Synchronized
     internal fun publishForTesting(
         candidate: IncrementalLayoutResult.Success,
         generation: Long,
-    ): IncrementalLayoutResult = publish(
-        generation,
-        candidate,
-        completedWork = null,
-        compositionConfiguration = null,
-    )
+    ): IncrementalLayoutResult = lifecycle.withLock {
+        publish(
+            generation,
+            candidate,
+            completedWork = null,
+            compositionConfiguration = null,
+        )
+    }
 
     private fun publish(
         generation: Long,
@@ -645,7 +650,6 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
          *
          * @throws IllegalArgumentException when [cacheBudgetBytes] is negative.
          */
-        @JvmOverloads
         public fun open(
             cacheBudgetBytes: Long = DEFAULT_CACHE_BUDGET_BYTES,
             preparedFontCachePolicy: PreparedFontCachePolicy = PreparedFontCachePolicy.default,

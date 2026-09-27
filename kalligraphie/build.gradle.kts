@@ -15,6 +15,9 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        iosMain.dependencies {
+            implementation(libs.kotlinx.atomicfu)
+        }
         jvmTest.dependencies {
             implementation(kotlin("test"))
         }
