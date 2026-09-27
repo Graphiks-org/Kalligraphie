@@ -1178,6 +1178,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             verticalMetricsPolicy = verticalMetricsPolicy,
             cancellationToken = cancellationToken,
             operationProfile = operationProfile,
+            styleSpans = styleSpans,
         )
     }
 
@@ -1210,6 +1211,7 @@ public object FlowParagraphComposer : FlowParagraphLayouter {
             verticalMetricsPolicy = verticalMetricsPolicy,
             cancellationToken = cancellationToken,
             operationProfile = operationProfile,
+            styleSpans = styleSpans,
         )
 
     private fun ComposedParagraphLine.atFlowPosition(

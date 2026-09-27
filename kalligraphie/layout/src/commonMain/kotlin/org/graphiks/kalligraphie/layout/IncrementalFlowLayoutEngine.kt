@@ -538,4 +538,5 @@ private fun ParagraphLayoutRequest.forFlowSourceRange(sourceRange: TextRange): P
         verticalMetricsPolicy = verticalMetricsPolicy,
         cancellationToken = cancellationToken,
         operationProfile = operationProfile,
+        styleSpans = styleSpans,
     )
