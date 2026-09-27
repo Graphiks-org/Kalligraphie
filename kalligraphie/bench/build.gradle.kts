@@ -123,15 +123,14 @@ kotlin {
             // refuses both conditions; suppressing them is the tool's own sanctioned escape hatch,
             // and the identity discloses the bias instead of hiding it.
             instrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "DEBUGGABLE,EMULATOR"
-            // Method tracing and stack sampling are off: `profiling.mode` governs those, and the
-            // publication contract needs the measured medians and counters, not profiles.
+            // Method tracing and stack sampling are off — `profiling.mode` governs those, and a
+            // profile is not what the publication contract needs. It does **not** govern the
+            // perfetto trace the runner records per profile and hands to the managed device's
+            // host-side pull: that trace weighs tens of megabytes, no argument turns it off without
+            // also suppressing the measured files, and its pull has aborted runs part-way. The
+            // device's own storage fills up with those traces while the run proceeds, so the run
+            // procedure deletes the ones already pulled (see the module's measurement pages).
             instrumentationRunnerArguments["androidx.benchmark.profiling.mode"] = "none"
-            // Full tracing is governed by its own argument, not by the profiling mode: with the
-            // default the tool writes a perfetto trace of tens of megabytes per profile, and the
-            // managed device's host-side pull of those files aborts the run part-way — measured
-            // twice before this line existed, once at the 25th profile and once at the 32nd. Turning
-            // it off leaves the measured medians, the allocation counts and the counters intact.
-            instrumentationRunnerArguments["androidx.benchmark.fullTracing.enable"] = "false"
             managedDevices {
                 localDevices {
                     create("mediumPhone") {
