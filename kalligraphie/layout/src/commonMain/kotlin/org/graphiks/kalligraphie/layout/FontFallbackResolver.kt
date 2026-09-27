@@ -381,6 +381,11 @@ internal object FontFallbackResolver {
         val candidateRequirements = if (glyphless) FontAccessRequirementsSnapshot.layoutOnly() else requirements
         val spanPreferredFace = preferredFace(unit, request)
         val span = styleFor(unit, request)
+        val effectiveOrder = effectiveCandidates(unit, request)
+        // The primary candidate is the span-preferred face when the span names one, otherwise the
+        // first candidate of the effective order (the paragraph default). Strictness applies to it
+        // even for a variation-only span that names no face.
+        val primaryFace = spanPreferredFace ?: effectiveOrder.first().faceId
         // The preferred face is always tried first, so a different selection means it was rejected.
         fun selected(assigned: AssignedUnit): CandidateSelection {
             if (spanPreferredFace != null && assigned.record.id != spanPreferredFace) {
@@ -388,7 +393,7 @@ internal object FontFallbackResolver {
             }
             return CandidateSelection.Selected(assigned)
         }
-        effectiveCandidates(unit, request).forEach { candidate ->
+        effectiveOrder.forEach { candidate ->
             if (request.cancellationToken.isCancellationRequested()) {
                 return CandidateSelection.Cancelled(emptyList())
             }
@@ -426,7 +431,7 @@ internal object FontFallbackResolver {
             // independently of a cache hit or miss.
             val effectiveDescriptor = when (val applicability = variationApplicability(
                 face = record.id,
-                preferred = spanPreferredFace,
+                preferred = primaryFace,
                 span = span,
                 base = request.fontInstanceDescriptor,
                 lookup = { variationAxisLookup(record.id, face, variationAxes) },
@@ -1006,7 +1011,8 @@ internal object FontFallbackResolver {
      *
      * The lookup is evaluated lazily so a `null` or empty selection never reads `fvar`. A static
      * face is accepted for a fallback by dropping the undeclared axes; the same selection on the
-     * span-preferred (primary) face is rejected because the preference must be honoured or not at
+     * primary candidate (the span-preferred face, or the first candidate of the effective order
+     * when the span names no face) is rejected because the preference must be honoured or not at
      * all. Any unreadable `fvar` rejects the candidate for a non-empty selection, primary or
      * fallback, so a malformed table is never silently treated as "no axes".
      */

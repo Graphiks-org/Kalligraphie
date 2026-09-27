@@ -75,6 +75,35 @@ class StyleSpanVariationTest {
     }
 
     @Test
+    fun aVariationOnlySpanRejectsAStaticPrimaryAndFallsThroughToTheVariableCandidate() {
+        // Policy order deliberately puts a static face first and the variable Work Sans second.
+        val base = fixture(
+            "A",
+            faces = listOf(
+                FaceFixture("DejaVu Sans", resourceBytes(DEJAVU)),
+                FaceFixture("Work Sans", resourceBytes(WORK_SANS)),
+                FaceFixture("Liberation Sans", resourceBytes(LIBERATION)),
+            ),
+        )
+        val fixture = base.withStyles(
+            ParagraphStyleSnapshot(
+                listOf(ParagraphStyleSpan(base.snapshot.range, variation = wght(700f))),
+            ),
+        )
+
+        val line = compose(fixture).lines.single().line
+        val run = line.positionedGlyphRuns.single()
+
+        // The first effective candidate is the primary even though the span names no face: the
+        // static primary must be rejected rather than silently projecting the selection, and the
+        // variable fallback receives the complete wght=700 selection.
+        assertEquals(base.faceIds[1], run.fontInstanceKey.face)
+        assertTrue(run.fontInstanceKey.geometry.normalizedAxes.isNotEmpty())
+        assertTrue(line.diagnostics.any { it.code == "font.variation.not-variable" })
+        assertTrue(line.diagnostics.none { it.code == "font.fallback.span-variation-projected" })
+    }
+
+    @Test
     fun adjacentSpansWithDifferentVariationStayAsTwoRuns() {
         val base = fixture("ab")
         val fixture = base.withStyles(
