@@ -187,7 +187,13 @@ internal abstract class PortableScenario(
     final override val timedBoundary: String,
     final override val cacheState: String,
 ) : MeasurementScenario {
-    final override val scenarioRoute: ScenarioRoute = ScenarioRoute.PORTABLE_GLYPHS
+    /**
+     * The route a scenario declares, from which the registry derives the capability it needs.
+     * Portably materialized glyphs by default; the paragraph half overrides it. A mis-declared route
+     * is not cosmetic: it would let a platform run a profile its capabilities cannot serve, or drop
+     * one they do.
+     */
+    override val scenarioRoute: ScenarioRoute get() = ScenarioRoute.PORTABLE_GLYPHS
 
     private val recorded = ScenarioObservations()
     private var checksum = 0L

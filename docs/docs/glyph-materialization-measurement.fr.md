@@ -12,10 +12,15 @@ Le module enregistre trente-sept profils au total ; cette page couvre les trente
 qui lui appartiennent. Dix-neuf d’entre eux sont du travail portable sur les
 glyphes — les neuf profils de représentation et les dix étapes portables TrueType
 — et s’exécutent sur toutes les plateformes. Les onze autres composent le texte à
-travers la façade de paragraphe, qui exige la capacité `END_TO_END_LAYOUT` : ils
-sont réservés à la JVM, et le module les liste comme différés sur Android et iOS
-au lieu de publier silencieusement moins de profils. Les profils de ligne
-éditable et de layout incrémental sont documentés dans leurs propres pages.
+travers la façade de paragraphe, qui exige la capacité `END_TO_END_LAYOUT` :
+toutes les plateformes déclarent cette capacité depuis que les façades et
+l’analyse Unicode portable sont passées dans `commonMain`, donc ces onze profils
+s’exécutent aussi sur Android et sur le simulateur iOS. Un profil du module ne
+voyage pas — `ConcurrentResolveWarm` exige un instrument de harnais, quatre
+threads OS persistants avec un compteur d’allocation par thread — et le rapport
+iOS le nomme comme différé au lieu de mesurer une boucle séquentielle sous son
+nom. Les profils de ligne éditable et de layout incrémental sont documentés dans
+leurs propres pages.
 
 Le module enregistre les trente profils de cette page dans cet ordre :
 
@@ -37,7 +42,8 @@ Le module enregistre les trente profils de cette page dans cet ordre :
   texte-glyphe, métriques, contours et détachement sur un paragraphe d’éditeur
   Liberation Sans stable ; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, puis
-  `ConcurrentResolveWarm` sur ce même paragraphe.
+  `ConcurrentResolveWarm` sur ce même paragraphe ; le dernier s’exécute sur la JVM
+  et sur Android, là où l’instrument de workers existe.
 
 Pour les six profils directs historiques, un échantillon froid commence avant
 la création du catalogue embarqué et se termine après consommation de la
@@ -250,13 +256,16 @@ module, que git ignore :
 ```
 
 Les trois premières tâches sont opt-in : aucune n’appartient à `check`, aucune ne
-se planifie d’elle-même. La commande JVM mesure les trente-sept profils qu’elle
-peut servir ; les commandes iOS et Android mesurent les dix-neuf profils
-portables, car la moitié « paragraphe » exige `END_TO_END_LAYOUT`. La dernière
-joint les exécutions disponibles dans `build/bench/report-jvm.md`,
-`report-ios.md`, `report-android.md` et `report-comparison.md`, et échoue en
-nommant le chemin manquant lorsqu’une entrée est absente, plutôt que de publier
-un rapport auquel une plateforme manquerait en silence.
+se planifie d’elle-même. La commande JVM mesure les trente-sept profils que le
+module enregistre ; la commande Android mesure les mêmes trente-sept sur le
+runtime de l’appareil ; la commande iOS en mesure trente-six, car le harnais du
+simulateur n’a pas d’instrument de workers et déclare `ConcurrentResolveWarm`
+différé. La dernière joint les exécutions disponibles dans
+`build/bench/report-jvm.md`, `report-ios.md`, `report-android.md` et
+`report-comparison.md`, et échoue en nommant le chemin manquant lorsqu’une entrée
+est absente, plutôt que de publier un rapport auquel une plateforme manquerait en
+silence. Elle refuse aussi un rapport qui mesure moins de profils que sa
+plateforme n’en sert sans en nommer la raison.
 
 Les deux objectifs de latence nommés ci-dessous restent des observations qu’un
 opérateur lit dans le rapport ; ils ne peuvent faire échouer une exécution.

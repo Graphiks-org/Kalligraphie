@@ -8,6 +8,7 @@ import androidx.benchmark.junit4.measureRepeated
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlin.io.encoding.Base64
 import org.graphiks.kalligraphie.bench.fixture.ClasspathFixtureCorpus
+import org.graphiks.kalligraphie.bench.scenarios.threadedInstrumentScenarios
 import org.graphiks.kalligraphie.conformance.currentPortableCapabilityIdentity
 import org.junit.BeforeClass
 import org.junit.Rule
@@ -25,13 +26,15 @@ private fun publishLine(line: String) {
 }
 
 /**
- * The Android entry point of the portable glyph scenarios.
+ * The Android entry point of the portable measurement: the glyph profiles and, since the paragraph
+ * facades and the portable Unicode analysis became `commonMain` code, the paragraph profiles too.
  *
  * androidx.benchmark's Gradle plugin targets the classic AGP extensions, which the KMP device-test
  * DSL of AGP 9 does not provide, so the benchmark runs dependency-only: `BenchmarkRule` under
  * `AndroidBenchmarkRunner`, one explicit test per scenario, the corpus read through the class path
  * the device-test APK packages. The scenario selection is derived from the platform's capability
- * identity, never hand-written — a capability that stops being served fails the test that needs it.
+ * identity and its harness instruments, never hand-written — a capability that stops being served,
+ * or an instrument this harness lacks, fails the test that needs it.
  *
  * The lifecycle maps onto JUnit the way the scenario contract maps onto JMH: [prepareScenario]
  * opens the long-lived state untimed before the measurement, [measureRepeated] times the operation
@@ -42,10 +45,6 @@ private fun publishLine(line: String) {
 @RunWith(AndroidJUnit4::class)
 public class AndroidGlyphMaterializationBenchmark {    @get:Rule
     public val benchmarkRule: BenchmarkRule = BenchmarkRule()
-
-    private val scenarios: Map<String, MeasurementScenario> =
-        ScenarioRegistry.select(ClasspathFixtureCorpus(), currentPortableCapabilityIdentity())
-            .associateBy { it.name }
 
     @Test
     public fun colrColdNormalization() {
@@ -142,6 +141,96 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
         runScenario("TrueTypeWarmDetach")
     }
 
+    @Test
+    public fun interactiveEdit() {
+        runScenario("InteractiveEdit")
+    }
+
+    @Test
+    public fun viewportLayout() {
+        runScenario("ViewportLayout")
+    }
+
+    @Test
+    public fun cancellation() {
+        runScenario("Cancellation")
+    }
+
+    @Test
+    public fun borrowedFragmentedUtf8Decode() {
+        runScenario("BorrowedFragmentedUtf8Decode")
+    }
+
+    @Test
+    public fun borrowedFragmentedUtf16Decode() {
+        runScenario("BorrowedFragmentedUtf16Decode")
+    }
+
+    @Test
+    public fun coldMixedBidiLine() {
+        runScenario("ColdMixedBidiLine")
+    }
+
+    @Test
+    public fun warmMixedBidiLine() {
+        runScenario("WarmMixedBidiLine")
+    }
+
+    @Test
+    public fun renderableConsumerColdSingleFont() {
+        runScenario("RenderableConsumerColdSingleFont")
+    }
+
+    @Test
+    public fun renderableConsumerWarmSingleFont() {
+        runScenario("RenderableConsumerWarmSingleFont")
+    }
+
+    @Test
+    public fun renderableConsumerColdMixedBidi() {
+        runScenario("RenderableConsumerColdMixedBidi")
+    }
+
+    @Test
+    public fun renderableConsumerWarmMixedBidi() {
+        runScenario("RenderableConsumerWarmMixedBidi")
+    }
+
+    @Test
+    public fun sessionColdSingleFont() {
+        runScenario("SessionColdSingleFont")
+    }
+
+    @Test
+    public fun sessionWarmSingleFont() {
+        runScenario("SessionWarmSingleFont")
+    }
+
+    @Test
+    public fun sessionColdMixedBidi() {
+        runScenario("SessionColdMixedBidi")
+    }
+
+    @Test
+    public fun sessionWarmMixedBidi() {
+        runScenario("SessionWarmMixedBidi")
+    }
+
+    @Test
+    public fun fontAssetRetainReopenCold() {
+        runScenario("FontAssetRetainReopenCold")
+    }
+
+    @Test
+    public fun fontAssetRetainReopenWarm() {
+        runScenario("FontAssetRetainReopenWarm")
+    }
+
+    @Test
+    public fun concurrentResolveWarm() {
+        runScenario("ConcurrentResolveWarm")
+    }
+
     private fun runScenario(name: String) {
         val target = scenarios[name]
             ?: error("The Android capability identity does not serve the scenario $name.")
@@ -157,7 +246,10 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
         collectGarbageTwice()
         target.observations().count("measuredOperations", operations)
         val counters = target.observations().snapshot()
-        check(counters.values.all { it > 0L }) {
+        // The no-op guard is "nothing was consumed", not "every counter is positive": a cold
+        // profile legitimately observes zero on counters that count reuse or hits, and a warm
+        // session records its prepared-source bytes as zero because the backend was reused.
+        check(counters.isNotEmpty() && counters.values.any { it > 0L }) {
             "The scenario $name consumed nothing on Android and measured a no-op: $counters."
         }
         publishLine(JSONL_MARKER + renderLine(name, target.evidence, counters))
@@ -185,26 +277,44 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
     }
 
     private companion object {
-        const val CORPUS_ID = "portable-glyphs"
+        const val CORPUS_ID = "portable-glyphs-and-paragraph-layout"
         const val JSONL_MARKER = "KALLIGRAPHIE-BENCH-JSONL:"
         const val IDENTITY_MARKER = "KALLIGRAPHIE-BENCH-IDENTITY:"
 
-        /** The four fixtures the portable glyph scenarios read, and nothing else. */
+        /**
+         * The derived catalogue, built once for the class run instead of once per JUnit instance:
+         * the paragraph scenarios parse their DejaVu and Amiri fixtures in their constructors, which
+         * is untimed setup and must not repeat for every one of the thirty-seven tests.
+         */
+        val scenarios: Map<String, MeasurementScenario> = ClasspathFixtureCorpus().let { corpus ->
+            ScenarioRegistry.select(
+                corpus = corpus,
+                identity = currentPortableCapabilityIdentity(),
+                platformScenarios = threadedInstrumentScenarios(corpus),
+            )
+        }.associateBy { it.name }
+
+        /** The six fixtures the glyph and paragraph profiles read, and nothing else. */
         val MEASURED_CORPUS_PATHS = listOf(
             "/fonts/bungee-color/BungeeColor-Regular.ttf",
             "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
             "/fonts/skia-ebdt-format1/ebdt_fmt1.ttf",
             "/fonts/liberation/LiberationSans-Regular.ttf",
+            "/fonts/dejavu/DejaVuSans.ttf",
+            "/fonts/amiri/Amiri-Regular.ttf",
         )
 
         /**
          * The publication contract refuses an unnamed commit and unknown corpus: the identity line
-         * prints once per class run, before any profile, with the hashes of the four fixtures the
-         * portable scenarios read.
+         * prints once per class run, before any profile, with the hashes of the six fixtures the
+         * profiles read.
          */
         @BeforeClass
         @JvmStatic
         public fun printIdentity() {
+            // Touching the catalogue here builds it before the first timed test rather than during
+            // one, and refuses a run whose capability identity serves nothing.
+            check(scenarios.isNotEmpty()) { "The Android capability identity selects no scenario to measure." }
             val corpus = ClasspathFixtureCorpus()
             val hashes = MEASURED_CORPUS_PATHS.associateWith { path -> corpus.sha256Hex(path) }
             val identity = measurementIdentity("android", CORPUS_ID, hashes)

@@ -10,10 +10,14 @@ The module records thirty-seven profiles in total; this page covers the thirty
 that belong here. Nineteen of them are portable glyph work — the nine
 representation profiles and the ten portable TrueType stages — and they run on
 every platform. The remaining eleven compose text through the paragraph facade,
-which needs the `END_TO_END_LAYOUT` capability: they are JVM-only, and the module
-lists them as deferred on Android and iOS rather than silently publishing fewer
-profiles. The editable-line and incremental-layout profiles are documented in
-their own pages.
+which needs the `END_TO_END_LAYOUT` capability: every platform declares that
+capability since the facades and the portable Unicode analysis became
+`commonMain` code, so those eleven run on Android and on the iOS simulator as
+well. One profile of the module does not travel — `ConcurrentResolveWarm` needs a
+harness instrument, four persistent OS threads with a per-thread allocation
+counter, and the iOS report names it as deferred rather than measuring a
+sequential loop under its name. The editable-line and incremental-layout profiles
+are documented in their own pages.
 
 The module records the thirty profiles of this page in this order:
 
@@ -32,7 +36,8 @@ The module records the thirty profiles of this page in this order:
 - cold and warm portable TrueType preparation, text mapping, metrics, outlines,
   and detachment stages over one stable Liberation Sans editor paragraph; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, then
-  `ConcurrentResolveWarm` over that same paragraph.
+  `ConcurrentResolveWarm` over that same paragraph; the last one runs on the JVM
+  and on Android, where the worker instrument exists.
 
 For the six historical direct-glyph profiles, cold samples start before
 embedded-catalog creation and end after the returned immutable representation
@@ -220,13 +225,15 @@ ignores:
 ```
 
 The first three are opt-in: none of them is part of `check`, and none schedules
-itself. The JVM command measures all thirty-seven profiles it can serve;
-the iOS and Android commands measure the nineteen portable ones, because the
-paragraph half needs `END_TO_END_LAYOUT`. The last command joins whatever runs
-have produced into `build/bench/report-jvm.md`, `report-ios.md`,
+itself. The JVM command measures all thirty-seven profiles the module records; the
+Android command measures the same thirty-seven on the device runtime; the iOS
+command measures thirty-six, because the simulator harness has no worker
+instrument and reports `ConcurrentResolveWarm` as deferred. The last command
+joins whatever runs have produced into `build/bench/report-jvm.md`, `report-ios.md`,
 `report-android.md` and `report-comparison.md`, and fails naming the missing path
 when an input is absent rather than publishing a report with a platform silently
-missing.
+missing. It also refuses a report that measures fewer profiles than its platform
+serves without naming the reason.
 
 The two named latency objectives below remain observations an operator reads in
 the report; they cannot fail a run.

@@ -7,9 +7,10 @@ published benchmark result. The profiles execute the real
 the checked-in DejaVu and Amiri font fixtures.
 
 They belong to the module's paragraph half: they need the `END_TO_END_LAYOUT`
-capability, which is declared absent on Android and iOS. They are therefore
-JVM-only, and the module lists them as deferred on the platforms that cannot
-serve them instead of silently publishing fewer profiles.
+capability, which every platform declares since the facades and the portable
+Unicode analysis became `commonMain` code, so they run on the JVM, on Android and
+on the iOS simulator. The one profile a platform cannot serve is reported as
+deferred, by name, instead of the module silently publishing fewer profiles.
 
 The timed interval starts immediately before `session.layout(...)`. Snapshots,
 font catalogs, deltas, and requests are constructed before the clock starts.
@@ -42,9 +43,9 @@ iterations.
 The module measures with kotlinx-benchmark (JMH on the JVM): warm-up, iterations,
 the one-second iteration time and the JSON report format come from its benchmark
 configuration, not from environment variables. One command measures every
-profile the platform serves — these three are part of the thirty-seven the JVM
-runs. Results and counters are written under the module's `build` directory,
-which git ignores:
+profile the platform serves — these three are part of the thirty-seven the module
+records, and the iOS simulator runs thirty-six of them. Results and counters are
+written under the module's `build` directory, which git ignores:
 
 ```bash
 ./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark

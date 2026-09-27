@@ -10,10 +10,11 @@ module et jamais dans le cadre de `check`.
 
 Les profils de ligne éditable appartiennent à la moitié « paragraphe » du
 module. Ils composent le texte à travers la façade de paragraphe, qui exige la
-capacité `END_TO_END_LAYOUT` ; cette capacité est déclarée absente sur Android et
-iOS, ces profils sont donc réservés à la JVM, et le module les liste comme
-différés sur les plateformes qui ne peuvent pas les servir au lieu de publier
-silencieusement moins de profils.
+capacité `END_TO_END_LAYOUT` ; toutes les plateformes déclarent cette capacité
+depuis que les façades et l’analyse Unicode portable sont passées dans
+`commonMain`, donc ces profils s’exécutent sur la JVM, sur Android et sur le
+simulateur iOS. Le seul profil qu’une plateforme ne peut pas servir est nommé
+comme différé, au lieu que le module publie silencieusement moins de profils.
 
 Le corpus de texte réel fixe est `Edit سلام 😀 café`. Les profils de décodage
 UTF-8 et UTF-16 empruntent un stockage immuable appartenant à l’application au
@@ -72,7 +73,8 @@ Le module mesure avec kotlinx-benchmark (JMH sur la JVM) : échauffement,
 itérations, durée d’itération d’une seconde et format JSON du rapport viennent de
 sa configuration de `benchmark`, pas de variables d’environnement. Une seule
 commande mesure tous les profils que la plateforme sert — les profils de ligne
-éditable sont quatre des trente-sept que la JVM exécute. Résultats et compteurs
+éditable sont quatre des trente-sept que le module enregistre, et le simulateur
+iOS en exécute trente-six. Résultats et compteurs
 sont écrits sous le répertoire `build` du module, que git ignore :
 
 ```bash

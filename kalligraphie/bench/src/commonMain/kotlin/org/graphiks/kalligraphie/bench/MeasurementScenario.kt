@@ -51,6 +51,17 @@ public interface MeasurementScenario {
             ScenarioRoute.PARAGRAPH_LAYOUT -> PortableCapability.END_TO_END_LAYOUT
         }
 
+    /**
+     * The harness instrument this scenario needs, or null when the standard harness serves it.
+     *
+     * A capability says what the product serves; an instrument says what the harness can measure. A
+     * platform that serves the route but has no instrument for the pattern runs nothing here and
+     * reports the scenario as deferred, by name, rather than measuring a different pattern under the
+     * same profile name.
+     */
+    public val requiredInstrument: MeasurementInstrument?
+        get() = null
+
     /** Untimed, once per measurement run: open long-lived assets and seed caches. */
     public fun prepare() {}
 

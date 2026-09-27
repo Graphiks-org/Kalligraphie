@@ -74,11 +74,18 @@ private fun machineName(): String =
         .ifBlank { "unknown-host" }
 
 /**
+ * JVM instruments: `java.util.concurrent` supplies the persistent worker threads, and
+ * `com.sun.management.ThreadMXBean` the per-thread allocation counter.
+ */
+public actual val measurementInstruments: Set<MeasurementInstrument> =
+    setOf(MeasurementInstrument.PARALLEL_WORKERS)
+
+/**
  * The per-thread allocation probe from the original harness: `com.sun.management.ThreadMXBean` when
  * the JVM supports it, null otherwise. The JMH gc profiler is the primary instrument; this probe
  * remains for scenarios that measure inside workers, where the profiler cannot see.
  */
-public object ThreadAllocationProbe {
+public actual object ThreadAllocationProbe {
     private val bean: com.sun.management.ThreadMXBean? =
         (ManagementFactory.getThreadMXBean() as? com.sun.management.ThreadMXBean)?.takeIf { candidate ->
             candidate.isThreadAllocatedMemorySupported && runCatching {
@@ -86,6 +93,6 @@ public object ThreadAllocationProbe {
             }.isSuccess
         }
 
-    public fun currentBytes(): Long? =
+    public actual fun currentBytes(): Long? =
         bean?.getThreadAllocatedBytes(Thread.currentThread().threadId())?.takeIf { it >= 0L }
 }
