@@ -145,10 +145,12 @@ illisible constitue un échec de données, jamais une face statique.
 
 Une plage ne modifie que la face et la variation appliquées au run retenu : la
 taille de fonte, les fonctionnalités OpenType, la peinture et la matérialisation
-restent au niveau du paragraphe. Les parcours incrémental et flow rejettent
-explicitement une requête dont `styleSpans` n’est pas `null` par un échec
-d’entrée invalide typé, avant toute requête de région ou réutilisation d’état,
-et la façade de ligne éditable autonome compose une seule instance et ne porte
+restent au niveau du paragraphe. Les parcours flow rejettent explicitement une
+requête dont `styleSpans` n’est pas `null`, avant toute requête de région ou
+réutilisation d’état : le flow au niveau ligne retourne un
+`FlowCompositionError.ParagraphFailure` portant un `ParagraphLayoutError.InvalidInput`,
+et le parcours flow incrémental retourne un `FlowCompositionError.IncompatibleState`.
+La façade de ligne éditable autonome compose une seule instance et ne porte
 aucune entrée de plage. La taille, les fonctionnalités et la peinture par plage
 sont reportées à une phase additive ultérieure.
 

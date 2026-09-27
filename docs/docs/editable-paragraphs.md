@@ -140,10 +140,12 @@ never treated as a static face.
 
 A span changes only the face and the variation applied to the selected run:
 font size, OpenType features, paint, and materialization remain paragraph-wide.
-The incremental and flow routes explicitly reject a request whose `styleSpans`
-is non-null with a typed invalid-input failure before any region query or state
-reuse, and the standalone editable-line facade composes a single instance and
-has no span input at all. Per-span size, features, and paint are deferred to an
+The flow routes explicitly reject a request whose `styleSpans` is non-null
+before any region query or state reuse: the line-level flow route returns a
+`FlowCompositionError.ParagraphFailure` carrying a `ParagraphLayoutError.InvalidInput`,
+and the incremental flow route returns a `FlowCompositionError.IncompatibleState`.
+The standalone editable-line facade composes a single instance and has no span
+input at all. Per-span size, features, and paint are deferred to an
 additive later phase.
 
 ### Line-box rhythm
