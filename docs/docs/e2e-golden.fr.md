@@ -26,10 +26,12 @@ activé.
 
 Ses dépendances le tiennent hors du graphe consommateur : `commonMain` ne dépend
 que de `:kalligraphie:api`, et les source sets de test ajoutent `:kalligraphie`,
-`:kalligraphie:conformance` et `:kalligraphie:raster-cpu` — plus
-`:kalligraphie:layout`, `:kalligraphie:shaping`, `:kalligraphie:unicode` et les
-modules de police sur la JVM, dont les écrivains et les parcours ont besoin. Rien
-en production ne dépend de ce module, et il n'est jamais publié.
+`:kalligraphie:conformance` et `:kalligraphie:raster-cpu` ; la compilation JVM
+nomme en plus explicitement `:kalligraphie:layout`, `:kalligraphie:shaping`,
+`:kalligraphie:unicode` et les deux modules de police, dont les écrivains ont
+besoin, tandis que les autres cibles atteignent ces mêmes modules par l'API de
+`:kalligraphie` lui-même. Rien en production ne dépend de ce module, et il n'est
+jamais publié.
 
 Le modèle pur — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` et le digest SHA-256 — vit dans
@@ -38,8 +40,9 @@ deux registres de renderers — y compris ceux qui composent du texte à travers
 façade de paragraphe — le vérificateur, les ratchets de capacités et les fixtures
 sont des sources de test partagées, compilées dans chaque cible de test qui peut
 les exécuter et lisant leurs octets via un `FixtureCorpus` injecté plutôt que par
-le class path ; seuls les écrivains et les parcours restent dans `jvmTest`. Une
-scène déclare la `CatalogRoute` dont elle a besoin, la plateforme déclare ses
+le class path ; seuls les écrivains restent dans `jvmTest`, et les journeys vivent
+dans leur propre répertoire, que les trois cibles capables de façonner compilent.
+Une scène déclare la `CatalogRoute` dont elle a besoin, la plateforme déclare ses
 capacités portables, et le ratchet refuse un registre qui ne serait pas
 exactement ce que ces capacités impliquent. La compilation Android *host* est le
 seul endroit où ces deux diffèrent de la plateforme : elle s'exécute sur une JVM
@@ -204,6 +207,13 @@ Les deux axes restent délibérément séparés, sans double couverture :
 
 Une scène n'est promue depuis un journey que là où un digest de pixels prouve ce
 que la géométrie ne couvre pas ; sinon la géométrie suffit.
+
+Les journeys eux-mêmes s'exécutent partout où la route de façonnage s'exécute. Ce
+sont des sources portables qui lisent le corpus injecté, et chacun d'eux compose du
+texte : la JVM, le runtime Android de l'appareil et le simulateur iOS les exécutent
+donc tous les trois, tandis que le test unitaire Android *host* — qui ne peut pas
+charger la bibliothèque partagée à travers laquelle la façade compose le texte —
+n'en porte aucun.
 
 Deux journeys ont migré ici : `AdvancedTypographyJourneyTest` et
 `CffOpenTypeJourneyTest`. Trois restent dans `:kalligraphie` :

@@ -25,10 +25,11 @@ and executes nothing, because no hosted runner can supply a device.
 
 Its dependencies keep it outside the consumer graph: `commonMain` depends only on
 `:kalligraphie:api`, and the test source sets add `:kalligraphie`,
-`:kalligraphie:conformance` and `:kalligraphie:raster-cpu` — plus
-`:kalligraphie:layout`, `:kalligraphie:shaping`, `:kalligraphie:unicode` and the
-font modules on the JVM, which the writers and the journeys need. Nothing in
-production depends on this module, and it is never published.
+`:kalligraphie:conformance` and `:kalligraphie:raster-cpu`; the JVM compilation
+additionally names `:kalligraphie:layout`, `:kalligraphie:shaping`,
+`:kalligraphie:unicode` and the two font modules explicitly, which the writers
+need, while the other targets reach the same modules through `:kalligraphie`'s own
+API. Nothing in production depends on this module, and it is never published.
 
 The pure model — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` and the SHA-256 digest — lives in
@@ -37,7 +38,8 @@ registries of renderers — including the ones that compose text through the
 paragraph facade — the verifier, the capability ratchets and the fixtures are
 shared test sources compiled into every test target that can run them, reading
 their bytes through an injected `FixtureCorpus` instead of the class path; only
-the writers and the journeys stay in `jvmTest`. A scene declares the
+the writers stay in `jvmTest`, and the journeys sit in their own directory, which
+the three targets that can shape compile. A scene declares the
 `CatalogRoute` it needs, the platform declares its portable capabilities, and the
 ratchet refuses a registry that is not exactly what those capabilities imply.
 The Android host compilation is the one place where those two differ from the
@@ -199,6 +201,12 @@ The two axes stay deliberately separate, with no double coverage:
 
 A scene is promoted from a journey only where a pixel digest proves something the
 geometry does not; otherwise the geometry is enough.
+
+The journeys themselves run wherever the shaping route does. They are portable
+sources reading the injected corpus, and every one of them composes text, so the
+JVM, the Android device runtime and the iOS simulator all execute them while the
+Android host unit test — which cannot load the shared library the facade composes
+text through — carries none.
 
 Two journeys moved here: `AdvancedTypographyJourneyTest` and
 `CffOpenTypeJourneyTest`. Three remain in `:kalligraphie`:

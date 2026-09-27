@@ -64,6 +64,15 @@ val iosFixtureCorpus by tasks.registering {
         // vertical Japanese face the mosaic composes.
         "/fonts/worksans/WorkSans[wght].ttf" to fixtures.file("fonts/worksans/WorkSans[wght].ttf").asFile,
         "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf" to fixtures.file("fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf").asFile,
+        // The journeys' own fixtures, which no scene reads: the Latin, Arabic and vertical CJK faces
+        // the typography journeys lay out, the kerning face the incremental session is built on, and
+        // the CFF faces with the fontTools outline oracles they are checked against.
+        "/fonts/dejavu/DejaVuSans.ttf" to fixtures.file("fonts/dejavu/DejaVuSans.ttf").asFile,
+        "/fonts/gdef-kern/GdefKerningFixture.ttf" to fixtures.file("fonts/gdef-kern/GdefKerningFixture.ttf").asFile,
+        "/fonts/cff-liberation/A-outline.txt" to fixtures.file("fonts/cff-liberation/A-outline.txt").asFile,
+        "/fonts/cff2-liberation/A-outline.txt" to fixtures.file("fonts/cff2-liberation/A-outline.txt").asFile,
+        "/fonts/cff2-variable/SyntheticVariable-CFF2.otf" to fixtures.file("fonts/cff2-variable/SyntheticVariable-CFF2.otf").asFile,
+        "/fonts/cff2-variable/A-outline.txt" to fixtures.file("fonts/cff2-variable/A-outline.txt").asFile,
         "/catalog/auto-sizing-exemptions.tsv" to resources.file("catalog/auto-sizing-exemptions.tsv").asFile,
         "/golden/manifest.tsv" to resources.file("golden/manifest.tsv").asFile,
     )
@@ -83,6 +92,16 @@ val sharedHarnessDirs = listOf("src/sharedTest/kotlin")
 
 /** The class-path corpus implementation, which only the JVM family can use. */
 val classpathCorpusDir = "src/classpathTest/kotlin"
+
+/**
+ * The journeys: the end-to-end scenarios that assert behaviour through the facades rather than
+ * through a committed fingerprint. Their sources are portable — they read every byte through the
+ * injected `FixtureCorpus` — so what keeps them off one compilation is its runtime, not its
+ * language: every journey composes text, and the Android host unit test runs on a JVM that cannot
+ * load the shared library the shaping route needs. The three targets that serve them are the JVM,
+ * the Android device runtime and the iOS simulator, the same three that verify the composed scenes.
+ */
+val journeyDirs = listOf("src/journeyTest/kotlin")
 
 kotlin {
     explicitApi()
@@ -128,6 +147,7 @@ kotlin {
             // verification and of the ratchets compiles into every test target that can run it.
             sharedHarnessDirs.forEach { directory -> kotlin.srcDir(directory) }
             kotlin.srcDir(classpathCorpusDir)
+            journeyDirs.forEach { directory -> kotlin.srcDir(directory) }
         }
         val androidHostTest by getting {
             dependencies {
@@ -146,6 +166,8 @@ kotlin {
             // host runs on a JVM and cannot load the Android native artifact, so it declares only
             // the capabilities its runtime serves. Each directory holds exactly one declaration.
             kotlin.srcDir("src/androidHostTest/kotlin")
+            // The journeys are absent here for that same reason and not because of where they are
+            // written: they compose text, so this compilation could not run them.
         }
         val androidDeviceTest by getting {
             dependencies {
@@ -163,6 +185,7 @@ kotlin {
             sharedHarnessDirs.forEach { directory -> kotlin.srcDir(directory) }
             kotlin.srcDir(classpathCorpusDir)
             kotlin.srcDir("src/androidDeviceTest/kotlin")
+            journeyDirs.forEach { directory -> kotlin.srcDir(directory) }
         }
         val iosSimulatorArm64Test by getting {
             dependencies {
@@ -172,6 +195,7 @@ kotlin {
                 implementation(kotlin("test"))
             }
             sharedHarnessDirs.forEach { directory -> kotlin.srcDir(directory) }
+            journeyDirs.forEach { directory -> kotlin.srcDir(directory) }
             kotlin.srcDir(iosFixtureCorpus)
         }
     }

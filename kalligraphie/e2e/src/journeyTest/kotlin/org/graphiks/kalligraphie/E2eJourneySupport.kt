@@ -1,8 +1,6 @@
 package org.graphiks.kalligraphie
 
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
-import java.nio.file.Files
-import java.nio.file.Path
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontFaceId
