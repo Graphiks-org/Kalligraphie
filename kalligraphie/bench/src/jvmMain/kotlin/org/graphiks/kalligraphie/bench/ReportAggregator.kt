@@ -246,7 +246,7 @@ private fun renderIosReport(options: Map<String, String>, metadata: Map<String, 
             iterations = samples.size,
             latency = Percentiles.of(samples),
             consumed = counters,
-            figures = allocationFigures(null),
+            figures = iosFigures(),
         )
     }.sortedBy { profile -> metadata.keys.indexOfFirst { it == profile.name } }
 
@@ -279,6 +279,26 @@ private fun parseDeferredProfiles(markdown: String): Set<String> = markdown.line
     .map { line -> line.removePrefix(DEFERRED_PREFIX).substringBefore(" — ").trim() }
     .filter { it.isNotEmpty() }
     .toSet()
+
+/**
+ * The figures for a platform the aggregator does not run on, in that platform's own words.
+ *
+ * [allocationFigures] is a platform declaration and the aggregator is a JVM program: calling it
+ * would publish the JVM harness's reasons — "no native allocator instrument on the JVM harness",
+ * "JMH reports allocation rate" — inside an iOS or Android report, which says the wrong harness lost
+ * the figure. Each set below restates what that platform's own `allocationFigures` publishes.
+ */
+private fun iosFigures(): Map<String, MeasurementValue> = mapOf(
+    "Allocated bytes" to MeasurementValue.unavailable("no allocation instrument in the Kotlin/Native harness"),
+    "Retained heap" to MeasurementValue.unavailable("no live-set instrument in the Kotlin/Native harness"),
+    "Native memory" to MeasurementValue.unavailable("no native allocator instrument in the Kotlin/Native harness"),
+)
+
+private fun androidFigures(): Map<String, MeasurementValue> = mapOf(
+    "Allocated bytes" to MeasurementValue.unavailable("no allocation metric in the instrumentation benchmark"),
+    "Retained heap" to MeasurementValue.unavailable("no live-set instrument on the Android harness"),
+    "Native memory" to MeasurementValue.unavailable("no native allocator instrument on the Android harness"),
+)
 
 private const val DEFERRED_PREFIX = "Deferred on this platform: "
 
@@ -433,7 +453,7 @@ private fun renderAndroidReport(options: Map<String, String>, metadata: Map<Stri
             profile.allocationCount?.let { allocations ->
                 appendLine("- Allocation count: measured $allocations (androidx.benchmark allocation count per operation)")
             }
-            allocationFigures(null).entries.sortedBy { it.key }.forEach { (label, figure) ->
+            androidFigures().entries.sortedBy { it.key }.forEach { (label, figure) ->
                 appendLine("- $label: ${figure.state.name.lowercase()} — ${figure.detail}")
             }
         }
