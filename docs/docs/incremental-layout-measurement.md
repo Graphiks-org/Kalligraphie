@@ -6,10 +6,10 @@ published benchmark result. The profiles execute the real
 `JvmIncrementalParagraphLayoutSession`, Unicode analysis, embedded HarfBuzz, and
 the checked-in DejaVu and Amiri font fixtures.
 
-They belong to the module's paragraph half: they need the `END_TO_END_LAYOUT`
-capability, which is declared absent on Android and iOS. They are therefore
-JVM-only, and the module lists them as deferred on the platforms that cannot
-serve them instead of silently publishing fewer profiles.
+They belong to the module's paragraph half, which is measured on the JVM today:
+the paragraph scenarios and the support they use are still JVM sources, so the
+other platforms have none to run. A missing capability is no longer the reason: every
+platform declares `END_TO_END_LAYOUT` present.
 
 The timed interval starts immediately before `session.layout(...)`. Snapshots,
 font catalogs, deltas, and requests are constructed before the clock starts.

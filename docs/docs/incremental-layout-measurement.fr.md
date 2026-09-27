@@ -7,10 +7,11 @@ de benchmark (mesure comparative) publié. Les profils exécutent la vraie
 les fixtures (données de test fixes) de fontes DejaVu et Amiri versionnées dans
 le dépôt.
 
-Ils appartiennent à la moitié « paragraphe » du module : ils exigent la capacité
-`END_TO_END_LAYOUT`, déclarée absente sur Android et iOS. Ils sont donc réservés
-à la JVM, et le module les liste comme différés sur les plateformes qui ne
-peuvent pas les servir au lieu de publier silencieusement moins de profils.
+Ils appartiennent à la moitié « paragraphe » du module, mesurée sur la JVM
+aujourd'hui : les scénarios de paragraphe et le support qu'ils utilisent sont
+encore des sources JVM, donc les autres plateformes n'en ont aucun à exécuter.
+Une capacité manquante n'est plus la raison : chaque plateforme
+déclare `END_TO_END_LAYOUT` présente.
 
 L’intervalle chronométré commence immédiatement avant
 `session.layout(...)`. Les snapshots (instantanés immuables), catalogues de

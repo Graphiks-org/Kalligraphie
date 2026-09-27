@@ -8,10 +8,10 @@ runs only through the module's `jvmBenchmarkBenchmark` task and never as part of
 `check`.
 
 The editable-line profiles belong to the module's paragraph half. They compose
-text through the paragraph facade, which needs the `END_TO_END_LAYOUT`
-capability; that capability is declared absent on Android and iOS, so these
-profiles are JVM-only, and the module lists them as deferred on the platforms
-that cannot serve them instead of silently publishing fewer profiles.
+text through the paragraph facade. That half is measured on the JVM today: the
+paragraph scenarios and the support they use are still JVM sources, so the other
+platforms have none to run. A missing capability is no longer the reason: every
+platform declares `END_TO_END_LAYOUT` present.
 
 The fixed real-text corpus is `Edit سلام 😀 café`. Its UTF-8 and UTF-16 decode
 profiles borrow immutable application-owned storage through four fragments:
