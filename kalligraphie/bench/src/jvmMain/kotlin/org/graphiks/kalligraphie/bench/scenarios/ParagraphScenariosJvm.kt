@@ -156,6 +156,7 @@ private class IncrementalCancellation(private val corpus: FixtureCorpus) : Porta
 ) {
     private val fixture = incrementalRealFontFixture(corpus, INCREMENTAL_SOURCE_TEXT, INCREMENTAL_FONTS)
     private var session: JvmIncrementalParagraphLayoutSession? = null
+    private var maxCancellationDelayNanos = 0L
 
     override fun prepare() {
         val opened = openIncrementalSession()
@@ -179,7 +180,14 @@ private class IncrementalCancellation(private val corpus: FixtureCorpus) : Porta
             "Cancellation profile accepted only typed cancelled outcomes."
         }
         val signal = checkNotNull(token.signaledAt) { "Cancellation profile returned before its token signaled." }
-        record("cancellationDelayNanos", (kotlin.time.TimeSource.Monotonic.markNow() - signal).inWholeNanoseconds)
+        // The maximum observed delay is published, not the last reading: across millions of
+        // operations the last one can observe the cancellation in under the clock's resolution,
+        // and a zero would be refused by the profile contract as a no-op.
+        val delay = (kotlin.time.TimeSource.Monotonic.markNow() - signal).inWholeNanoseconds
+        if (delay > maxCancellationDelayNanos) {
+            maxCancellationDelayNanos = delay
+            record("cancellationDelayNanosMax", delay)
+        }
     }
 
     override fun release() {

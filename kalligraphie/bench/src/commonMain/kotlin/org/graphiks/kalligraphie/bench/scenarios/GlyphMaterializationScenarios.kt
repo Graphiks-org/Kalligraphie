@@ -158,6 +158,7 @@ private class CooperativeCancellation(private val fixture: CorpusFixture) : Port
     cacheState = "cache disabled so cancellation reaches a real two-layer COLR materialization instead of a cache hit",
 ) {
     private var opened: OpenAsset? = null
+    private var maxCancellationDelayNanos = 0L
 
     override fun prepare() {
         opened = openAsset(fixture, colrRequirements(), cachePolicy = FontMaterializationCachePolicy.disabled)
@@ -170,7 +171,14 @@ private class CooperativeCancellation(private val fixture: CorpusFixture) : Port
             "Cancellation profile must return a typed cancelled result."
         }
         val signal = checkNotNull(token.signaledAt) { "Cancellation token did not signal during materialization." }
-        record("cancellationDelayNanos", (kotlin.time.TimeSource.Monotonic.markNow() - signal).inWholeNanoseconds)
+        // The maximum observed delay is published, not the last reading: across millions of
+        // operations the last one can observe the cancellation in under the clock's resolution,
+        // and a zero would be refused by the profile contract as a no-op.
+        val delay = (kotlin.time.TimeSource.Monotonic.markNow() - signal).inWholeNanoseconds
+        if (delay > maxCancellationDelayNanos) {
+            maxCancellationDelayNanos = delay
+            record("cancellationDelayNanosMax", delay)
+        }
         count("glyphsMaterialized")
     }
 

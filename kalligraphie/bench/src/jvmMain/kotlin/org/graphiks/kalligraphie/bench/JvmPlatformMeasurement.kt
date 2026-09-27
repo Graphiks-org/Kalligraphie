@@ -29,13 +29,14 @@ public actual fun measurementIdentity(
 )
 
 /**
- * JVM figures: JMH's `gc.alloc.rate.norm` provides the per-operation allocation, reported by the
- * caller as [allocatedBytes]. Live-set and native sizes have no instrument in this harness and are
- * published as unavailable rather than estimated.
+ * JVM figures: the per-thread allocation probe inside the measured method provides the
+ * per-operation allocation, reported by the caller as [allocatedBytes] — the kotlinx-benchmark
+ * runner is not jmh.Main and ignores JMH profilers. Live-set and native sizes have no instrument
+ * in this harness and are published as unavailable rather than estimated.
  */
 public actual fun allocationFigures(allocatedBytes: Long?): Map<String, MeasurementValue> = mapOf(
     "Allocated bytes" to (
-        allocatedBytes?.let { MeasurementValue.measured(it, "JMH gc.alloc.rate.norm over the measured iterations") }
+        allocatedBytes?.let { MeasurementValue.measured(it, "per-thread allocation probe across the measured iterations") }
             ?: MeasurementValue.unavailable("this scenario ran without an allocation instrument")
         ),
     "Retained heap" to MeasurementValue.unavailable(
