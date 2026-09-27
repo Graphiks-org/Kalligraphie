@@ -6,9 +6,9 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Statut | Entrées |
 | --- | --- |
-| Supporté | 23 |
+| Supporté | 24 |
 | Rejet attendu | 2 |
-| Pas encore | 11 |
+| Pas encore | 10 |
 | Hors périmètre | 1 |
 
 ## CONTAINER
@@ -84,7 +84,7 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
 | `composition.every-route-mosaic` | Sept routes de rendu dans une seule image : un mot en contour TrueType, le A majuscule en contour CFF 1 puis CFF 2, une ligne dont les trois scripts sont résolus par repli entre trois polices, un glyphe à quatre graisses, une peinture couleur et un strike bitmap, composés sur un même canvas couleur à marge gauche partagée | liberation | Supporté depuis 58ba2267 |
-| `composition.per-span-style` | Style par plage à l'intérieur d'un paragraphe : un segment qui garde sa propre police ou sa propre instance de variation alors que le reste du paragraphe en garde une autre | — | Pas encore ; aucune entrée publique ne porte la demande |
+| `composition.per-span-style` | Style par plage à l'intérieur d'un paragraphe : un segment qui garde sa propre police ou sa propre instance de variation alors que le reste du paragraphe en garde une autre | worksans | Supporté depuis c2a382a7 |
 
 ## ROBUSTNESS
 

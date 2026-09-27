@@ -39,6 +39,7 @@ class ExpectationCatalogRatchetTest {
                 "script.mixed.composed-line",
                 "variation.wght-ladder",
                 "composition.every-route-mosaic",
+                "composition.per-span-style",
             ),
             supportedEntriesFor(everyCapability) - glyphOnly,
             "the paragraph route must excuse exactly the scenes that compose text",

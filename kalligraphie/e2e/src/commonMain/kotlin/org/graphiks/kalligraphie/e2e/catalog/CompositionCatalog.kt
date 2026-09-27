@@ -75,13 +75,24 @@ public object CompositionCatalog {
                     "police ou sa propre instance de variation alors que le reste du paragraphe en " +
                     "garde une autre",
             ),
-            font = null,
-            status = CatalogStatus.NotYet(
-                trackingIssue = "spec:§3 composition",
-                currentBehavior = null,
-                unpinnedReason = UnpinnedReason.NO_API_SURFACE,
+            font = CorpusKeys.WORK_SANS,
+            status = CatalogStatus.Supported(sinceCommit = "c2a382a7"),
+            tags = setOf("composition:per-span", "variation:wght", "auto-sized"),
+            // The scene resolves its code points through `cmap`, shapes every run (GDEF/GPOS/GSUB),
+            // instantiates the variable primary through `fvar`/`avar` for its `wght` span, varies
+            // the outlines through `gvar` and the advances through `HVAR`, and reads `glyf`/`loca`/
+            // `hmtx` for the result. `STAT` and `gasp` stay carried and unread; see CatalogClaims.
+            tables = setOf("avar", "cmap", "fvar", "gvar", "GDEF", "glyf", "GPOS", "GSUB", "HVAR", "hmtx", "loca"),
+            family = GoldenSceneFamily.PARAGRAPH,
+            frame = SceneFramePolicy.AutoSized(padding = 2),
+            route = CatalogRoute.PARAGRAPH_LAYOUT,
+            composedOf = listOf(CorpusKeys.LIBERATION, CorpusKeys.AMIRI),
+            composedTables = mapOf(
+                // The promoted Liberation run and the Amiri last-resort run are shaped and drawn
+                // exactly as their own line entries claim them, with no table beyond those claims.
+                CorpusKeys.LIBERATION to setOf("cmap", "glyf", "loca", "hmtx", "GDEF", "GPOS", "GSUB"),
+                CorpusKeys.AMIRI to setOf("GDEF", "GPOS", "GSUB", "cmap", "glyf", "hmtx", "loca"),
             ),
-            tags = setOf("documented-only"),
         ),
     )
 }
