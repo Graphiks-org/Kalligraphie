@@ -2,8 +2,6 @@
 
 package org.graphiks.kalligraphie
 
-import java.util.concurrent.locks.ReentrantLock
-import kotlin.concurrent.withLock
 import org.graphiks.kalligraphie.api.EditableLineError
 import org.graphiks.kalligraphie.api.EditableLineResult
 import org.graphiks.kalligraphie.api.EditorOperationContext
@@ -34,9 +32,11 @@ import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 public class JvmEditableLineLayoutSession private constructor(
     private val backend: ShapingBackend,
 ) {
-    private val lifecycle = ReentrantLock(true)
-    private val lifecycleChanged = lifecycle.newCondition()
-    private val currentThreadOperations = ThreadLocal.withInitial { 0 }
+    private val lifecycle = PortableConditionLock()
+
+    // How many operations each thread is running, keyed by that thread's own platform object.
+    // Only ever read or written while `lifecycle` is held, which is what makes a plain map safe.
+    private val operationsByThread = mutableMapOf<Any, Int>()
     private var state: LifecycleState = LifecycleState.OPEN
     private var activeOperations: Int = 0
     private var publishedCloseResult: FontOperationResult<Unit>? = null
@@ -78,21 +78,10 @@ public class JvmEditableLineLayoutSession private constructor(
      * normally and the session remains usable and ordinarily closable afterward.
      */
     public fun close(): FontOperationResult<Unit> {
-        lifecycle.withLock {
-            if (currentThreadOperations.get() > 0) return reentrantCloseFailure()
-            when (state) {
-                LifecycleState.OPEN -> {
-                    state = LifecycleState.CLOSING
-                    while (activeOperations > 0) lifecycleChanged.awaitUninterruptibly()
-                }
-
-                LifecycleState.CLOSING -> {
-                    while (state != LifecycleState.CLOSED) lifecycleChanged.awaitUninterruptibly()
-                    return checkNotNull(publishedCloseResult)
-                }
-
-                LifecycleState.CLOSED -> return checkNotNull(publishedCloseResult)
-            }
+        when (val preparation = lifecycle.withLock { prepareClose() }) {
+            is ClosePreparation.Rejected -> return preparation.result
+            is ClosePreparation.AlreadyClosed -> return preparation.result
+            ClosePreparation.CloseNow -> Unit
         }
         val closeResult = try {
             backend.close()
@@ -109,30 +98,60 @@ public class JvmEditableLineLayoutSession private constructor(
         lifecycle.withLock {
             publishedCloseResult = closeResult
             state = LifecycleState.CLOSED
-            lifecycleChanged.signalAll()
+            lifecycle.signalAll()
         }
         return closeResult
     }
 
+    /**
+     * Runs under the lock and decides what [close] may do.
+     *
+     * A reentrant close from an admitted layout on this thread is rejected before an open session's
+     * state changes. Otherwise the first caller moves the session away from open admission and, for
+     * an open session, waits here until every admitted layout has finished; concurrent and later
+     * callers wait for that same completion and then receive the published result.
+     */
+    private fun prepareClose(): ClosePreparation {
+        if ((operationsByThread[currentThreadToken()] ?: 0) > 0) {
+            return ClosePreparation.Rejected(reentrantCloseFailure())
+        }
+        when (state) {
+            LifecycleState.OPEN -> {
+                state = LifecycleState.CLOSING
+                while (activeOperations > 0) lifecycle.awaitUninterruptibly()
+                return ClosePreparation.CloseNow
+            }
+
+            LifecycleState.CLOSING -> {
+                while (state != LifecycleState.CLOSED) lifecycle.awaitUninterruptibly()
+                return ClosePreparation.AlreadyClosed(checkNotNull(publishedCloseResult))
+            }
+
+            LifecycleState.CLOSED -> return ClosePreparation.AlreadyClosed(checkNotNull(publishedCloseResult))
+        }
+    }
+
     private fun acquireOperation(): Boolean = lifecycle.withLock {
-        if (state != LifecycleState.OPEN) return false
+        if (state != LifecycleState.OPEN) return@withLock false
         activeOperations += 1
-        currentThreadOperations.set(currentThreadOperations.get() + 1)
+        val token = currentThreadToken()
+        operationsByThread[token] = (operationsByThread[token] ?: 0) + 1
         true
     }
 
     private fun releaseOperation() {
         lifecycle.withLock {
             check(activeOperations > 0) { "An editable-line session operation was released more than once." }
-            val threadOperationCount = currentThreadOperations.get()
+            val token = currentThreadToken()
+            val threadOperationCount = operationsByThread[token] ?: 0
             check(threadOperationCount > 0) { "The current thread does not own an editable-line session operation." }
             if (threadOperationCount == 1) {
-                currentThreadOperations.remove()
+                operationsByThread.remove(token)
             } else {
-                currentThreadOperations.set(threadOperationCount - 1)
+                operationsByThread[token] = threadOperationCount - 1
             }
             activeOperations -= 1
-            if (activeOperations == 0) lifecycleChanged.signalAll()
+            if (activeOperations == 0) lifecycle.signalAll()
         }
     }
 
@@ -176,5 +195,17 @@ public class JvmEditableLineLayoutSession private constructor(
         OPEN,
         CLOSING,
         CLOSED,
+    }
+
+    /** What [close] may do, decided under the lock by [prepareClose]. */
+    private sealed interface ClosePreparation {
+        /** This call owns the close: the session is no longer admitting layouts. */
+        data object CloseNow : ClosePreparation
+
+        /** Another call already completed the close; its published result is the answer. */
+        class AlreadyClosed(val result: FontOperationResult<Unit>) : ClosePreparation
+
+        /** The call came from an admitted layout on this thread; it must not close the session. */
+        class Rejected(val result: FontOperationResult<Unit>) : ClosePreparation
     }
 }
