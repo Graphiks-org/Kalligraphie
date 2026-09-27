@@ -25,21 +25,25 @@ and executes nothing, because no hosted runner can supply a device.
 
 Its dependencies keep it outside the consumer graph: `commonMain` depends only on
 `:kalligraphie:api`, and the test source sets add `:kalligraphie`,
-`:kalligraphie:conformance`, `:kalligraphie:raster-cpu`, `:kalligraphie:font:core`
-and `:kalligraphie:font:sfnt` — plus `:kalligraphie:layout`, `:kalligraphie:shaping`
-and `:kalligraphie:unicode` on the JVM, where the paragraph-facade scenes run.
-Nothing in production depends on this module, and it is never published.
+`:kalligraphie:conformance` and `:kalligraphie:raster-cpu` — plus
+`:kalligraphie:layout`, `:kalligraphie:shaping`, `:kalligraphie:unicode` and the
+font modules on the JVM, which the writers and the journeys need. Nothing in
+production depends on this module, and it is never published.
 
 The pure model — `GoldenImage`, `GoldenScene`, `GoldenFingerprint`,
 `GoldenManifest`, `GoldenComparison` and the SHA-256 digest — lives in
-`commonMain`, with no platform type. The catalog, the scene materializer, the
-portable renderers, the verifier, the capability ratchets and the fixtures are
+`commonMain`, with no platform type. The catalog, the scene materializer, both
+registries of renderers — including the ones that compose text through the
+paragraph facade — the verifier, the capability ratchets and the fixtures are
 shared test sources compiled into every test target that can run them, reading
 their bytes through an injected `FixtureCorpus` instead of the class path; only
-the paragraph-facade renderers, the writers and the journeys stay in `jvmTest`. A
-scene declares the `CatalogRoute` it needs, the platform declares its portable
-capabilities, and the ratchet refuses a registry that is not exactly what those
-capabilities imply.
+the writers and the journeys stay in `jvmTest`. A scene declares the
+`CatalogRoute` it needs, the platform declares its portable capabilities, and the
+ratchet refuses a registry that is not exactly what those capabilities imply.
+The Android host compilation is the one place where those two differ from the
+platform: it runs on a JVM and cannot load the shared library the shaping route
+needs, so it declares the portable analysis and the portable glyph route and
+carries the portable scenes alone.
 
 Protection is free on the reference platform: the root `check` runs
 `:kalligraphie:e2e:jvmTest` like any other subproject, and the existing
@@ -212,10 +216,11 @@ stay per consumer — `:kalligraphie:e2e` defines its own thin builders reading
 
 ## Known limitations
 
-- The paragraph-authored scenes — the composed lines, the weight ladder and the
-  mosaic — execute on the JVM only. They wait for a portable Unicode-analysis
-  backend, and the capability ratchet will demand them on every target the day it
-  lands.
+- The Android host compilation verifies the portable scenes only. It runs on a
+  JVM and cannot load the shared library the shaping route needs, so it declares
+  the portable Unicode analysis and the portable glyph route; the device runtime
+  carries the full declaration and the composed scenes, and so do the JVM and the
+  iOS simulator.
 - `iosArm64` compiles but executes nothing: no hosted runner can supply a device.
 - Comparison is exact; a non-deterministic rendering route would require
   introducing a tolerance.

@@ -33,16 +33,21 @@ retourné lorsque — et seulement lorsque — la capacité est indisponible.
 | Plateforme | Analyse Unicode | Shaping (façonnage) | Mise en page de bout en bout (end-to-end layout) | Variantes de représentation des glyphes | Profil |
 | --- | --- | --- | --- | --- | --- |
 | JVM | Présente | Présent | Présente | Présentes | `jvm-reference` |
-| iOS | Absente | Présent | Absente | Présentes | `absent` / `bundled-harfbuzz` / `portable-glyph` |
-| Android | Absente | Présent | Absente | Présentes | `absent` / `bundled-harfbuzz` / `portable-glyph` |
+| iOS | Présente | Présent | Présente | Présentes | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
+| Android | Présente | Présent | Présente | Présentes | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
 
-Le JVM déclare la surface de capacités de référence complète. Android déclare le
-façonnage (shaping) présent via le backend HarfBuzz embarqué (API 28+), et iOS
-déclare le façonnage (shaping) présent via le backend HarfBuzz embarqué ; les deux
-cibles mobiles déclarent l'analyse Unicode et la mise en page de bout en bout
-`absent` ainsi que la route de représentation des glyphes présente. Le diagnostic
+Chaque plateforme déclare la surface de capacités portables complète, et les
+résultats sont les mêmes sur chacune d'elles. Le JVM est la référence. Android et
+iOS prennent le façonnage (shaping) du backend HarfBuzz embarqué (Android exige
+l'API 28 ou ultérieure), la route de représentation des glyphes du code portable,
+et les deux capacités restantes du code portable de ce dépôt : l'analyse Unicode
+et le découpage de ligne se résolvent depuis les tables Unicode 16.0 générées, et
+la façade paragraphe compose le texte à travers elles, si bien que le moteur
+Unicode propre à un appareil ne peut pas changer un résultat. Le diagnostic
 d'absence est émis pour chaque capacité absente, indépendamment du fait qu'un
-appelant la requière (requires).
+appelant la requière (requires) ; aucune capacité n'est absente nulle part, donc
+rien ne l'émet aujourd'hui, et la déclaration le porte toujours par plateforme
+pour la prochaine plateforme incomplète.
 
 ## Couverture des tests
 
@@ -90,12 +95,16 @@ géométrie portable existera à comparer.
 
 ## Limites connues
 
-- L'analyse Unicode portable et la mise en page de bout en bout appartiennent à
-  des chantiers distincts. Android déclare le façonnage (shaping) présent via le
-  backend HarfBuzz embarqué, qui exige l'API 28 ou ultérieure ; le socle Android
-  partagé a été relevé de l'API 24 à l'API 28, un changement cassant délibéré
-  pour les consommateurs API 24–27. iOS déclare le façonnage (shaping) présent
-  via le backend HarfBuzz embarqué et l'analyse absente.
+- Android déclare le façonnage (shaping) présent via le backend HarfBuzz
+  embarqué, qui exige l'API 28 ou ultérieure ; le socle Android partagé a été
+  relevé de l'API 24 à l'API 28, un changement cassant délibéré pour les
+  consommateurs API 24–27. iOS déclare le façonnage (shaping) présent via le
+  backend HarfBuzz embarqué.
+- La compilation de test Android *host* déclare moins que la plateforme Android :
+  elle s'exécute sur une JVM et ne peut pas charger la bibliothèque partagée dont
+  la route de façonnage a besoin, donc elle ne déclare que l'analyse Unicode
+  portable et la route portable des glyphes. Le runtime de l'appareil porte la
+  déclaration complète.
 - La lecture et la rastérisation des polices ne font pas partie de ce module.
 - `iosArm64` est compilé mais les tests s'exécutent sur `iosSimulatorArm64` ;
   l'exécution sur appareil physique n'est pas effectuée sur les runners

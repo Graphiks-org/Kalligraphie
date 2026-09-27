@@ -16,22 +16,22 @@ code lives and why.
 | --- | --- | --- |
 | `commonMain` | The catalog model (`CatalogEntry`, its axes, routes, statuses and audit), the canonical image and its geometry (`GoldenImage`, `GoldenInkBox`, `GoldenImageReframer`, `GoldenOrientation`), the claims export (`CatalogClaims`) and the matrix renderer (`CatalogMatrixRenderer`). | Every target |
 | `commonTest` | The tests of that model, which need no font and no host. | `jvmTest`, `androidHostTest` and `iosSimulatorArm64Test`. `androidDeviceTest` cannot see `commonTest` in this repository, so the device run executes the shared harness — scenes, verifier and ratchets — and not the model tests. |
-| `sharedTest` | The portable half of the harness: the corpus seam (`FixtureCorpus`), the scene renderers that need only the portable glyph route, the scene materializer and its catalog, the probes, the golden verifier, the capability ratchets, and the tests of all of them. | `jvmTest`, `androidHostTest`, `androidDeviceTest`, `iosSimulatorArm64Test` |
+| `sharedTest` | The whole harness: the corpus seam (`FixtureCorpus`), both registries of scene renderers — the portable glyph route and the paragraph route, which every platform can now serve — the scene materializer and its catalog, the probes, the golden verifier, the capability ratchets, and the tests of all of them. | `jvmTest`, `androidHostTest`, `androidDeviceTest`, `iosSimulatorArm64Test` |
 | `classpathTest` | The corpus implementation of the JVM and Android family: fonts and committed resources read through the class loader. | `jvmTest` and the two Android test compilations |
-| `androidFamilyTest` | The Android test environment, shared by the host and device compilations so the two cannot drift. | `androidHostTest`, `androidDeviceTest` |
+| `androidHostTest`, `androidDeviceTest` | The Android test environments, one per compilation. They share the harness but not the declaration: the device runs on ART and declares the platform's full capability surface, while the host runs on a JVM and cannot load the shared library the shaping route needs, so it declares the portable analysis and the portable glyph route alone. | the respective Android test compilation |
 | `harnessResources` | The committed harness resources: the golden manifest, the auto-sizing exemptions, the claims export. Wired as a resource directory where the platform has a class path, embedded where it does not. | Every test target |
-| `jvmTest` | What genuinely needs this platform: the paragraph-facade renderers (`JvmSceneRenderers` — the composed lines, the weight ladder, the mosaic), the writers (`updateE2eGolden`, the matrix, the claims, the dumps), the journeys, and the reference platform's declaration (`E2eTestEnvironment`). | JVM only |
-| `iosSimulatorArm64Test` | The embedded corpus (`EmbeddedFixtureCorpus`, fed by the generated `E2eFixtureCorpus` source) and the iOS declaration. The paragraph-facade scenes are absent: their renderers do not compile here. | iOS simulator |
+| `jvmTest` | What genuinely needs this platform: the writers (`updateE2eGolden`, the matrix, the claims, the dumps), the journeys, and the reference platform's declaration (`E2eTestEnvironment`). | JVM only |
+| `iosSimulatorArm64Test` | The embedded corpus (`EmbeddedFixtureCorpus`, fed by the generated `E2eFixtureCorpus` source) and the iOS declaration, which now carries the composed scenes too. | iOS simulator |
 
-`sharedTest`, `classpathTest` and `androidFamilyTest` are not Kotlin source sets of their own: they
-are directories added to several test compilations with `kotlin.srcDir`. That is deliberate.
+`sharedTest`, `classpathTest`, `androidHostTest` and `androidDeviceTest` are not Kotlin source sets
+of their own: they are directories added to test compilations with `kotlin.srcDir`. That is
+deliberate.
 `androidDeviceTest` cannot see `commonTest` in this repository, so a shared directory is the only
 way to compile one copy of the portable harness into every test target — the same arrangement
 `:kalligraphie:shaping` uses for its device goldens.
 
-The rule for new code: **a scene that needs no paragraph facade belongs in `sharedTest`, and reads
-its font bytes from the injected `FixtureCorpus`; anything that writes into the repository belongs
-in `jvmTest`.** Two facts fix that boundary:
+The rule for new code: **every scene belongs in `sharedTest` and reads its font bytes from the
+injected `FixtureCorpus`; anything that writes into the repository belongs in `jvmTest`.** Two facts fix that boundary:
 
 - **Font bytes reach the harness through the corpus seam, never through the class path.**
   `FixtureCorpus` has one implementation per platform family — `ClasspathFixtureCorpus` for JVM and
@@ -60,9 +60,10 @@ Two consequences worth stating, because they are the reason the route exists at 
 
 - A scene cannot be skipped in silence. An entry the platform does not verify is one its declared
   capabilities excuse, and the comparison is checked, not narrated.
-- When a portable Unicode-analysis backend lands and `END_TO_END_LAYOUT` flips to available on a
-  shipped target, the ratchet stops excusing the composed lines, the weight ladder and the mosaic
-  there and *demands* their renderers — the work becomes forced rather than remembered.
+- This is how the composed lines, the weight ladder and the mosaic reached Android and iOS: the
+  day `END_TO_END_LAYOUT` flipped to available there, the ratchet stopped excusing them and
+  *demanded* their renderers, and the portable text facades are what made them servable. The work
+  became forced rather than remembered.
 
 The deferred set is derived the same way: a platform's catalog reports its scenes, and
 `deferredSceneIds()` reports the manifest keys its capabilities excuse. The golden verifier receives

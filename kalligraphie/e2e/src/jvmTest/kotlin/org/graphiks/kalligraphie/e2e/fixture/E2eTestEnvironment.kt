@@ -3,7 +3,7 @@ package org.graphiks.kalligraphie.e2e.fixture
 import org.graphiks.kalligraphie.conformance.PortableCapability
 import org.graphiks.kalligraphie.conformance.currentPortableCapabilityIdentity
 import org.graphiks.kalligraphie.e2e.catalog.CatalogSceneRenderer
-import org.graphiks.kalligraphie.e2e.catalog.JvmSceneRenderers
+import org.graphiks.kalligraphie.e2e.catalog.ParagraphSceneRenderers
 import org.graphiks.kalligraphie.e2e.catalog.PortableSceneRenderers
 
 /**
@@ -23,7 +23,7 @@ internal object E2eTestEnvironment {
     val corpus: FixtureCorpus = ClasspathFixtureCorpus
 
     /** Every scene this platform registers, keyed by catalog entry id. */
-    val renderers: Map<String, CatalogSceneRenderer> = PortableSceneRenderers.byId + JvmSceneRenderers.byId
+    val renderers: Map<String, CatalogSceneRenderer> = PortableSceneRenderers.byId + ParagraphSceneRenderers.byId
 
     /** The portable capabilities this platform declares, read from `:kalligraphie:conformance`. */
     val capabilities: Set<PortableCapability> = currentPortableCapabilityIdentity()

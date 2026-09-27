@@ -98,7 +98,7 @@ pour la séquence complète et les frontières de durée de vie.
 
 ## Garanties de coupure et de composition
 
-Le parcours JVM analyse les opportunités légales UAX #14 avec des frontières
+Le parcours de paragraphe analyse les opportunités légales UAX #14 avec des frontières
 `TextIndex` versionnées, jamais des offsets UTF-16. Il choisit le dernier
 candidat légal qui tient dans la région ; si la première unité légale est plus
 large que la région, cette unité complète est publiée afin de garantir la

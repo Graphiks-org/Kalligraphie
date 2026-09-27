@@ -94,7 +94,7 @@ for the complete sequence and lifecycle boundaries.
 
 ## Line-breaking and shaping guarantees
 
-The JVM route analyzes legal UAX #14 break opportunities with versioned
+The paragraph route analyzes legal UAX #14 break opportunities with versioned
 `TextIndex` boundaries, never UTF-16 offsets. It chooses the last legal
 candidate that fits; when the first legal unit itself is wider than the region,
 it publishes that complete unit to guarantee progress.

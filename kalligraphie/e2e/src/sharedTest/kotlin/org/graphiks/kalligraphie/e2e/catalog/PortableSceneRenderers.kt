@@ -30,7 +30,7 @@ import org.graphiks.kalligraphie.raster.RasterResult
  * These render a font's bytes into outlines, paint graphs, bitmaps or sheets and hand the result to
  * the CPU rasterizer, so they run wherever the platform declares that route: they are the half of
  * the catalogue every platform can verify. The scenes that lay text out through the paragraph
- * facade are registered beside them in `JvmSceneRenderers`, and the harness checks that this map
+ * facade are registered beside them in `ParagraphSceneRenderers`, and the harness checks that this map
  * holds exactly the entries whose route the platform can serve.
  */
 internal object PortableSceneRenderers {
