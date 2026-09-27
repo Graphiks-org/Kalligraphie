@@ -43,7 +43,7 @@ import org.graphiks.kalligraphie.api.UnicodeAnalysisRequest
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.api.intersect
 import org.graphiks.kalligraphie.layout.ExactEditableLineLayouter
-import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
+import org.graphiks.kalligraphie.unicode.PortableUnicodeAnalyzer
 
 /**
  * Complete explicit input to the JVM reference editable-line journey.
@@ -312,7 +312,7 @@ public object JvmEditableLineFacade {
     ): FacadeUnicodeAnalysis = try {
         preflight(request, context)?.let { return FacadeUnicodeAnalysis.Result(it) }
         when (
-            val outcome = JvmUnicodeAnalyzer.create().analyze(
+            val outcome = PortableUnicodeAnalyzer.create().analyze(
                 snapshot = request.snapshot,
                 request = UnicodeAnalysisRequest(request.baseDirection, request.language),
                 profile = request.operationProfile.intersect(request.unicodeAnalysisProfile),

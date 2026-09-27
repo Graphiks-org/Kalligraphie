@@ -15,6 +15,16 @@ import org.graphiks.kalligraphie.api.UnicodeDataIdentity
 public object PortableUnicodeAnalyzer {
     /** Creates an analyzer backed internally by the generated Unicode 16.0 tables. */
     public fun create(): BoundedUnicodeAnalyzer = UcdUnicodeAnalyzer()
+
+    /**
+     * Validates [language] and returns the canonical BCP 47 form this analyzer uses.
+     *
+     * This is the portable counterpart of the JVM factory's own canonicalizer and produces the
+     * same form: it retains no resource and is safe for concurrent calls.
+     *
+     * @throws IllegalArgumentException when [language] is not a well-formed BCP 47 tag.
+     */
+    public fun canonicalizeLanguageTag(language: String): String = parseLanguageTag(language).canonicalTag
 }
 
 /**

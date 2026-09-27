@@ -76,9 +76,14 @@ internal class UcdLineBreakAnalyzer : BoundedLineBreakAnalyzer {
         context.sourceLimit(snapshot)?.let { return LineBreakAnalysisOutcome.LimitExceeded(it) }
         context.scalarLimit(snapshot)?.let { return LineBreakAnalysisOutcome.LimitExceeded(it) }
         if (context.isCancellationRequested()) return LineBreakAnalysisOutcome.Cancelled
+        // The line-break budget models the work the JVM reference does, because it is observable
+        // through the operation limit: one scalar of conversion, one fixed startup charge, and one
+        // per boundary the rules examine — which is the same count the reference's own iterator
+        // walks, since the two engines agree on where a break is legal.
         context.chargeLineBreakWork(snapshot.scalars.size.toLong())?.let {
             return LineBreakAnalysisOutcome.LimitExceeded(it)
         }
+        context.chargeLineBreakWork(1L)?.let { return LineBreakAnalysisOutcome.LimitExceeded(it) }
 
         val graphemeEnds = unicodeAnalysis.graphemeClusters
             .map { cluster -> cluster.endExclusive }
@@ -93,6 +98,7 @@ internal class UcdLineBreakAnalyzer : BoundedLineBreakAnalyzer {
         for (boundaryIndex in 1..snapshot.scalars.size) {
             val decision = decisions[boundaryIndex]
             if (decision == UnicodeLineBreakEngine.Decision.NO_BREAK) continue
+            context.chargeLineBreakWork(1L)?.let { return LineBreakAnalysisOutcome.LimitExceeded(it) }
             val boundary = snapshot.textIndexAtScalarBoundary(boundaryIndex)
             if (boundary !in graphemeEnds) continue
             val kind = when (decision) {

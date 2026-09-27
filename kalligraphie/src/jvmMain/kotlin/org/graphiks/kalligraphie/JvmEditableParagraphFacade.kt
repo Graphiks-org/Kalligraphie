@@ -41,8 +41,8 @@ import org.graphiks.kalligraphie.api.VerticalMetricsPolicy
 import org.graphiks.kalligraphie.api.toDiagnostic
 import org.graphiks.kalligraphie.layout.ParagraphComposer
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
-import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
-import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
+import org.graphiks.kalligraphie.unicode.PortableLineBreakAnalyzer
+import org.graphiks.kalligraphie.unicode.PortableUnicodeAnalyzer
 import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
 
 /**
@@ -367,7 +367,7 @@ public object JvmEditableParagraphFacade {
         }
         if (context.isCancellationRequested()) return ParagraphPreparation.Cancelled
         val unicodeAnalysis = when (
-            val analyzed = JvmUnicodeAnalyzer.create().analyze(
+            val analyzed = PortableUnicodeAnalyzer.create().analyze(
                 snapshot = request.snapshot,
                 request = UnicodeAnalysisRequest(request.baseDirection, request.language),
                 profile = context.profile.unicodeAnalysisProfile,
@@ -392,9 +392,9 @@ public object JvmEditableParagraphFacade {
         val canonicalLanguage = unicodeAnalysis.scriptLanguageRuns
             .firstOrNull()
             ?.language
-            ?: JvmUnicodeAnalyzer.canonicalizeLanguageTag(request.language)
+            ?: PortableUnicodeAnalyzer.canonicalizeLanguageTag(request.language)
         val lineBreakAnalysis = when (
-            val analyzed = JvmLineBreakAnalyzer.createBounded().analyze(
+            val analyzed = PortableLineBreakAnalyzer.createBounded().analyze(
                 request.snapshot,
                 unicodeAnalysis,
                 context,

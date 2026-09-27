@@ -45,8 +45,8 @@ import org.graphiks.kalligraphie.layout.IncrementalParagraphComputation
 import org.graphiks.kalligraphie.layout.IncrementalParagraphComputer
 import org.graphiks.kalligraphie.layout.IncrementalParagraphLayoutEngine
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
-import org.graphiks.kalligraphie.unicode.JvmLineBreakAnalyzer
-import org.graphiks.kalligraphie.unicode.JvmUnicodeAnalyzer
+import org.graphiks.kalligraphie.unicode.PortableLineBreakAnalyzer
+import org.graphiks.kalligraphie.unicode.PortableUnicodeAnalyzer
 
 /**
  * JVM-specific inputs layered on a validated portable [IncrementalLayoutRequest].
@@ -262,7 +262,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         val snapshot = request.input.text
         val documentEnd = snapshot.range.endExclusive
         val unicodeAnalysis = when (
-            val analyzed = JvmUnicodeAnalyzer.create().analyze(
+            val analyzed = PortableUnicodeAnalyzer.create().analyze(
                 snapshot,
                 UnicodeAnalysisRequest(sessionRequest.baseDirection, sessionRequest.language),
                 context,
@@ -286,7 +286,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             return ComputerWork(IncrementalParagraphComputation.Cancelled)
         }
         val lineBreakAnalysis = when (
-            val analyzed = JvmLineBreakAnalyzer.createBounded().analyze(snapshot, unicodeAnalysis, context)
+            val analyzed = PortableLineBreakAnalyzer.createBounded().analyze(snapshot, unicodeAnalysis, context)
         ) {
             is LineBreakAnalysisOutcome.Success -> analyzed.value
             is LineBreakAnalysisOutcome.LimitExceeded -> return ComputerWork(
