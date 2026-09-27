@@ -42,6 +42,19 @@
       "provides": ["Indic_Conjunct_Break"]
     },
     {
+      "key": "east-asian-width",
+      "url": "https://www.unicode.org/Public/16.0.0/ucd/EastAsianWidth.txt",
+      "unicodeVersion": "16.0.0",
+      "retrieved": "2026-09-26",
+      "license": "Unicode-3.0",
+      "sha256": "43adc76c0686a42cb370764eb8cfe2b2a45b10b855e5572a2db4a0eecce15d5b",
+      "sizeBytes": 199042,
+      "repositoryPath": null,
+      "cacheFile": "EastAsianWidth.txt",
+      "kdocFileName": "EastAsianWidth.txt",
+      "provides": ["East_Asian_Width"]
+    },
+    {
       "key": "emoji-data",
       "url": "https://www.unicode.org/Public/16.0.0/ucd/emoji/emoji-data.txt",
       "unicodeVersion": "16.0.0",
@@ -53,6 +66,19 @@
       "cacheFile": "emoji-data.txt",
       "kdocFileName": null,
       "provides": ["Extended_Pictographic"]
+    },
+    {
+      "key": "general-category",
+      "url": "https://www.unicode.org/Public/16.0.0/ucd/extracted/DerivedGeneralCategory.txt",
+      "unicodeVersion": "16.0.0",
+      "retrieved": "2026-09-26",
+      "license": "Unicode-3.0",
+      "sha256": "7676ab755a41ef82108460238569e60ad65c191ddafe61b36c6765ec1353f293",
+      "sizeBytes": 274423,
+      "repositoryPath": null,
+      "cacheFile": "DerivedGeneralCategory.txt",
+      "kdocFileName": "DerivedGeneralCategory.txt",
+      "provides": ["General_Category"]
     },
     {
       "key": "grapheme-break",

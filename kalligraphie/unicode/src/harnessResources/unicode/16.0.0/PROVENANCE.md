@@ -10,6 +10,7 @@ The files in this directory are unchanged copies of the Unicode Character Databa
 | `Scripts.txt` | <https://www.unicode.org/Public/16.0.0/ucd/Scripts.txt> | 16.0.0 | 2026-09-09 | `9e88f0a677df47311106340be8ede2ecdacd9c1c931831218d2be6d5508e0039` |
 | `ScriptExtensions.txt` | <https://www.unicode.org/Public/16.0.0/ucd/ScriptExtensions.txt> | 16.0.0 | 2026-09-09 | `049117ce26b9769fe2749b06eef51a50a89faef4a97764dd2d81daa715980700` |
 | `BidiBrackets.txt` | <https://www.unicode.org/Public/16.0.0/ucd/BidiBrackets.txt> | 16.0.0 | 2026-09-09 | `b8f32554c6f658821fb0ee742d21c5b1f2086b9bf13071fed04894b022f93d67` |
+| `LineBreakTest.txt` | <https://www.unicode.org/Public/16.0.0/ucd/auxiliary/LineBreakTest.txt> | 16.0.0 | 2026-09-26 | `910759a611a479f37df4f535d2e64d7589be3c5ac5f7491cf1fb4fa4cdb211e9` |
 
 ## Unicode data license
 
