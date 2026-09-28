@@ -33,4 +33,28 @@ class FontContainerDecoderTest {
         )
         assertEquals(ContainerKind.WOFF, result.value?.kind)
     }
+
+    @Test
+    fun decodesAWoff2SourceToItsKind() {
+        val woff2 = Woff2TestFonts.singleTableUntransformed()
+        val result = assertIs<FontOperationResult.Success<DecodedFont?>>(
+            FontContainerDecoder.decode(
+                org.graphiks.kalligraphie.api.FontSource(woff2, org.graphiks.kalligraphie.api.FontSourceProvenance("wrapped2")),
+                limits,
+            ),
+        )
+        assertEquals(ContainerKind.WOFF2, result.value?.kind)
+    }
+
+    @Test
+    fun aRecognizedContainerNeverDecodesToNull() {
+        val woff2 = Woff2TestFonts.withCollectionFlavor()
+        val failure = assertIs<FontOperationResult.Failure>(
+            FontContainerDecoder.decode(
+                org.graphiks.kalligraphie.api.FontSource(woff2, org.graphiks.kalligraphie.api.FontSourceProvenance("collection")),
+                limits,
+            ),
+        )
+        assertIs<org.graphiks.kalligraphie.api.FontError.UnsupportedContainer>(failure.error)
+    }
 }

@@ -13,7 +13,7 @@ public enum class ContainerKind {
     /** WOFF 1.0, decoded by [WoffReader]. */
     WOFF,
 
-    /** WOFF 2.0, decoded once its reader lands. */
+    /** WOFF 2.0, decoded by [Woff2Reader]. */
     WOFF2,
 }
 
@@ -31,7 +31,8 @@ public class DecodedFont(
  *
  * A source whose first four bytes are neither `wOFF` nor `wOF2` is not a container and is returned
  * as a `null` value, leaving the caller's existing SFNT handling untouched. `wOFF` routes to
- * [WoffReader]; `wOF2` routing lands with the WOFF 2.0 reader.
+ * [WoffReader] and `wOF2` to [Woff2Reader]; a recognised container never yields `Success(null)`,
+ * it either decodes or returns a typed failure.
  */
 @KalligraphieInternalApi
 public object FontContainerDecoder {
@@ -43,8 +44,7 @@ public object FontContainerDecoder {
         }
         return when (bytes.decodeAsciiTag(0)) {
             "wOFF" -> decodeWoff(bytes, limits)
-            // WOFF 2.0 routing is added with its reader in a follow-up task.
-            "wOF2" -> FontOperationResult.Success(null)
+            "wOF2" -> decodeWoff2(bytes, limits)
             else -> FontOperationResult.Success(null)
         }
     }
@@ -53,6 +53,16 @@ public object FontContainerDecoder {
         when (val decoded = WoffReader.decode(bytes, limits)) {
             is FontOperationResult.Success -> FontOperationResult.Success(
                 DecodedFont(decoded.value, ContainerKind.WOFF),
+                decoded.diagnostics,
+            )
+            is FontOperationResult.Failure -> decoded
+            is FontOperationResult.Cancelled -> decoded
+        }
+
+    private fun decodeWoff2(bytes: ByteArray, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?> =
+        when (val decoded = Woff2Reader.decode(bytes, limits)) {
+            is FontOperationResult.Success -> FontOperationResult.Success(
+                DecodedFont(decoded.value, ContainerKind.WOFF2),
                 decoded.diagnostics,
             )
             is FontOperationResult.Failure -> decoded
