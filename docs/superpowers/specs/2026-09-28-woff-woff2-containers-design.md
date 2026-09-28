@@ -180,7 +180,7 @@ internal object SfntReassembler {
 }
 ```
 
-`WoffDecodeLimits.EMBEDDED` is `(maxDecodedFontBytes = 64 MiB, maxWorkingBytes = 64 MiB)`; `forCapture(maxSourceBytes)` uses that value for both. Accounting: every produced buffer is charged against `maxDecodedFontBytes` (a table, the decompressed font-data block, and the combined reassembled font); the Brotli window, Huffman tables and a transform's live streams are charged against `maxWorkingBytes`. In WOFF 2.0 the Brotli stream decodes with only `maxDecodedFontBytes` as the cap; the decoded length is then compared to the directory sum, so a valid stream with the wrong length yields `font.woff2.invalid-font-data-size`, distinct from a malformed stream (`font.woff2.brotli-failed`).
+`WoffDecodeLimits.EMBEDDED` is `(maxDecodedFontBytes = 64 MiB, maxWorkingBytes = 64 MiB)`; `forCapture(maxSourceBytes)` uses that value for both. Accounting: every produced buffer is charged against `maxDecodedFontBytes` (a table, the decompressed font-data block, and the combined reassembled font); `maxWorkingBytes` bounds the maximum Brotli back-reference distance (window reach) and a transform's live streams. The Brotli Huffman and context tables are bounded by RFC 7932 format constants and need no byte charge. In WOFF 2.0 the Brotli stream decodes with only `maxDecodedFontBytes` as the cap; the decoded length is then compared to the directory sum, so a valid stream with the wrong length yields `font.woff2.invalid-font-data-size`, distinct from a malformed stream (`font.woff2.brotli-failed`).
 
 ### 5.2 Data flow
 
@@ -227,8 +227,9 @@ reassembly:
 - `maxDecodedFontBytes` caps every produced buffer (a table, the decompressed font-data block, and
   the reassembled SFNT). Capture passes its `maxSourceBytes` (default 16 MiB); embedded ingestion
   uses a documented finite default (64 MiB) since it has no options object.
-- `maxWorkingBytes` caps temporary buffers. Because a reconstructed `glyf` is not bounded by its
-  `origLength`, this is where that reconstruction is bounded.
+- `maxWorkingBytes` caps the maximum Brotli back-reference distance (window reach) and a transform's
+  live streams. Brotli's Huffman and context tables are bounded by RFC 7932 format constants, so
+  they need no byte charge.
 - All offsets/lengths use checked `Long` arithmetic before conversion to array sizes; an overflow is
   a `FontError.OutOfBounds` or `ResourceLimitExceeded`, never a negative allocation.
 

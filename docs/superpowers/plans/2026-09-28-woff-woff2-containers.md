@@ -420,7 +420,7 @@ Expected: FAIL — `BrotliDecoder` unresolved.
 
 - [ ] **Step 3: Implement `BrotliDecoder`**
 
-Wire the meta-block loop, three block categories with block switching, literal/command/distance code readers, context modelling, insert-and-copy, the four-entry distance ring buffer (initialised `16, 15, 11, 4`, never reset at meta-block boundaries, not advanced for symbol 0 or dictionary references), overlapping copies, static-dictionary references (base word length 4..24, transformed output of any length), metadata and uncompressed meta-blocks. Bound the output at `maxOutputBytes` and the window/Huffman working set at `maxWorkingBytes`, both `FontError.ResourceLimitExceeded` on breach. Fail `FontDataFailure("font.woff2.brotli-failed", …)` on `overran`, reserved bits, invalid codes, trailing bytes after the final block, or a stream that ends early.
+Wire the meta-block loop, three block categories with block switching, literal/command/distance code readers, context modelling, insert-and-copy, the four-entry distance ring buffer (initialised `16, 15, 11, 4`, never reset at meta-block boundaries, not advanced for symbol 0 or dictionary references), overlapping copies, static-dictionary references (base word length 4..24, transformed output of any length), metadata and uncompressed meta-blocks. Bound the output at `maxOutputBytes` and the maximum back-reference distance (window reach) at `maxWorkingBytes`, both `FontError.ResourceLimitExceeded` on breach; the Huffman and context tables are RFC-format-bounded and need no byte charge. Fail `FontDataFailure("font.woff2.brotli-failed", …)` on `overran`, reserved bits, invalid codes, trailing bytes after the final block, or a stream that ends early.
 
 - [ ] **Step 4: Add the vectors**
 
