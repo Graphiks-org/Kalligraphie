@@ -1,63 +1,9 @@
 import java.io.File
 import java.util.Base64
-import java.util.zip.ZipFile
 
 plugins {
     id("ygdrasil.conventions.kalligraphie-kmp-web-library")
-}
-
-/**
- * Extraction of the bundled WebAssembly HarfBuzz runtime from the published kffi klib.
- *
- * The authored glue and the Emscripten module travel inside the `kffi-harfbuzz` js/wasmJs klibs,
- * but a consumer's bundler resolves `@JsModule("./kffi-harfbuzz-web.mjs")` relative to the generated
- * module, so the two files must be extracted from the artifact and placed where the bundler looks —
- * the same mechanism the Compose Gradle plugin applies to the Skiko runtime. Until this ships as a
- * kffi Gradle plugin, the consumer performs the extraction here.
- */
-val kffiVersion = libs.versions.kffi.get()
-val harfBuzzWebRuntimeJs by configurations.creating { isTransitive = false }
-val harfBuzzWebRuntimeWasm by configurations.creating { isTransitive = false }
-dependencies {
-    harfBuzzWebRuntimeJs("org.graphiks:kffi-harfbuzz-js:$kffiVersion")
-    harfBuzzWebRuntimeWasm("org.graphiks:kffi-harfbuzz-wasm-js:$kffiVersion")
-}
-
-abstract class ExtractHarfBuzzWebRuntime : DefaultTask() {
-    @get:InputFiles
-    abstract val archives: ConfigurableFileCollection
-
-    @get:OutputDirectory
-    abstract val outputDirectory: DirectoryProperty
-
-    @TaskAction
-    fun extract() {
-        val output = outputDirectory.get().asFile
-        output.mkdirs()
-        val expected = listOf("hb.mjs", "kffi-harfbuzz-web.mjs")
-        archives.files.forEach { archive ->
-            ZipFile(archive).use { zip ->
-                expected.forEach { name ->
-                    val entry = zip.getEntry(name) ?: return@forEach
-                    zip.getInputStream(entry).use { input ->
-                        File(output, name).outputStream().use { target -> input.copyTo(target) }
-                    }
-                }
-            }
-        }
-        expected.forEach { name ->
-            check(File(output, name).isFile) {
-                "The HarfBuzz web runtime entry $name is missing from ${archives.files}."
-            }
-        }
-    }
-}
-
-val extractHarfBuzzWebRuntime by tasks.registering(ExtractHarfBuzzWebRuntime::class) {
-    group = "harfbuzz"
-    description = "Extracts the WebAssembly HarfBuzz runtime for the web bundler."
-    archives.from(harfBuzzWebRuntimeJs, harfBuzzWebRuntimeWasm)
-    outputDirectory.set(layout.buildDirectory.dir("generated/harfbuzzWebRuntime"))
+    id("ygdrasil.conventions.kalligraphie-kffi-harfbuzz-web-runtime")
 }
 
 tasks.withType<Test>().configureEach {
@@ -174,12 +120,6 @@ kotlin {
         webTest.dependencies {
             implementation(kotlin("test"))
             implementation(libs.kotlinx.coroutines.test)
-        }
-        val jsMain by getting {
-            resources.srcDir(extractHarfBuzzWebRuntime)
-        }
-        val wasmJsMain by getting {
-            resources.srcDir(extractHarfBuzzWebRuntime)
         }
         val androidDeviceTest by getting {
             dependencies {
