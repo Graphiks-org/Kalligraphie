@@ -110,6 +110,15 @@ public object CatalogClaims {
                 "which applies no grid-fitting hint profile, so the table's flags and ranges are " +
                 "carried and never consulted",
         ),
+        "woff-ibm-plex" to mapOf(
+            "GDEF" to "no catalogued scene shapes text with this family: both container scenes " +
+                "resolve one capital through cmap and materialise its outline, never reading glyph " +
+                "definitions",
+            "GPOS" to "no catalogued scene shapes text with this family: both container scenes " +
+                "draw one capital in isolation, never consulting pair positioning",
+            "GSUB" to "no catalogued scene shapes text with this family: both container scenes " +
+                "select no substitution, so the face's lookups carry no expectation",
+        ),
     )
 
     /**

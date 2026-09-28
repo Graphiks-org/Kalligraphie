@@ -3,15 +3,17 @@
 Kalligraphie mesure la matérialisation portable des glyphes dans le module non
 publié `:kalligraphie:bench`. Ce n’est ni un test fonctionnel de latence, ni un
 résultat de benchmark (mesure comparative) publié. Le module exécute les fixtures
-(données de test fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1 et Liberation
-Sans TrueType auditées et versionnées, à travers les parcours publics catalogue,
-resolver (résolveur), instance, asset (ressource de rendu) et `resolveGlyph(...)`
+(données de test fixes) COLR/CPAL, SVG-in-OpenType, EBDT format 1, Liberation Sans
+TrueType et IBM Plex Sans WOFF/WOFF2, auditées et versionnées, à travers les
+parcours publics catalogue, resolver (résolveur), instance, asset (ressource de
+rendu) et `resolveGlyph(...)`
 `.
 
-Le module enregistre trente-neuf profils au total ; cette page couvre les trente-deux
-qui lui appartiennent. Dix-neuf d’entre eux sont du travail portable sur les
-glyphes — les neuf profils de représentation et les dix étapes portables TrueType
-— et s’exécutent sur toutes les plateformes. Les treize autres composent le texte à
+Le module enregistre quarante-deux profils au total ; cette page couvre les
+trente-cinq qui lui appartiennent. Vingt-deux d’entre eux sont du travail portable
+sur les glyphes — les neuf profils de représentation, les dix étapes portables
+TrueType et les trois profils de conteneur WOFF/WOFF2 — et s’exécutent sur toutes
+les plateformes. Les treize autres composent le texte à
 travers la façade de paragraphe, qui exige la capacité `END_TO_END_LAYOUT` :
 toutes les plateformes déclarent cette capacité depuis que les façades et
 l’analyse Unicode portable sont passées dans `commonMain`, donc ces treize profils
@@ -22,7 +24,7 @@ iOS le nomme comme différé au lieu de mesurer une boucle séquentielle sous so
 nom. Les profils de ligne éditable et de layout incrémental sont documentés dans
 leurs propres pages.
 
-Le module enregistre les trente-deux profils de cette page dans cet ordre :
+Le module enregistre les trente-cinq profils de cette page dans cet ordre :
 
 - normalisation COLR v0 / CPAL v0 froide et chaude ; *(portable)*
 - normalisation SVG-in-OpenType froide et chaude ; *(portable)*
@@ -41,6 +43,10 @@ Le module enregistre les trente-deux profils de cette page dans cet ordre :
 - étapes portables TrueType froides et chaudes de préparation, correspondance
   texte-glyphe, métriques, contours et détachement sur un paragraphe d’éditeur
   Liberation Sans stable ; *(portable)*
+- sur les conteneurs IBM Plex Sans, `WoffColdCapture` et `Woff2ColdCapture`
+  décodent un nouvel emballage WOFF 1.0 ou WOFF 2.0 en catalogue, face et
+  instance, et `Woff2ColdGlyph` décode WOFF 2.0 jusqu’au contour résolu du
+  glyphe capital de la scène ; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, puis
   `ConcurrentResolveWarm` sur ce même paragraphe ; le dernier s’exécute sur la JVM
   et sur Android, là où l’instrument de workers existe ;
@@ -259,9 +265,9 @@ module, que git ignore :
 ```
 
 Les trois premières tâches sont opt-in : aucune n’appartient à `check`, aucune ne
-se planifie d’elle-même. La commande JVM mesure les trente-neuf profils que le
-module enregistre ; la commande Android mesure les mêmes trente-neuf sur le
-runtime de l’appareil ; la commande iOS en mesure trente-huit, car le harnais du
+se planifie d’elle-même. La commande JVM mesure les quarante-deux profils que le
+module enregistre ; la commande Android mesure les mêmes quarante-deux sur le
+runtime de l’appareil ; la commande iOS en mesure quarante et un, car le harnais du
 simulateur n’a pas d’instrument de workers et déclare `ConcurrentResolveWarm`
 différé. La dernière joint les exécutions disponibles dans
 `build/bench/report-jvm.md`, `report-ios.md`, `report-android.md` et
@@ -275,10 +281,10 @@ par profil et la remet au pull côté hôte de l’appareil géré. Aucun argume
 d’instrumentation ne supprime cette trace sans supprimer aussi les fichiers
 mesurés, le mode de profilage gouverne le traçage de méthodes et
 l’échantillonnage de pile plutôt qu’elle, et un appareil à qui l’on demande
-trente-neuf de ces traces se remplit : pendant l’exécution, supprimez les traces
+quarante-deux de ces traces se remplit : pendant l’exécution, supprimez les traces
 que l’hôte a déjà tirées, pour que le pull d’un profil suivant n’échoue pas et
 n’emporte pas le reste de l’exécution. Le fichier de résultats de l’outil fait foi
-— trente-neuf tests, aucun échec, aucune erreur, aucun test ignoré — et le code de
+— quarante-deux tests, aucun échec, aucune erreur, aucun test ignoré — et le code de
 sortie de la tâche peut encore signaler la démolition du pilote de test, qui est
 hors mesure.
 

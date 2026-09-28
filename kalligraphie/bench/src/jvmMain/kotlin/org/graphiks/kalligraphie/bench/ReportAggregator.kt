@@ -17,7 +17,7 @@ private val JSON = Json { ignoreUnknownKeys = true }
 /** The corpus id every platform publishes, so a report names the corpus it actually measured. */
 private const val CORPUS_ID = "portable-glyphs-and-paragraph-layout"
 
-/** The seven fixtures the glyph and paragraph profiles read, on every platform that serves them. */
+/** The nine fixtures the glyph and paragraph profiles read, on every platform that serves them. */
 private val MEASURED_CORPUS_PATHS = listOf(
     "/fonts/bungee-color/BungeeColor-Regular.ttf",
     "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
@@ -26,11 +26,14 @@ private val MEASURED_CORPUS_PATHS = listOf(
     "/fonts/dejavu/DejaVuSans.ttf",
     "/fonts/amiri/Amiri-Regular.ttf",
     "/fonts/worksans/WorkSans[wght].ttf",
+    "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff",
+    "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2",
 )
 
 private const val CORPUS_DESCRIPTION =
-    "the seven fixtures the glyph and paragraph profiles read: COLR v0, SVG-in-OT, EBDT bitmap, " +
-        "TrueType, DejaVu, Amiri and variable Work Sans"
+    "the nine fixtures the glyph and paragraph profiles read: COLR v0, SVG-in-OT, EBDT bitmap, " +
+        "TrueType, DejaVu, Amiri, variable Work Sans, and the IBM Plex Sans WOFF 1.0 and WOFF 2.0 " +
+        "containers"
 
 /** Warm-up and measured iterations the iOS driver runs, in one-second iterations. */
 private const val IOS_WARMUP_ITERATIONS = 3

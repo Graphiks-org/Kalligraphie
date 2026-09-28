@@ -47,9 +47,10 @@ Each entry of `files`:
 
 Notes on the fields:
 
-- **Font artifacts only.** A `files` entry is a `.ttf`, `.otf` or `.ttc`, or the base64 wrapper of
-  one. `PROVENANCE.md`, licence texts, builder scripts, `audit.json` and the recorded outline oracles
-  are not font files, are not listed in `files`, and are re-checked by `--provenance` instead.
+- **Font artifacts only.** A `files` entry is a `.ttf`, `.otf`, `.ttc`, `.woff` or `.woff2`, or the
+  base64 wrapper of one. `PROVENANCE.md`, licence texts, builder scripts, `audit.json` and the
+  recorded outline oracles are not font files, are not listed in `files`, and are re-checked by
+  `--provenance` instead.
 - **`sha256` and `sizeBytes` describe the committed file**, so for `skia-colr-v1` they are those of
   `test_glyphs-glyf_colr_1.ttf.b64` and for `twemoji-svginot-glyph5` those of the `.base64` wrapper
   — the encoded artifact is what the repository ships and what `--check` verifies. The decoded fonts
@@ -59,13 +60,17 @@ Notes on the fields:
   the synthetic `GlyphOrder` pseudo-entry is not an sfnt table and is not listed, while the exact tag
   spelling of the directory is preserved, trailing space included (`CFF `, `SVG `, `cvt `). All
   entries are recorded, not only the ones the catalog cares about, and for a `.ttc` the list is the
-  union over its faces. Read with fontTools 4.65.0, the version of the repository audits.
+  union over its faces. Read with fontTools 4.65.0, the version of the repository audits; the
+  reader is `check_exhaustiveness.py`, which for WOFF 2.0 additionally needs the `brotli` package to
+  decompress the single font-data stream (the WOFF 1.0 per-table zlib decompression needs no extra
+  package).
 - **`revision`** is the 40-character commit for a GitHub source, the release or tag identifier for an
   archived source (`2.37`, `2.1.5`, `NotoSansDevanagari-v2.006`, `v15.1.0`), and `null` for a
   synthetic family.
 - **`license`** is the identifier of record for the family. The corpus uses six of the eight:
-  `OFL-1.1` (the Liberation, Amiri, Noto and Bungee families), `BSD-3-Clause` (the four Skia
-  fixtures), `DejaVu`, `CC-BY-4.0` (the two emoji families, `emoji-two-colr-v0` and
+  `OFL-1.1` (the Liberation, Amiri, Noto, Bungee, Kalnia Glaze, Work Sans and IBM Plex families),
+  `BSD-3-Clause` (the four Skia fixtures), `DejaVu`, `CC-BY-4.0` (the two emoji families,
+  `emoji-two-colr-v0` and
   `twemoji-svginot-glyph5`), `CC0-1.0` (`gdef-kern`, which declares it explicitly) and `MIT`, which
   covers the fixtures generated inside the repository that declare no licence of their own
   (`cff2-variable`, `kalligraphie-var-colr`, `kalligraphie-var-vvar`; see `licenseFile` below).
@@ -99,9 +104,10 @@ family's fonts are rebuilt locally by that script, are never fetched, and theref
 | `kalligraphie-var-vvar` | `build_variable_vvar.py` |
 | `liberation-amiri-collection` | `build_collection_fixture.py` |
 
-The other twelve families (`amiri`, `bungee-color`, `dejavu`, `emoji-two-colr-v0`, `liberation`,
-`noto-devanagari`, `noto-sans-jp`, `skia-cbdt`, `skia-colr-v1`, `skia-ebdt-format1`, `skia-sbix`,
-`twemoji-svginot-glyph5`) are upstream distributions: `synthetic: false`, `builtBy: null`.
+The other fifteen families (`amiri`, `bungee-color`, `dejavu`, `emoji-two-colr-v0`, `kalniaglaze`,
+`liberation`, `noto-devanagari`, `noto-sans-jp`, `skia-cbdt`, `skia-colr-v1`, `skia-ebdt-format1`,
+`skia-sbix`, `twemoji-svginot-glyph5`, `woff-ibm-plex`, `worksans`) are upstream distributions:
+`synthetic: false`, `builtBy: null`.
 
 ## The `url` / `rawUrl` / `fetchNote` rule
 
@@ -200,7 +206,7 @@ Task 11 — claims export (the tables the catalog claims, one entry per corpus k
 Task 12 — exhaustiveness lint (the tables these fonts carry, against the claims):
 
 ```sh
-uv run --with fonttools==4.65.0 python scripts/fonts/check_exhaustiveness.py
+uv run --with fonttools==4.65.0 --with brotli python scripts/fonts/check_exhaustiveness.py
 python3 -m unittest discover -s scripts/fonts/tests -v
 ```
 
@@ -223,8 +229,8 @@ print('\n'.join(fetch_fonts.coverage_errors(manifest, root)))
 manifest keys, and, per family, the committed font artifacts with the declared `path`s. A font
 dropped into the tree by hand, a directory of `test-fixtures/fonts/` no family of the manifest uses
 (a phantom family), a family the manifest declares with no directory behind it, and a declared file
-that is not committed all fail. Only the font artifacts count — a `.ttf`, `.otf` or `.ttc`, or its
-base64 wrapper; `PROVENANCE.md`, the licence texts, the builder scripts, `audit.json` and the
-recorded oracles are companions and are not declared.
+that is not committed all fail. Only the font artifacts count — a `.ttf`, `.otf`, `.ttc`, `.woff` or
+`.woff2`, or its base64 wrapper; `PROVENANCE.md`, the licence texts, the builder scripts, `audit.json`
+and the recorded oracles are companions and are not declared.
 
 Expected: no output.

@@ -265,6 +265,16 @@ class FixtureTreeCoverageTest(unittest.TestCase):
         )
         self.assertEqual([], fetch_fonts.coverage_errors(manifest, self.root))
 
+    def test_a_web_font_container_is_a_font_artifact(self):
+        self.commit(
+            "test-fixtures/fonts/tiny/tiny.woff",
+            "test-fixtures/fonts/tiny/tiny.woff2",
+        )
+        manifest = self.manifest(
+            {"tiny": ["test-fixtures/fonts/tiny/tiny.woff", "test-fixtures/fonts/tiny/tiny.woff2"]}
+        )
+        self.assertEqual([], fetch_fonts.coverage_errors(manifest, self.root))
+
     def test_the_committed_fixture_tree_matches_the_manifest(self):
         """The real corpus, not a synthetic tree: the guard the lint cannot provide itself."""
         root = pathlib.Path(__file__).resolve().parents[3]

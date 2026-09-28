@@ -15,6 +15,7 @@
     "skia-cbdt": ["CBDT", "CBLC"],
     "skia-ebdt-format1": ["EBDT", "EBLC"],
     "skia-sbix": ["sbix"],
+    "woff-ibm-plex": ["OS/2", "cmap", "glyf", "head", "hhea", "hmtx", "loca", "maxp", "post"],
     "worksans": ["GDEF", "GPOS", "GSUB", "HVAR", "avar", "cmap", "fvar", "glyf", "gvar", "hmtx", "loca"]
   },
   "allowUnclaimed": {
@@ -32,6 +33,7 @@
     "skia-colr-v1": {"*": "static COLR v1 fixture with transforms and gradients, read by the colour representation tests; the color axis pins COLR v1 on the synthetic variable fixture, and no catalogued scene uses the Skia file"},
     "skia-sbix": {"glyf": "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the sbix route does not require glyf, so this family's outlines are carried but never read", "loca": "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the sbix route does not require glyf, so this family's outlines are carried but never read"},
     "twemoji-svginot-glyph5": {"*": "SVG-in-OpenType subset read by the glyph-representation suite; no catalogued scene renders an SVG glyph, so the family stays outside the claimed perimeter"},
+    "woff-ibm-plex": {"GDEF": "no catalogued scene shapes text with this family: both container scenes resolve one capital through cmap and materialise its outline, never reading glyph definitions", "GPOS": "no catalogued scene shapes text with this family: both container scenes draw one capital in isolation, never consulting pair positioning", "GSUB": "no catalogued scene shapes text with this family: both container scenes select no substitution, so the face's lookups carry no expectation"},
     "worksans": {"STAT": "the ladder selects its instances by design `wght` coordinate through `fvar` and `avar` and reads no style attribute; `variation.stat` records that portable STAT reading is not implemented yet", "gasp": "the ladder rasterises the varied outlines with the portable CPU rasterizer, which applies no grid-fitting hint profile, so the table's flags and ranges are carried and never consulted"}
   }
 }

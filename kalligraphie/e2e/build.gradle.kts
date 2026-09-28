@@ -69,6 +69,10 @@ val e2eHarnessCorpusEntries: List<Pair<String, File>> = run {
         // vertical Japanese face the mosaic composes.
         "/fonts/worksans/WorkSans[wght].ttf" to fixtures.file("fonts/worksans/WorkSans[wght].ttf").asFile,
         "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf" to fixtures.file("fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf").asFile,
+        // The container scenes and their robustness probes: the same IBMPlexSans face wrapped in
+        // both a WOFF 1.0 and a WOFF 2.0 container.
+        "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff" to fixtures.file("fonts/woff-ibm-plex/IBMPlexSans-Regular.woff").asFile,
+        "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2" to fixtures.file("fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2").asFile,
         // The journeys' own fixtures, which no scene reads: the Latin, Arabic and vertical CJK faces
         // the typography journeys lay out, the kerning face the incremental session is built on, and
         // the CFF faces with the fontTools outline oracles they are checked against.

@@ -55,10 +55,11 @@ fun renderEmbeddedCorpus(entries: List<Pair<String, File>>): String {
 
 /**
  * The corpus the measurement reads, and nothing else: the four fixtures behind the COLR, SVG-in-OT,
- * EBDT bitmap and TrueType scenarios, plus the DejaVu, Amiri and variable Work Sans faces the
- * paragraph profiles compose with. `END_TO_END_LAYOUT` is declared present on iOS since the facades
- * and the portable Unicode analysis became `commonMain` code, so those profiles run here too and
- * their fonts must travel with them.
+ * EBDT bitmap and TrueType scenarios, the DejaVu, Amiri and variable Work Sans faces the paragraph
+ * profiles compose with, and the IBM Plex Sans WOFF 1.0 and WOFF 2.0 containers the container
+ * profiles decode. `END_TO_END_LAYOUT` is declared present on iOS since the facades and the portable
+ * Unicode analysis became `commonMain` code, so those profiles run here too and their fonts must
+ * travel with them.
  */
 val iosBenchmarkCorpus by tasks.registering {
     group = "benchmark"
@@ -72,6 +73,8 @@ val iosBenchmarkCorpus by tasks.registering {
         "/fonts/dejavu/DejaVuSans.ttf" to fixtures.file("fonts/dejavu/DejaVuSans.ttf").asFile,
         "/fonts/amiri/Amiri-Regular.ttf" to fixtures.file("fonts/amiri/Amiri-Regular.ttf").asFile,
         "/fonts/worksans/WorkSans[wght].ttf" to fixtures.file("fonts/worksans/WorkSans[wght].ttf").asFile,
+        "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff" to fixtures.file("fonts/woff-ibm-plex/IBMPlexSans-Regular.woff").asFile,
+        "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2" to fixtures.file("fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2").asFile,
     )
     inputs.files(entries.map { (_, file) -> file }).withPropertyName("fixtureFiles")
     val outputDirectory = layout.buildDirectory.dir("generated/ios-benchmark-corpus/kotlin")
@@ -262,6 +265,9 @@ kotlin {
             implementation(project(":kalligraphie:layout"))
             implementation(project(":kalligraphie:font:core"))
             implementation(project(":kalligraphie:font:sfnt"))
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
         val webMain by getting {
             dependencies {

@@ -745,6 +745,71 @@
       "builtBy": null
     },
     {
+      "key": "woff-ibm-plex",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff",
+          "url": "https://github.com/IBM/plex/tree/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-sans/fonts/complete/woff",
+          "rawUrl": "https://raw.githubusercontent.com/IBM/plex/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-sans/fonts/complete/woff/IBMPlexSans-Regular.woff",
+          "fetchNote": null,
+          "revision": "763c36ef9117782905ae010056dfbe8fd2653a25",
+          "sha256": "b731cf56514a4bd711ab2f9acf641f9311707f4386772eb306d25c2b29b73b1a",
+          "sizeBytes": 87508,
+          "tables": [
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        },
+        {
+          "path": "test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2",
+          "url": "https://github.com/IBM/plex/tree/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-sans/fonts/complete/woff2",
+          "rawUrl": "https://raw.githubusercontent.com/IBM/plex/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-sans/fonts/complete/woff2/IBMPlexSans-Regular.woff2",
+          "fetchNote": null,
+          "revision": "763c36ef9117782905ae010056dfbe8fd2653a25",
+          "sha256": "ba711a3085ff9f27440b6b9c4550cfc47c97bf36591d5da958b975bb3add8c1a",
+          "sizeBytes": 63020,
+          "tables": [
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "OS/2",
+            "cmap",
+            "cvt ",
+            "fpgm",
+            "gasp",
+            "glyf",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/woff-ibm-plex/OFL.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
       "key": "worksans",
       "files": [
         {

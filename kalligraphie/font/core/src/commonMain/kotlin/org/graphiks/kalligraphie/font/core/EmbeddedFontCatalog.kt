@@ -54,6 +54,9 @@ import org.graphiks.kalligraphie.font.sfnt.ParsedTrueTypeFont
 import org.graphiks.kalligraphie.font.sfnt.SbixReader
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.font.sfnt.SvgOpenTypeReader
+import org.graphiks.kalligraphie.font.sfnt.container.DecodedFont
+import org.graphiks.kalligraphie.font.sfnt.container.FontContainerDecoder
+import org.graphiks.kalligraphie.font.sfnt.container.WoffDecodeLimits
 import org.graphiks.kalligraphie.font.sfnt.slice
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -375,13 +378,40 @@ public object EmbeddedFontCatalogFactory {
     ): FontOperationResult<FontCatalogSnapshot> {
         val capturedSources = sources.toList()
         if (capturedSources.isEmpty()) return invalidCatalog("An embedded font catalog requires at least one source.")
-        if (capturedSources.map(FontSource::id).distinct().size != capturedSources.size) {
+
+        // Every source is normalised to its decoded standalone SFNT bytes before any identity work:
+        // a WOFF or WOFF2 container is decoded to the SFNT it wraps, while a non-container source
+        // keeps its original bytes. Identity is the digest of those decoded bytes, so two sources
+        // share identity exactly when their decoded SFNT bytes are identical, even when their
+        // containers differ; this is intentional and must not be "fixed".
+        val diagnostics = mutableListOf<FontDiagnostic>()
+        val normalisedSources = mutableListOf<FontSource>()
+        capturedSources.forEach { source ->
+            when (val decoded = FontContainerDecoder.decode(source, WoffDecodeLimits.EMBEDDED)) {
+                is FontOperationResult.Success<*> -> {
+                    diagnostics += decoded.diagnostics
+                    val decodedFont = decoded.value as DecodedFont?
+                    normalisedSources += if (decodedFont == null) source
+                    else FontSource(decodedFont.bytes, source.provenance)
+                }
+
+                is FontOperationResult.Failure -> return FontOperationResult.Failure(
+                    decoded.error,
+                    diagnostics + decoded.diagnostics,
+                )
+
+                is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(
+                    diagnostics + decoded.diagnostics,
+                )
+            }
+        }
+
+        if (normalisedSources.map(FontSource::id).distinct().size != normalisedSources.size) {
             return invalidCatalog("An embedded font catalog must not contain the same source twice.")
         }
 
-        val diagnostics = mutableListOf<FontDiagnostic>()
         val entries = mutableListOf<EmbeddedFontCatalogEntry>()
-        capturedSources.forEach { source ->
+        normalisedSources.forEach { source ->
             when (val parsed = SfntReader.readMetadata(source)) {
                 is FontOperationResult.Success<*> -> {
                     entries += EmbeddedFontCatalogEntry(source, parsed.value as ParsedTrueTypeFont)
@@ -401,7 +431,7 @@ public object EmbeddedFontCatalogFactory {
 
         val generation = FontCatalogGeneration(
             provider = FontProviderId("embedded-opentype"),
-            value = capturedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
+            value = normalisedSources.joinToString(prefix = "embedded-", separator = ".") { source ->
                 (source.id as FontSourceId.Portable).contentDigest.value
             },
         )

@@ -21,12 +21,15 @@ import org.graphiks.kalligraphie.e2e.golden.GoldenSceneCatalog
 class SceneOrientationTest {
     /**
      * Scenes that hand the rasterizer's own rows to the canonical model, so they declare
-     * [GoldenOrientation.DESIGN]: the two CFF capitals, the TrueType one, the VVAR metrics one and
-     * the COLR v0 paint. Every other scene goes through a composition canvas or a normalized bitmap
-     * strike and is already in [GoldenOrientation.IMAGE].
+     * [GoldenOrientation.DESIGN]: the two CFF capitals, the TrueType one, the two container
+     * capitals, the VVAR metrics one and the COLR v0 paint. Every other scene goes through a
+     * composition canvas or a normalized bitmap strike and is already in
+     * [GoldenOrientation.IMAGE].
      */
     private val designOrientedScenes = setOf(
         "glyph.outline.liberation-sans.A.64",
+        "glyph.outline.woff-ibm-plex.A.64",
+        "glyph.outline.woff2-ibm-plex.A.64",
         "glyph.paint.emoji-two-colr-v0.u1F600.64",
         "outline.cff1-static",
         "outline.cff2-static",

@@ -3,13 +3,15 @@
 Kalligraphie measures portable glyph materialization in the non-published
 `:kalligraphie:bench` module. It is not a functional latency test and not a
 published benchmark result. It exercises the checked-in, audited COLR/CPAL,
-SVG-in-OpenType, EBDT format 1, and Liberation Sans TrueType fixtures through the
-public catalog, resolver, instance, asset, and `resolveGlyph(...)` paths.
+SVG-in-OpenType, EBDT format 1, Liberation Sans TrueType, and IBM Plex Sans
+WOFF/WOFF2 container fixtures through the public catalog, resolver, instance,
+asset, and `resolveGlyph(...)` paths.
 
-The module records thirty-nine profiles in total; this page covers the thirty-two
-that belong here. Nineteen of them are portable glyph work — the nine
-representation profiles and the ten portable TrueType stages — and they run on
-every platform. The remaining thirteen compose text through the paragraph facade,
+The module records forty-two profiles in total; this page covers the thirty-five
+that belong here. Twenty-two of them are portable glyph work — the nine
+representation profiles, the ten portable TrueType stages, and the three
+WOFF/WOFF2 container profiles — and they run on every platform. The remaining
+thirteen compose text through the paragraph facade,
 which needs the `END_TO_END_LAYOUT` capability: every platform declares that
 capability since the facades and the portable Unicode analysis became
 `commonMain` code, so those thirteen run on Android and on the iOS simulator as
@@ -19,7 +21,7 @@ counter, and the iOS report names it as deferred rather than measuring a
 sequential loop under its name. The editable-line and incremental-layout profiles
 are documented in their own pages.
 
-The module records the thirty-two profiles of this page in this order:
+The module records the thirty-five profiles of this page in this order:
 
 - cold and warm COLR v0 / CPAL v0 normalization; *(portable)*
 - cold and warm SVG-in-OpenType normalization; *(portable)*
@@ -35,6 +37,10 @@ The module records the thirty-two profiles of this page in this order:
   mixed-BiDi paragraphs;
 - cold and warm portable TrueType preparation, text mapping, metrics, outlines,
   and detachment stages over one stable Liberation Sans editor paragraph; *(portable)*
+- over the IBM Plex Sans containers, `WoffColdCapture` and `Woff2ColdCapture`
+  decode a fresh WOFF 1.0 or WOFF 2.0 wrapper into a catalog, face and instance,
+  and `Woff2ColdGlyph` decodes WOFF 2.0 through to the scene capital's resolved
+  outline; *(portable)*
 - `FontAssetRetainReopenCold`, `FontAssetRetainReopenWarm`, then
   `ConcurrentResolveWarm` over that same paragraph; the last one runs on the JVM
   and on Android, where the worker instrument exists;
@@ -227,9 +233,9 @@ ignores:
 ```
 
 The first three are opt-in: none of them is part of `check`, and none schedules
-itself. The JVM command measures all thirty-nine profiles the module records; the
-Android command measures the same thirty-nine on the device runtime; the iOS
-command measures thirty-eight, because the simulator harness has no worker
+itself. The JVM command measures all forty-two profiles the module records; the
+Android command measures the same forty-two on the device runtime; the iOS
+command measures forty-one, because the simulator harness has no worker
 instrument and reports `ConcurrentResolveWarm` as deferred. The last command
 joins whatever runs have produced into `build/bench/report-jvm.md`, `report-ios.md`,
 `report-android.md` and `report-comparison.md`, and fails naming the missing path
@@ -241,10 +247,10 @@ androidx.benchmark records a perfetto trace of tens of megabytes for every
 profile and hands it to the managed device's host-side pull. No instrumentation
 argument suppresses that trace without also suppressing the measured files, the
 profiling mode governs method tracing and stack sampling rather than it, and a
-device asked for thirty-nine of them fills up: while the run proceeds, delete the
+device asked for forty-two of them fills up: while the run proceeds, delete the
 traces the host has already pulled, so that the pull of a later profile does not
 fail and take the rest of the run with it. The tool's own results file is the
-verdict — thirty-nine tests, no failure, no error, no skip — and the task's exit
+verdict — forty-two tests, no failure, no error, no skip — and the task's exit
 status can still report the test driver's teardown, which is outside the
 measurement.
 

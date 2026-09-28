@@ -45,4 +45,6 @@ public object CorpusKeys {
     public val LIBERATION_AMIRI_COLLECTION: CorpusKey = CorpusKey("liberation-amiri-collection")
     /** Work Sans variable, `wght` axis 100–900. */
     public val WORK_SANS: CorpusKey = CorpusKey("worksans")
+    /** IBMPlexSans Regular wrapped in both a WOFF 1.0 and a WOFF 2.0 container. */
+    public val WOFF_IBM_PLEX: CorpusKey = CorpusKey("woff-ibm-plex")
 }
