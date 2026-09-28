@@ -29,7 +29,7 @@ import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
  * before changing an otherwise open session. The owner must close every successfully opened
  * session.
  */
-public class JvmEditableLineLayoutSession private constructor(
+public class EditableLineLayoutSession private constructor(
     private val backend: ShapingBackend,
 ) {
     private val lifecycle = PortableConditionLock()
@@ -49,18 +49,18 @@ public class JvmEditableLineLayoutSession private constructor(
      * serialize one another. Once closing has begun, the request is rejected atomically with an
      * [EditableLineError.ShapingFailure] carrying [FontError.ResourceClosed].
      */
-    public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
+    public fun layout(request: EditableLineFacadeRequest): EditableLineResult {
         val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
         return layout(request, context)
     }
 
     internal fun layout(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         context: EditorOperationContext,
     ): EditableLineResult {
         if (!acquireOperation()) return closedResult()
         return try {
-            JvmEditableLineFacade.layoutBorrowing(request, backend, context)
+            EditableLineFacade.layoutBorrowing(request, backend, context)
         } finally {
             releaseOperation()
         }
@@ -179,10 +179,10 @@ public class JvmEditableLineLayoutSession private constructor(
          * through [FontOperationResult]. On success, ownership of the opened backend transfers to
          * the returned session and the caller must invoke [close].
          */
-        public fun open(): FontOperationResult<JvmEditableLineLayoutSession> =
+        public fun open(): FontOperationResult<EditableLineLayoutSession> =
             when (val opened = HarfBuzzShapingBackend.open()) {
                 is FontOperationResult.Success -> FontOperationResult.Success(
-                    JvmEditableLineLayoutSession(opened.value),
+                    EditableLineLayoutSession(opened.value),
                     opened.diagnostics,
                 )
 

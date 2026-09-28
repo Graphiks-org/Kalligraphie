@@ -1132,7 +1132,7 @@ synthetic descriptor at its own `instantiate`.
 The JVM reference target also provides one complete headless route for a
 single non-wrapped editable line. `Kalligraphie.decodeUtf8(...)` or
 `Kalligraphie.decodeUtf16(...)` creates an immutable `TextSnapshot`. The
-JVM-only `JvmEditableLineFacade` then analyzes Unicode, resolves script and
+JVM-only `EditableLineFacade` then analyzes Unicode, resolves script and
 BiDi runs, shapes each run with its embedded HarfBuzz backend, and positions
 the final line.
 
@@ -1141,8 +1141,8 @@ val decoded = Kalligraphie.decodeUtf8(
     version = TextVersion.create(),
     slices = listOf(TextSlice.Utf8(editorBytes)),
 )
-val result = JvmEditableLineFacade.layout(
-    JvmEditableLineFacadeRequest(
+val result = EditableLineFacade.layout(
+    EditableLineFacadeRequest(
         snapshot = decoded.snapshot,
         font = instance,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,

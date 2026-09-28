@@ -59,14 +59,14 @@ import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 import org.graphiks.kalligraphie.shaping.PreparedFontCachePolicy
 import org.graphiks.kalligraphie.shaping.PreparedFontCacheUsage
 
-class JvmIncrementalParagraphLayoutSessionTest {
+class IncrementalParagraphLayoutSessionTest {
     @Test
     fun reusesPreparedFontsAcrossRealMultifontEditsWithinTheDeclaredBudget() {
         val source = fixture("fi سلام")
         val target = source.withText("fi سلام fi")
         val policy = PreparedFontCachePolicy(2, 4_000_000, 20_000_000, 24_000_000)
-        val session = assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
-            JvmIncrementalParagraphLayoutSession.open(4_000_000, policy),
+        val session = assertIs<FontOperationResult.Success<IncrementalParagraphLayoutSession>>(
+            IncrementalParagraphLayoutSession.open(4_000_000, policy),
         ).value
         val resolver = assertIs<FontOperationResult.Success<org.graphiks.kalligraphie.api.FontAssetResolverHandle>>(
             source.catalog.openAssetResolver(),
@@ -118,8 +118,8 @@ class JvmIncrementalParagraphLayoutSessionTest {
     fun rejectsASecondPreparedFontBeforeItsNativeAllocationExceedsTheBudget() {
         val source = fixture("fi")
         val policy = PreparedFontCachePolicy(2, 4_000_000, 500_000, 4_500_000)
-        val session = assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
-            JvmIncrementalParagraphLayoutSession.open(preparedFontCachePolicy = policy),
+        val session = assertIs<FontOperationResult.Success<IncrementalParagraphLayoutSession>>(
+            IncrementalParagraphLayoutSession.open(preparedFontCachePolicy = policy),
         ).value
         try {
             val initial = assertIs<IncrementalLayoutResult.Success>(session.layout(request(source)))
@@ -154,8 +154,8 @@ class JvmIncrementalParagraphLayoutSessionTest {
         )
         try {
             for (policy in policies) {
-                val session = assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
-                    JvmIncrementalParagraphLayoutSession.open(preparedFontCachePolicy = policy),
+                val session = assertIs<FontOperationResult.Success<IncrementalParagraphLayoutSession>>(
+                    IncrementalParagraphLayoutSession.open(preparedFontCachePolicy = policy),
                 ).value
                 session.use {
                     for (revision in listOf(source, source.withText("fi سلام"))) {
@@ -467,7 +467,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
         var backendOpenCalls = 0
 
         assertFailsWith<IllegalArgumentException> {
-            JvmIncrementalParagraphLayoutSession.openWithBackendFactory(cacheBudgetBytes = -1) {
+            IncrementalParagraphLayoutSession.openWithBackendFactory(cacheBudgetBytes = -1) {
                 backendOpenCalls += 1
                 error("Backend opening must not be attempted for an invalid cache budget.")
             }
@@ -482,7 +482,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(backend)
         val fixture = fixture("fi \u0633\u0644\u0627\u0645")
 
         try {
@@ -515,7 +515,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(backend)
 
         try {
             val initial = assertIs<IncrementalLayoutResult.Success>(session.layout(request(source)))
@@ -549,8 +549,8 @@ class JvmIncrementalParagraphLayoutSessionTest {
         val fixture = fixture("fi ".repeat(24) + "\u0633\u0644\u0627\u0645")
         val documentEnd = fixture.snapshot.range.endExclusive
         val reference = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
-                JvmEditableParagraphFacadeRequest(
+            EditableParagraphFacade.layout(
+                EditableParagraphFacadeRequest(
                     snapshot = fixture.snapshot,
                     constraints = constraints(height = 1_200f),
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -565,7 +565,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(backend)
 
         try {
             val actual = assertIs<IncrementalLayoutResult.Success>(
@@ -597,8 +597,8 @@ class JvmIncrementalParagraphLayoutSessionTest {
         val fixture = fixture("fi\n" + "fi ".repeat(24) + "\u0633\u0644\u0627\u0645")
         val mandatoryEnd = fixture.snapshot.textIndexAtScalarBoundary(3)
         val reference = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
-                JvmEditableParagraphFacadeRequest(
+            EditableParagraphFacade.layout(
+                EditableParagraphFacadeRequest(
                     snapshot = fixture.snapshot,
                     constraints = constraints(height = 1_200f),
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -613,7 +613,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(backend)
 
         try {
             val actual = assertIs<IncrementalLayoutResult.Success>(
@@ -645,14 +645,14 @@ class JvmIncrementalParagraphLayoutSessionTest {
         val sessionDelegate = assertIs<FontOperationResult.Success<ShapingBackend>>(
             HarfBuzzShapingBackend.open(),
         ).value
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(
             ThresholdSignedAdvanceBackend(sessionDelegate, signedSuffixStart),
         )
 
         try {
             val reference = assertIs<ParagraphLayoutResult.Success>(
-                JvmEditableParagraphFacade.layoutBorrowing(
-                    request = JvmEditableParagraphFacadeRequest(
+                EditableParagraphFacade.layoutBorrowing(
+                    request = EditableParagraphFacadeRequest(
                         snapshot = fixture.snapshot,
                         constraints = constraints(height = 1_200f),
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -692,7 +692,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             HarfBuzzShapingBackend.open(),
         ).value
         val backend = CancellingAfterFirstShapeBackend(delegate, token)
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(backend)
         val publishedFixture = fixture("fi")
         val cancelledFixture = fixture("fi \u0633\u0644\u0627\u0645")
 
@@ -726,7 +726,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
             HarfBuzzShapingBackend.open(),
         ).value
         val backend = TrackingBackend(delegate)
-        val session = JvmIncrementalParagraphLayoutSession.openOwnedBackend(backend)
+        val session = IncrementalParagraphLayoutSession.openOwnedBackend(backend)
 
         try {
             val initial = assertIs<IncrementalLayoutResult.Success>(
@@ -842,9 +842,9 @@ class JvmIncrementalParagraphLayoutSessionTest {
         }
     }
 
-    private fun openSession(): JvmIncrementalParagraphLayoutSession =
-        assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
-            JvmIncrementalParagraphLayoutSession.open(),
+    private fun openSession(): IncrementalParagraphLayoutSession =
+        assertIs<FontOperationResult.Success<IncrementalParagraphLayoutSession>>(
+            IncrementalParagraphLayoutSession.open(),
         ).value
 
     private fun request(
@@ -859,7 +859,7 @@ class JvmIncrementalParagraphLayoutSessionTest {
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
         inlineObjects: InlineObjectSnapshot? = null,
         materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
-    ): JvmIncrementalParagraphLayoutRequest = JvmIncrementalParagraphLayoutRequest(
+    ): IncrementalParagraphLayoutRequest = IncrementalParagraphLayoutRequest(
         request = incrementalRequest(fixture, cancellationToken, requestedRange, previousState, delta, constraints, operationProfile),
         baseDirection = baseDirection,
         language = language,

@@ -40,12 +40,12 @@ These are the failure modes the spec implies but no existing test exercises. Eac
 ### Task 0.1: Rename the `Jvm*` public facades to neutral names
 
 **Files:**
-- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/JvmEditableParagraphFacade.kt` → `EditableParagraphFacade.kt`
-- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/JvmEditableLineFacade.kt` → `EditableLineFacade.kt`
-- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/JvmFlowCompositionFacade.kt` → `FlowCompositionFacade.kt`
-- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/JvmIncrementalParagraphLayoutSession.kt` → `IncrementalParagraphLayoutSession.kt`
-- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/JvmEditableLineLayoutSession.kt` → `EditableLineLayoutSession.kt`
-- Rename tests: `kalligraphie/src/jvmTest/.../JvmEditableLineFacadeTest.kt` → `EditableLineFacadeTest.kt`, `JvmEditableLineLayoutSessionTest.kt` → `EditableLineLayoutSessionTest.kt`, `JvmEditableParagraphFacadeTest.kt` → `EditableParagraphFacadeTest.kt`, `JvmIncrementalParagraphLayoutSessionTest.kt` → `IncrementalParagraphLayoutSessionTest.kt`
+- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableParagraphFacade.kt` → `EditableParagraphFacade.kt`
+- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableLineFacade.kt` → `EditableLineFacade.kt`
+- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/FlowCompositionFacade.kt` → `FlowCompositionFacade.kt`
+- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/IncrementalParagraphLayoutSession.kt` → `IncrementalParagraphLayoutSession.kt`
+- Rename: `kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableLineLayoutSession.kt` → `EditableLineLayoutSession.kt`
+- Rename tests: `kalligraphie/src/jvmTest/.../EditableLineFacadeTest.kt` → `EditableLineFacadeTest.kt`, `EditableLineLayoutSessionTest.kt` → `EditableLineLayoutSessionTest.kt`, `EditableParagraphFacadeTest.kt` → `EditableParagraphFacadeTest.kt`, `IncrementalParagraphLayoutSessionTest.kt` → `IncrementalParagraphLayoutSessionTest.kt`
 - Modify (references): `kalligraphie/bench/src/**`, `kalligraphie/e2e/src/**`, `kalligraphie/platform/apple/src/jvmTest/**`, `kalligraphie/platform/linux/src/jvmTest/**`, `kalligraphie/src/jvmTest/**`
 
 **Interfaces:**
@@ -54,23 +54,34 @@ These are the failure modes the spec implies but no existing test exercises. Eac
 
 - [ ] **Step 1: Rename the declaration files with git**
 
+Run from the repository root:
+
 ```bash
-cd kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie
-git mv JvmEditableParagraphFacade.kt EditableParagraphFacade.kt
-git mv JvmEditableLineFacade.kt EditableLineFacade.kt
-git mv JvmFlowCompositionFacade.kt FlowCompositionFacade.kt
-git mv JvmIncrementalParagraphLayoutSession.kt IncrementalParagraphLayoutSession.kt
-git mv JvmEditableLineLayoutSession.kt EditableLineLayoutSession.kt
+git mv kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableParagraphFacade.kt \
+       kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableParagraphFacade.kt
+git mv kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableLineFacade.kt \
+       kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableLineFacade.kt
+git mv kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/FlowCompositionFacade.kt \
+       kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/FlowCompositionFacade.kt
+git mv kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/IncrementalParagraphLayoutSession.kt \
+       kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/IncrementalParagraphLayoutSession.kt
+git mv kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableLineLayoutSession.kt \
+       kalligraphie/src/commonMain/kotlin/org/graphiks/kalligraphie/EditableLineLayoutSession.kt
 ```
 
 - [ ] **Step 2: Rename the test files with git**
 
+Run from the repository root:
+
 ```bash
-cd kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie
-git mv JvmEditableLineFacadeTest.kt EditableLineFacadeTest.kt
-git mv JvmEditableLineLayoutSessionTest.kt EditableLineLayoutSessionTest.kt
-git mv JvmEditableParagraphFacadeTest.kt EditableParagraphFacadeTest.kt
-git mv JvmIncrementalParagraphLayoutSessionTest.kt IncrementalParagraphLayoutSessionTest.kt
+git mv kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EditableLineFacadeTest.kt \
+       kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EditableLineFacadeTest.kt
+git mv kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EditableLineLayoutSessionTest.kt \
+       kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EditableLineLayoutSessionTest.kt
+git mv kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EditableParagraphFacadeTest.kt \
+       kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EditableParagraphFacadeTest.kt
+git mv kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/IncrementalParagraphLayoutSessionTest.kt \
+       kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/IncrementalParagraphLayoutSessionTest.kt
 ```
 
 - [ ] **Step 3: Rewrite every identifier reference repo-wide**
@@ -78,23 +89,23 @@ git mv JvmIncrementalParagraphLayoutSessionTest.kt IncrementalParagraphLayoutSes
 Run from the repository root. Order matters only for clarity; every rule replaces a distinct `Jvm…` token.
 
 ```bash
-grep -rl --include='*.kt' --include='*.md' -E 'JvmEditableParagraphFacade|JvmEditableLineFacade|JvmFlowCompositionFacade|JvmIncrementalParagraphLayoutSession|JvmEditableLineLayoutSession|JvmFlowCompositionRequest|JvmIncrementalParagraphLayoutRequest' . \
+grep -rl --include='*.kt' --include='*.md' -E 'EditableParagraphFacade|EditableLineFacade|FlowCompositionFacade|IncrementalParagraphLayoutSession|EditableLineLayoutSession|FlowCompositionRequest|IncrementalParagraphLayoutRequest' . \
   | grep -v '/build/' \
   | xargs sed -i '' \
-    -e 's/JvmEditableParagraphFacadeRequest/EditableParagraphFacadeRequest/g' \
-    -e 's/JvmEditableParagraphFacade/EditableParagraphFacade/g' \
-    -e 's/JvmEditableLineLayoutSession/EditableLineLayoutSession/g' \
-    -e 's/JvmEditableLineFacadeRequest/EditableLineFacadeRequest/g' \
-    -e 's/JvmEditableLineFacade/EditableLineFacade/g' \
-    -e 's/JvmFlowCompositionRequest/FlowCompositionRequest/g' \
-    -e 's/JvmFlowCompositionFacade/FlowCompositionFacade/g' \
-    -e 's/JvmIncrementalParagraphLayoutRequest/IncrementalParagraphLayoutRequest/g' \
-    -e 's/JvmIncrementalParagraphLayoutSession/IncrementalParagraphLayoutSession/g'
+    -e 's/EditableParagraphFacadeRequest/EditableParagraphFacadeRequest/g' \
+    -e 's/EditableParagraphFacade/EditableParagraphFacade/g' \
+    -e 's/EditableLineLayoutSession/EditableLineLayoutSession/g' \
+    -e 's/EditableLineFacadeRequest/EditableLineFacadeRequest/g' \
+    -e 's/EditableLineFacade/EditableLineFacade/g' \
+    -e 's/FlowCompositionRequest/FlowCompositionRequest/g' \
+    -e 's/FlowCompositionFacade/FlowCompositionFacade/g' \
+    -e 's/IncrementalParagraphLayoutRequest/IncrementalParagraphLayoutRequest/g' \
+    -e 's/IncrementalParagraphLayoutSession/IncrementalParagraphLayoutSession/g'
 ```
 
 - [ ] **Step 4: Verify no stale identifier remains**
 
-Run: `grep -rn --include='*.kt' -E 'JvmEditableParagraphFacade|JvmEditableLineFacade|JvmFlowCompositionFacade|JvmIncrementalParagraphLayoutSession|JvmEditableLineLayoutSession' kalligraphie | grep -v '/build/'`
+Run: `grep -rn --include='*.kt' -E 'EditableParagraphFacade|EditableLineFacade|FlowCompositionFacade|IncrementalParagraphLayoutSession|EditableLineLayoutSession' kalligraphie | grep -v '/build/'`
 Expected: no output.
 
 - [ ] **Step 5: Run the full verification lifecycle**
@@ -128,7 +139,7 @@ git commit -m "refactor(kalligraphie): rename Jvm* facades to neutral names"
 
 - [ ] **Step 1: Verify the code rename already covered markdown code identifiers**
 
-Run: `grep -rn --include='*.md' -E 'JvmEditableParagraphFacade|JvmEditableLineFacade|JvmFlowCompositionFacade|JvmIncrementalParagraphLayoutSession|JvmEditableLineLayoutSession' . | grep -v '/build/'`
+Run: `grep -rn --include='*.md' -E 'EditableParagraphFacade|EditableLineFacade|FlowCompositionFacade|IncrementalParagraphLayoutSession|EditableLineLayoutSession' . | grep -v '/build/'`
 Expected: only the spec under `docs/superpowers/specs/` may appear (it documents the old names deliberately). If any other file appears, replace the identifier with its neutral name.
 
 - [ ] **Step 2: Add a changelog entry**
@@ -141,22 +152,22 @@ Append under a new `## Unreleased` heading at the top of `CHANGELOG.md`:
 ### Breaking changes
 
 - Renamed the public facades to neutral names ahead of the web targets:
-  `JvmEditableParagraphFacade` → `EditableParagraphFacade`,
-  `JvmEditableLineFacade` → `EditableLineFacade`,
-  `JvmFlowCompositionFacade` → `FlowCompositionFacade`,
-  `JvmIncrementalParagraphLayoutSession` → `IncrementalParagraphLayoutSession`,
-  `JvmEditableLineLayoutSession` → `EditableLineLayoutSession`, and their
+  `EditableParagraphFacade` → `EditableParagraphFacade`,
+  `EditableLineFacade` → `EditableLineFacade`,
+  `FlowCompositionFacade` → `FlowCompositionFacade`,
+  `IncrementalParagraphLayoutSession` → `IncrementalParagraphLayoutSession`,
+  `EditableLineLayoutSession` → `EditableLineLayoutSession`, and their
   `*Request` companion types. No deprecated aliases are provided.
 ```
 
 - [ ] **Step 3: Rewrite the README consumer route**
 
-In `README.md`, change the consumer code sample so `JvmFlowCompositionFacade` / `JvmFlowCompositionRequest` become `FlowCompositionFacade` / `FlowCompositionRequest`, and the prose "Applications consume the JVM facade" becomes "Applications consume the portable facade". Leave the JVM Reference route description otherwise intact.
+In `README.md`, change the consumer code sample so `FlowCompositionFacade` / `FlowCompositionRequest` become `FlowCompositionFacade` / `FlowCompositionRequest`, and the prose "Applications consume the JVM facade" becomes "Applications consume the portable facade". Leave the JVM Reference route description otherwise intact.
 
 - [ ] **Step 4: Verify docs do not contradict the code**
 
 Run: `./gradlew :docs:embedDokkaIntoMkDocs`
-Expected: BUILD SUCCESSFUL; the generated API reference lists `EditableParagraphFacade` and no `JvmEditableParagraphFacade`.
+Expected: BUILD SUCCESSFUL; the generated API reference lists `EditableParagraphFacade` and no `EditableParagraphFacade`.
 
 - [ ] **Step 5: Commit**
 

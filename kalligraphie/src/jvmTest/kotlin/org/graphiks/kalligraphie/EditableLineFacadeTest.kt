@@ -45,7 +45,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-class JvmEditableLineFacadeTest {
+class EditableLineFacadeTest {
     @Test
     fun java_consumer_using_the_original_constructor_still_lays_out_real_liberation_text() {
         val snapshot = Kalligraphie.decodeUtf16(
@@ -54,7 +54,7 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val request = LegacyJvmEditableLineFacadeRequestFactory.create(
+            val request = LegacyEditableLineFacadeRequestFactory.create(
                 snapshot,
                 fixture.font,
                 BaseDirection.LEFT_TO_RIGHT,
@@ -69,7 +69,7 @@ class JvmEditableLineFacadeTest {
                 ShapingResourceProfile.unbounded,
             )
 
-            val glyph = assertIs<EditableLineResult.Success>(JvmEditableLineFacade.layout(request))
+            val glyph = assertIs<EditableLineResult.Success>(EditableLineFacade.layout(request))
                 .line.positionedGlyphRuns.single().glyphs.single()
             assertEquals(GlyphId(36), glyph.shapedGlyph.glyphId)
             assertEquals(0f, glyph.origin.x.value)
@@ -115,7 +115,7 @@ class JvmEditableLineFacadeTest {
                         ).snapshot
                     }
 
-                    val result = JvmEditableLineFacade.layout(
+                    val result = EditableLineFacade.layout(
                         lineRequest(
                             snapshot = snapshot,
                             font = fixture.font,
@@ -158,7 +158,7 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
+            val result = EditableLineFacade.layout(
                 lineRequest(
                     snapshot = snapshot,
                     font = fixture.font,
@@ -190,7 +190,7 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
+            val result = EditableLineFacade.layout(
                 lineRequest(
                     snapshot = snapshot,
                     font = fixture.font,
@@ -242,7 +242,7 @@ class JvmEditableLineFacadeTest {
         val fixture = renderableFixture()
         try {
             val line = assertIs<EditableLineResult.Success>(
-                JvmEditableLineFacade.layout(
+                EditableLineFacade.layout(
                     lineRequest(
                         snapshot = snapshot,
                         font = fixture.font,
@@ -312,7 +312,7 @@ class JvmEditableLineFacadeTest {
         val fixture = renderableFixture()
         try {
             val line = assertIs<EditableLineResult.Success>(
-                JvmEditableLineFacade.layout(
+                EditableLineFacade.layout(
                     lineRequest(
                         snapshot = snapshot,
                         font = fixture.font,
@@ -366,7 +366,7 @@ class JvmEditableLineFacadeTest {
         val fixture = renderableFixture()
         try {
             val line = assertIs<EditableLineResult.Success>(
-                JvmEditableLineFacade.layout(
+                EditableLineFacade.layout(
                     lineRequest(
                         snapshot = snapshot,
                         font = fixture.font,
@@ -423,7 +423,7 @@ class JvmEditableLineFacadeTest {
         val fixture = renderableFixture()
         try {
             val line = assertIs<EditableLineResult.Success>(
-                JvmEditableLineFacade.layout(
+                EditableLineFacade.layout(
                     lineRequest(
                         snapshot = snapshot,
                         font = fixture.font,
@@ -496,7 +496,7 @@ class JvmEditableLineFacadeTest {
                 ).snapshot
 
                 val line = assertIs<EditableLineResult.Success>(
-                    JvmEditableLineFacade.layout(
+                    EditableLineFacade.layout(
                         lineRequest(
                             snapshot = snapshot,
                             font = fixture.font,
@@ -544,8 +544,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -620,7 +620,7 @@ class JvmEditableLineFacadeTest {
         val fixture = renderableFixture()
         try {
             val line = assertIs<EditableLineResult.Success>(
-                JvmEditableLineFacade.layout(
+                EditableLineFacade.layout(
                     lineRequest(
                         snapshot = snapshot,
                         font = fixture.font,
@@ -700,7 +700,7 @@ class JvmEditableLineFacadeTest {
                     slices = listOf(TextSlice.Utf16(text.toCharArray())),
                 ).snapshot
                 val line = assertIs<EditableLineResult.Success>(
-                    JvmEditableLineFacade.layout(
+                    EditableLineFacade.layout(
                         lineRequest(
                             snapshot = snapshot,
                             font = fixture.font,
@@ -751,8 +751,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -786,8 +786,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -819,8 +819,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -859,8 +859,8 @@ class JvmEditableLineFacadeTest {
         val fixture = renderableFixture()
         val backend = assertIs<FontOperationResult.Success<ShapingBackend>>(HarfBuzzShapingBackend.open()).value
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -891,8 +891,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -919,8 +919,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -948,8 +948,8 @@ class JvmEditableLineFacadeTest {
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val result = JvmEditableLineFacade.layout(
-                JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(
+                EditableLineFacadeRequest(
                     snapshot = snapshot,
                     font = fixture.font,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -997,7 +997,7 @@ class JvmEditableLineFacadeTest {
         positioning: ParagraphPositioningPolicy? = null,
         materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
         shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
-    ): JvmEditableLineFacadeRequest = JvmEditableLineFacadeRequest(
+    ): EditableLineFacadeRequest = EditableLineFacadeRequest(
         snapshot = snapshot,
         font = font,
         baseDirection = baseDirection,

@@ -42,9 +42,9 @@ n’est calculée avec Kalligraphie.
 
 `FontAssetRetainReopenCold` crée un catalogue embarqué, un resolver (résolveur),
 une face résolue, son instance de police et une session publique
-`JvmEditableLineLayoutSession` neufs par échantillon. La session possède son vrai
+`EditableLineLayoutSession` neufs par échantillon. La session possède son vrai
 backend (moteur interne) HarfBuzz. Son appel public `layout`, recevant un
-`JvmEditableLineFacadeRequest`, publie une `EditableLine` représentable, puis
+`EditableLineFacadeRequest`, publie une `EditableLine` représentable, puis
 son `LayoutHandle` (poignée de ressource) est ouvert. Les certificats finaux sont
 regroupés par clé complète `FontRenderAssetKey`, un asset (ressource de rendu)
 de renderer (moteur de rendu) est conservé par clé, puis tous les glyphes finaux
@@ -59,7 +59,7 @@ la session/backend et du resolver persistants reste hors intervalle. Ce profil
 est la référence nommée 60 Hz.
 
 `ConcurrentResolveWarm` obtient un unique asset possédé par le renderer par la
-chaîne publique `JvmEditableLineLayoutSession.layout` -> `openLayoutHandle` -> `retainFontAsset`, puis ferme
+chaîne publique `EditableLineLayoutSession.layout` -> `openLayoutHandle` -> `retainFontAsset`, puis ferme
 le handle, la session/backend et le resolver avant le préchauffage et la mesure.
 Il résout préalablement ces 35 identifiants fixes de glyphes non nuls distincts,
 dans l’ordre de première occurrence du paragraphe :

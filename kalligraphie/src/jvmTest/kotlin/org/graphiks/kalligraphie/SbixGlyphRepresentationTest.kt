@@ -86,8 +86,8 @@ class SbixGlyphRepresentationTest {
                 slices = listOf(TextSlice.Utf8("😀".encodeToByteArray())),
             ).snapshot
             val line = assertIs<EditableLineResult.Success>(
-                JvmEditableLineFacade.layout(
-                    JvmEditableLineFacadeRequest(
+                EditableLineFacade.layout(
+                    EditableLineFacadeRequest(
                         snapshot = snapshot,
                         font = instance,
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,

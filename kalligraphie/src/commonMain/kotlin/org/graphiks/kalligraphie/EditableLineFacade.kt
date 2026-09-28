@@ -59,7 +59,7 @@ import org.graphiks.kalligraphie.unicode.PortableUnicodeAnalyzer
  * captures its feature list and is safe to share between threads when its font and borrowed
  * resolver support concurrent calls.
  */
-public class JvmEditableLineFacadeRequest(
+public class EditableLineFacadeRequest(
     /** Complete immutable source snapshot to analyze, shape, and position. */
     public val snapshot: TextSnapshot,
     /** Single TrueType-derived font instance used to shape every resolved run. */
@@ -227,11 +227,11 @@ public class JvmEditableLineFacadeRequest(
  * hash-verified HarfBuzz JVM backend, and portable final-line layout. It returns a typed failure
  * when Unicode inputs are invalid or HarfBuzz cannot open or shape. Android and Apple adapters
  * are deliberately not selected by this JVM-only entry point. Each call delegates to a
- * short-lived [JvmEditableLineLayoutSession], so it owns no native handle after returning;
- * renderable mode borrows the resolver supplied in [JvmEditableLineFacadeRequest]. Consumers
+ * short-lived [EditableLineLayoutSession], so it owns no native handle after returning;
+ * renderable mode borrows the resolver supplied in [EditableLineFacadeRequest]. Consumers
  * laying out successive edits should instead open and reuse an explicit session.
  */
-public object JvmEditableLineFacade {
+public object EditableLineFacade {
     /**
      * Produces one editable line through the complete JVM reference route.
      *
@@ -244,10 +244,10 @@ public object JvmEditableLineFacade {
      * `RENDERABLE` publication additionally certifies every final glyph through the selected
      * certified representation profile.
      */
-    public fun layout(request: JvmEditableLineFacadeRequest): EditableLineResult {
+    public fun layout(request: EditableLineFacadeRequest): EditableLineResult {
         val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
         preflight(request, context)?.let { return it }
-        val session = when (val opened = JvmEditableLineLayoutSession.open()) {
+        val session = when (val opened = EditableLineLayoutSession.open()) {
             is FontOperationResult.Success -> opened.value
             is FontOperationResult.Failure -> return shapingFailure(opened)
             is FontOperationResult.Cancelled -> return EditableLineResult.Cancelled(opened.diagnostics.toEditableDiagnostics())
@@ -256,7 +256,7 @@ public object JvmEditableLineFacade {
     }
 
     internal fun layout(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         backend: ShapingBackend,
     ): EditableLineResult {
         val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
@@ -271,7 +271,7 @@ public object JvmEditableLineFacade {
     }
 
     internal fun layoutBorrowing(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         backend: ShapingBackend,
     ): EditableLineResult = layoutBorrowing(
         request,
@@ -280,7 +280,7 @@ public object JvmEditableLineFacade {
     )
 
     internal fun layoutBorrowing(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         backend: ShapingBackend,
         context: EditorOperationContext,
     ): EditableLineResult {
@@ -292,8 +292,8 @@ public object JvmEditableLineFacade {
     }
 
     private fun layoutWithOwnedSession(
-        request: JvmEditableLineFacadeRequest,
-        session: JvmEditableLineLayoutSession,
+        request: EditableLineFacadeRequest,
+        session: EditableLineLayoutSession,
         context: EditorOperationContext,
     ): EditableLineResult {
         var result: EditableLineResult? = null
@@ -307,7 +307,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun analyze(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         context: EditorOperationContext,
     ): FacadeUnicodeAnalysis = try {
         preflight(request, context)?.let { return FacadeUnicodeAnalysis.Result(it) }
@@ -344,7 +344,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun preflight(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         context: EditorOperationContext,
     ): EditableLineResult? = try {
         context.sourceLimit(request.snapshot)?.let { return operationLimitFailure(it) }
@@ -356,7 +356,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun unsupportedLineControl(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
     ): EditableLineResult? {
         val snapshot = request.snapshot
         snapshot.scalars.forEachIndexed { index, scalar ->
@@ -394,7 +394,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun layoutAnalyzed(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         analysis: UnicodeAnalysis,
         backend: ShapingBackend,
         context: EditorOperationContext,
@@ -426,7 +426,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun shapeRuns(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         analysis: UnicodeAnalysis,
         backend: ShapingBackend,
     ): ShapingRunsResult {
@@ -493,7 +493,7 @@ public object JvmEditableLineFacade {
     }
 
     private fun tabControlRun(
-        request: JvmEditableLineFacadeRequest,
+        request: EditableLineFacadeRequest,
         analysis: UnicodeAnalysis,
         backend: ShapingBackend,
         plan: ShapingPlan,

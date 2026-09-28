@@ -12,10 +12,10 @@ import org.graphiks.kalligraphie.api.ShapingResourceProfile;
 import org.graphiks.kalligraphie.api.TextSnapshot;
 import org.graphiks.kalligraphie.api.UnicodeAnalysisProfile;
 
-final class LegacyJvmEditableLineFacadeRequestFactory {
-    private LegacyJvmEditableLineFacadeRequestFactory() {}
+final class LegacyEditableLineFacadeRequestFactory {
+    private LegacyEditableLineFacadeRequestFactory() {}
 
-    static JvmEditableLineFacadeRequest create(
+    static EditableLineFacadeRequest create(
             TextSnapshot snapshot,
             FontInstance font,
             BaseDirection baseDirection,
@@ -28,7 +28,7 @@ final class LegacyJvmEditableLineFacadeRequestFactory {
             CancellationToken cancellationToken,
             UnicodeAnalysisProfile unicodeAnalysisProfile,
             ShapingResourceProfile shapingResourceProfile) {
-        return new JvmEditableLineFacadeRequest(
+        return new EditableLineFacadeRequest(
                 snapshot,
                 font,
                 baseDirection,

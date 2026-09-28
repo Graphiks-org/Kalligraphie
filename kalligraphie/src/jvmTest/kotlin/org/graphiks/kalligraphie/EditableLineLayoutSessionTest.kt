@@ -36,7 +36,7 @@ import org.graphiks.kalligraphie.api.TextSnapshot
 import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
-class JvmEditableLineLayoutSessionTest {
+class EditableLineLayoutSessionTest {
     @Test
     fun oneSessionShapesSuccessiveRealEditsToAuditedGlyphClusterAndCaretGeometry() {
         val font = liberationSans()
@@ -336,9 +336,9 @@ class JvmEditableLineLayoutSessionTest {
         }
     }
 
-    private fun openSession(): JvmEditableLineLayoutSession =
-        assertIs<FontOperationResult.Success<JvmEditableLineLayoutSession>>(
-            JvmEditableLineLayoutSession.open(),
+    private fun openSession(): EditableLineLayoutSession =
+        assertIs<FontOperationResult.Success<EditableLineLayoutSession>>(
+            EditableLineLayoutSession.open(),
         ).value
 
     private fun request(
@@ -347,7 +347,7 @@ class JvmEditableLineLayoutSessionTest {
         cancellationToken: CancellationToken = CancellationToken.none,
         shapingResourceProfile: ShapingResourceProfile = ShapingResourceProfile.unbounded,
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
-    ): JvmEditableLineFacadeRequest = JvmEditableLineFacadeRequest(
+    ): EditableLineFacadeRequest = EditableLineFacadeRequest(
         snapshot = snapshot,
         font = font,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,

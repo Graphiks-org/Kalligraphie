@@ -22,9 +22,9 @@ import org.graphiks.kalligraphie.api.LineVerticalMetrics
 import org.graphiks.kalligraphie.api.OutlineProfile
 import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
-import org.graphiks.kalligraphie.JvmEditableLineFacadeRequest
+import org.graphiks.kalligraphie.EditableLineFacadeRequest
 import org.graphiks.kalligraphie.layout.openLayoutHandle
-import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
+import org.graphiks.kalligraphie.EditableLineLayoutSession
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
@@ -48,12 +48,12 @@ class CoreTextRegistryJourneyTest {
                 success(catalog.resolveFace(face.id, requirements)).instantiate(FontInstanceDescriptor(LayoutUnit(1000f))),
             )
             val resolver = success(catalog.openAssetResolver())
-            val session = success(JvmEditableLineLayoutSession.open())
+            val session = success(EditableLineLayoutSession.open())
             try {
                 val snapshot = Kalligraphie.decodeUtf8(TextVersion.create(), listOf(TextSlice.Utf8("Affi".encodeToByteArray()))).snapshot
                 val line = assertIs<EditableLineResult.Success>(
                     session.layout(
-                        JvmEditableLineFacadeRequest(
+                        EditableLineFacadeRequest(
                             snapshot = snapshot,
                             font = font,
                             baseDirection = BaseDirection.LEFT_TO_RIGHT,

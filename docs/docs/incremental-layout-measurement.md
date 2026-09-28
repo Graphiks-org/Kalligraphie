@@ -3,7 +3,7 @@
 Kalligraphie measures incremental paragraph layout in the non-published
 `:kalligraphie:bench` module. It is not a functional latency test and not a
 published benchmark result. The profiles execute the real
-`JvmIncrementalParagraphLayoutSession`, Unicode analysis, embedded HarfBuzz, and
+`IncrementalParagraphLayoutSession`, Unicode analysis, embedded HarfBuzz, and
 the checked-in DejaVu and Amiri font fixtures.
 
 They belong to the module's paragraph half: they need the `END_TO_END_LAYOUT`

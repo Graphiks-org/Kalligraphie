@@ -60,7 +60,7 @@ import org.graphiks.kalligraphie.unicode.PortableUnicodeAnalyzer
  *
  * @throws IllegalArgumentException when [language] is blank.
  */
-public class JvmIncrementalParagraphLayoutRequest(
+public class IncrementalParagraphLayoutRequest(
     /** Validated target input, exact requested range, overscan, prior state, delta, and cancellation. */
     public val request: IncrementalLayoutRequest,
     /** Explicit UAX #9 paragraph base direction. */
@@ -108,7 +108,7 @@ public class JvmIncrementalParagraphLayoutRequest(
  * [layout] after close fail with [IllegalStateException]; [currentLayout] remains readable because
  * closing native work does not invalidate an already published immutable result.
  */
-public class JvmIncrementalParagraphLayoutSession private constructor(
+public class IncrementalParagraphLayoutSession private constructor(
     private val backend: ShapingBackend,
     private val engine: IncrementalParagraphLayoutEngine,
 ) : AutoCloseable {
@@ -137,10 +137,10 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
      *
      * @throws IllegalStateException when the session has already been closed.
      */
-    public fun layout(request: JvmIncrementalParagraphLayoutRequest): IncrementalLayoutResult =
+    public fun layout(request: IncrementalParagraphLayoutRequest): IncrementalLayoutResult =
         lifecycle.withLock { layoutLocked(request) }
 
-    private fun layoutLocked(request: JvmIncrementalParagraphLayoutRequest): IncrementalLayoutResult {
+    private fun layoutLocked(request: IncrementalParagraphLayoutRequest): IncrementalLayoutResult {
         check(!closed) { "The JVM incremental paragraph layout session is closed." }
         val generation = ++nextGeneration
         latestAttempt = generation
@@ -254,7 +254,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     }
 
     private fun composeIncrementally(
-        sessionRequest: JvmIncrementalParagraphLayoutRequest,
+        sessionRequest: IncrementalParagraphLayoutRequest,
         target: IncrementalMaterializationTarget,
         overscan: LineOverscan,
         request: IncrementalLayoutRequest,
@@ -339,8 +339,8 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
                 )
                 WindowContinuation.Cancelled -> return ComputerWork(IncrementalParagraphComputation.Cancelled)
             }
-            val paragraphResult = JvmEditableParagraphFacade.layoutBorrowing(
-                request = JvmEditableParagraphFacadeRequest(
+            val paragraphResult = EditableParagraphFacade.layoutBorrowing(
+                request = EditableParagraphFacadeRequest(
                     snapshot = snapshot,
                     sourceRange = sourceRange,
                     constraints = oneLineConstraints(request.constraints, blockCursor),
@@ -472,7 +472,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     }
 
     private fun continuationForWindow(
-        sessionRequest: JvmIncrementalParagraphLayoutRequest,
+        sessionRequest: IncrementalParagraphLayoutRequest,
         request: IncrementalLayoutRequest,
         sourceRange: TextRange,
         blockCursor: LayoutUnit,
@@ -480,8 +480,8 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     ): WindowContinuation {
         if (sourceRange.start == request.input.text.range.start) return WindowContinuation.NotRequired
         return when (
-            val prepared = JvmEditableParagraphFacade.continuationBorrowing(
-                request = JvmEditableParagraphFacadeRequest(
+            val prepared = EditableParagraphFacade.continuationBorrowing(
+                request = EditableParagraphFacadeRequest(
                     snapshot = request.input.text,
                     sourceRange = sourceRange,
                     constraints = oneLineConstraints(
@@ -609,7 +609,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
     }
 
     private fun continuationSemantics(
-        sessionRequest: JvmIncrementalParagraphLayoutRequest,
+        sessionRequest: IncrementalParagraphLayoutRequest,
         request: IncrementalLayoutRequest,
         nextBlockCursor: LayoutUnit,
     ): String = buildString {
@@ -654,17 +654,17 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
             cacheBudgetBytes: Long = DEFAULT_CACHE_BUDGET_BYTES,
             preparedFontCachePolicy: PreparedFontCachePolicy = PreparedFontCachePolicy.default,
         ):
-            FontOperationResult<JvmIncrementalParagraphLayoutSession> =
+            FontOperationResult<IncrementalParagraphLayoutSession> =
             openWithBackendFactory(cacheBudgetBytes) { HarfBuzzShapingBackend.open(preparedFontCachePolicy) }
 
         internal fun openWithBackendFactory(
             cacheBudgetBytes: Long,
             openBackend: () -> FontOperationResult<ShapingBackend>,
-        ): FontOperationResult<JvmIncrementalParagraphLayoutSession> {
+        ): FontOperationResult<IncrementalParagraphLayoutSession> {
             val engine = IncrementalParagraphLayoutEngine(cacheBudgetBytes)
             return when (val opened = openBackend()) {
                 is FontOperationResult.Success -> FontOperationResult.Success(
-                    JvmIncrementalParagraphLayoutSession(opened.value, engine),
+                    IncrementalParagraphLayoutSession(opened.value, engine),
                     opened.diagnostics,
                 )
                 is FontOperationResult.Failure -> opened
@@ -675,7 +675,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         internal fun openOwnedBackend(
             backend: ShapingBackend,
             cacheBudgetBytes: Long = DEFAULT_CACHE_BUDGET_BYTES,
-        ): JvmIncrementalParagraphLayoutSession = JvmIncrementalParagraphLayoutSession(
+        ): IncrementalParagraphLayoutSession = IncrementalParagraphLayoutSession(
             backend,
             IncrementalParagraphLayoutEngine(cacheBudgetBytes),
         )
@@ -719,7 +719,7 @@ public class JvmIncrementalParagraphLayoutSession private constructor(
         val verticalMetricsPolicy: VerticalMetricsPolicy,
     ) {
         companion object {
-            fun from(request: JvmIncrementalParagraphLayoutRequest): JvmCompositionConfiguration =
+            fun from(request: IncrementalParagraphLayoutRequest): JvmCompositionConfiguration =
                 JvmCompositionConfiguration(
                     baseDirection = request.baseDirection,
                     language = request.language,

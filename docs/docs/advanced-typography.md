@@ -3,7 +3,7 @@
 This guide documents the consumer journey for advanced typographic behaviors
 published by `org.graphiks:kalligraphie`. Every behavior listed here is a real
 pipeline behavior: it shapes real text with real fonts and publishes observable
-geometry through `JvmEditableParagraphFacade` (or the portable
+geometry through `EditableParagraphFacade` (or the portable
 `ParagraphLayouter` contract).
 
 All derived and synthetic content shares one rule: **it never creates a

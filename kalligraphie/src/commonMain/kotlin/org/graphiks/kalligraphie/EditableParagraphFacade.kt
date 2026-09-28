@@ -59,9 +59,9 @@ import org.graphiks.kalligraphie.api.LineBreakAnalysisOutcome
  *
  * Input incompatibilities discovered after pinned Unicode and shaping identities are available
  * are returned as [ParagraphLayoutError.InvalidInput], rather than escaping from
- * [JvmEditableParagraphFacade.layout].
+ * [EditableParagraphFacade.layout].
  */
-public class JvmEditableParagraphFacadeRequest(
+public class EditableParagraphFacadeRequest(
     /** Complete immutable source snapshot analyzed by the facade. */
     public val snapshot: TextSnapshot,
     /** Source range to compose, or the exact remainder named by [continuation]. */
@@ -164,7 +164,7 @@ public class JvmEditableParagraphFacadeRequest(
  * continuations only. No backend, resolver, native handle, renderer, or platform object is
  * retained. The facade itself has no mutable state and can be called concurrently.
  */
-public object JvmEditableParagraphFacade {
+public object EditableParagraphFacade {
     /**
      * Composes [request] through the complete pinned JVM reference route.
      *
@@ -172,7 +172,7 @@ public object JvmEditableParagraphFacade {
      * backend-close failures are represented by [ParagraphLayoutResult]. Only unexpected virtual
      * machine failures escape the call. A successful result publishes complete lines only.
      */
-    public fun layout(request: JvmEditableParagraphFacadeRequest): ParagraphLayoutResult {
+    public fun layout(request: EditableParagraphFacadeRequest): ParagraphLayoutResult {
         val context = EditorOperationContext.create(request.operationProfile, request.cancellationToken)
         context.sourceLimit(request.snapshot)?.let {
             return ParagraphLayoutResult.Failure(ParagraphLayoutError.OperationLimitExceeded(it))
@@ -196,7 +196,7 @@ public object JvmEditableParagraphFacade {
     }
 
     internal fun layout(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
     ): ParagraphLayoutResult = layoutOwned(
         request,
@@ -205,7 +205,7 @@ public object JvmEditableParagraphFacade {
     )
 
     internal fun layout(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         paragraphLayout: (ParagraphLayoutRequest, EditableLineMaterialization) -> ParagraphLayoutResult =
             ParagraphComposer::layout,
@@ -221,7 +221,7 @@ public object JvmEditableParagraphFacade {
     }
 
     private fun layoutOwned(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         context: EditorOperationContext,
     ): ParagraphLayoutResult {
@@ -244,7 +244,7 @@ public object JvmEditableParagraphFacade {
      * geometry route as the public facade.
      */
     internal fun layoutBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
     ): ParagraphLayoutResult = layoutBorrowing(
         request,
@@ -253,7 +253,7 @@ public object JvmEditableParagraphFacade {
     )
 
     internal fun layoutBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         context: EditorOperationContext,
     ): ParagraphLayoutResult = try {
@@ -273,7 +273,7 @@ public object JvmEditableParagraphFacade {
     }
 
     internal fun layoutBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         paragraphLayout: (ParagraphLayoutRequest, EditableLineMaterialization) -> ParagraphLayoutResult =
             ParagraphComposer::layout,
@@ -294,7 +294,7 @@ public object JvmEditableParagraphFacade {
      * every preparation failure remain distinct typed outcomes.
      */
     internal fun continuationBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         remainingSourceRange: TextRange,
         resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
@@ -309,7 +309,7 @@ public object JvmEditableParagraphFacade {
     )
 
     internal fun continuationBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         remainingSourceRange: TextRange,
         resumptionRegionTop: org.graphiks.kalligraphie.api.LayoutUnit,
@@ -340,7 +340,7 @@ public object JvmEditableParagraphFacade {
     }
 
     internal fun prepareParagraphRequestBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
     ): ParagraphLayoutRequest? = when (
         val prepared = prepareParagraphRequestBorrowing(
@@ -354,7 +354,7 @@ public object JvmEditableParagraphFacade {
     }
 
     internal fun prepareParagraphRequestBorrowing(
-        request: JvmEditableParagraphFacadeRequest,
+        request: EditableParagraphFacadeRequest,
         backend: ShapingBackend,
         context: EditorOperationContext,
     ): ParagraphPreparation {

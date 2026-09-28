@@ -398,8 +398,8 @@ class JvmPortableGlyphMaterializationLineTest {
         font: FontInstance = fixture.font,
         cancellationToken: CancellationToken = CancellationToken.none,
     ): EditableLineResult =
-        JvmEditableLineFacade.layout(
-            JvmEditableLineFacadeRequest(
+        EditableLineFacade.layout(
+            EditableLineFacadeRequest(
                 snapshot = snapshot,
                 font = font,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -437,8 +437,8 @@ class JvmPortableGlyphMaterializationLineTest {
         cancellationToken: CancellationToken = CancellationToken.none,
     ): ParagraphLayoutResult {
         val face = fontCatalog.faces.single().id
-        return JvmEditableParagraphFacade.layout(
-                JvmEditableParagraphFacadeRequest(
+        return EditableParagraphFacade.layout(
+                EditableParagraphFacadeRequest(
                     snapshot = snapshot,
                     constraints = HorizontalParagraphConstraints(
                         region = LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(2_000f), LayoutUnit(1_000f)),

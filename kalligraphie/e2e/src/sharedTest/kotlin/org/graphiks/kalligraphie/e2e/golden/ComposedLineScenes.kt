@@ -3,8 +3,8 @@ package org.graphiks.kalligraphie.e2e.golden
 import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import kotlin.math.roundToInt
 import kotlin.test.assertIs
-import org.graphiks.kalligraphie.JvmEditableParagraphFacade
-import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
+import org.graphiks.kalligraphie.EditableParagraphFacade
+import org.graphiks.kalligraphie.EditableParagraphFacadeRequest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -241,7 +241,7 @@ internal object ComposedLineScenes {
             TextVersion.create(),
             listOf(TextSlice.Utf16(text.toCharArray())),
         ).snapshot
-        val request = JvmEditableParagraphFacadeRequest(
+        val request = EditableParagraphFacadeRequest(
             snapshot = snapshot,
             sourceRange = snapshot.range,
             constraints = HorizontalParagraphConstraints(
@@ -263,7 +263,7 @@ internal object ComposedLineScenes {
             cancellationToken = CancellationToken.none,
             operationProfile = EditorOperationProfile.unbounded,
         )
-        val result = when (val outcome = JvmEditableParagraphFacade.layout(request)) {
+        val result = when (val outcome = EditableParagraphFacade.layout(request)) {
             is ParagraphLayoutResult.Success -> outcome
             is ParagraphLayoutResult.Failure -> error(
                 "line '$text' failed: ${outcome.error.code}: ${outcome.error.message} " +

@@ -85,7 +85,7 @@ réutilisable).
 ## Sessions HarfBuzz réutilisables
 
 `SessionColdSingleFont`, `SessionWarmSingleFont`, `SessionColdMixedBidi` et
-`SessionWarmMixedBidi` utilisent `JvmIncrementalParagraphLayoutSession`. Les
+`SessionWarmMixedBidi` utilisent `IncrementalParagraphLayoutSession`. Les
 deux côtés amorcent les assets du catalogue et du resolver hors chronomètre.
 Un échantillon froid ouvre sa session dans l’intervalle mesuré ; un échantillon
 chaud conserve une session et son backend HarfBuzz, amorcés par un layout hors
@@ -174,9 +174,9 @@ limites `(4, 0, 1362, 1409)`, deux contours. Il vérifie aussi la séquence dist
 des glyphes finaux du paragraphe contre le corpus fixe ci-dessous.
 
 `FontAssetRetainReopenCold` crée un catalogue embarqué, un resolver, une face
-résolue, son instance de police et une session publique `JvmEditableLineLayoutSession`
+résolue, son instance de police et une session publique `EditableLineLayoutSession`
 neufs par échantillon. Cette session possède son vrai backend HarfBuzz. Son
-appel public `layout`, recevant un `JvmEditableLineFacadeRequest`, compose le
+appel public `layout`, recevant un `EditableLineFacadeRequest`, compose le
 texte stable comme une unique `EditableLine` représentable. Le parcours appelle
 `openLayoutHandle`, regroupe tous les certificats finaux
 par clé complète `FontRenderAssetKey`, conserve un asset de renderer (moteur de

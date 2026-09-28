@@ -288,7 +288,7 @@ vivant, puis retenir le certificat publié exact via
 `retainFontAsset(certificate)`. La ressource retournée est un propriétaire
 indépendant, capable d’en détacher un autre.
 
-`JvmEditableParagraphFacade.layout` possède son backend de shaping (moteur
+`EditableParagraphFacade.layout` possède son backend de shaping (moteur
 sous-jacent) utilisé et le ferme avant publication du résultat. Le paragraphe
 immuable publié ne conserve pas ce moteur ; son résolveur correspondant doit
 toutefois rester vivant pour ouvrir un propriétaire de mise en page.

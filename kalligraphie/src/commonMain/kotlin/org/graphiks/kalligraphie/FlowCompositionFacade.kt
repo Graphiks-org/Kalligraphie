@@ -34,7 +34,7 @@ import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
  *
  * @param features immutable OpenType feature overrides; defaults to the typography snapshot.
  */
-public class JvmFlowCompositionRequest(
+public class FlowCompositionRequest(
     /** Portable bounded flow request consumed by the layout engine. */
     public val request: IncrementalFlowLayoutRequest,
     /** Explicit UAX #9 paragraph base direction. */
@@ -75,14 +75,14 @@ public class JvmFlowCompositionRequest(
  * suffix from that immutable analysis and owns all reflow and structured-checkpoint decisions.
  * The facade owns no page or renderer and publishes no value after cancellation or failure.
  */
-public object JvmFlowCompositionFacade {
+public object FlowCompositionFacade {
     /**
      * Materializes [request] synchronously and closes all facade-owned native resources.
      *
      * Invalid paragraph inputs, region protocols, font failures, and cancellation are returned as
      * typed [FlowCompositionResult.Failure] values.
      */
-    public fun layout(request: JvmFlowCompositionRequest): FlowCompositionResult<FlowLayout> {
+    public fun layout(request: FlowCompositionRequest): FlowCompositionResult<FlowLayout> {
         val context = EditorOperationContext.create(
             request.request.operationProfile,
             request.request.cancellationToken,
@@ -118,7 +118,7 @@ public object JvmFlowCompositionFacade {
     }
 
     internal fun layoutBorrowing(
-        request: JvmFlowCompositionRequest,
+        request: FlowCompositionRequest,
         backend: ShapingBackend,
     ): FlowCompositionResult<FlowLayout> = layoutBorrowing(
         request,
@@ -127,7 +127,7 @@ public object JvmFlowCompositionFacade {
     )
 
     internal fun layoutBorrowing(
-        request: JvmFlowCompositionRequest,
+        request: FlowCompositionRequest,
         backend: ShapingBackend,
         context: EditorOperationContext,
     ): FlowCompositionResult<FlowLayout> {
@@ -136,8 +136,8 @@ public object JvmFlowCompositionFacade {
             return FlowCompositionResult.Failure(FlowCompositionError.Cancelled)
         }
         val paragraph = try {
-            JvmEditableParagraphFacade.prepareParagraphRequestBorrowing(
-                JvmEditableParagraphFacadeRequest(
+            EditableParagraphFacade.prepareParagraphRequestBorrowing(
+                EditableParagraphFacadeRequest(
                     snapshot = portable.input.text,
                     sourceRange = portable.input.text.range,
                     constraints = portable.constraints,

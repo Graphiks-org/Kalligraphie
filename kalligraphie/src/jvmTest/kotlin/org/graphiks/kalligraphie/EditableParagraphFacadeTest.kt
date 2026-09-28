@@ -62,14 +62,14 @@ import org.graphiks.kalligraphie.api.TextVersion
 import org.graphiks.kalligraphie.api.VisualNavigationDirection
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
-class JvmEditableParagraphFacadeTest {
+class EditableParagraphFacadeTest {
     @Test
     fun publishesLocalizedFallbackMaterializationRejection() {
         val fixture = diagnosticFixture("AA", colorLastResort = true)
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(fixture.catalog.openAssetResolver()).value
         try {
             val profile = diagnosticPaintProfile()
-            val result = assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(request(
+            val result = assertIs<ParagraphLayoutResult.Success>(EditableParagraphFacade.layout(request(
                 fixture, constraints(10_000f, 0f, 2_000f), materialization = EditableLineMaterialization.Renderable(
                     resolver, org.graphiks.kalligraphie.api.FontRenderVariantSnapshot.default, FontAccessRequirementsSnapshot.renderable(listOf(profile)),
                 ),
@@ -114,7 +114,7 @@ class JvmEditableParagraphFacadeTest {
         val fixture = diagnosticFixture("A", colorLastResort = false)
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(fixture.catalog.openAssetResolver()).value
         try {
-            val result = assertIs<ParagraphLayoutResult.Failure>(JvmEditableParagraphFacade.layout(request(
+            val result = assertIs<ParagraphLayoutResult.Failure>(EditableParagraphFacade.layout(request(
                 fixture, constraints(10_000f, 0f, 2_000f), materialization = EditableLineMaterialization.Renderable(
                     resolver, org.graphiks.kalligraphie.api.FontRenderVariantSnapshot.default, FontAccessRequirementsSnapshot.renderable(listOf(diagnosticPaintProfile())),
                 ),
@@ -141,7 +141,7 @@ class JvmEditableParagraphFacadeTest {
         val fixture = diagnosticFixture("A", colorLastResort = true)
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(fixture.catalog.openAssetResolver()).value
         resolver.close()
-        val result = assertIs<ParagraphLayoutResult.Failure>(JvmEditableParagraphFacade.layout(request(
+        val result = assertIs<ParagraphLayoutResult.Failure>(EditableParagraphFacade.layout(request(
             fixture, constraints(10_000f, 0f, 2_000f), materialization = EditableLineMaterialization.Renderable(
                 resolver, FontRenderVariantKey.default, diagnosticOutlineProfile(),
             ),
@@ -153,7 +153,7 @@ class JvmEditableParagraphFacadeTest {
     @Test
     fun genericShapingFailureDoesNotClaimAContextProjectionFailure() {
         val fixture = diagnosticFixture("A", colorLastResort = true)
-        val result = assertIs<ParagraphLayoutResult.Failure>(JvmEditableParagraphFacade.layout(request(
+        val result = assertIs<ParagraphLayoutResult.Failure>(EditableParagraphFacade.layout(request(
             fixture, constraints(10_000f, 0f, 2_000f), features = listOf(OpenTypeFeature("rand", 1)),
         )))
         val error = assertIs<FontError.UnrenderableFontResolution>(assertIs<ParagraphLayoutError.FontFailure>(result.error).fontError)
@@ -167,7 +167,7 @@ class JvmEditableParagraphFacadeTest {
         val fixture = diagnosticFixture("\n", colorLastResort = true)
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(fixture.catalog.openAssetResolver()).value
         try {
-            val result = assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(request(
+            val result = assertIs<ParagraphLayoutResult.Success>(EditableParagraphFacade.layout(request(
                 fixture, constraints(10_000f, 0f, 2_000f), materialization = EditableLineMaterialization.Renderable(
                     resolver, org.graphiks.kalligraphie.api.FontRenderVariantSnapshot.default,
                     FontAccessRequirementsSnapshot.renderable(listOf(diagnosticPaintProfile())),
@@ -188,7 +188,7 @@ class JvmEditableParagraphFacadeTest {
         val fixture = fontFixture("A\n", listOf(FontFixture("liberation/LiberationSans-Regular.ttf", "Liberation Sans")))
         val resolver = assertIs<FontOperationResult.Success<FontAssetResolverHandle>>(fixture.catalog.openAssetResolver()).value
         try {
-            val result = assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(request(
+            val result = assertIs<ParagraphLayoutResult.Success>(EditableParagraphFacade.layout(request(
                 fixture, constraints(10_000f, 0f, 2_000f), materialization = EditableLineMaterialization.Renderable(
                     resolver, org.graphiks.kalligraphie.api.FontRenderVariantSnapshot.default,
                     FontAccessRequirementsSnapshot.renderable(listOf(diagnosticPaintProfile(), diagnosticOutlineProfile())),
@@ -234,7 +234,7 @@ class JvmEditableParagraphFacadeTest {
                 FontAccessRequirementsSnapshot.renderable(listOf(diagnosticPaintProfile())),
             )
             val lines = listOf(fixture, reordered).map { input ->
-                assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(request(
+                assertIs<ParagraphLayoutResult.Success>(EditableParagraphFacade.layout(request(
                     input, constraints(10_000f, 0f, 2_000f), materialization = materialization,
                 ))).layout.lines.single()
             }
@@ -275,7 +275,7 @@ class JvmEditableParagraphFacadeTest {
                     outlineProfile = diagnosticOutlineProfile().copy(maxContours = maxContours),
                 )
                 return assertIs<ParagraphLayoutResult.Success>(
-                    JvmEditableParagraphFacade.layout(
+                    EditableParagraphFacade.layout(
                         request(
                             fixture,
                             constraints(width = 10_000f, top = 0f, height = 1_200f),
@@ -331,7 +331,7 @@ class JvmEditableParagraphFacadeTest {
         )
         try {
             val limited = assertIs<ParagraphLayoutResult.Failure>(
-                JvmEditableParagraphFacade.layout(
+                EditableParagraphFacade.layout(
                     request(
                         fixture,
                         constraints(width = 10_000f, top = 0f, height = 1_200f),
@@ -351,7 +351,7 @@ class JvmEditableParagraphFacadeTest {
             assertEquals(2L, exceeded.observed)
 
             val accepted = assertIs<ParagraphLayoutResult.Success>(
-                JvmEditableParagraphFacade.layout(
+                EditableParagraphFacade.layout(
                     request(
                         fixture,
                         constraints(width = 10_000f, top = 0f, height = 1_200f),
@@ -385,7 +385,7 @@ class JvmEditableParagraphFacadeTest {
             fixture.catalog.openAssetResolver(),
         ).value
         try {
-            val outcome = JvmEditableParagraphFacade.layout(
+            val outcome = EditableParagraphFacade.layout(
                 request(
                     fixture,
                     constraints(width = 10_000f, top = 0f, height = 1_200f),
@@ -429,7 +429,7 @@ class JvmEditableParagraphFacadeTest {
         ).value
         try {
             val result = assertIs<ParagraphLayoutResult.Failure>(
-                JvmEditableParagraphFacade.layout(
+                EditableParagraphFacade.layout(
                     request(
                         fixture,
                         constraints(width = 10_000f, top = 0f, height = 1_200f),
@@ -489,7 +489,7 @@ class JvmEditableParagraphFacadeTest {
 
         try {
             val result = assertIs<ParagraphLayoutResult.Success>(
-                JvmEditableParagraphFacade.layout(
+                EditableParagraphFacade.layout(
                     request(
                         fixture = fixture,
                         constraints = constraints(width = 10_000f, top = 50f, height = 1_200f),
@@ -544,7 +544,7 @@ class JvmEditableParagraphFacadeTest {
         val geometry = constraints(width = 1_400f, top = 50f, height = 2_400f)
 
         val limited = assertIs<ParagraphLayoutResult.Failure>(
-            JvmEditableParagraphFacade.layout(
+            EditableParagraphFacade.layout(
                 request(fixture, geometry, operationProfile = EditorOperationProfile(maxTotalGlyphs = 2)),
             ),
         )
@@ -554,7 +554,7 @@ class JvmEditableParagraphFacadeTest {
         assertTrue(exceeded.observed > exceeded.maximum)
 
         val retry = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
+            EditableParagraphFacade.layout(
                 request(fixture, geometry, operationProfile = EditorOperationProfile(maxTotalGlyphs = 64)),
             ),
         )
@@ -584,7 +584,7 @@ class JvmEditableParagraphFacadeTest {
     fun publicFacadeCanonicalizesBcp47LanguageForPopulatedSnapshot() {
         val populatedFixture = multiFaceFixture("fi")
         val populated = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
+            EditableParagraphFacade.layout(
                 request(
                     fixture = populatedFixture,
                     constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
@@ -609,7 +609,7 @@ class JvmEditableParagraphFacadeTest {
         ).value
         var suppliedRequest: ParagraphLayoutRequest? = null
 
-        val result = JvmEditableParagraphFacade.layout(
+        val result = EditableParagraphFacade.layout(
             request = request(
                 fixture = emptyFixture,
                 constraints = constraints(width = 1_400f, top = 50f, height = 1_200f),
@@ -978,7 +978,7 @@ class JvmEditableParagraphFacadeTest {
         val partial = layout(fixture, constraints(width = 1_400f, top = 50f, height = 1_200f))
         val continuation = assertNotNull(partial.continuation)
         val resumed = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layout(
+            EditableParagraphFacade.layout(
                 request(
                     fixture = fixture,
                     constraints = constraints(width = 1_400f, top = 1_250f, height = 1_200f),
@@ -997,7 +997,7 @@ class JvmEditableParagraphFacadeTest {
             (partial.layout.lines + resumed.layout.lines).map(::lineFingerprint),
         )
 
-        val incompatible = JvmEditableParagraphFacade.layout(
+        val incompatible = EditableParagraphFacade.layout(
             request(
                 fixture = fixture,
                 constraints = constraints(width = 1_399f, top = 1_250f, height = 1_200f),
@@ -1009,7 +1009,7 @@ class JvmEditableParagraphFacadeTest {
             assertIs<ParagraphLayoutResult.Failure>(incompatible).error,
         )
 
-        val incompatibleLeft = JvmEditableParagraphFacade.layout(
+        val incompatibleLeft = EditableParagraphFacade.layout(
             request(
                 fixture = fixture,
                 constraints = HorizontalParagraphConstraints(
@@ -1029,7 +1029,7 @@ class JvmEditableParagraphFacadeTest {
             assertIs<ParagraphLayoutResult.Failure>(incompatibleLeft).error,
         )
 
-        val incompatibleTop = JvmEditableParagraphFacade.layout(
+        val incompatibleTop = EditableParagraphFacade.layout(
             request(
                 fixture = fixture,
                 constraints = constraints(width = 1_400f, top = 1_251f, height = 1_200f),
@@ -1045,7 +1045,7 @@ class JvmEditableParagraphFacadeTest {
     @Test
     fun publicFacadeReturnsTypedCancellationAndInvalidClusterRange() {
         val fixture = multiFaceFixture("f\u0301")
-        val cancelled = JvmEditableParagraphFacade.layout(
+        val cancelled = EditableParagraphFacade.layout(
             request(
                 fixture,
                 constraints(width = 1_400f, top = 50f, height = 1_200f),
@@ -1054,7 +1054,7 @@ class JvmEditableParagraphFacadeTest {
         )
         assertIs<ParagraphLayoutResult.Cancelled>(cancelled)
 
-        val splitCluster = JvmEditableParagraphFacade.layout(
+        val splitCluster = EditableParagraphFacade.layout(
             request(
                 fixture,
                 constraints(width = 1_400f, top = 50f, height = 1_200f),
@@ -1090,7 +1090,7 @@ class JvmEditableParagraphFacadeTest {
             HarfBuzzShapingBackend.open(),
         ).value
         try {
-            val result = JvmEditableParagraphFacade.layout(
+            val result = EditableParagraphFacade.layout(
                 request(fixture, constraints(width = 1_400f, top = 50f, height = 1_200f)),
                 CloseFailingBackend(backend),
             )
@@ -1114,7 +1114,7 @@ class JvmEditableParagraphFacadeTest {
 
         try {
             assertIs<ParagraphLayoutResult.Success>(
-                JvmEditableParagraphFacade.layoutBorrowing(
+                EditableParagraphFacade.layoutBorrowing(
                     request(fixture, constraints(width = 1_400f, top = 50f, height = 1_200f)),
                     backend,
                 ),
@@ -1133,7 +1133,7 @@ class JvmEditableParagraphFacadeTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "ar",
     ): ParagraphLayoutResult.Success = assertIs(
-        JvmEditableParagraphFacade.layout(request(fixture, constraints, baseDirection = baseDirection, language = language)),
+        EditableParagraphFacade.layout(request(fixture, constraints, baseDirection = baseDirection, language = language)),
     )
 
     private fun request(
@@ -1147,7 +1147,7 @@ class JvmEditableParagraphFacadeTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
         materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
-    ): JvmEditableParagraphFacadeRequest = JvmEditableParagraphFacadeRequest(
+    ): EditableParagraphFacadeRequest = EditableParagraphFacadeRequest(
         snapshot = fixture.snapshot,
         sourceRange = sourceRange,
         constraints = constraints,

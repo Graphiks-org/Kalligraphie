@@ -73,7 +73,7 @@ class FlowCompositionEditorJourneyTest {
         val constraints = incrementalTestConstraints(width = 3_800f, top = 100f, height = 1_200f)
 
         val limited = assertIs<FlowCompositionResult.Failure>(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -88,7 +88,7 @@ class FlowCompositionEditorJourneyTest {
         assertEquals(0L, exceeded.maximum)
 
         val retry = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -113,7 +113,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val result = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     horizontalChain(count = 1, inlineExtent = 3_800f),
@@ -217,7 +217,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val first = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -248,7 +248,7 @@ class FlowCompositionEditorJourneyTest {
         val recording = RecordingShapingBackend(backend)
         try {
             val result = success(
-                JvmFlowCompositionFacade.layoutBorrowing(
+                FlowCompositionFacade.layoutBorrowing(
                     request(
                         fixture,
                         chain,
@@ -296,7 +296,7 @@ class FlowCompositionEditorJourneyTest {
         }
 
         val result = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     horizontalChain(count = 1, inlineExtent = 4_000f),
@@ -327,7 +327,7 @@ class FlowCompositionEditorJourneyTest {
         val chain = horizontalChain(count = lineCount, inlineExtent = 4_000f)
         val constraints = incrementalTestConstraints(width = 4_000f, top = 100f, height = 1_200f)
         var extended = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     source,
                     chain,
@@ -339,7 +339,7 @@ class FlowCompositionEditorJourneyTest {
         for (line in 1 until lineCount) {
             val lineStart = line * 2
             extended = success(
-                JvmFlowCompositionFacade.layout(
+                FlowCompositionFacade.layout(
                     request(
                         source,
                         chain,
@@ -369,7 +369,7 @@ class FlowCompositionEditorJourneyTest {
             ),
         ).value
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -379,7 +379,7 @@ class FlowCompositionEditorJourneyTest {
                 ),
             ),
         )
-        val full = success(JvmFlowCompositionFacade.layout(request(target, chain, constraints = constraints)))
+        val full = success(FlowCompositionFacade.layout(request(target, chain, constraints = constraints)))
 
         assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
         assertEquals(full.fragments.map(ParagraphFragment::laidOutRange), edited.fragments.map(ParagraphFragment::laidOutRange))
@@ -412,7 +412,7 @@ class FlowCompositionEditorJourneyTest {
         val constraints = incrementalTestConstraints(width = 2_100f, top = 100f, height = 2_400f)
 
         val first = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -429,7 +429,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val completed = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -451,7 +451,7 @@ class FlowCompositionEditorJourneyTest {
         val source = incrementalRealFontFixture("fi fi")
         val target = source.withTypography()
         val chain = horizontalChain(2)
-        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val initial = success(FlowCompositionFacade.layout(request(source, chain)))
         val foreignSource = incrementalSnapshot("ab")
         val foreignTarget = incrementalSnapshot("ac")
         val foreignChange = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
@@ -529,7 +529,7 @@ class FlowCompositionEditorJourneyTest {
         val chain = FlowChain(listOf(FixedFlowRegion(bounds, intervals)))
 
         val line = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -609,7 +609,7 @@ class FlowCompositionEditorJourneyTest {
         }
 
         val composed = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture = fixture,
                     chain = FlowChain(listOf(region)),
@@ -642,7 +642,7 @@ class FlowCompositionEditorJourneyTest {
         val target = source.withText("ii fi fi")
         val chain = horizontalChain(4)
         val initial = success(
-            JvmFlowCompositionFacade.layout(request(source, chain)),
+            FlowCompositionFacade.layout(request(source, chain)),
         )
         val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
             TextChangeSet.create(
@@ -658,7 +658,7 @@ class FlowCompositionEditorJourneyTest {
         ).value
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -667,7 +667,7 @@ class FlowCompositionEditorJourneyTest {
                 ),
             ),
         )
-        val full = success(JvmFlowCompositionFacade.layout(request(target, chain)))
+        val full = success(FlowCompositionFacade.layout(request(target, chain)))
 
         assertEquals(
             listOf(
@@ -711,7 +711,7 @@ class FlowCompositionEditorJourneyTest {
         val chain = horizontalChain(4, queries)
 
         val partial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -744,7 +744,7 @@ class FlowCompositionEditorJourneyTest {
         val queries = MutableList(4) { 0 }
         val chain = horizontalChain(4, queries)
         val first = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -755,7 +755,7 @@ class FlowCompositionEditorJourneyTest {
         val firstRegionQueries = queries[0]
 
         val extended = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -783,7 +783,7 @@ class FlowCompositionEditorJourneyTest {
         assertNotNull(extended.unmaterializedTail)
 
         val independent = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     horizontalChain(4),
@@ -803,7 +803,7 @@ class FlowCompositionEditorJourneyTest {
         val originalQueries = MutableList(4) { 0 }
         val originalChain = horizontalChain(4, originalQueries)
         val partial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     originalChain,
@@ -837,7 +837,7 @@ class FlowCompositionEditorJourneyTest {
         val target = source.withText("fi fi fx fi fi")
         val queries = MutableList(5) { 0 }
         val chain = horizontalChain(5, queries)
-        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val initial = success(FlowCompositionFacade.layout(request(source, chain)))
         val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
             TextChangeSet.create(
                 source.snapshot,
@@ -853,7 +853,7 @@ class FlowCompositionEditorJourneyTest {
         val beforeEdit = queries.toList()
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -877,7 +877,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val full = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     horizontalChain(5),
@@ -913,7 +913,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val result = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -942,7 +942,7 @@ class FlowCompositionEditorJourneyTest {
             FragmentationConstraints(minLinesAtStart = 2, minLinesAtEnd = 2),
         )
         val partial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(fixture, chain, requestedRange = fixture.snapshot.incrementalRange(0, 1)),
             ),
         )
@@ -950,11 +950,11 @@ class FlowCompositionEditorJourneyTest {
         assertEquals(1, assertNotNull(tail.fragmentationCommitment).remainingLineCount)
 
         val resumed = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(fixture, chain, requestedRange = tail.remainingSourceRange, previousState = partial.state),
             ),
         )
-        val full = success(JvmFlowCompositionFacade.layout(request(fixture, chain)))
+        val full = success(FlowCompositionFacade.layout(request(fixture, chain)))
 
         assertNull(resumed.unmaterializedTail)
         assertEquals(full.fragments.map { it.laidOutRange }, resumed.fragments.map { it.laidOutRange })
@@ -984,7 +984,7 @@ class FlowCompositionEditorJourneyTest {
             FragmentationConstraints(minLinesAtStart = 2, minLinesAtEnd = 2),
         )
         val initial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(source, chain, requestedRange = source.snapshot.incrementalRange(0, 1)),
             ),
         )
@@ -1003,7 +1003,7 @@ class FlowCompositionEditorJourneyTest {
         ).value
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -1018,7 +1018,7 @@ class FlowCompositionEditorJourneyTest {
                 ),
             ),
         )
-        val full = success(JvmFlowCompositionFacade.layout(request(target, chain)))
+        val full = success(FlowCompositionFacade.layout(request(target, chain)))
 
         assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
         assertEquals(full.fragments.map { it.laidOutRange }, edited.fragments.map { it.laidOutRange })
@@ -1048,7 +1048,7 @@ class FlowCompositionEditorJourneyTest {
             FragmentationConstraints(keepTogether = true),
         )
         val initial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     source,
                     chain,
@@ -1075,7 +1075,7 @@ class FlowCompositionEditorJourneyTest {
         ).value
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -1085,7 +1085,7 @@ class FlowCompositionEditorJourneyTest {
                 ),
             ),
         )
-        val full = success(JvmFlowCompositionFacade.layout(request(target, chain, constraints = constraints)))
+        val full = success(FlowCompositionFacade.layout(request(target, chain, constraints = constraints)))
 
         assertEquals(full.fragments.map { it.laidOutRange }, edited.fragments.map { it.laidOutRange })
         assertEquals(full.lines.map(LineLayout::lineBox), edited.lines.map(LineLayout::lineBox))
@@ -1115,7 +1115,7 @@ class FlowCompositionEditorJourneyTest {
         }
         val chain = horizontalChain(6, inlineExtent = 2_600f)
         val initial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     source,
                     chain,
@@ -1139,7 +1139,7 @@ class FlowCompositionEditorJourneyTest {
         ).value
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -1152,7 +1152,7 @@ class FlowCompositionEditorJourneyTest {
             ),
         )
         val full = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     horizontalChain(6, inlineExtent = 2_600f),
@@ -1182,7 +1182,7 @@ class FlowCompositionEditorJourneyTest {
         val target = source.withText("fi \u200Fi fi")
         val queries = MutableList(4) { 0 }
         val chain = horizontalChain(4, queries)
-        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val initial = success(FlowCompositionFacade.layout(request(source, chain)))
         val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
             TextChangeSet.create(
                 source.snapshot,
@@ -1198,11 +1198,11 @@ class FlowCompositionEditorJourneyTest {
         val beforeEdit = queries.toList()
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(target, chain, previousState = initial.state, delta = LayoutDelta(text = change)),
             ),
         )
-        val full = success(JvmFlowCompositionFacade.layout(request(target, horizontalChain(4))))
+        val full = success(FlowCompositionFacade.layout(request(target, horizontalChain(4))))
 
         assertEquals(target.snapshot.range.start, edited.diagnostics.reflowStart)
         assertTrue(edited.diagnostics.usedConservativeInvalidation)
@@ -1221,7 +1221,7 @@ class FlowCompositionEditorJourneyTest {
         val source = incrementalRealFontFixture("fi fi fi fi fi")
         val target = source.withText("fi fi fx fi fi")
         val chain = horizontalChain(5)
-        val initial = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val initial = success(FlowCompositionFacade.layout(request(source, chain)))
         val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
             TextChangeSet.create(
                 source.snapshot,
@@ -1235,7 +1235,7 @@ class FlowCompositionEditorJourneyTest {
             ),
         ).value
         val middle = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -1247,7 +1247,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val earlier = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -1257,7 +1257,7 @@ class FlowCompositionEditorJourneyTest {
             ),
         )
         val full = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(target, horizontalChain(5), requestedRange = target.snapshot.incrementalRange(0, 1)),
             ),
         )
@@ -1273,7 +1273,7 @@ class FlowCompositionEditorJourneyTest {
         val source = incrementalRealFontFixture("fi fi fi fi fi")
         val target = source.withText("fi fi fi fi fx")
         val chain = horizontalChain(5)
-        val completeSource = success(JvmFlowCompositionFacade.layout(request(source, chain)))
+        val completeSource = success(FlowCompositionFacade.layout(request(source, chain)))
         val change = assertIs<org.graphiks.kalligraphie.api.LayoutContractResult.Success<TextChangeSet>>(
             TextChangeSet.create(
                 source.snapshot,
@@ -1288,7 +1288,7 @@ class FlowCompositionEditorJourneyTest {
         ).value
 
         val edited = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     target,
                     chain,
@@ -1299,7 +1299,7 @@ class FlowCompositionEditorJourneyTest {
             ),
         )
         val full = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(target, horizontalChain(5), requestedRange = target.snapshot.incrementalRange(0, 1)),
             ),
         )
@@ -1320,7 +1320,7 @@ class FlowCompositionEditorJourneyTest {
         val chain = horizontalChain(1)
 
         val result = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -1346,7 +1346,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val result = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -1373,11 +1373,11 @@ class FlowCompositionEditorJourneyTest {
         val fixture = incrementalRealFontFixture("fi")
         val queries = mutableListOf(0)
         val chain = horizontalChain(1, queries)
-        val first = success(JvmFlowCompositionFacade.layout(request(fixture, chain)))
+        val first = success(FlowCompositionFacade.layout(request(fixture, chain)))
         val beforeSecond = queries.single()
 
         val second = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(fixture, chain, previousState = first.state),
             ),
         )
@@ -1391,7 +1391,7 @@ class FlowCompositionEditorJourneyTest {
     fun invalidFlowLayoutAggregateIsRejectedAsAPublicBusinessError() {
         val fixture = incrementalRealFontFixture("fi fi")
         val legitimate = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     horizontalChain(1),
@@ -1434,7 +1434,7 @@ class FlowCompositionEditorJourneyTest {
         val fixture = incrementalRealFontFixture("fi fi")
         val chain = horizontalChain(2)
         val partial = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(
                     fixture,
                     chain,
@@ -1461,8 +1461,8 @@ class FlowCompositionEditorJourneyTest {
     @Test
     fun flowStateRejectsForeignFragmentGeometryEvenWithALegitimateEnd() {
         val fixture = incrementalRealFontFixture("fi fi")
-        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(2))))
-        val foreign = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(2))))
+        val legitimate = success(FlowCompositionFacade.layout(request(fixture, horizontalChain(2))))
+        val foreign = success(FlowCompositionFacade.layout(request(fixture, horizontalChain(2))))
         val mixed = listOf(foreign.fragments.first(), legitimate.fragments.last())
 
         val rejected = assertIs<FlowCompositionResult.Failure>(
@@ -1483,8 +1483,8 @@ class FlowCompositionEditorJourneyTest {
     @Test
     fun flowStateRejectsASingleFinalFragmentFromAnotherChain() {
         val fixture = incrementalRealFontFixture("fi")
-        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
-        val foreign = success(JvmFlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
+        val legitimate = success(FlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
+        val foreign = success(FlowCompositionFacade.layout(request(fixture, horizontalChain(1))))
         assertNull(foreign.fragments.single().continuation)
 
         val rejected = assertIs<FlowCompositionResult.Failure>(
@@ -1506,7 +1506,7 @@ class FlowCompositionEditorJourneyTest {
     fun flowStateRejectsARegionRetrogradeFragmentTransition() {
         val fixture = incrementalRealFontFixture("fi fi")
         val chain = horizontalChain(2)
-        val legitimate = success(JvmFlowCompositionFacade.layout(request(fixture, chain)))
+        val legitimate = success(FlowCompositionFacade.layout(request(fixture, chain)))
         val first = legitimate.fragments.first()
         val last = legitimate.fragments.last()
         val retrograde = listOf(
@@ -1565,7 +1565,7 @@ class FlowCompositionEditorJourneyTest {
         )
 
         val composed = success(
-            JvmFlowCompositionFacade.layout(
+            FlowCompositionFacade.layout(
                 request(fixture, FlowChain(listOf(region)), constraints = constraints),
             ),
         )
@@ -1588,7 +1588,7 @@ class FlowCompositionEditorJourneyTest {
         inlineObjects: InlineObjectSnapshot? = null,
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
-    ): JvmFlowCompositionRequest {
+    ): FlowCompositionRequest {
         val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
             createIncrementalFlowLayoutRequest(
                 input = LayoutInput(fixture.snapshot, fixture.typography),
@@ -1601,7 +1601,7 @@ class FlowCompositionEditorJourneyTest {
                 operationProfile = operationProfile,
             ),
         ).value
-        return JvmFlowCompositionRequest(
+        return FlowCompositionRequest(
             request = portable,
             baseDirection = baseDirection,
             language = "en",
@@ -1612,11 +1612,11 @@ class FlowCompositionEditorJourneyTest {
     }
 
     private fun prepareParagraph(
-        request: JvmFlowCompositionRequest,
+        request: FlowCompositionRequest,
         backend: ShapingBackend,
     ): ParagraphLayoutRequest = checkNotNull(
-        JvmEditableParagraphFacade.prepareParagraphRequestBorrowing(
-            JvmEditableParagraphFacadeRequest(
+        EditableParagraphFacade.prepareParagraphRequestBorrowing(
+            EditableParagraphFacadeRequest(
                 snapshot = request.request.input.text,
                 sourceRange = request.request.input.text.range,
                 constraints = request.request.constraints,

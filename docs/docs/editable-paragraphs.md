@@ -3,7 +3,7 @@
 Kalligraphie provides a JVM reference route for composing one immutable,
 editable multiline paragraph. It extends the exact editable-line
 route described in [Font Management](font-management.md): the public
-`JvmEditableParagraphFacade` owns the ICU and HarfBuzz work for one call, then
+`EditableParagraphFacade` owns the ICU and HarfBuzz work for one call, then
 returns portable, renderer-independent values. It does not retain a native
 handle, resolver, backend, renderer, or platform object.
 
@@ -40,8 +40,8 @@ val lineMetrics = LineVerticalMetrics(
     descent = LayoutUnit(300f),
 )
 
-val result = JvmEditableParagraphFacade.layout(
-    JvmEditableParagraphFacadeRequest(
+val result = EditableParagraphFacade.layout(
+    EditableParagraphFacadeRequest(
         snapshot = decoded.snapshot,
         constraints = HorizontalParagraphConstraints(
             region = LayoutRect(
@@ -102,7 +102,7 @@ outside every span use the paragraph default. A span must be non-empty, must
 name at least one of `face` and `variation`, and its bounds must fall on
 extended grapheme cluster boundaries. Both request types carry the optional
 field — `ParagraphLayoutRequest.styleSpans` and
-`JvmEditableParagraphFacadeRequest.styleSpans` — defaulting to `null`, which
+`EditableParagraphFacadeRequest.styleSpans` — defaulting to `null`, which
 keeps the paragraph behavior exactly unchanged.
 
 ### Face preference and fallback
@@ -188,8 +188,8 @@ val resumedRegion = LayoutRect(
     right = LayoutUnit(continuation.regionLeft.value + continuation.regionWidth.value),
     bottom = LayoutUnit(continuation.resumptionRegionTop.value + 1_200f),
 )
-val resumed = JvmEditableParagraphFacade.layout(
-    JvmEditableParagraphFacadeRequest(
+val resumed = EditableParagraphFacade.layout(
+    EditableParagraphFacadeRequest(
         snapshot = decoded.snapshot,
         sourceRange = continuation.remainingSourceRange,
         constraints = HorizontalParagraphConstraints(resumedRegion, lineMetrics),
@@ -213,7 +213,7 @@ observable as one sufficiently tall composition.
 
 ## Compose through regions and exclusions
 
-Use `JvmFlowCompositionFacade` when the application supplies several
+Use `FlowCompositionFacade` when the application supplies several
 composition regions or excludes inline space inside a line band. A
 `FlowRegion` is an immutable, pure, deterministic, thread-safe geometry
 provider. Its opaque `FlowRegionIdentity` must change whenever its bounds or
@@ -269,8 +269,8 @@ val portable = requireFlowSuccess(createIncrementalFlowLayoutRequest(
     flowChain = chain,
     overscan = LineOverscan(2),
 ))
-val flow = JvmFlowCompositionFacade.layout(
-    JvmFlowCompositionRequest(
+val flow = FlowCompositionFacade.layout(
+    FlowCompositionRequest(
         request = portable,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en",

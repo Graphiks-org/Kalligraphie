@@ -3,7 +3,7 @@
 Kalligraphie mesure le layout incrémental dans le module non publié
 `:kalligraphie:bench`. Ce n’est ni un test fonctionnel de latence, ni un résultat
 de benchmark (mesure comparative) publié. Les profils exécutent la vraie
-`JvmIncrementalParagraphLayoutSession`, l’analyse Unicode, HarfBuzz embarqué et
+`IncrementalParagraphLayoutSession`, l’analyse Unicode, HarfBuzz embarqué et
 les fixtures (données de test fixes) de fontes DejaVu et Amiri versionnées dans
 le dépôt.
 

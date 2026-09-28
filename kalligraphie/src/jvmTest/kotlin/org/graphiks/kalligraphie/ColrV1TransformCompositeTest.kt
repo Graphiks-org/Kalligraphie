@@ -147,7 +147,7 @@ internal class ColrV1Fixture(
         .use { Base64.getMimeDecoder().decode(it.readBytes()) }.also(mutateSource)
     val catalog = colrSuccess(Kalligraphie.embedded(bytes, FontSourceProvenance("Skia COLR v1 test glyphs")))
     val resolver = colrSuccess(catalog.openAssetResolver())
-    val session = colrSuccess(JvmEditableLineLayoutSession.open())
+    val session = colrSuccess(EditableLineLayoutSession.open())
     val font = colrSuccess(colrSuccess(catalog.resolveFace(catalog.faces.single().id, requirements))
         .instantiate(FontInstanceDescriptor(LayoutUnit(1000f))))
 
@@ -161,7 +161,7 @@ internal class ColrV1Fixture(
         } finally { asset.close() }
     }
 
-    fun layout(snapshot: TextSnapshot): EditableLineResult = session.layout(JvmEditableLineFacadeRequest(
+    fun layout(snapshot: TextSnapshot): EditableLineResult = session.layout(EditableLineFacadeRequest(
         snapshot = snapshot, font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
         verticalMetrics = LineVerticalMetrics(LayoutUnit(1000f), LayoutUnit(250f)),

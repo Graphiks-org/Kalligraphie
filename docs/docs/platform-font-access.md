@@ -257,7 +257,7 @@ The immutable layout value and its keys own no font resources. Open a
 published certificate with `retainFontAsset(certificate)`. The returned
 asset is an independent owner and can detach another independent owner.
 
-`JvmEditableParagraphFacade.layout` owns its used shaping backend and closes
+`EditableParagraphFacade.layout` owns its used shaping backend and closes
 it before publishing the paragraph result. The published immutable paragraph
 does not keep that backend alive; its matching resolver must still be live
 when opening a layout owner.
