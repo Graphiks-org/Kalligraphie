@@ -2,6 +2,12 @@ package org.graphiks.kalligraphie.font.sfnt
 
 internal actual fun platformInflateSupport(): InflateSupport = PortableInflateSupport
 
+/**
+ * Web actual backed by the portable [RawInflate] decoder.
+ *
+ * It is stricter than the JVM/native Okio actual: `inflateZlib` rejects trailing bytes after the
+ * zlib Adler-32 here, a divergence tracked for Phase 4 reconciliation (see [InflateSupport]).
+ */
 private object PortableInflateSupport : InflateSupport {
     override fun inflateZlib(compressed: ByteArray, maxOutputBytes: Long): InflateOutcome {
         if (compressed.size < 6) return InflateOutcome.Malformed("zlib header is truncated")

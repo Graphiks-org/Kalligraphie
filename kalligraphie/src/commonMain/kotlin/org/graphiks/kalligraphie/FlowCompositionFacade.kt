@@ -25,7 +25,7 @@ import org.graphiks.kalligraphie.layout.IncrementalFlowLayoutEngine
 import org.graphiks.kalligraphie.shaping.HarfBuzzShapingBackend
 
 /**
- * Immutable JVM preparation options for one portable [IncrementalFlowLayoutRequest].
+ * Immutable preparation options for one portable [IncrementalFlowLayoutRequest].
  *
  * The portable request owns flow state, checkpoint mapping, requested coverage, and composition
  * identity. This adapter supplies only the ICU, UAX #14, font, and HarfBuzz inputs needed to
@@ -68,7 +68,7 @@ public class FlowCompositionRequest(
 }
 
 /**
- * JVM consumer facade for bounded and incrementally extendable flow-chain composition.
+ * Consumer facade for bounded and incrementally extendable flow-chain composition.
  *
  * Each call prepares one complete paragraph through pinned ICU analysis, UAX #14 breaking, font
  * resolution, and HarfBuzz shaping. The portable [IncrementalFlowLayoutEngine] then derives every

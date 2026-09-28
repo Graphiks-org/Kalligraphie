@@ -14,6 +14,11 @@ import kotlin.test.assertEquals
  * The `expectedBits` tables below are the JVM oracle: they were generated once by evaluating
  * `convert(u).value.toRawBits()` on the JVM and are hardcoded on purpose. The assertions must not
  * regenerate them at runtime, otherwise the probe would only compare a target against itself.
+ *
+ * Scope: this probe covers single `DesignToLayoutScale.convert` values bit-exactly on every target
+ * and the boundary-narrowed double accumulation below. It does not cover line-wrap thresholds,
+ * pixel-boundary rounding, or the product-level float32 narrowing rule for `LayoutUnit.value` on
+ * Kotlin/JS; those are Phase 4 exit criteria, not asserted here.
  */
 class DesignToLayoutScaleParityProbeTest {
     private data class ScaleCase(val layoutSize: Float, val unitsPerEm: Int)

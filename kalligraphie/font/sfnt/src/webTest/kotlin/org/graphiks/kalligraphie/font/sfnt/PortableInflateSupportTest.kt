@@ -1,7 +1,6 @@
 package org.graphiks.kalligraphie.font.sfnt
 
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 
@@ -80,7 +79,9 @@ class PortableInflateSupportTest {
 
     @Test
     fun inflatesADynamicBlockWithoutMatches() {
-        // btype == 2 with an all-zero distance alphabet: only literals and end-of-block are used.
+        // btype == 2 whose declared distance table is [1,1]: the block emits literals and
+        // end-of-block only, so the distance codes are never used. The null-distance-table branch
+        // (distanceLengths.all { it == 0 }) remains untested.
         val outcome = assertIs<InflateOutcome.Success>(support.inflateZlib(dynamicWithoutMatches, 256))
         assertEquals("ABCDEFGHIJKLMNOPQRSTUVWXYZABCDEFGHIJKLMNOPQRSTUVWX", outcome.bytes.decodeToString())
     }

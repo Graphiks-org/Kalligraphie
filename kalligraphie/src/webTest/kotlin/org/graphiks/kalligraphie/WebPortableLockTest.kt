@@ -4,7 +4,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertSame
-import kotlin.test.assertTrue
 
 class WebPortableLockTest {
     @Test
@@ -33,10 +32,6 @@ class WebPortableLockTest {
         assertSame(currentThreadToken(), currentThreadToken())
     }
 
-    @Test
-    fun signalAllIsANoOp() {
-        val lock = PortableConditionLock()
-        lock.withLock { lock.signalAll() }
-        assertTrue(true)
-    }
+    // `signalAll` with no waiter is covered portably by PortableConditionLockTest, which runs on
+    // every target including web; no web-specific duplicate is needed.
 }

@@ -220,13 +220,13 @@ public class EditableLineFacadeRequest(
 }
 
 /**
- * JVM-reference consumer facade for one exact editable Unicode line.
+ * Consumer facade for one exact editable Unicode line.
  *
  * The facade first rejects unsupported line controls, then executes the deterministic route:
  * ICU4J Unicode analysis, the embedded
  * hash-verified HarfBuzz JVM backend, and portable final-line layout. It returns a typed failure
  * when Unicode inputs are invalid or HarfBuzz cannot open or shape. Android and Apple adapters
- * are deliberately not selected by this JVM-only entry point. Each call delegates to a
+ * are deliberately not selected by this entry point. Each call delegates to a
  * short-lived [EditableLineLayoutSession], so it owns no native handle after returning;
  * renderable mode borrows the resolver supplied in [EditableLineFacadeRequest]. Consumers
  * laying out successive edits should instead open and reuse an explicit session.

@@ -152,7 +152,7 @@ public class EditableParagraphFacadeRequest(
 }
 
 /**
- * JVM-reference consumer facade for immutable editable multiline paragraphs.
+ * Consumer facade for immutable editable multiline paragraphs.
  *
  * Each call owns its temporary ICU analysis objects and HarfBuzz backend. It performs full
  * Unicode analysis, UAX #14 line-break analysis, provisional and boundary-correct final shaping,
@@ -166,7 +166,7 @@ public class EditableParagraphFacadeRequest(
  */
 public object EditableParagraphFacade {
     /**
-     * Composes [request] through the complete pinned JVM reference route.
+     * Composes [request] through the complete pinned reference route.
      *
      * Invalid consumer inputs, font and shaping failures, geometry overflow, cancellation, and
      * backend-close failures are represented by [ParagraphLayoutResult]. Only unexpected virtual
