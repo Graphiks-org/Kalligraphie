@@ -134,6 +134,8 @@ public object CatalogClaims {
             "and no catalogued scene uses the Skia file",
         "twemoji-svginot-glyph5" to "SVG-in-OpenType subset read by the glyph-representation suite; " +
             "no catalogued scene renders an SVG glyph, so the family stays outside the claimed perimeter",
+        "woff-ibm-plex" to "corpus acquired ahead of the container scenes; this excuse is removed " +
+            "when the scenes land",
     )
 
     /**

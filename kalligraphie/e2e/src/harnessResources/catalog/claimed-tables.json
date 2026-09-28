@@ -32,6 +32,7 @@
     "skia-colr-v1": {"*": "static COLR v1 fixture with transforms and gradients, read by the colour representation tests; the color axis pins COLR v1 on the synthetic variable fixture, and no catalogued scene uses the Skia file"},
     "skia-sbix": {"glyf": "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the sbix route does not require glyf, so this family's outlines are carried but never read", "loca": "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the sbix route does not require glyf, so this family's outlines are carried but never read"},
     "twemoji-svginot-glyph5": {"*": "SVG-in-OpenType subset read by the glyph-representation suite; no catalogued scene renders an SVG glyph, so the family stays outside the claimed perimeter"},
+    "woff-ibm-plex": {"*": "corpus acquired ahead of the container scenes; this excuse is removed when the scenes land"},
     "worksans": {"STAT": "the ladder selects its instances by design `wght` coordinate through `fvar` and `avar` and reads no style attribute; `variation.stat` records that portable STAT reading is not implemented yet", "gasp": "the ladder rasterises the varied outlines with the portable CPU rasterizer, which applies no grid-fitting hint profile, so the table's flags and ranges are carried and never consulted"}
   }
 }

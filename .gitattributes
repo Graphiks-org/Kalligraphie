@@ -12,4 +12,5 @@
 *.jpg binary
 *.zip binary
 *.ttc binary
+*.woff binary
 *.woff2 binary
