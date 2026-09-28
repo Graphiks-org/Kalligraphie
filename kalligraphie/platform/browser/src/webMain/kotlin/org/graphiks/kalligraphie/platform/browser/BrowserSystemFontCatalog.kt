@@ -1,14 +1,5 @@
 package org.graphiks.kalligraphie.platform.browser
 
-import kotlinx.coroutines.await
-import kotlin.js.JsAny
-import kotlin.js.unsafeCast
-import kotlin.js.JsArray
-import kotlin.js.Promise
-import org.khronos.webgl.ArrayBuffer
-import org.khronos.webgl.Int8Array
-import org.khronos.webgl.toByteArray
-
 /**
  * One system font the browser exposed, with the bytes the library parses itself.
  *
@@ -65,17 +56,15 @@ public suspend fun discoverLocalFonts(): BrowserFontDiscovery {
     val access = localFontAccess()
     if (!access.isSupported()) return BrowserFontDiscovery.Unsupported
     return try {
-        val data = access.query().await<JsArray<BrowserFontData>>()
         val fonts = buildList {
-            for (index in 0 until data.length) {
-                val font = data[index] ?: continue
+            for (font in access.query()) {
                 add(
                     BrowserFont(
                         family = font.family,
                         fullName = font.fullName,
                         postscriptName = font.postscriptName,
                         style = font.style,
-                        bytes = font.blob().await<JsAny>().toByteArray(),
+                        bytes = font.bytes(),
                     ),
                 )
             }
@@ -91,13 +80,21 @@ public suspend fun discoverLocalFonts(): BrowserFontDiscovery {
     }
 }
 
-/** One `FontData` the browser returned. */
-internal external interface BrowserFontData : JsAny {
+/**
+ * One `FontData` the browser returned, seen through the platform seam.
+ *
+ * The interface is deliberately free of JavaScript types: the `web` intermediate source set has a
+ * metadata compilation that cannot name `Promise` or `kotlinx.coroutines.await`, so the awaiting and
+ * the `Blob` copy live in each target's [localFontAccess] implementation instead.
+ */
+internal interface BrowserFontData {
     val family: String
     val fullName: String
     val postscriptName: String
     val style: String
-    fun blob(): Promise<JsAny>
+
+    /** The font bytes, read from the browser's `Blob`. */
+    suspend fun bytes(): ByteArray
 }
 
 /** The per-target access to `window.queryLocalFonts`, which is not on the portable `Window` type. */
@@ -106,14 +103,8 @@ internal interface LocalFontAccess {
     fun isSupported(): Boolean
 
     /** Queries the system fonts; only valid when [isSupported] is true. */
-    fun query(): Promise<JsArray<BrowserFontData>>
+    suspend fun query(): List<BrowserFontData>
 }
 
 /** The target-specific access; declared here so the shared discovery compiles on both targets. */
 internal expect fun localFontAccess(): LocalFontAccess
-
-/** Copies the `ArrayBuffer` a `Blob` resolves to into Kotlin-managed bytes. */
-private suspend fun JsAny.toByteArray(): ByteArray {
-    val buffer = this.unsafeCast<ArrayBuffer>()
-    return Int8Array(buffer).toByteArray()
-}
