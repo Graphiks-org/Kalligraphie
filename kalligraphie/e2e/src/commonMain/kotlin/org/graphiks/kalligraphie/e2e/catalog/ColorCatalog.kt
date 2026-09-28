@@ -62,18 +62,18 @@ public object ColorCatalog {
         CatalogEntry(
             id = "color.colr-v1-variable",
             axis = CatalogAxis.COLOR,
-            technology = CatalogText("Variable COLR v1 paint graphs; blocked today by the CPU compositor, which does not composite GlyphClip nodes", "Graphes de peinture COLR v1 variables ; bloqués aujourd'hui par le compositeur CPU, qui ne compose pas les nœuds GlyphClip"),
-            font = CorpusKeys.KALLIGRAPHIE_VAR_COLR,
-            status = CatalogStatus.NotYet(
-                trackingIssue = "spec:§5 color",
-                currentBehavior = PinnedBehavior.RejectedAt(
-                    stage = CatalogStage.FACE_RESOLUTION,
-                    diagnostic = "font.unsupported-representation-profile",
-                ),
-                unpinnedReason = null,
+            technology = CatalogText(
+                "Variable COLR v1 paint graphs: GlyphClip, Solid, LinearGradient and Transform composed at two design weights",
+                "Graphes de peinture COLR v1 variables : GlyphClip, Solid, LinearGradient et Transform composés à deux graisses",
             ),
-            tags = setOf("color:colr-v1", "blocked-by-compositor"),
-            tables = setOf("COLR", "CPAL", "fvar"),
+            font = CorpusKeys.KALLIGRAPHIE_VAR_COLR,
+            status = CatalogStatus.Supported(sinceCommit = "005e38d"),
+            tags = setOf("color:colr-v1", "variation:wght", "auto-sized"),
+            tables = setOf("COLR", "CPAL", "fvar", "glyf", "loca"),
+            family = GoldenSceneFamily.PAINT_SHEET,
+            sceneId = "sheet.paint.kalligraphie-var-colr.64",
+            route = CatalogRoute.PORTABLE_GLYPH,
+            frame = SceneFramePolicy.AutoSized(padding = 2),
         ),
         documented(
             id = "color.cpal-variable",

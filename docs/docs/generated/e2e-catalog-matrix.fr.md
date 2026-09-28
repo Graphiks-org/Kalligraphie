@@ -6,9 +6,9 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Statut | Entrées |
 | --- | --- |
-| Supporté | 24 |
+| Supporté | 25 |
 | Rejet attendu | 2 |
-| Pas encore | 10 |
+| Pas encore | 9 |
 | Hors périmètre | 1 |
 
 ## CONTAINER
@@ -52,7 +52,7 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 | `color.colr-v0-alphabet-sheet` | Planche d'alphabet latin COLR v0 + CPAL v0 | bungee-color | Supporté depuis fa405247 |
 | `color.colr-v0-emoji-sheet` | Planche d'alphabet emoji COLR v0 + CPAL v0 | emoji-two-colr-v0 | Supporté depuis fa405247 |
 | `color.colr-cff` | Glyphes COLR adossés à des charstrings CFF | — | Hors périmètre : Le CFF-dans-COLR ne fait pas partie de la surface de peinture supportée ; le motif est consigné dans font-management.md. |
-| `color.colr-v1-variable` | Graphes de peinture COLR v1 variables ; bloqués aujourd'hui par le compositeur CPU, qui ne compose pas les nœuds GlyphClip | kalligraphie-var-colr | Pas encore ; comportement actuel épinglé (`spec:§5 color`) |
+| `color.colr-v1-variable` | Graphes de peinture COLR v1 variables : GlyphClip, Solid, LinearGradient et Transform composés à deux graisses | kalligraphie-var-colr | Supporté depuis 005e38d |
 | `color.cpal-variable` | Palettes CPAL variables | — | Pas encore ; corpus non acquis |
 
 ## BITMAP

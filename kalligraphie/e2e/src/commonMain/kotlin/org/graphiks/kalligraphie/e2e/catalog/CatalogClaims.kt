@@ -30,11 +30,6 @@ public object CatalogClaims {
         "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the " +
             "sbix route does not require glyf, so this family's outlines are carried but never read"
 
-    /** The reason the outline tables of the COLR v1 fixture are excused, shared by `glyf` and `loca`. */
-    private const val REJECTED_FIXTURE_OUTLINES_REASON =
-        "the colour axis pins this fixture as rejected at face resolution, the CPU compositor " +
-            "refusing GlyphClip, so no catalogued scene ever decodes its outlines"
-
     /**
      * The reason the vertical-metric tables of the VVAR fixture are excused, shared by `VVAR`,
      * `vhea` and `vmtx`.
@@ -65,10 +60,6 @@ public object CatalogClaims {
         "emoji-two-colr-v0" to mapOf(
             "GSUB" to "no catalogued scene shapes text with this family: the emoji sheets resolve " +
                 "code points through cmap and paint the COLR graph, never applying ccmp",
-        ),
-        "kalligraphie-var-colr" to mapOf(
-            "glyf" to REJECTED_FIXTURE_OUTLINES_REASON,
-            "loca" to REJECTED_FIXTURE_OUTLINES_REASON,
         ),
         "kalligraphie-var-vvar" to mapOf(
             "VVAR" to VVAR_VERTICAL_REASON,

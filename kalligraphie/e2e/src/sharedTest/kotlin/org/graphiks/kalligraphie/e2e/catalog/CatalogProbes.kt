@@ -2,17 +2,12 @@
 package org.graphiks.kalligraphie.e2e.catalog
 
 import org.graphiks.kalligraphie.Kalligraphie
-import org.graphiks.kalligraphie.api.FontAccessRequirementsSnapshot
-import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSourceProvenance
-import org.graphiks.kalligraphie.e2e.golden.paintRequirements
-import kotlin.test.assertIs
 
 /** The registered probes, keyed by catalog entry id. */
 internal object CatalogProbes {
     private const val LIBERATION_SANS = "/fonts/liberation/LiberationSans-Regular.ttf"
-    private const val KALLIGRAPHIE_VAR_COLR = "/fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf"
 
     /** Every registered probe. */
     val byId: Map<String, CatalogProbe> = mapOf(
@@ -22,9 +17,6 @@ internal object CatalogProbes {
         // The zero-byte source is the point of this probe: it declares the corpus key its entry
         // names and hands the facade no font at all.
         "robustness.empty-input" to CatalogProbe(LIBERATION_SANS) { decodeOutcome(ByteArray(0)) },
-        "color.colr-v1-variable" to CatalogProbe(KALLIGRAPHIE_VAR_COLR) { bytes ->
-            faceResolutionOutcome(bytes, paintRequirements())
-        },
     )
 
     /**
@@ -62,36 +54,4 @@ internal object CatalogProbes {
                 observation = "cancelled; no decode verdict",
             )
         }
-
-    /**
-     * Translates the facade's face-resolution result for [bytes] into an observation.
-     *
-     * The catalog itself must open: an undecodable source is a hard regression rather than the
-     * refusal a face-resolution probe pins, so it fails with the facade's own message instead of
-     * being reported as a face-resolution verdict.
-     */
-    private fun faceResolutionOutcome(bytes: ByteArray, requirements: FontAccessRequirementsSnapshot): ProbeObservation {
-        val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
-            Kalligraphie.embedded(
-                sourceBytes = bytes,
-                provenance = FontSourceProvenance(declaredName = "e2e face-resolution probe"),
-            ),
-        ).value
-        return when (val result = catalog.resolveFace(catalog.faces.single().id, requirements)) {
-            is FontOperationResult.Success<*> -> ProbeObservation.Succeeded(
-                stage = CatalogStage.FACE_RESOLUTION,
-                observation = "face resolution succeeds",
-            )
-
-            is FontOperationResult.Failure -> ProbeObservation.Rejected(
-                stage = CatalogStage.FACE_RESOLUTION,
-                diagnostic = result.error.code,
-            )
-
-            is FontOperationResult.Cancelled -> ProbeObservation.Succeeded(
-                stage = CatalogStage.FACE_RESOLUTION,
-                observation = "cancelled; no face-resolution verdict",
-            )
-        }
-    }
 }

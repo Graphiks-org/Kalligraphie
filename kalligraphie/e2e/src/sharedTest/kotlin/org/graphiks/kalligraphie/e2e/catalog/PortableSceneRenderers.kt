@@ -10,6 +10,7 @@ import org.graphiks.kalligraphie.e2e.GoldenOrientation
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
 import org.graphiks.kalligraphie.e2e.golden.GlyphSheetScenes
+import org.graphiks.kalligraphie.e2e.golden.VariablePaintSheetScene
 import org.graphiks.kalligraphie.e2e.golden.bitmapOf
 import org.graphiks.kalligraphie.e2e.golden.bitmapRequirements
 import org.graphiks.kalligraphie.e2e.golden.colourBitmapRequirements
@@ -74,6 +75,21 @@ internal object PortableSceneRenderers {
         },
         "color.colr-v0-emoji-sheet" to CatalogSceneRenderer(EMOJI_TWO_COLR_V0, CatalogRoute.PORTABLE_GLYPH, sceneId = "sheet.paint.emoji-two-colr-v0.64") { corpus ->
             composed { GlyphSheetScenes.paintSheet(corpus, EMOJI_TWO_COLR_V0, EMOJI, 64.0, paletteIndex = 0) }
+        },
+        "color.colr-v1-variable" to CatalogSceneRenderer(
+            fontPath = KALLIGRAPHIE_VAR_COLR,
+            route = CatalogRoute.PORTABLE_GLYPH,
+            sceneId = "sheet.paint.kalligraphie-var-colr.64",
+        ) { corpus ->
+            composed {
+                VariablePaintSheetScene.sheet(
+                    corpus = corpus,
+                    fontPath = KALLIGRAPHIE_VAR_COLR,
+                    codepoints = listOf(0x41, 0x42, 0x43),
+                    weights = listOf(400f, 900f),
+                    pixelsPerEm = 64.0,
+                )
+            }
         },
         "bitmap.cbdt-png.u1f600.16" to CatalogSceneRenderer(SKIA_CBDT, CatalogRoute.PORTABLE_GLYPH, render = ::renderCbdtColourStrike),
         "bitmap.sbix-png.u1f600.16" to CatalogSceneRenderer(SKIA_SBIX, CatalogRoute.PORTABLE_GLYPH, render = ::renderSbixColourStrike),
