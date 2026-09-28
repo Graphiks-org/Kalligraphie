@@ -1,5 +1,5 @@
 plugins {
-    id("ygdrasil.conventions.kmp-library")
+    id("ygdrasil.conventions.kmp-web-library")
 }
 
 kotlin {
@@ -23,6 +23,10 @@ kotlin {
             api(project(":kalligraphie:api"))
         }
         commonTest.dependencies {
+            implementation(project(":kalligraphie"))
+            implementation(kotlin("test"))
+        }
+        webTest.dependencies {
             implementation(project(":kalligraphie"))
             implementation(kotlin("test"))
         }
