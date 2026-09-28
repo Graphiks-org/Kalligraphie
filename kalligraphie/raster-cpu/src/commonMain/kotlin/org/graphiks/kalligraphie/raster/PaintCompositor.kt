@@ -16,8 +16,9 @@ import org.graphiks.kalligraphie.api.GlyphPaintPoint
  * the child paint to its outline, and a `Transform` composes its matrix into the child's
  * coordinates. Clipping is an exact per-sample intersection at the rasterizer's sixteen fixed
  * sub-pixel positions, so a shared edge is never squared and nested clips intersect correctly.
- * Children of a group are painted in index order with `SOURCE_OVER` integer arithmetic, so
- * identical graphs produce identical pixels on every platform.
+ * Children of a group are painted in index order with `SOURCE_OVER`: schema 1 keeps the historical
+ * integer sRGB arithmetic, while schema 2 and later composite in linear-light RGB through the
+ * committed sRGB transfer table, so identical graphs produce identical pixels on every platform.
  *
  * Each visited node materializes one layer before its group composites, and the layers stay live
  * until the group finishes, so peak memory scales with the live stack: roughly
@@ -336,7 +337,17 @@ internal object PaintCompositor {
             destination: Int,
             destinationWeight: Int,
             outputAlpha: Int,
-        ): Byte = ((source * sourceAlpha + destination * destinationWeight + outputAlpha / 2) / outputAlpha).toByte()
+        ): Byte {
+            if (paint.schemaVersion >= 2) {
+                // COLR v1 composites in linear-light RGB: convert through the committed transfer
+                // table, blend with the same integer alpha weights, and convert back.
+                val sourceLinear = SrgbTransfer.toLinear(source)
+                val destinationLinear = SrgbTransfer.toLinear(destination)
+                val blended = (sourceLinear * sourceAlpha + destinationLinear * destinationWeight + outputAlpha / 2) / outputAlpha
+                return SrgbTransfer.toSrgb(blended.coerceIn(0, 65535)).toByte()
+            }
+            return ((source * sourceAlpha + destination * destinationWeight + outputAlpha / 2) / outputAlpha).toByte()
+        }
 
         private fun checkCanvas(width: Int, height: Int) {
             if (width <= 0 || height <= 0) return

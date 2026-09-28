@@ -83,7 +83,7 @@ public object ColorCatalog {
                 "Une vraie police latine COLR v1 variable : les capitales de Kalnia Glaze à wght 100 et 700",
             ),
             font = CorpusKeys.KALNIA_GLAZE,
-            status = CatalogStatus.Supported(sinceCommit = "85c6fd47"),
+            status = CatalogStatus.Supported(sinceCommit = "1d36fc4b"),
             tags = setOf("color:colr-v1", "variation:wght", "auto-sized", "real-font"),
             tables = setOf("COLR", "CPAL", "cmap", "fvar", "avar", "gvar", "glyf", "loca"),
             family = GoldenSceneFamily.ALPHABET_SHEET,

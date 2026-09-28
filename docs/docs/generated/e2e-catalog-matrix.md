@@ -53,7 +53,7 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 | `color.colr-v0-emoji-sheet` | COLR v0 + CPAL v0 emoji alphabet sheet | emoji-two-colr-v0 | Supported since fa405247 |
 | `color.colr-cff` | CFF-backed COLR glyphs | — | Out of scope: CFF-in-COLR is not part of the supported paint surface; the rationale is recorded in font-management.md. |
 | `color.colr-v1-variable` | Variable COLR v1 paint graphs: GlyphClip, Solid, LinearGradient and Transform composed at two design weights | kalligraphie-var-colr | Supported since 24051798 |
-| `color.colr-v1-variable-real` | A real variable COLR v1 Latin font: Kalnia Glaze's capitals at wght 100 and 700 | kalniaglaze | Supported since 85c6fd47 |
+| `color.colr-v1-variable-real` | A real variable COLR v1 Latin font: Kalnia Glaze's capitals at wght 100 and 700 | kalniaglaze | Supported since 1d36fc4b |
 | `color.cpal-variable` | variable CPAL palettes | — | Not yet; corpus not acquired |
 
 ## BITMAP
