@@ -63,6 +63,29 @@ jobs:
           :kalligraphie:shaping:jsBrowserTest :kalligraphie:shaping:wasmJsBrowserTest
           :kalligraphie:platform:browser:jsBrowserTest :kalligraphie:platform:browser:wasmJsBrowserTest
 
+  consumer-smoke:
+    name: Published artifacts (consumer)
+    # Consumes the published coordinates from the local repository through a separate build, so a
+    # broken POM, a missing Gradle module metadata variant or a klib that lost its WebAssembly
+    # HarfBuzz runtime fails here and nowhere else.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '25'
+          cache: gradle
+      - name: Set up Android SDK and NDK
+        uses: ./.github/actions/setup-android
+      - run: chmod +x gradlew
+      - name: Publish the artifacts to the local repository
+        run: ./gradlew --no-daemon publishToMavenLocal -PreleaseVersion=1.0.0-SNAPSHOT
+      - name: Consume them from a separate build
+        run: >-
+          ./gradlew -p smoke --no-daemon check
+          -Pkalligraphie.version=1.0.0-SNAPSHOT -Pkffi.version=1.0.0-SNAPSHOT
+
   shaping-native:
     name: HarfBuzz JVM (${{ matrix.target }})
     strategy:
