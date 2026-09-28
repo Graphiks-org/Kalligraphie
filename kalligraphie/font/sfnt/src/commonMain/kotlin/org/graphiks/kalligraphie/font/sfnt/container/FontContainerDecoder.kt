@@ -42,7 +42,7 @@ public object FontContainerDecoder {
     public fun decode(source: FontSource, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?> =
         try {
             decodeContainer(source, limits)
-        } catch (_: OutOfMemoryError) {
+        } catch (_: ContainerAllocationError) {
             // Defensive decoder boundary: a malformed container that slips past the independent
             // limits must never let an Error escape the public API.
             FontOperationResult.Failure(

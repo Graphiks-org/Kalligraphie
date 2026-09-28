@@ -108,7 +108,7 @@ internal object Woff2GlyfTransform {
             limitExceeded(limit.message ?: "The WOFF2 glyf decoded limit was exceeded.")
         } catch (invalid: TransformException) {
             failure(invalid.message ?: "The WOFF2 glyf transform is malformed.")
-        } catch (_: OutOfMemoryError) {
+        } catch (_: ContainerAllocationError) {
             // The point arrays and the reconstructed table can still exhaust the heap on a hostile
             // input; map it to a typed limit failure rather than letting an Error escape.
             limitExceeded("The WOFF2 glyf reconstruction exhausted available memory.")
