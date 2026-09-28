@@ -63,4 +63,28 @@ class Woff2ReaderTest {
             assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withWrongDirectoryLength(), limits)).error.code,
         )
     }
+
+    @Test
+    fun refusesADuplicateTag() {
+        assertEquals(
+            "font.woff2.invalid-table-directory",
+            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withDuplicateTag(), limits)).error.code,
+        )
+    }
+
+    @Test
+    fun refusesAnOutOfBoundsMetadataBlock() {
+        assertEquals(
+            "font.woff2.invalid-header",
+            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withOutOfBoundsMetadata(), limits)).error.code,
+        )
+    }
+
+    @Test
+    fun refusesAMetadataBlockOverlappingTheFontData() {
+        assertEquals(
+            "font.woff2.invalid-header",
+            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withOverlappingMetadata(), limits)).error.code,
+        )
+    }
 }

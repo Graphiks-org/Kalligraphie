@@ -47,6 +47,9 @@ internal object Woff2TestFonts {
     private const val GLYF_FLAGS_OFFSET: Int = HEADER_BYTES
     private const val GLYF_ORIG_LENGTH_OFFSET: Int = HEADER_BYTES + 1
 
+    /** First byte of the second directory entry: the first entry is one flags byte plus one length byte. */
+    private const val SECOND_ENTRY_FLAGS_OFFSET: Int = HEADER_BYTES + 2
+
     /** A valid WOFF2 whose only content table, `glyf`, uses the null transform (version 3). */
     fun singleTableUntransformed(): ByteArray {
         val directory = ArrayList<Byte>()
@@ -104,6 +107,25 @@ internal object Woff2TestFonts {
      */
     fun withWrongDirectoryLength(): ByteArray = singleTableUntransformed().also {
         it[GLYF_ORIG_LENGTH_OFFSET] = (GLYF_BYTES.size + 1).toByte()
+    }
+
+    /** The canonical blob whose second directory entry repeats the `glyf` tag. */
+    fun withDuplicateTag(): ByteArray = singleTableUntransformed().also {
+        it[SECOND_ENTRY_FLAGS_OFFSET] = (GLYF_INDEX or (0 shl 6)).toByte()
+    }
+
+    /** The canonical blob whose metadata block points past the end of the file. */
+    fun withOutOfBoundsMetadata(): ByteArray = singleTableUntransformed().also {
+        writeUInt32(it, 28, 0xFFFFFFFCu)
+        writeUInt32(it, 32, 4u)
+        writeUInt32(it, 36, 4u)
+    }
+
+    /** The canonical blob whose metadata block starts inside the header/directory extent. */
+    fun withOverlappingMetadata(): ByteArray = singleTableUntransformed().also {
+        writeUInt32(it, 28, HEADER_BYTES.toUInt())
+        writeUInt32(it, 32, 4u)
+        writeUInt32(it, 36, 4u)
     }
 
     private fun writeBase128(target: MutableList<Byte>, value: Int) {

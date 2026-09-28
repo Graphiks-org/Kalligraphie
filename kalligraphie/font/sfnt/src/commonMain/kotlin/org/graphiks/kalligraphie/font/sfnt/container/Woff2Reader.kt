@@ -19,7 +19,9 @@ import org.graphiks.kalligraphie.font.sfnt.readUInt32
  * rejecting on it), `majorVersion`/`minorVersion` are file metadata, and `totalSfntSize` is
  * advisory (a correctly reconstructed font must not be rejected for disagreeing with it). Only the
  * signature, the declared `length`, a non-zero `numTables`, the directory encoding, the transform
- * matrix and the single Brotli font-data stream are enforced.
+ * matrix, the optional metadata/private extents and the single Brotli font-data stream are enforced.
+ * A non-zero metadata or private extent must be four-byte aligned, in bounds, after the compressed
+ * block and non-overlapping (W3C WOFF2 §3, §6, §7); the metadata itself is not decoded.
  *
  * The table directory maps `flags` bits 0-5 to [Woff2KnownTags] or a following four-byte tag, and
  * bits 6-7 to a transform version. `transformLength` is read exactly when the entry names a
@@ -54,6 +56,11 @@ internal object Woff2Reader {
     private const val HHEA_NUMBER_OF_HMETRICS_OFFSET: Int = 34
     private const val HEAD_INDEX_TO_LOC_FORMAT_OFFSET: Int = 50
     private const val X_MIN_OFFSET: Int = 2
+    private const val META_OFFSET: Int = 28
+    private const val META_LENGTH: Int = 32
+    private const val META_ORIG_LENGTH: Int = 36
+    private const val PRIV_OFFSET: Int = 40
+    private const val PRIV_LENGTH: Int = 44
 
     private const val INVALID_HEADER: String = "font.woff2.invalid-header"
     private const val INVALID_TABLE_DIRECTORY: String = "font.woff2.invalid-table-directory"
@@ -74,9 +81,15 @@ internal object Woff2Reader {
         }
         val declaredLength = readUInt32(bytes, 8)!!.toLong()
         val numTables = readUInt16(bytes, 12)!!.toInt()
-        // `reserved` (14), `totalSfntSize` (16), `majorVersion`/`minorVersion` (24/26) and the
-        // metadata/private offsets are deliberately unread: none is a format gate (§6.3).
+        // `reserved` (14), `totalSfntSize` (16) and `majorVersion`/`minorVersion` (24/26) are
+        // deliberately unread: none is a format gate (§6.3). The metadata/private extents are read
+        // and structurally validated below (W3C WOFF2 §3).
         val totalCompressedSize = readUInt32(bytes, 20)!!.toLong()
+        val metaOffset = readUInt32(bytes, META_OFFSET)!!.toLong()
+        val metaLength = readUInt32(bytes, META_LENGTH)!!.toLong()
+        val metaOrigLength = readUInt32(bytes, META_ORIG_LENGTH)!!.toLong()
+        val privOffset = readUInt32(bytes, PRIV_OFFSET)!!.toLong()
+        val privLength = readUInt32(bytes, PRIV_LENGTH)!!.toLong()
 
         if (numTables <= 0) return invalidHeader("The WOFF2 table directory is empty.")
         if (declaredLength != bytes.size.toLong()) {
@@ -155,6 +168,34 @@ internal object Woff2Reader {
 
         val compressedEnd = checkedRangeEnd(cursor.toLong(), totalCompressedSize, bytes.size)
             ?: return invalidDirectory("The WOFF2 font-data block is out of bounds.")
+
+        // W3C WOFF2 §3: any data block with a non-zero extent must be aligned and in bounds, and
+        // must not overlap the table directory or the compressed font-data block. §6/§7 further
+        // require the metadata block to follow the compressed data and the private block to end the
+        // file. The metadata itself is not decoded.
+        val metadataAbsent = metaOffset == 0L && metaLength == 0L && metaOrigLength == 0L
+        val metadataPresent = metaOffset != 0L && metaLength != 0L && metaOrigLength != 0L
+        if (!metadataAbsent && !metadataPresent) {
+            return invalidHeader("The WOFF2 metadata offset, length and original length must agree.")
+        }
+        val privateAbsent = privOffset == 0L && privLength == 0L
+        val privatePresent = privOffset != 0L && privLength != 0L
+        if (!privateAbsent && !privatePresent) {
+            return invalidHeader("The WOFF2 private-data offset and length must agree.")
+        }
+        if (metadataPresent) {
+            optionalBlockFailure(metaOffset, metaLength, compressedEnd, bytes.size, "metadata")?.let { return it }
+        }
+        if (privatePresent) {
+            optionalBlockFailure(privOffset, privLength, compressedEnd, bytes.size, "private data")?.let { return it }
+            if (metadataPresent && privOffset < align4(metaOffset + metaLength)) {
+                return invalidHeader("The WOFF2 metadata and private-data extents overlap.")
+            }
+            if (privOffset + privLength != bytes.size.toLong()) {
+                return invalidHeader("The WOFF2 private data must end the file.")
+            }
+        }
+
         val block = bytes.copyOfRange(cursor, compressedEnd)
         val decompressed = when (
             val result = BrotliDecoder.decode(block, limits.maxDecodedFontBytes, limits.maxWorkingBytes)
@@ -386,6 +427,28 @@ internal object Woff2Reader {
         }
         return null
     }
+
+    /**
+     * Validates one declared optional WOFF2 block. Returns `null` when [offset]/[length] describe
+     * a four-byte-aligned, in-bounds extent that starts after the compressed font-data block.
+     */
+    private fun optionalBlockFailure(
+        offset: Long,
+        length: Long,
+        compressedEnd: Int,
+        sourceSize: Int,
+        label: String,
+    ): FontOperationResult.Failure? {
+        if (offset % 4L != 0L) return invalidHeader("The WOFF2 $label is not four-byte aligned.")
+        if (offset < compressedEnd.toLong()) {
+            return invalidHeader("The WOFF2 $label overlaps the table directory or font-data block.")
+        }
+        checkedRangeEnd(offset, length, sourceSize)
+            ?: return invalidHeader("The WOFF2 $label is out of bounds.")
+        return null
+    }
+
+    private fun align4(value: Long): Long = (value + 3L) / 4L * 4L
 
     private fun invalidHeader(message: String): FontOperationResult.Failure =
         failure(INVALID_HEADER, message)
