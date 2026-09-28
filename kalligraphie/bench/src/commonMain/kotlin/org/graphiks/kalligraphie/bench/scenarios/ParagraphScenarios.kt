@@ -88,7 +88,7 @@ private class InteractiveEdit(private val corpus: FixtureCorpus) : ParagraphScen
         current = opened.layout(
             incrementalRequest(source, source.snapshot.incrementalRange(0, 18), overscan = 1),
         ).let { result ->
-            result as? IncrementalLayoutResult.Success ?: error("InteractiveEdit seed failed: $result")
+            result as? IncrementalLayoutResult.Success ?: error("InteractiveEdit seed failed: ${describeIncrementalFailure(result)}")
         }
         session = opened
     }
@@ -1021,4 +1021,14 @@ public fun paragraphScenarios(corpus: FixtureCorpus): List<org.graphiks.kalligra
         StyledSpanParagraphCold(corpus),
         StyledSpanParagraphWarm(corpus),
     )
+}
+
+/** Renders the nested typed failure codes so a web report never prints an opaque `[object Object]`. */
+private fun describeIncrementalFailure(result: IncrementalLayoutResult): String {
+    val failure = result as? IncrementalLayoutResult.Failure ?: return result.toString()
+    val paragraph = failure.error as? org.graphiks.kalligraphie.api.IncrementalLayoutError.ParagraphFailure
+    val paragraphError = paragraph?.paragraphError
+    val font = paragraphError as? org.graphiks.kalligraphie.api.ParagraphLayoutError.FontFailure
+    return "incremental=${failure.error.code} paragraph=${paragraphError?.code} " +
+        "font=${font?.fontError?.code} fontMessage=${font?.fontError?.message}"
 }
