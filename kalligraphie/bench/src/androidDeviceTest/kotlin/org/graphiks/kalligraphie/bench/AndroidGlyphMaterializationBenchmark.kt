@@ -309,7 +309,7 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
         /**
          * The derived catalogue, built once for the class run instead of once per JUnit instance:
          * the paragraph scenarios parse their DejaVu and Amiri fixtures in their constructors, which
-         * is untimed setup and must not repeat for every one of the thirty-nine tests.
+         * is untimed setup and must not repeat for every one of the forty-two tests.
          */
         val scenarios: Map<String, MeasurementScenario> = ClasspathFixtureCorpus().let { corpus ->
             ScenarioRegistry.select(
