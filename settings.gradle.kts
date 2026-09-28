@@ -13,8 +13,11 @@ pluginManagement {
 }
 
 dependencyResolutionManagement {
-    // KT-68533: the Kotlin plugin adds Node/Yarn/Binaryen ivy repos to project.repositories during
-    // task execution, which FAIL_ON_PROJECT_REPOS rejects. PREFER_SETTINGS lets us declare them here.
+    // KT-68533: the Kotlin Gradle plugin adds Node/Yarn/Binaryen ivy repos to project.repositories at
+    // task-execution time, which FAIL_ON_PROJECT_REPOS rejects. PREFER_SETTINGS makes Gradle ignore
+    // those project-level repositories in favour of the settings-level equivalents declared below
+    // (expected declarers: org.nodejs, com.yarnpkg, com.github.webassembly). The guard is intentionally
+    // relaxed only for those tool repositories, which are pinned here via exclusiveContent.
     @Suppress("UnstableApiUsage")
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
