@@ -16,13 +16,13 @@ frontière entre journeys et scènes.
 
 ## Module et isolation
 
-`:kalligraphie:e2e` vit dans `kalligraphie/e2e/` et utilise la convention KMP des
-modules non publiés (comme `:kalligraphie:conformance`). La convention déclare les
-cibles `jvm`, `iosArm64`, `iosSimulatorArm64` et `android`, et la vérification
-dorée s'exécute désormais sur toutes sauf `iosArm64` : la JVM, les compilations
-hôte et appareil d'Android, et le simulateur iOS. `iosArm64` compile sans rien
-exécuter, aucun runner hébergé ne pouvant fournir d'appareil. `explicitApi()` est
-activé.
+`:kalligraphie:e2e` vit dans `kalligraphie/e2e/` et utilise la convention KMP web
+des modules non publiés (comme `:kalligraphie:conformance`) : son jeu de cibles est
+donc `jvm`, `iosArm64`, `iosSimulatorArm64` et `android`, plus `js` et `wasmJs`. La
+vérification dorée s'exécute sur toutes sauf `iosArm64` : la JVM, les exécutions web
+sous Node, les compilations hôte et appareil d'Android, et le simulateur iOS.
+`iosArm64` compile sans rien exécuter, aucun runner hébergé ne pouvant fournir
+d'appareil. `explicitApi()` est activé.
 
 Ses dépendances le tiennent hors du graphe consommateur : `commonMain` ne dépend
 que de `:kalligraphie:api`, et les source sets de test ajoutent `:kalligraphie`,
@@ -52,9 +52,12 @@ ne porte que les scènes portables.
 
 La protection est gratuite sur la plateforme de référence : le `check` racine
 exécute `:kalligraphie:e2e:jvmTest` comme tout sous-projet, et le workflow de pull
-request existant couvre déjà `kalligraphie/**`. Les autres cibles sont exécutées par
-`.github/workflows/golden-portability.yml` : la suite JVM sur les cinq architectures
-de runner que la bibliothèque livre, `testAndroidHostTest` et
+request existant couvre déjà `kalligraphie/**`. Les suites dorées web y tournent
+aussi — `jsNodeTest` et `wasmJsNodeTest` s'exécutent sous Node, sur une portée de
+test qui attend le `initialize()` portable dont le façonnement WebAssembly a
+besoin — tout comme les suites navigateur en Chrome headless. Les autres cibles sont
+exécutées par `.github/workflows/golden-portability.yml` : la suite JVM sur les cinq
+architectures de runner que la bibliothèque livre, `testAndroidHostTest` et
 `connectedAndroidDeviceTest` sur un émulateur, et `iosSimulatorArm64Test` sur un
 runner macOS avec la suite portable du rastériseur. Une plateforme qui cesse de
 reproduire les empreintes committées échoue son propre job, et l'enregistrement
@@ -64,19 +67,20 @@ n'est jamais regelé pour lui plaire.
 
 Chaque scène déclare la `CatalogRoute` dont elle a besoin, et chaque plateforme
 vérifie les scènes que ses propres capacités déclarées peuvent servir. C'est tout
-le catalogue sur la JVM, sur le runtime Android de l'appareil et sur le simulateur
-iOS, puisque les trois déclarent la surface portable complète ; la compilation
-Android *host*, qui s'exécute sur une JVM, ne sert que la route portable. Le
-tableau ci-dessous suit la route déclarée et le manifeste committé.
+le catalogue sur la JVM, sur les runtimes web, sur le runtime Android de l'appareil
+et sur le simulateur iOS, puisque tous déclarent la surface portable complète ; la
+compilation Android *host*, qui s'exécute sur une JVM, ne sert que la route
+portable. Le tableau ci-dessous suit la route déclarée et le manifeste committé.
 
 | Commande | Plateforme | Scènes |
 | --- | --- | --- |
 | `./gradlew :kalligraphie:e2e:jvmTest` | JVM, tous les runners | Toutes les scènes cataloguées |
+| `./gradlew :kalligraphie:e2e:jsNodeTest :kalligraphie:e2e:wasmJsNodeTest` | Web (js et wasmJs), Node | Toutes les scènes cataloguées |
 | `./gradlew :kalligraphie:e2e:testAndroidHostTest` | Test unitaire Android, exécution JVM | Les scènes portables |
 | `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Émulateur Android, ART | Toutes les scènes cataloguées |
 | `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | Simulateur iOS, Kotlin/Native | Toutes les scènes cataloguées |
 
-Les quatre comparent le même manifeste committé, octet pour octet, sans tolérance
+Toutes comparent le même manifeste committé, octet pour octet, sans tolérance
 numérique : l'empreinte d'une scène est un fait du rastériseur, pas de la
 plateforme qui l'a exécuté. Une scène qu'une plateforme ne vérifie pas est nommée
 par `deferredSceneIds()`, dérivé de l'identité de capacités de cette plateforme :

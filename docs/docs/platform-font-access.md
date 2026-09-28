@@ -102,11 +102,26 @@ never claims a capability its target does not have.
 | Windows `DirectWriteSystemFontCatalog` | DirectWrite system collection through the kffi DirectWrite bindings | Reported file bytes; opaque COM keys are resolved to paths through the local font file loader | Portable routes | A new `open` mints a `directwrite-registry` generation | Bundled HarfBuzz on Windows x64 |
 | Android `AndroidSystemFontCatalog` | `android.graphics.fonts.SystemFonts` (Android 10 and later) | Reported file bytes | Portable routes | A new `open` mints an `android-platform-fonts` generation | Below Android 10 no supported enumeration route exists, so the provider fails with a typed error instead of scanning unknown paths |
 | iOS `IosSystemFontCatalog` | CoreText registry through the platform CoreText bindings | CoreText tables rebuilt into a standalone SFNT container with a recomputed table directory checksum and `head.checkSumAdjustment` | Portable routes | A new `open` mints an `ios-coretext-registry` generation | System font files are sandboxed, so no path is available; a rebuilt container is not byte-identical to the original file and its `DSIG` signature becomes stale |
+| Web `BrowserSystemFontCatalog` | `window.queryLocalFonts()` through the Local Font Access API, on an explicit application call | The `Blob` each `FontData` reports, read as an `ArrayBuffer` | Portable routes | The application calls `discoverLocalFonts()` when it chooses; there is no cached generation | The API needs a secure context and a user gesture, so a browser that does not implement it answers a typed `Unsupported` and a denied permission a typed `PermissionDenied`; no route enumerates fonts without consent |
 
 Family and face names are taken from the parsed captured bytes, so a provider
 never matches by name on the platform. A provider that cannot capture a face —
 missing file, unreadable source or an exceeded bound — contributes a bounded,
 typed diagnostic and skips it; cancellation publishes no partial catalogue.
+
+## Optional browser module
+
+Use `:kalligraphie:platform:browser` alongside the main `:kalligraphie` module on
+the `js` and `wasmJs` targets. Its publication coordinate is
+`org.graphiks:kalligraphie-platform-browser`; it has no JVM or native variant, and
+the main artifact never depends on it and never touches `window`.
+
+`discoverLocalFonts()` is a `suspend` call the application triggers from its own
+user gesture — never a library initializer — and answers with a typed
+`BrowserFontDiscovery`: `Success`, `Unsupported` when the browser does not
+implement the Local Font Access API, `PermissionDenied`, or `Failed`. A cancelled
+coroutine propagates instead of becoming an outcome. Application-supplied bytes
+remain the primary route on every platform.
 
 ## Optional Apple module
 
