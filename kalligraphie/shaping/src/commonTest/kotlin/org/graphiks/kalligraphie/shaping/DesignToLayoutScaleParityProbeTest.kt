@@ -63,9 +63,16 @@ class DesignToLayoutScaleParityProbeTest {
     }
 
     /**
-     * A fixed multiset of design units summed through the conversion boundary. Repeated `Float`
-     * accumulation rounds to single precision after every addition on the JVM; a target that keeps
-     * wider precision between additions diverges here even when each individual conversion matches.
+     * A fixed multiset of design units summed through the conversion boundary.
+     *
+     * Normalization rule: cross-target geometry accumulation is performed in `Double` and narrowed
+     * to `Float` once, at the boundary — `sum.toFloat().toRawBits()`. Kotlin/JS represents `Float`
+     * as a JavaScript `Number` and `LayoutUnit.value` therefore keeps double precision on JS, so a
+     * bare `.value.toDouble()` sum still diverges from the JVM by 1 ULP. The converted boundary
+     * value is materialized as a genuine `Float` through `toRawBits()`/`fromBits()` before it joins
+     * the double sum, which makes every target agree on the same IEEE-754 bit pattern. Step-by-step
+     * `Float` accumulation (the pre-fix behavior) is a known divergence to be avoided in product
+     * geometry; residual JS precision risk is tracked for Phase 2/4.
      */
     private val accumulationMultiset = listOf(
         1, 3, 7, 123, 511, 1000, 2048, 65535,
@@ -86,11 +93,16 @@ class DesignToLayoutScaleParityProbeTest {
         for (caseIndex in scaleCases.indices) {
             val scaleCase = scaleCases[caseIndex]
             val scale = DesignToLayoutScale.create(scaleCase.layoutSize, scaleCase.unitsPerEm)
-            var accumulated = 0f
+            var accumulated = 0.0
             for (designUnit in accumulationMultiset) {
-                accumulated += scale.convert(designUnit).value
+                // Materialize the converted boundary value as a true Float before summing: Kotlin/JS
+                // keeps `LayoutUnit.value` in double precision, so `.value.toDouble()` alone is not
+                // the float32 boundary value the JVM sees. toRawBits/fromBits pins the same Float
+                // on every target; the sum is then Double and narrows once below.
+                val boundary = Float.fromBits(scale.convert(designUnit).value.toRawBits())
+                accumulated += boundary.toDouble()
             }
-            val actualBits = accumulated.toRawBits()
+            val actualBits = accumulated.toFloat().toRawBits()
             val expectedBits = expectedAccumulationBits[caseIndex]
             if (actualBits != expectedBits) {
                 divergences +=
