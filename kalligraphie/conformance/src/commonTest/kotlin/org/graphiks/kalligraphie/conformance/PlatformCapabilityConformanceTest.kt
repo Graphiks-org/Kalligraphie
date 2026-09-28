@@ -21,8 +21,8 @@ class PlatformCapabilityConformanceTest {
         )
         "web" -> mapOf(
             PortableCapability.UNICODE_ANALYSIS to true,
-            PortableCapability.SHAPING to false,
-            PortableCapability.END_TO_END_LAYOUT to false,
+            PortableCapability.SHAPING to true,
+            PortableCapability.END_TO_END_LAYOUT to true,
             PortableCapability.GLYPH_REPRESENTATION_VARIANTS to true,
         )
         else -> error("Unexpected platform identity: $platformId")

@@ -18,15 +18,11 @@ public actual fun currentPortableCapabilityIdentity(): PortableCapabilityIdentit
                 available = true,
                 profileId = "portable-unicode-16.0",
             ),
-            CapabilityDeclaration(
-                PortableCapability.SHAPING,
-                available = false,
-                profileId = "pending-web-harfbuzz",
-            ),
+            CapabilityDeclaration(PortableCapability.SHAPING, available = true, profileId = "bundled-harfbuzz"),
             CapabilityDeclaration(
                 PortableCapability.END_TO_END_LAYOUT,
-                available = false,
-                profileId = "pending-web-harfbuzz",
+                available = true,
+                profileId = "portable-paragraph",
             ),
             CapabilityDeclaration(
                 PortableCapability.GLYPH_REPRESENTATION_VARIANTS,

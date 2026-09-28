@@ -5,8 +5,8 @@ import org.graphiks.kalligraphie.api.TextSlice
 import org.graphiks.kalligraphie.api.TextVersion
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
-import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class WebPortableConformanceTest {
     @Test
@@ -19,12 +19,10 @@ class WebPortableConformanceTest {
     }
 
     @Test
-    fun declaresShapingAbsenceWithADiagnostic() {
+    fun declaresShapingPresentOnWeb() {
         val identity = currentPortableCapabilityIdentity()
         assertEquals("web", identity.platformId)
-        assertFalse(identity.presenceOf(PortableCapability.SHAPING))
-        val diagnostic = identity.absenceDiagnostic(PortableCapability.SHAPING)
-        assertNotNull(diagnostic)
-        assertEquals(CAPABILITY_ABSENCE_DIAGNOSTIC_CODE, diagnostic.code)
+        assertTrue(identity.presenceOf(PortableCapability.SHAPING))
+        assertNull(identity.absenceDiagnostic(PortableCapability.SHAPING))
     }
 }
