@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Let `Kalligraphie.embedded` and directory font capture ingest WOFF 1.0 and WOFF 2.0 containers by reconstructing a standalone SFNT that the existing pipeline consumes unchanged, with golden e2e scenes and benchmarks.
+**Goal:** Let `Kalligraphie.embedded` and byte-backed directory font capture ingest WOFF 1.0 and WOFF 2.0 by reconstructing a standalone SFNT the existing pipeline consumes unchanged, with golden e2e scenes, a semantic cross-container proof, and benchmarks.
 
-**Architecture:** An internal `FontContainerDecoder` in `:kalligraphie:font:sfnt` sniffs `wOFF`/`wOF2` and delegates to `WoffReader`/`Woff2Reader`, which inflate tables (zlib via `okio.Inflater`; Brotli via a vendored pure-Kotlin decoder) and reassemble an SFNT (`SfntReassembler`). WOFF 2.0 additionally reconstructs the `glyf`/`loca`/`hmtx` transforms. The facade and directory capture decode at the boundary, then build `FontSource(decodedBytes, provenance)` and call `SfntReader` as today (Approach A).
+**Architecture:** An internal `FontContainerDecoder` in `:kalligraphie:font:sfnt` sniffs `wOFF`/`wOF2` and delegates to `WoffReader`/`Woff2Reader` under an independent `WoffDecodeLimits`. WOFF 1.0 inflates each table with zlib (`okio.Inflater`); WOFF 2.0 decompresses **one** Brotli stream for the whole font-data block and reconstructs the `glyf`/`loca`/`hmtx` transforms. `SfntReassembler` builds a valid SFNT with correct checksum sequencing. The facade and capture decode at the boundary, then build `FontSource(decodedBytes, provenance)` and call `SfntReader` (Approach A).
 
 **Tech Stack:** Kotlin Multiplatform (`commonMain` for Android/JVM/iOS), `okio` (existing), `kotlin.test`, `:kalligraphie:e2e` golden harness, `:kalligraphie:bench` kotlinx-benchmark harness, Python `fontTools` corpus tooling.
 
@@ -13,45 +13,42 @@
 ## Global Constraints
 
 - All new production code lives in `:kalligraphie:font:sfnt` `commonMain`; no new third-party dependency. `okio` is already an `implementation` dependency there.
-- Every new type is internal: annotate with `@org.graphiks.kalligraphie.api.KalligraphieInternalApi` and `@file:OptIn(...)` where needed. No change to the public `:kalligraphie:api` surface.
-- Single-face containers only. A `flavor` of `ttcf` (or any unsupported version) returns `FontError.UnsupportedContainer`.
-- Every declared size is validated against the available bytes **before** any allocation; the Brotli/zlib output is bounded to the table's declared reconstructed length; the reassembled size is bounded by the declared `totalSfntSize` and by `maxSourceBytes` in directory capture. Breaches return `FontError.ResourceLimitExceeded`.
-- Malformed structure returns `FontError.FontDataFailure(code, message, location)` with the exact codes from spec §6.
-- Test commands: `./gradlew :kalligraphie:font:sfnt:jvmTest` for the decoder; `./gradlew check` and `./gradlew allTests` for the whole repo.
-- Conventional Commits; allowed scopes include `sfnt`, `font-core`, `kalligraphie`, `e2e`, `bench`, `docs`, `build`, `ci`. Branch `feat/sfnt-woff-containers`, PR from the fork to `Graphiks-org/Kalligraphie`.
+- Types on the `font:core`/`:kalligraphie` boundary are `public` **and** annotated `@org.graphiks.kalligraphie.api.KalligraphieInternalApi`; do not make an internal type part of a public signature. No change to the public `:kalligraphie:api` surface.
+- Single-face containers only. `flavor == 'ttcf'` returns `FontError.UnsupportedContainer`.
+- No bound may derive solely from an untrusted declared length. `WoffDecodeLimits.maxDecodedFontBytes` caps every produced buffer and `maxWorkingBytes` caps temporary work; `totalSfntSize` and a transformed `glyf`'s `origLength` are **advisory** and must never cause rejection. Breaches return `FontResourceLimitExceeded`.
+- Malformed structure returns `FontError.FontDataFailure(code, message, location)` with the exact codes from spec §6.4.
+- Test commands: `./gradlew :kalligraphie:font:sfnt:allTests` for the decoder; `./gradlew check` and `./gradlew allTests` for the repo.
+- Conventional Commits; allowed scopes include `sfnt`, `font-core`, `kalligraphie`, `e2e`, `bench`, `docs`, `ci`. `build` is a **type**, never a scope. Branch `feat/sfnt-woff-containers`; PR from the fork to `Graphiks-org/Kalligraphie`.
 - Regenerate committed artifacts with `./gradlew :kalligraphie:e2e:updateE2eGolden`; never hand-edit `manifest.tsv`, the catalog matrices or `claimed-tables.json`.
-- Corpus commands from `scripts/fonts/README.md` are local obligations and must pass before committing fixture changes.
+- Corpus commands in `scripts/fonts/README.md` are local obligations and must pass before committing fixture changes.
 
 ## Review Focus
 
 The five input classes / failure modes most likely to bite a user, each pinned by a test in the task noted:
 
-1. **Collection flavor.** A WOFF/WOFF2 whose `flavor` is `ttcf` must fail with `font.unsupported-container`, never crash or silently parse one face. (Task 6, Task 7.)
-2. **Decompression bomb.** A table whose declared reconstructed length is far larger than the input, or whose Brotli/zlib stream expands past the declared length, must fail with `font.resource-limit-exceeded` before allocation. (Task 4, Task 6, Task 7.)
-3. **Null transform (`transformVersion 3`).** `glyf`/`loca` stored untransformed must pass through verbatim, not be run through the transform reconstruction. (Task 8.)
-4. **`hmtx` shape.** The transformed `hmtx` must reconstruct correctly for `numberOfHMetrics < numGlyphs` (with lsb arrays) and the flat case, cross-checked against the original metrics. (Task 9.)
-5. **Overlapping / duplicate tables.** Directory records that overlap, duplicate a tag, or point outside the file must be refused with a stable typed code, not read out of bounds. (Task 6, Task 7.)
+1. **Collection flavor.** A WOFF/WOFF2 whose `flavor` is `ttcf` must fail with `font.unsupported-container`, never crash or parse one face. (Task 6, Task 7.)
+2. **Decompression bomb.** A container declaring a huge `totalSfntSize`/`origLength`, or whose Brotli/zlib stream expands past the declared and independent limits, must fail with `font.resource-limit-exceeded` before allocation. (Task 4, Task 6, Task 7.)
+3. **Advisory lengths.** A correctly reconstructed font whose size differs from `totalSfntSize` (and whose `glyf` differs from `origLength`) must be **accepted**. (Task 7.)
+4. **Null transform (`transformVersion 3`).** `glyf`/`loca` stored untransformed must pass through verbatim. (Task 7, Task 8.)
+5. **`hmtx` shape.** The transformed `hmtx` must reconstruct omitted bearings from glyph `xMin` for flags 1/2/3 and every count shape. (Task 9.)
 
 ## Test-only helpers
 
-These names are referenced by the tasks below and are defined once, in the test source set of the task named; none is production code.
+Defined once, in the test source set of the task named; none is production code.
 
-- `WoffTestFonts` (`sfnt` `commonTest`, `container` package): `singleTableSfnt(): ByteArray` builds a minimal valid one-table SFNT; `wrapUncompressed(font: ByteArray, flavor: UInt = 0x00010000u): ByteArray` builds a WOFF whose single table is stored uncompressed. (Task 6.)
-- `Woff2TestFonts` (`sfnt` `commonTest`): `singleTableUntransformed()`, `withWrongTotalSfntSize()`, `withCollectionFlavor()`, each a constructed WOFF2 with `transformVersion 3`. (Task 7.)
-- `Woff2GlyfVectors` (`sfnt` `commonTest`): a data holder `(transformedGlyf, origGlyfLength, expectedGlyf, expectedLoca, indexFormat)`, produced once with `fontTools` `woff2` and embedded as base64. (Task 8.)
-- `Woff2HmtxVectors` (`sfnt` `commonTest`): data holders `FLAT` and `WITH_LSB` `(transformed, expected)`. (Task 9.)
-- `BrotliVectors` (`sfnt` `commonTest`): base64 constants `EMPTY`, `LOREM_IPSUM`, `DICTIONARY_USER`. (Task 4.)
-- `EmbeddedWoffTestData` (`font:core` `commonTest`): `wrappedLiberation()`, `decodedLiberation()`, `faceDigest(bytes)`. (Task 10.)
-- `WoffCaptureFixtures` (`:kalligraphie` `jvmTest`): `woffPath()`, `woff2Path()` resolve the committed `woff-ibm-plex` corpus resources. (Task 11.)
-- `WoffPaths` (`:kalligraphie:e2e` `sharedTest`): `WOFF`, `WOFF2` resource-path constants. (Task 13.)
-- `decodeTable(bytes, tag)` (`e2e` `sharedTest`): decodes a source through `Kalligraphie.embedded` and returns the raw SFNT table bytes read through the internal `ParsedTrueTypeFont`. (Task 13.)
-- `TestCorpus` (`bench` `commonTest`): an in-memory `FixtureCorpus` for the container-scenario registry test. (Task 15.)
+- `WoffTestFonts` (`sfnt` `commonTest`, `container`): `singleTableSfnt()`, `wrapUncompressed(font, flavor = 0x00010000u)`, `wrapDeflated(font)` (okio `Deflater`).
+- `Woff2TestFonts` (`sfnt` `commonTest`): `singleTableUntransformed()`, `withCollectionFlavor()`, `withUnknownTransform()`, `withBadUIntBase128()`.
+- `Woff2GlyfVectors` / `Woff2HmtxVectors` (`sfnt` `commonTest`): base64 data holders generated once with fontTools + brotli.
+- `BrotliVectors` (`sfnt` `commonTest`): base64 constants `EMPTY`, `TEXT`, `DICTIONARY_USER`, `MULTI_BLOCK`, plus malformed streams.
+- `WoffPaths` (`e2e` `sharedTest`): `WOFF`, `WOFF2` resource-path constants.
+- `outlineCommandsOf(bytes, codePoint)` / `advanceOf(bytes, codePoint)` (`e2e` `sharedTest`): resolve through the public facade and return comparable values.
+- `TestCorpus` (`bench` `commonTest`): an in-memory `FixtureCorpus`.
 
 ---
 
 ## Phase 1 — Vendored Brotli decoder
 
-### Task 1: Brotli bit reader, Huffman decoder, and framing constants
+### Task 1: Bit reader and Huffman code reader
 
 **Files:**
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliBits.kt`
@@ -60,8 +57,7 @@ These names are referenced by the tasks below and are defined once, in the test 
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliHuffmanTest.kt`
 
 **Interfaces:**
-- Consumes: nothing.
-- Produces: `internal class BrotliBits(input: ByteArray)` with `fun readBits(count: Int): Int`, `fun readBit(): Int`, `fun alignToByte()`, `fun hasMore(): Boolean`; `internal class BrotliHuffman` with `internal fun readCode(bits: BrotliBits): Int` and `internal companion object { fun fromSimple(alphabetSize: Int, symbols: IntArray): BrotliHuffman; fun fromComplex(codeLengths: IntArray, maxBits: Int): BrotliHuffman }`; `BrotliFraming.WBITS_MAX = 24`.
+- Produces: `internal class BrotliBits(input: ByteArray)` with `fun readBits(count: Int): Int`, `fun readBit(): Int`, `fun alignToByte()`, `fun hasMore(): Boolean`, `var overran: Boolean`; `internal class BrotliHuffman` with `fun readCode(bits: BrotliBits): Int` and `internal companion object { fun fromCodeLengths(codeLengths: IntArray, maxBits: Int): BrotliHuffman; fun fromSingleSymbol(symbol: Int): BrotliHuffman }`; `internal object BrotliHuffmanReader { fun read(bits: BrotliBits, alphabetSize: Int): BrotliHuffman }` (parses the §3.4 simple / §3.5 complex code description from the stream, including the four-symbol `tree-select` bit, then builds the tree).
 
 - [ ] **Step 1: Write the failing bit-reader test**
 
@@ -73,7 +69,7 @@ import kotlin.test.assertEquals
 
 class BrotliBitsTest {
     @Test
-    fun readsLittleEndianBitOrderWithinBytes() {
+    fun readsLeastSignificantBitFirst() {
         // 0b10110001 => first four bits (LSB first) are 1,0,0,0
         val bits = BrotliBits(byteArrayOf(0b10110001.toByte()))
         assertEquals(0b0001, bits.readBits(4))
@@ -84,6 +80,13 @@ class BrotliBitsTest {
     fun readsAcrossByteBoundaries() {
         val bits = BrotliBits(byteArrayOf(0x01, 0x02))
         assertEquals(0x0201, bits.readBits(16))
+    }
+
+    @Test
+    fun overrunReturnsZerosAndFlags() {
+        val bits = BrotliBits(byteArrayOf(0x00))
+        assertEquals(0, bits.readBits(20))
+        assertEquals(true, bits.overran)
     }
 }
 ```
@@ -102,12 +105,7 @@ package org.graphiks.kalligraphie.font.sfnt.brotli
 
 import org.graphiks.kalligraphie.api.KalligraphieInternalApi
 
-/**
- * LSB-first bit reader over a byte array, the bit order RFC 7932 uses for every field.
- *
- * Reading past the end returns zero bits and sets [overran], so the decoder can finish a code and
- * then fail the whole stream once, instead of throwing from deep inside a tree walk.
- */
+/** LSB-first bit reader over a byte array, the bit order RFC 7932 uses for integer fields. */
 @KalligraphieInternalApi
 internal class BrotliBits(private val input: ByteArray) {
     private var bitPosition = 0
@@ -120,19 +118,15 @@ internal class BrotliBits(private val input: ByteArray) {
 
     fun readBits(count: Int): Int {
         var result = 0
-        var shift = 0
-        repeat(count) {
+        repeat(count) { shift ->
             val byteIndex = bitPosition ushr 3
             if (byteIndex >= input.size) {
                 overran = true
-                bitPosition += 1
-                shift += 1
-                return@repeat
+            } else {
+                val bit = (input[byteIndex].toInt() ushr (bitPosition and 7)) and 1
+                result = result or (bit shl shift)
             }
-            val bit = (input[byteIndex].toInt() ushr (bitPosition and 7)) and 1
-            result = result or (bit shl shift)
             bitPosition += 1
-            shift += 1
         }
         return result
     }
@@ -144,19 +138,12 @@ internal class BrotliBits(private val input: ByteArray) {
 
     fun hasMore(): Boolean = (bitPosition ushr 3) < input.size
 }
-
-/** Framing constants of RFC 7932 §9.1. */
-@KalligraphieInternalApi
-internal object BrotliFraming {
-    /** Maximum window bits; the window size is `(1 shl wbits) - 16`. */
-    const val WBITS_MAX = 24
-}
 ```
 
 - [ ] **Step 4: Run the bit-reader test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliBitsTest*'`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Write the failing Huffman test**
 
@@ -168,18 +155,24 @@ import kotlin.test.assertEquals
 
 class BrotliHuffmanTest {
     @Test
-    fun simpleSingleSymbolDecodesWithoutBits() {
-        // RFC 7932 §3.4: a simple code with one symbol read consumes zero bits and always yields it.
-        val code = BrotliHuffman.fromSimple(alphabetSize = 4, symbols = intArrayOf(2))
+    fun aSingleSymbolCodeConsumesNoBits() {
+        val code = BrotliHuffman.fromSingleSymbol(2)
+        // A one-symbol code returns that symbol without reading any bits.
         assertEquals(2, code.readCode(BrotliBits(byteArrayOf())))
     }
 
     @Test
-    fun complexTwoSymbolTreeDecodesBothSymbols() {
-        // Two symbols of length 1: symbol 0 on bit 0, symbol 1 on bit 1.
-        val code = BrotliHuffman.fromComplex(codeLengths = intArrayOf(1, 1), maxBits = 1)
+    fun aTwoSymbolCanonicalTreeDecodesBothSymbols() {
+        val code = BrotliHuffman.fromCodeLengths(intArrayOf(1, 1), maxBits = 1)
         assertEquals(0, code.readCode(BrotliBits(byteArrayOf(0b00000000))))
         assertEquals(1, code.readCode(BrotliBits(byteArrayOf(0b00000001))))
+    }
+
+    @Test
+    fun readsASimpleOneSymbolCodeDescription() {
+        // LSB-first: 2 bits "simple" = 1 (bit0=1), 2 bits NSYM-1 = 0, 1 symbol bit = 1 => 0x11.
+        val code = BrotliHuffmanReader.read(BrotliBits(byteArrayOf(0x11)), alphabetSize = 2)
+        assertEquals(1, code.readCode(BrotliBits(byteArrayOf())))
     }
 }
 ```
@@ -189,14 +182,14 @@ class BrotliHuffmanTest {
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliHuffmanTest*'`
 Expected: FAIL — `BrotliHuffman` unresolved.
 
-- [ ] **Step 7: Implement `BrotliHuffman`**
+- [ ] **Step 7: Implement `BrotliHuffman` and `BrotliHuffmanReader`**
 
-Build a canonical prefix tree from the code lengths (RFC 7932 §3.2), then a direct-lookup fast table plus a canonical decoding walk. `fromSimple` implements §3.4 including the two "single symbol" and "tree-select" bit forms; `fromComplex` runs the code-length code from §3.5 to materialise lengths, then builds the same tree. Return the symbol as `Int`. The tree walk must consume exactly the bits of the matched code and must tolerate `BrotliBits.overran` by returning the accumulator; the caller fails the stream.
+`fromCodeLengths` builds the canonical tree from lengths (§3.2), where a code with a single non-zero length decodes with no bits. `readCode` walks the tree LSB-first (prefix codes are read starting at the most significant bit of the code, which is the reverse of the integer bit order). `BrotliHuffmanReader.read` parses: 2 bits (`1` = simple), 2 bits `NSYM-1`, `NSYM` symbols of `ALPHABET_BITS` (the smallest width holding every alphabet symbol), the `tree-select` bit for `NSYM == 4` giving lengths `2,2,2,2` (bit 0) or `1,2,3,3` (bit 1), rejects a symbol ≥ alphabet size or a repeated symbol; otherwise parses the §3.5 complex description (HSKIP, the six code-length code lengths in the fixed order, the repeat codes 16/17 with their repeat-count modification rules, and the closing `(32768 >> len)` sum rule). Return `BrotliHuffman`.
 
 - [ ] **Step 8: Run the Huffman test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliHuffmanTest*'`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 9: Commit**
 
@@ -205,10 +198,10 @@ git add kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/f
         kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliHuffman.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliBitsTest.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliHuffmanTest.kt
-git commit -m "feat(sfnt): add Brotli bit reader and Huffman decoder"
+git commit -m "feat(sfnt): add Brotli bit reader and Huffman code reader"
 ```
 
-### Task 2: Brotli meta-block header, block switching, and literal/command/distance alphabets
+### Task 2: Meta-block header, contexts, and alphabets
 
 **Files:**
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliMetaBlock.kt`
@@ -217,10 +210,10 @@ git commit -m "feat(sfnt): add Brotli bit reader and Huffman decoder"
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliMetaBlockTest.kt`
 
 **Interfaces:**
-- Consumes: `BrotliBits`, `BrotliHuffman` (Task 1).
-- Produces: `internal object BrotliMetaBlock` implementing the §9.2 header (`wbits`, `ISLAST`, `MNIBBLES`, `MLEN`, `ISUNCOMPRESSED`, `ISMETADATA`) and dispatching an uncompressed meta-block flush; `internal object BrotliAlphabet` with the RFC 7932 §5 insert-and-copy length code tables, the §7 distance code tables, and `internal object BrotliContext` with the §7.1 context lookup modes (`LSB6`, `MSB6`, `UTF8`, `SIGNED`).
+- Consumes: `BrotliBits`, `BrotliHuffmanReader` (Task 1).
+- Produces: `internal object BrotliMetaBlock { fun readWbits(bits: BrotliBits): Int }` plus the §9.2 header parse; `internal object BrotliContext` with literal/distance context-ID computation; `internal object BrotliAlphabet` with the §5/§7/§6 base tables.
 
-- [ ] **Step 1: Write the failing meta-block test**
+- [ ] **Step 1: Write the failing WBITS test**
 
 ```kotlin
 package org.graphiks.kalligraphie.font.sfnt.brotli
@@ -230,15 +223,21 @@ import kotlin.test.assertEquals
 
 class BrotliMetaBlockTest {
     @Test
-    fun wbitsIsReadWithTheReservedBitRule() {
-        // RFC 7932 §9.1: first bit 0 => WBITS 16; the following 3 bits, if non-zero, add to 17.
-        assertEquals(16, BrotliMetaBlock.readWbits(BrotliBits(byteArrayOf(0b00000000))))
+    fun aLeadingZeroBitMeansWbits16() {
+        // RFC 7932 §9.1: the "16" pattern is the single bit 0.
+        assertEquals(16, BrotliMetaBlock.readWbits(BrotliBits(byteArrayOf(0b00000010))))
     }
 
     @Test
-    fun reservedWbitPatternIsRecognised() {
-        // §9.1: first bit 0 => 16 + the next three bits; here they are 1,0,0 => WBITS 17.
-        assertEquals(17, BrotliMetaBlock.readWbits(BrotliBits(byteArrayOf(0b00000010))))
+    fun oneThenThreeZeroBitsMeansWbits17() {
+        // "0000001" parsed right-to-left: first bit 1, then 000, then 000.
+        assertEquals(17, BrotliMetaBlock.readWbits(BrotliBits(byteArrayOf(0b00000001))))
+    }
+
+    @Test
+    fun oneThenWbits24() {
+        // "1111" parsed right-to-left: first bit 1, next three bits 111 => 17 + 7 = 24.
+        assertEquals(24, BrotliMetaBlock.readWbits(BrotliBits(byteArrayOf(0b00001111))))
     }
 }
 ```
@@ -248,14 +247,14 @@ class BrotliMetaBlockTest {
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliMetaBlockTest*'`
 Expected: FAIL — `BrotliMetaBlock` unresolved.
 
-- [ ] **Step 3: Implement the meta-block header and the alphabet/context tables**
+- [ ] **Step 3: Implement the header, contexts, and alphabet tables**
 
-`BrotliMetaBlock.readWbits` implements §9.1 exactly. The header reader implements §9.2: `ISLAST`, then optional `ISEMPTY`/`ISLASTEMPTY`, `MNIBBLES` and `MLEN`, then either `ISUNCOMPRESSED` (byte-align and copy `MLEN` bytes) or `ISMETADATA` (skip a reserved meta-block) or the compressed path. `BrotliAlphabet` carries, as `IntArray` constants, the §5 `insertLengthCode`/`copyLengthCode` offset tables and the §7 `distanceShortCode` offset tables; `BrotliContext` implements the four context ID computations over the last two output bytes and the current literal byte.
+`readWbits` implements §9.1 exactly: bit 0 ⇒ 16; otherwise read 3 bits `v`; if `v != 0` ⇒ `17 + v`; otherwise read 3 more bits `w`; if `w == 0` ⇒ 17, else `8 + w`. The §9.2 header reader reads `ISLAST`, optional `ISEMPTY`/`ISLASTEMPTY`, `MNIBBLES`/`MLEN`, then `ISUNCOMPRESSED` / `ISMETADATA` / the compressed path. `BrotliContext` computes the literal context ID from the **previous two decoded bytes** (never the byte being decoded) and the selected context mode, and the distance context ID from the current copy length; it also implements the context-map RLE and inverse-MTF decode. `BrotliAlphabet` carries the §5 insert/copy length offset tables, the §7 distance tables, and the §6 block-count/block-type tables.
 
 - [ ] **Step 4: Run the meta-block test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliMetaBlockTest*'`
-Expected: PASS (2 tests).
+Expected: PASS (3 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -264,10 +263,10 @@ git add kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/f
         kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliContext.kt \
         kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliAlphabet.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliMetaBlockTest.kt
-git commit -m "feat(sfnt): add Brotli meta-block header and alphabets"
+git commit -m "feat(sfnt): add Brotli meta-block header, contexts and alphabets"
 ```
 
-### Task 3: Brotli static dictionary and word transforms
+### Task 3: Static dictionary, transforms, and provenance
 
 **Files:**
 - Create: `scripts/brotli/fetch_dictionary.py`
@@ -277,14 +276,13 @@ git commit -m "feat(sfnt): add Brotli meta-block header and alphabets"
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDictionaryTest.kt`
 
 **Interfaces:**
-- Consumes: nothing.
-- Produces: `internal object BrotliDictionary` with `val offsetByLength: IntArray`, `val sizeBitsByLength: IntArray`, `fun word(offset: Int, length: Int): ByteArray`; `internal object BrotliDictionaryTransforms` with `fun apply(transformId: Int, word: ByteArray): ByteArray`.
+- Produces: `internal object BrotliDictionary` with `val sizeBytes: Int`, `fun word(offset: Int, length: Int): ByteArray`; `internal object BrotliDictionaryTransforms` with `fun apply(transformId: Int, word: ByteArray): ByteArray`.
 
-- [ ] **Step 1: Write the dictionary generator script**
+- [ ] **Step 1: Write the generator and pin the provenance**
 
-`scripts/brotli/fetch_dictionary.py` downloads the RFC 7932 static dictionary from the pinned Google Brotli source at a tagged commit, verifies its SHA-256, and emits `BrotliDictionary.kt` containing the 122,784 dictionary bytes as a chunked `ByteArray` literal, plus the `NWORDS`, `NWORDS_BITS`, `NWORDS_LENGTHS` tables from §8. Write `scripts/brotli/README.md` documenting the pinned origin, the digest and the regeneration command.
+`scripts/brotli/fetch_dictionary.py` downloads the RFC 7932 static dictionary from the pinned Google Brotli source at a tagged commit, verifies its SHA-256, and emits `BrotliDictionary.kt` as several chunk-sized `ByteArray` literals (never one oversized JVM initialiser) plus `sizeBytes`, the `NWORDS`/`NWORDS_BITS` tables and the upstream MIT notice as a comment. `scripts/brotli/README.md` records the pinned commit, the digest, the licence and the regeneration command.
 
-- [ ] **Step 2: Generate the dictionary and write the failing test**
+- [ ] **Step 2: Generate and write the failing test**
 
 ```bash
 python3 scripts/brotli/fetch_dictionary.py
@@ -298,16 +296,15 @@ import kotlin.test.assertEquals
 
 class BrotliDictionaryTest {
     @Test
-    fun dictionaryHasRfcSizeAndKnownWord() {
+    fun hasTheRfcSizeAndFirstWord() {
         assertEquals(122_784, BrotliDictionary.sizeBytes)
-        // RFC 7932 §8: the first word of length 4 is "time".
+        // RFC 7932 §8: the first word of the length-4 group is "time".
         assertEquals("time", BrotliDictionary.word(offset = 0, length = 4).decodeToString())
     }
 
     @Test
-    fun identityTransformLeavesWordUnchanged() {
-        val word = "world".encodeToByteArray()
-        assertEquals("world", BrotliDictionaryTransforms.apply(transformId = 0, word).decodeToString())
+    fun identityTransformLeavesTheWordUnchanged() {
+        assertEquals("world", BrotliDictionaryTransforms.apply(0, "world".encodeToByteArray()).decodeToString())
     }
 }
 ```
@@ -317,9 +314,9 @@ class BrotliDictionaryTest {
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliDictionaryTest*'`
 Expected: FAIL — `BrotliDictionary` unresolved.
 
-- [ ] **Step 4: Implement the dictionary accessors and all 121 transforms**
+- [ ] **Step 4: Implement the dictionary accessors and all transforms**
 
-`BrotliDictionary.word` computes the §8 offset: entries are grouped by length 4..24; for a length `l` the base is the sum of `NWORDS[l']` for smaller `l'`, and the offset within the group is decoded through `sizeBitsByLength`. `BrotliDictionaryTransforms` implements the complete RFC 7932 §8 transform table (prefix/suffix strings, the identity, and the uppercase/capitalise operations), indexed by the transform id.
+`word(offset, length)`: the byte offset of a length group is `Σ(len × wordCount[len])` over shorter lengths; within a group the word is at `wordIndex × length`, decoded through `NWORDS`/`NWORDS_BITS` (RFC 7932 §8). `BrotliDictionaryTransforms.apply` implements all 121 §8 transforms (prefix/suffix, identity, uppercase/capitalise); the output length may be shorter than the base word, including empty.
 
 - [ ] **Step 5: Run the dictionary test to verify it passes**
 
@@ -329,22 +326,23 @@ Expected: PASS (2 tests).
 - [ ] **Step 6: Commit**
 
 ```bash
-git add scripts/brotli kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDictionary.kt \
+git add scripts/brotli \
+        kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDictionary.kt \
         kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDictionaryTransforms.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDictionaryTest.kt
 git commit -m "feat(sfnt): add Brotli static dictionary and transforms"
 ```
 
-### Task 4: `BrotliDecoder` public API, bounded output, and conformance vectors
+### Task 4: `BrotliDecoder` with independent bounds and successful vectors
 
 **Files:**
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDecoder.kt`
-- Create: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDecoderTest.kt`
 - Create: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliVectors.kt`
+- Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/brotli/BrotliDecoderTest.kt`
 
 **Interfaces:**
 - Consumes: Tasks 1–3.
-- Produces: `internal object BrotliDecoder { fun decode(input: ByteArray, expectedLength: Int): FontOperationResult<ByteArray> }`.
+- Produces: `internal object BrotliDecoder { fun decode(input: ByteArray, expectedLength: Int, limit: Long): FontOperationResult<ByteArray> }`. `expectedLength` is the exact required output; `limit` is the independent cap; `expectedLength > limit` fails before decoding.
 
 - [ ] **Step 1: Write the failing API test**
 
@@ -352,8 +350,8 @@ git commit -m "feat(sfnt): add Brotli static dictionary and transforms"
 package org.graphiks.kalligraphie.font.sfnt.brotli
 
 import kotlin.test.Test
-import kotlin.test.assertIs
 import kotlin.test.assertContentEquals
+import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 
@@ -363,22 +361,49 @@ class BrotliDecoderTest {
         assertContentEquals(
             ByteArray(0),
             assertIs<FontOperationResult.Success<ByteArray>>(
-                BrotliDecoder.decode(BrotliVectors.EMPTY, expectedLength = 0),
+                BrotliDecoder.decode(BrotliVectors.EMPTY, expectedLength = 0, limit = 16),
             ).value,
         )
     }
 
     @Test
-    fun refusesOutputLongerThanTheDeclaredLength() {
-        val result = BrotliDecoder.decode(BrotliVectors.LOREM_IPSUM, expectedLength = 3)
-        val failure = assertIs<FontOperationResult.Failure>(result)
+    fun decodesTextSuccessfullyAndByteForByte() {
+        assertContentEquals(
+            BrotliVectors.TEXT_EXPECTED,
+            assertIs<FontOperationResult.Success<ByteArray>>(
+                BrotliDecoder.decode(BrotliVectors.TEXT, expectedLength = BrotliVectors.TEXT_EXPECTED.size, limit = 1_024),
+            ).value,
+        )
+    }
+
+    @Test
+    fun decodesAStreamThatUsesTheStaticDictionary() {
+        assertContentEquals(
+            BrotliVectors.DICTIONARY_EXPECTED,
+            assertIs<FontOperationResult.Success<ByteArray>>(
+                BrotliDecoder.decode(
+                    BrotliVectors.DICTIONARY_USER,
+                    expectedLength = BrotliVectors.DICTIONARY_EXPECTED.size,
+                    limit = 4_096,
+                ),
+            ).value,
+        )
+    }
+
+    @Test
+    fun refusesADeclaredLengthBeyondTheIndependentLimit() {
+        val failure = assertIs<FontOperationResult.Failure>(
+            BrotliDecoder.decode(BrotliVectors.TEXT, expectedLength = 10_000, limit = 16),
+        )
         assertIs<FontError.ResourceLimitExceeded>(failure.error)
     }
 
     @Test
     fun refusesATruncatedStream() {
-        val truncated = BrotliVectors.LOREM_IPSUM.copyOf(BrotliVectors.LOREM_IPSUM.size / 2)
-        assertIs<FontOperationResult.Failure>(BrotliDecoder.decode(truncated, expectedLength = 1_000))
+        val truncated = BrotliVectors.TEXT.copyOf(BrotliVectors.TEXT.size / 2)
+        assertIs<FontOperationResult.Failure>(
+            BrotliDecoder.decode(truncated, expectedLength = BrotliVectors.TEXT_EXPECTED.size, limit = 1_024),
+        )
     }
 }
 ```
@@ -390,16 +415,16 @@ Expected: FAIL — `BrotliDecoder` unresolved.
 
 - [ ] **Step 3: Implement `BrotliDecoder`**
 
-Wire the framing (WBITS), meta-block loop, block-switch state for the three block categories, the literal/command/distance Huffman decoders, context modelling, insert-and-copy, the distance ring buffer and the static-dictionary references (with a transformed-word match length ≥ 4). Write into a bounded output buffer that refuses to grow past `expectedLength` (returning `ResourceLimitExceeded`); return `FontDataFailure("font.woff2.brotli-failed", …)` when `BrotliBits.overran`, a reserved bit is set, a code is invalid, or the stream ends before `expectedLength` bytes are produced. Expose `decode(input, expectedLength): FontOperationResult<ByteArray>`.
+Wire the meta-block loop, three block categories with block switching, literal/command/distance code readers, context modelling, insert-and-copy, the four-entry distance ring buffer (initialised `16, 15, 11, 4`, never reset at meta-block boundaries, not advanced for symbol 0 or dictionary references), overlapping copies, and static-dictionary references (base word length 4..24, transformed output of any length), plus metadata and uncompressed meta-blocks. Write into a bounded buffer that fails `ResourceLimitExceeded` past `limit` (or before decoding if `expectedLength > limit`), and fail `FontDataFailure("font.woff2.brotli-failed", …)` on `overran`, reserved bits, invalid codes, an over-long stream, or an output length other than `expectedLength`. A stream with trailing bytes after the final block is rejected.
 
-- [ ] **Step 4: Add the conformance vector constants**
+- [ ] **Step 4: Add the vectors**
 
-`BrotliVectors.kt` holds base64 constants for: the empty stream; a short ASCII stream; a stream that uses the static dictionary; and the RFC 7932 test corpus entries. Record in a comment the exact command used to produce each (`brotli --stdout -q 5 < input > out`, Brotli CLI version) so vectors are reproducible.
+`BrotliVectors.kt` holds base64 constants and, for the two success cases, the expected plaintext: a literal-only text, a dictionary-using text, a multi-block stream, and the empty stream, produced with a recorded Brotli CLI version; plus malformed streams (truncated, bad block type, reserved bit). Record the exact producing command in a comment.
 
 - [ ] **Step 5: Run the API test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*BrotliDecoderTest*'`
-Expected: PASS (3 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 6: Commit**
 
@@ -412,19 +437,19 @@ git commit -m "feat(sfnt): expose a bounded Brotli decoder"
 
 ---
 
-## Phase 2 — SFNT reassembly, WOFF 1.0, and container dispatch
+## Phase 2 — Limits, SFNT reassembly, WOFF 1.0, and dispatch
 
-### Task 5: `SfntReassembler`
+### Task 5: `WoffDecodeLimits` and `SfntReassembler`
 
 **Files:**
+- Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/WoffDecodeLimits.kt`
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/SfntReassembler.kt`
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/SfntReassemblerTest.kt`
 
 **Interfaces:**
-- Consumes: `readUInt32`, `checkedRangeEnd`, `decodeAsciiTag` from `org.graphiks.kalligraphie.font.sfnt`.
-- Produces: `internal class SfntTable(val tag: String, val data: ByteArray, val originalChecksum: UInt? = null)`; `internal object SfntReassembler { fun assemble(flavor: UInt, tables: List<SfntTable>): ByteArray }`.
+- Produces: `@KalligraphieInternalApi public class WoffDecodeLimits(val maxDecodedFontBytes: Long, val maxWorkingBytes: Long)` with `companion { val EMBEDDED: WoffDecodeLimits; fun forCapture(maxSourceBytes: Int): WoffDecodeLimits }`; `internal class SfntTable(val tag: String, val data: ByteArray, val originalChecksum: UInt? = null)`; `internal object SfntReassembler { fun assemble(flavor: UInt, tables: List<SfntTable>): ByteArray; fun tableChecksum(bytes: ByteArray): UInt; fun wholeFontChecksum(font: ByteArray): UInt }`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing reassembler test**
 
 ```kotlin
 package org.graphiks.kalligraphie.font.sfnt.container
@@ -434,20 +459,23 @@ import kotlin.test.assertEquals
 
 class SfntReassemblerTest {
     @Test
-    fun writesASortedDirectoryWithPaddedTables() {
-        val head = SfntTable("head", ByteArray(54))
-        val cmap = SfntTable("cmap", ByteArray(5))
-        val sfnt = SfntReassembler.assemble(0x00010000u, listOf(head, cmap))
+    fun writesASortedPaddedDirectory() {
+        val sfnt = SfntReassembler.assemble(0x00010000u, listOf(SfntTable("head", ByteArray(54)), SfntTable("cmap", ByteArray(5))))
         assertEquals(0x00010000u, readUInt32(sfnt, 0))
         assertEquals(2, readUInt16(sfnt, 4)!!.toInt())
-        assertEquals("cmap", sfnt.decodeAsciiTag(12))  // sorted: cmap before head
+        assertEquals("cmap", sfnt.decodeAsciiTag(12))
         assertEquals("head", sfnt.decodeAsciiTag(28))
-        assertEquals(0, (sfnt.size % 4))               // every table 4-byte aligned/padded
+        assertEquals(0, sfnt.size % 4)
     }
 
     @Test
-    fun headChecksumAdjustmentMakesTheWholeFontSumToTheMagic() {
-        val sfnt = SfntReassembler.assemble(0x00010000u, listOf(SfntTable("head", ByteArray(54))))
+    fun theHeadDirectoryChecksumIsComputedWithTheAdjustmentZeroed() {
+        // A head whose incoming checkSumAdjustment is non-zero must still get the right directory checksum.
+        val head = ByteArray(54).also { it[8] = 0x12; it[9] = 0x34; it[10] = 0x56; it[11] = 0x78 }
+        val sfnt = SfntReassembler.assemble(0x00010000u, listOf(SfntTable("head", head)))
+        val recorded = readUInt32(sfnt, 12 + 4)!!  // head is the only table, first record, checksum at +4
+        val expected = SfntReassembler.tableChecksum(ByteArray(54))
+        assertEquals(expected, recorded)
         assertEquals(0xB1B0AFBAu, SfntReassembler.wholeFontChecksum(sfnt))
     }
 }
@@ -460,7 +488,7 @@ Expected: FAIL — `SfntReassembler` unresolved.
 
 - [ ] **Step 3: Implement `SfntReassembler`**
 
-Compute `searchRange`/`entrySelector`/`rangeShift` for `numTables`; write the directory tag-sorted with each table's recomputed checksum (or `originalChecksum` when supplied); pad each table to a 4-byte boundary; then patch `head.checkSumAdjustment` to `0xB1B0AFBA - wholeFontChecksum(withAdjustmentZeroed)`. Expose `wholeFontChecksum(font: ByteArray): UInt` summing big-endian `UInt32` words.
+Expose `tableChecksum(bytes): UInt` (sum of big-endian 32-bit words, zero-padded). `assemble` computes `searchRange`/`entrySelector`/`rangeShift`, sorts by tag, copies `head` with `bytes[8..11]` zeroed, records each table's checksum (zeroed `head` for the `head` record, or `originalChecksum` when supplied), 4-byte pads, writes the directory, then patches `head.checkSumAdjustment = 0xB1B0AFBA - wholeFontChecksum(out)`. `WoffDecodeLimits` is a small immutable value class as above.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -470,12 +498,13 @@ Expected: PASS (2 tests).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/SfntReassembler.kt \
+git add kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/WoffDecodeLimits.kt \
+        kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/SfntReassembler.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/SfntReassemblerTest.kt
-git commit -m "feat(sfnt): reassemble a standalone SFNT from decoded tables"
+git commit -m "feat(sfnt): reassemble a standalone SFNT with correct checksum sequencing"
 ```
 
-### Task 6: `WoffReader` and `FontContainerDecoder` (WOFF 1.0)
+### Task 6: `WoffReader` and `FontContainerDecoder`
 
 **Files:**
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/WoffReader.kt`
@@ -484,43 +513,64 @@ git commit -m "feat(sfnt): reassemble a standalone SFNT from decoded tables"
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/FontContainerDecoderTest.kt`
 
 **Interfaces:**
-- Consumes: `SfntReassembler`, `SfntTable` (Task 5), `org.graphiks.kalligraphie.api.FontSource`, `okio.Inflater`/`InflaterSource`.
-- Produces: `internal object WoffReader { fun decode(bytes: ByteArray): FontOperationResult<ByteArray> }`; `internal enum class ContainerKind { WOFF, WOFF2 }`; `@KalligraphieInternalApi public class DecodedContainer(val bytes: ByteArray, val kind: ContainerKind)`; `@KalligraphieInternalApi public object FontContainerDecoder { fun decode(source: FontSource): FontOperationResult<DecodedContainer?> }`.
+- Consumes: `SfntReassembler`, `WoffDecodeLimits` (Task 5), `okio.Inflater`/`InflaterSource`.
+- Produces: `internal object WoffReader { fun decode(bytes: ByteArray, limits: WoffDecodeLimits): FontOperationResult<ByteArray> }`; `@KalligraphieInternalApi public enum class ContainerKind { WOFF, WOFF2 }`; `@KalligraphieInternalApi public class DecodedFont(val bytes: ByteArray, val kind: ContainerKind)`; `@KalligraphieInternalApi public object FontContainerDecoder { fun decode(source: FontSource, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?> }` (WOFF2 routing lands in Task 7).
 
-- [ ] **Step 1: Write the failing WOFF reader test (uncompressed tables, no compressor needed)**
+- [ ] **Step 1: Write the failing WOFF reader test**
 
 ```kotlin
 package org.graphiks.kalligraphie.font.sfnt.container
 
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 class WoffReaderTest {
+    private val limits = WoffDecodeLimits.EMBEDDED
+
     @Test
-    fun roundTripsAnUncompressedTableDirectory() {
+    fun roundTripsAnUncompressedDirectory() {
         val font = WoffTestFonts.singleTableSfnt()
-        val woff = WoffTestFonts.wrapUncompressed(font)
-        val decoded = assertIs<FontOperationResult.Success<ByteArray>>(WoffReader.decode(woff)).value
-        // The decoded SFNT carries the same table bytes, though padding/checksums may be recomputed.
+        val decoded = assertIs<FontOperationResult.Success<ByteArray>>(
+            WoffReader.decode(WoffTestFonts.wrapUncompressed(font), limits),
+        ).value
         assertEquals("cmap", decoded.decodeAsciiTag(12))
-        assertEquals(font.size, decoded.size)
+        assertEquals(0xB1B0AFBAu, SfntReassembler.wholeFontChecksum(decoded))
+    }
+
+    @Test
+    fun roundTripsADeflatedTable() {
+        val font = WoffTestFonts.singleTableSfnt()
+        val decoded = assertIs<FontOperationResult.Success<ByteArray>>(
+            WoffReader.decode(WoffTestFonts.wrapDeflated(font), limits),
+        ).value
+        assertEquals("cmap", decoded.decodeAsciiTag(12))
     }
 
     @Test
     fun refusesATruncatedHeader() {
-        val failure = assertIs<FontOperationResult.Failure>(WoffReader.decode(ByteArray(10)))
-        assertEquals("font.woff.invalid-header", failure.error.code)
+        assertEquals(
+            "font.woff.invalid-header",
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(ByteArray(10), limits)).error.code,
+        )
     }
 
     @Test
     fun refusesACollectionFlavor() {
         val woff = WoffTestFonts.wrapUncompressed(WoffTestFonts.singleTableSfnt(), flavor = 0x74746366u)
         assertIs<FontError.UnsupportedContainer>(
-            assertIs<FontOperationResult.Failure>(WoffReader.decode(woff)).error,
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(woff, limits)).error,
+        )
+    }
+
+    @Test
+    fun refusesAnOverlapOrDuplicateTag() {
+        val woff = WoffTestFonts.wrapWithDuplicateTag()
+        assertEquals(
+            "font.woff.invalid-table-directory",
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(woff, limits)).error.code,
         )
     }
 }
@@ -531,35 +581,37 @@ class WoffReaderTest {
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*WoffReaderTest*'`
 Expected: FAIL — `WoffReader` unresolved.
 
-- [ ] **Step 3: Implement `WoffReader` and `FontContainerDecoder`**
+- [ ] **Step 3: Implement `WoffReader` and the dispatcher**
 
-`WoffReader.decode` validates the 44-byte header (`wOFF`, `flavor`, `length ≤ bytes.size`, `numTables > 0`, `reserved == 0`, `totalSfntSize`), returns `UnsupportedContainer` for `flavor == "ttcf"`, validates each 20-byte record (ranges inside the file, no overlap, no duplicate tag), copies uncompressed tables (`compLength == origLength`) and inflates the others to exactly `origLength` through `okio.InflaterSource` with a bounded sink, then calls `SfntReassembler.assemble(flavor, tables)` carrying `origChecksum`. `FontContainerDecoder.decode` copies `source.copyBytes()`, returns `null` unless the first four bytes are `wOFF`/`wOF2`, and routes to `WoffReader` (WOFF2 lands in Task 7).
+`WoffReader.decode` implements spec §6.2: field-map validation, complete declared extent, aligned non-overlapping table/meta/private extents (absent blocks zero), `compLength > origLength` reject, raw copy when equal, zlib inflate to exactly `origLength` otherwise (bounded by `maxDecodedFontBytes`), `ttcf` refusal, exact reassembled size, then `SfntReassembler`. `FontContainerDecoder.decode` copies `source.copyBytes()`, returns `null` unless the first four bytes are `wOFF`/`wOF2`, and routes `wOFF` to `WoffReader` (WOFF2 → Task 7).
 
 - [ ] **Step 4: Run the WOFF reader test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*WoffReaderTest*'`
-Expected: PASS (3 tests).
+Expected: PASS (5 tests).
 
-- [ ] **Step 5: Write and run the dispatch test**
+- [ ] **Step 5: Write and run the dispatcher test**
 
 ```kotlin
 class FontContainerDecoderTest {
+    private val limits = WoffDecodeLimits.EMBEDDED
+
     @Test
     fun passesThroughANonContainerSource() {
         val sfnt = WoffTestFonts.singleTableSfnt()
-        val decoded = FontContainerDecoder.decode(
-            org.graphiks.kalligraphie.api.FontSource(sfnt, org.graphiks.kalligraphie.api.FontSourceProvenance("plain")),
+        val result = assertIs<FontOperationResult.Success<DecodedFont?>>(
+            FontContainerDecoder.decode(FontSource(sfnt, FontSourceProvenance("plain")), limits),
         )
-        assertEquals(null, assertIs<FontOperationResult.Success<DecodedContainer?>>(decoded).value)
+        assertEquals(null, result.value)
     }
 
     @Test
     fun decodesAWoffSourceToItsKind() {
         val woff = WoffTestFonts.wrapUncompressed(WoffTestFonts.singleTableSfnt())
-        val decoded = FontContainerDecoder.decode(
-            org.graphiks.kalligraphie.api.FontSource(woff, org.graphiks.kalligraphie.api.FontSourceProvenance("wrapped")),
+        val result = assertIs<FontOperationResult.Success<DecodedFont?>>(
+            FontContainerDecoder.decode(FontSource(woff, FontSourceProvenance("wrapped")), limits),
         )
-        assertEquals(ContainerKind.WOFF, assertIs<FontOperationResult.Success<DecodedContainer?>>(decoded).value?.kind)
+        assertEquals(ContainerKind.WOFF, result.value?.kind)
     }
 }
 ```
@@ -572,25 +624,26 @@ Expected: PASS (2 tests).
 ```bash
 git add kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container
-git commit -m "feat(sfnt): decode WOFF 1.0 containers"
+git commit -m "feat(sfnt): decode WOFF 1.0 containers under explicit limits"
 ```
 
 ---
 
-## Phase 3 — WOFF 2.0 header, Brotli tables, and transforms
+## Phase 3 — WOFF 2.0 header, single-stream Brotli, and transforms
 
 ### Task 7: `Woff2Reader` header, directory, and untransformed reassembly
 
 **Files:**
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2Reader.kt`
+- Modify: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/FontContainerDecoder.kt`
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2ReaderTest.kt`
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2TestFonts.kt`
 
 **Interfaces:**
-- Consumes: `BrotliDecoder.decode` (Task 4), `SfntReassembler` (Task 5), `ContainerKind`/`FontContainerDecoder` (Task 6).
-- Produces: `internal object Woff2Reader { fun decode(bytes: ByteArray): FontOperationResult<ByteArray> }`; `internal object Woff2KnownTags { val tagsByIndex: List<String> }`.
+- Consumes: `BrotliDecoder.decode` (Task 4), `SfntReassembler`, `WoffDecodeLimits` (Task 5), `ContainerKind` (Task 6).
+- Produces: `internal object Woff2Reader { fun decode(bytes: ByteArray, limits: WoffDecodeLimits): FontOperationResult<ByteArray> }`; `internal object Woff2KnownTags { val tagsByIndex: List<String> }`.
 
-- [ ] **Step 1: Write the failing test using a constructed `transformVersion 3` vector**
+- [ ] **Step 1: Write the failing test**
 
 ```kotlin
 package org.graphiks.kalligraphie.font.sfnt.container
@@ -602,25 +655,44 @@ import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 class Woff2ReaderTest {
+    private val limits = WoffDecodeLimits.EMBEDDED
+
     @Test
     fun decodesAnUntransformedWoff2AndRecomputesChecksums() {
-        val woff2 = Woff2TestFonts.singleTableUntransformed()
-        val decoded = assertIs<FontOperationResult.Success<ByteArray>>(Woff2Reader.decode(woff2)).value
+        val decoded = assertIs<FontOperationResult.Success<ByteArray>>(
+            Woff2Reader.decode(Woff2TestFonts.singleTableUntransformed(), limits),
+        ).value
         assertEquals(0xB1B0AFBAu, SfntReassembler.wholeFontChecksum(decoded))
     }
 
     @Test
-    fun refusesAReconstructedSizeMismatch() {
-        val woff2 = Woff2TestFonts.withWrongTotalSfntSize()
-        val failure = assertIs<FontOperationResult.Failure>(Woff2Reader.decode(woff2))
-        assertEquals("font.woff2.reconstructed-size-mismatch", failure.error.code)
+    fun acceptsAReconstructedSizeThatDiffersFromTotalSfntSize() {
+        // totalSfntSize is advisory; a wrong declaration must not reject a decodable font.
+        assertIs<FontOperationResult.Success<ByteArray>>(
+            Woff2Reader.decode(Woff2TestFonts.withWrongTotalSfntSize(), limits),
+        )
     }
 
     @Test
     fun refusesACollectionFlavor() {
-        val woff2 = Woff2TestFonts.withCollectionFlavor()
         assertIs<FontError.UnsupportedContainer>(
-            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(woff2)).error,
+            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withCollectionFlavor(), limits)).error,
+        )
+    }
+
+    @Test
+    fun refusesAnUnknownTransformVersion() {
+        assertEquals(
+            "font.woff2.unknown-transform",
+            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withUnknownTransform(), limits)).error.code,
+        )
+    }
+
+    @Test
+    fun refusesABadUIntBase128() {
+        assertEquals(
+            "font.woff2.invalid-table-directory",
+            assertIs<FontOperationResult.Failure>(Woff2Reader.decode(Woff2TestFonts.withBadUIntBase128(), limits)).error.code,
         )
     }
 }
@@ -631,14 +703,14 @@ class Woff2ReaderTest {
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*Woff2ReaderTest*'`
 Expected: FAIL — `Woff2Reader` unresolved.
 
-- [ ] **Step 3: Implement the WOFF2 header, directory reader, and untransformed path**
+- [ ] **Step 3: Implement header, directory, single-stream split, reassembly**
 
-Validate the 48-byte header (`wOF2`, `flavor`, `length`, `numTables`, `reserved`, `totalSfntSize`, `totalCompressedSize`, `majorVersion`, `minorVersion`); refuse `ttcf`. Read each directory entry: `flags` (tag index `flags & 0x3F`, transform version `flags ushr 6`), an explicit `tag` when the index is `0x3F`, `origLength` as `UIntBase128`, and `transformLength` as `UIntBase128` **only when the transform applies**. Record the known-tag table (§5.2). Brotli-inflate each table to its declared length. For `transformVersion == 3`, or any table other than `glyf`/`loca`/`hmtx`, pass the decoded bytes through byte-for-byte. Assemble with `SfntReassembler`, then verify the reassembled size equals `totalSfntSize` or fail `font.woff2.reconstructed-size-mismatch`. Extend `FontContainerDecoder` to route `wOF2` to `Woff2Reader`.
+Implement spec §6.3: header validation with `ttcf` refusal, non-rejection of non-zero `reserved`, `flags` tag index/transform version, the §4.1 known-tag table, `UIntBase128` bounds, the transform matrix, `transformLength` presence only for non-null transforms, unknown-transform rejection, and transformed-`loca` consistency. Decompress **one** `totalCompressedSize` slice with `BrotliDecoder.decode(block, expectedLength = directorySum, limit = limits.maxDecodedFontBytes)`, split it across directory entries in order (transformed tables take `transformLength`, others `origLength`), pass untransformed tables through, and reassemble. Extend `FontContainerDecoder` to route `wOF2`.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*Woff2ReaderTest*'`
-Expected: PASS (3 tests).
+Expected: PASS (5 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -647,7 +719,7 @@ git add kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/f
         kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/container/FontContainerDecoder.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2ReaderTest.kt \
         kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2TestFonts.kt
-git commit -m "feat(sfnt): read WOFF 2.0 headers and Brotli tables"
+git commit -m "feat(sfnt): read WOFF 2.0 headers and the single Brotli font-data stream"
 ```
 
 ### Task 8: `glyf` / `loca` transform reconstruction
@@ -658,10 +730,10 @@ git commit -m "feat(sfnt): read WOFF 2.0 headers and Brotli tables"
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2GlyfTransformTest.kt`
 
 **Interfaces:**
-- Consumes: the decoded table map from Task 7.
-- Produces: `internal class GlyfReconstruction(val glyf: ByteArray, val loca: ByteArray, val indexFormat: Int)`; `internal object Woff2GlyfTransform { fun reconstruct(transformed: ByteArray, origLength: Int): FontOperationResult<GlyfReconstruction> }`.
+- Consumes: the split transformed `glyf` block and the transformation's declared `numGlyphs`/`indexFormat`.
+- Produces: `internal class GlyfReconstruction(val glyf: ByteArray, val loca: ByteArray, val indexFormat: Int)`; `internal object Woff2GlyfTransform { fun reconstruct(transformed: ByteArray, limits: WoffDecodeLimits): FontOperationResult<GlyfReconstruction> }`.
 
-- [ ] **Step 1: Write the failing test from a real transformed vector**
+- [ ] **Step 1: Write the failing test covering both index formats**
 
 ```kotlin
 package org.graphiks.kalligraphie.font.sfnt.container
@@ -673,15 +745,27 @@ import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 class Woff2GlyfTransformTest {
+    private val limits = WoffDecodeLimits.EMBEDDED
+
     @Test
-    fun reconstructsGlyfAndLocaWithIndexFormatOne() {
-        val vector = Woff2GlyfVectors.TRANSFORMED_ONE_GLYPH
-        val reconstruction = assertIs<FontOperationResult.Success<GlyfReconstruction>>(
-            Woff2GlyfTransform.reconstruct(vector.transformedGlyf, origLength = vector.origGlyfLength),
+    fun reconstructsASimpleOneGlyphWithShortLoca() {
+        val v = Woff2GlyfVectors.SIMPLE_SHORT_LOCA
+        val r = assertIs<FontOperationResult.Success<GlyfReconstruction>>(
+            Woff2GlyfTransform.reconstruct(v.transformedGlyf, limits),
         ).value
-        assertEquals(1, reconstruction.indexFormat)
-        assertContentEquals(vector.expectedLoca, reconstruction.loca)
-        assertContentEquals(vector.expectedGlyf, reconstruction.glyf)
+        assertEquals(0, r.indexFormat)
+        assertContentEquals(v.expectedLoca, r.loca)
+        assertContentEquals(v.expectedGlyf, r.glyf)
+    }
+
+    @Test
+    fun reconstructsACaseWithLongLocaAndAComposite() {
+        val v = Woff2GlyfVectors.COMPOSITE_LONG_LOCA
+        val r = assertIs<FontOperationResult.Success<GlyfReconstruction>>(
+            Woff2GlyfTransform.reconstruct(v.transformedGlyf, limits),
+        ).value
+        assertEquals(1, r.indexFormat)
+        assertContentEquals(v.expectedLoca, r.loca)
     }
 }
 ```
@@ -693,12 +777,12 @@ Expected: FAIL — `Woff2GlyfTransform` unresolved.
 
 - [ ] **Step 3: Implement the transform**
 
-Parse the §5.1 transform header: `reserved` (must be 0), `optionFlags` (bit 0 `overlapSimple`), `numGlyphs`, `indexFormat` (0 or 1), then the seven stream sizes. Read the seven streams; rebuild, per glyph, the `glyf` record (header, contour/point encoding, optional overlap flag, composite records, bbox, instructions) and the `loca` offsets in `indexFormat`; enforce that the reconstructed `glyf` is exactly `origLength` and that `loca` is `(numGlyphs + 1) * entrySize`. Wire it into `Woff2Reader` so a `glyf` entry with `transformVersion 0` is reconstructed and its paired `loca` entry (also transform 0) is replaced by the produced `loca`.
+Parse the §5.1 header (`reserved == 0`, `optionFlags` bit 0 `overlapSimple`, `numGlyphs`, `indexFormat ∈ {0,1}`, seven stream sizes each bounded under `limits.maxWorkingBytes`) and the seven streams. Per glyph: `nContour` (`0` empty repeats the previous `loca` offset and must not have an explicit bbox; `> 0` simple; `-1` composite); simple glyphs read `nContour` `255UInt16` point counts (cumulative → `endPtsOfContours`), `nPoints` flag bytes, then per-flag triplet bytes (1 byte for flags `< 0x7f` in 0..83, 2 for 84..119, 3 for 120..123, 4 for 124..127) decoding all 128 triplet codes to delta-x/delta-y, then a `255UInt16` instruction length and its bytes from the instruction stream; composite glyphs decode the composite stream (flags, args, transforms, instructions). Bbox: `bboxBitmap` is `4 * floor((numGlyphs + 31) / 32)` bytes, MSB-first per glyph; explicit bboxes from `bboxStream`, simple glyphs without the bit infer from points, composites always explicit. If `optionFlags` bit 0 is set, read the `overlapSimpleBitmap` (`ceil(numGlyphs/8)` bytes, MSB-first) and set flag bit 6 on each simple glyph's first flag byte; otherwise clear it. Emit the reconstructed `glyf` and `loca`; enforce `loca` size `(numGlyphs + 1) * entrySize` and that short-format offsets are representable (`offset/2` fits `UInt16`). Wire into `Woff2Reader`: a `glyf` with version 0 is replaced by the reconstruction and its paired `loca` with the produced table.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `./gradlew :kalligraphie:font:sfnt:jvmTest --tests '*Woff2GlyfTransformTest*'`
-Expected: PASS (1 test).
+Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**
 
@@ -717,8 +801,8 @@ git commit -m "feat(sfnt): reconstruct the WOFF2 glyf and loca transforms"
 - Test: `kalligraphie/font/sfnt/src/commonTest/kotlin/org/graphiks/kalligraphie/font/sfnt/container/Woff2HmtxTransformTest.kt`
 
 **Interfaces:**
-- Consumes: the decoded `hhea`/`maxp` tables (for `numberOfHMetrics` and `numGlyphs`) and the transformed `hmtx` bytes from Task 7.
-- Produces: `internal object Woff2HmtxTransform { fun reconstruct(transformed: ByteArray, numberOfHMetrics: Int, numGlyphs: Int): FontOperationResult<ByteArray> }`.
+- Consumes: the split transformed `hmtx`, `numberOfHMetrics` (`hhea`), `numGlyphs` (`maxp`) and `xMinByGlyph: IntArray` (from the reconstructed/paired `glyf`).
+- Produces: `internal object Woff2HmtxTransform { fun reconstruct(transformed: ByteArray, numberOfHMetrics: Int, numGlyphs: Int, xMinByGlyph: IntArray): FontOperationResult<ByteArray> }`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -727,27 +811,28 @@ package org.graphiks.kalligraphie.font.sfnt.container
 
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
-import kotlin.test.assertIs
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontOperationResult
 
 class Woff2HmtxTransformTest {
     @Test
-    fun flatCaseReconstructsAdvanceWidths() {
-        val vector = Woff2HmtxVectors.FLAT
+    fun flagsOneReconstructsProportionalBearingsFromXMin() {
+        val v = Woff2HmtxVectors.FLAGS_ONE
         val hmtx = assertIs<FontOperationResult.Success<ByteArray>>(
-            Woff2HmtxTransform.reconstruct(vector.transformed, numberOfHMetrics = 2, numGlyphs = 2),
+            Woff2HmtxTransform.reconstruct(v.transformed, numberOfHMetrics = 2, numGlyphs = 2, xMinByGlyph = intArrayOf(3, -4)),
         ).value
-        assertContentEquals(vector.expected, hmtx)
+        assertContentEquals(v.expected, hmtx)
     }
 
     @Test
-    fun lsbArraysAreExpandedWhenNumberOfHMetricsIsSmaller() {
-        val vector = Woff2HmtxVectors.WITH_LSB
+    fun flagsTwoReconstructsTheTrailingBearingsFromXMin() {
+        val v = Woff2HmtxVectors.FLAGS_TWO
         val hmtx = assertIs<FontOperationResult.Success<ByteArray>>(
-            Woff2HmtxTransform.reconstruct(vector.transformed, numberOfHMetrics = 1, numGlyphs = 3),
+            Woff2HmtxTransform.reconstruct(v.transformed, numberOfHMetrics = 1, numGlyphs = 3, xMinByGlyph = intArrayOf(0, 5, 0)),
         ).value
         assertEquals(1 * 4 + (3 - 1) * 2, hmtx.size)
+        assertContentEquals(v.expected, hmtx)
     }
 }
 ```
@@ -759,7 +844,7 @@ Expected: FAIL — `Woff2HmtxTransform` unresolved.
 
 - [ ] **Step 3: Implement the transform**
 
-Implement §5.3: read the `flags` byte; when the optional lsb arrays are present (`flags` low bit clear), expand them; read the advance widths as 16-bit big-endian; when `numberOfHMetrics == numGlyphs` the last lsb is omitted, otherwise emit the trailing `numGlyphs - numberOfHMetrics` lsb values. Wire it into `Woff2Reader` after all tables are inflated (so `hhea`/`maxp` are available), replacing an `hmtx` entry whose `transformVersion == 1`.
+Per spec §5.4: read `flags` and reject anything outside the three valid values (bit 0 = `lsb[]` absent, bit 1 = `leftSideBearing[]` absent; bits 2-7 must be zero). Read all `numberOfHMetrics` advance widths; if bit 0 is clear read the proportional `lsb[]`, else derive each from `xMinByGlyph` (zero for empty glyphs); if bit 1 is clear read the trailing `leftSideBearing[]` (`numGlyphs - numberOfHMetrics` entries), else derive; emit the normal interleaved `hmtx` (`numberOfHMetrics` advance/lsb pairs followed by the trailing bearings). Wire into `Woff2Reader` after all tables are decoded so `hhea`/`maxp`/`glyf` are available; this includes the case where `glyf` itself used the null transform (then `xMin` is read from the passthrough `glyf` records).
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -777,84 +862,136 @@ git commit -m "feat(sfnt): reconstruct the WOFF2 hmtx transform"
 
 ---
 
-## Phase 4 — Integration
+## Phase 4 — Corpus and tooling
 
-### Task 10: `Kalligraphie.embedded` accepts WOFF/WOFF2
+### Task 10: Acquire the real fixtures and extend `scripts/fonts`
+
+**Files:**
+- Create: `test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff`
+- Create: `test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2`
+- Create: `test-fixtures/fonts/woff-ibm-plex/PROVENANCE.md`
+- Create: `test-fixtures/fonts/woff-ibm-plex/OFL.txt`
+- Modify: `.gitattributes`
+- Modify: `scripts/fonts/corpus.json`
+- Modify: `scripts/fonts/fetch_fonts.py`
+- Modify: `scripts/fonts/README.md`
+- Modify: `scripts/fonts/tests/test_fetch_fonts.py`
+
+**Interfaces:**
+- Produces: the `woff-ibm-plex` family used by later tasks. **Not committed in this task** — the commit happens in Task 13 once the exhaustiveness lint passes.
+
+- [ ] **Step 1: Download the pinned files and measure them**
+
+```bash
+mkdir -p test-fixtures/fonts/woff-ibm-plex
+BASE=https://raw.githubusercontent.com/IBM/plex/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-sans/fonts/complete
+curl -fL "$BASE/woff/IBMPlexSans-Regular.woff"   -o test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff
+curl -fL "$BASE/woff2/IBMPlexSans-Regular.woff2" -o test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2
+shasum -a 256 test-fixtures/fonts/woff-ibm-plex/*.woff*
+```
+
+- [ ] **Step 2: Write `PROVENANCE.md` and copy the licence**
+
+Record the repository, the pinned commit, both raw URLs, each measured SHA-256 and size, the OFL-1.1 licence, and a note that the two files are the same font and (per spec §4.3) may decode to different bytes.
+
+- [ ] **Step 3: `.gitattributes` and `fetch_fonts.py`**
+
+Add `*.woff binary` (verify `*.woff2 binary` exists). Add `.woff`/`.woff2` to `FONT_SUFFIXES` in `scripts/fonts/fetch_fonts.py` (line ~48) and update its coverage tests for both extensions. Update `scripts/fonts/README.md`: the artifact definition, and that the table reader is `check_exhaustiveness.py`, which for WOFF2 needs fontTools + `brotli`.
+
+- [ ] **Step 4: Populate `corpus.json`**
+
+Add the `woff-ibm-plex` family (`synthetic: false`) with measured `sha256`/`sizeBytes`, real `tables` read through fontTools + brotli (every tag, `GlyphOrder` excluded), `url`, `rawUrl`, `revision`, `license` (`OFL-1.1`), `licenseFile`.
+
+- [ ] **Step 5: Run the offline checks and capture the unclaimed-table list**
+
+```bash
+python3 scripts/fonts/fetch_fonts.py --check --provenance
+uv run --with fonttools==4.65.0 --with brotli python scripts/fonts/check_exhaustiveness.py
+python3 -m unittest discover -s scripts/fonts/tests -v
+```
+
+Expected: `--check` and the unit tests pass; the exhaustiveness lint reports the new family's carried tables as unclaimed — record that list for Task 13. Do not commit yet.
+
+### Task 11: `Kalligraphie.embedded` accepts WOFF/WOFF2
 
 **Files:**
 - Modify: `kalligraphie/font/core/src/commonMain/kotlin/org/graphiks/kalligraphie/font/core/EmbeddedFontCatalog.kt` (`EmbeddedFontCatalogFactory.create`)
-- Test: `kalligraphie/font/core/src/commonTest/kotlin/org/graphiks/kalligraphie/font/core/EmbeddedWoffCatalogTest.kt`
+- Test: `kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EmbeddedWoffCatalogTest.kt`
 
 **Interfaces:**
-- Consumes: `FontContainerDecoder.decode`, `DecodedContainer` (Task 6, Task 7).
-- Produces: no new type; `create` maps each source to its decoded SFNT before `SfntReader.readMetadata`.
+- Consumes: `FontContainerDecoder.decode`, `WoffDecodeLimits` (Tasks 5–7).
+- Produces: no new type; `create` normalises the source list to decoded SFNT before duplicate/generation/parse.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write the failing test (corpus-backed, `:kalligraphie` jvmTest)**
 
 ```kotlin
-package org.graphiks.kalligraphie.font.core
+package org.graphiks.kalligraphie
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import org.graphiks.kalligraphie.api.FontCatalogSnapshot
 import org.graphiks.kalligraphie.api.FontOperationResult
-import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.FontSourceProvenance
 
 class EmbeddedWoffCatalogTest {
+    private fun fixture(name: String): ByteArray =
+        checkNotNull(javaClass.getResourceAsStream("/fonts/woff-ibm-plex/$name")).use { it!!.readBytes() }
+
     @Test
-    fun createsACatalogFromAWoffSource() {
-        val woff = EmbeddedWoffTestData.wrappedLiberation()
-        val catalog = assertIs<FontOperationResult.Success<*>>(
-            EmbeddedFontCatalogFactory.create(
-                listOf(FontSource(woff, FontSourceProvenance("wrapped"))),
-            ),
-        ).value as org.graphiks.kalligraphie.api.FontCatalogSnapshot
-        assertEquals(1, catalog.faces.size)
+    fun createsACatalogFromWoffAndWoff2() {
+        for (name in listOf("IBMPlexSans-Regular.woff", "IBMPlexSans-Regular.woff2")) {
+            val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
+                Kalligraphie.embedded(fixture(name), FontSourceProvenance(name)),
+            ).value
+            assertEquals(1, catalog.faces.size)
+        }
     }
 
     @Test
-    fun theFaceIdentityIsTheDecodedSfntDigest() {
-        val woff = EmbeddedWoffTestData.wrappedLiberation()
-        val decoded = EmbeddedWoffTestData.decodedLiberation()
-        val woffFace = EmbeddedWoffTestData.faceDigest(woff)
-        val sfntFace = EmbeddedWoffTestData.faceDigest(decoded)
-        assertEquals(sfntFace, woffFace)
+    fun twoIdenticalContainersAreRejectedAsDuplicates() {
+        val bytes = fixture("IBMPlexSans-Regular.woff")
+        val result = Kalligraphie.embedded(
+            listOf(
+                org.graphiks.kalligraphie.api.FontSource(bytes, FontSourceProvenance("a")),
+                org.graphiks.kalligraphie.api.FontSource(bytes, FontSourceProvenance("b")),
+            ),
+        )
+        assertIs<FontOperationResult.Failure>(result)
     }
 }
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
 
-Run: `./gradlew :kalligraphie:font:core:jvmTest --tests '*EmbeddedWoffCatalogTest*'`
-Expected: FAIL — the catalog rejects the WOFF bytes.
+Run: `./gradlew :kalligraphie:jvmTest --tests '*EmbeddedWoffCatalogTest*'`
+Expected: FAIL — the catalog rejects the WOFF/WOFF2 bytes.
 
-- [ ] **Step 3: Implement the decode step in `create`**
+- [ ] **Step 3: Implement the normalised decode**
 
-At the top of the per-source loop, call `FontContainerDecoder.decode(source)`; on failure return the failure with accumulated diagnostics; on success with a non-null value, replace the source with `FontSource(decoded.bytes, source.provenance)` before parsing and before the generation/dedup computation. Add the test data helper `EmbeddedWoffTestData` producing a real Liberation-based WOFF (compressed) from the corpus fixture, plus the decoded SFNT.
+In `create`, first map every source through `FontContainerDecoder.decode(source, WoffDecodeLimits.EMBEDDED)` into a `List<FontSource>` (a decode failure returns the failure with accumulated diagnostics), then run the existing duplicate check, generation computation and `SfntReader.readMetadata` over that list.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
-Run: `./gradlew :kalligraphie:font:core:jvmTest --tests '*EmbeddedWoffCatalogTest*'`
+Run: `./gradlew :kalligraphie:jvmTest --tests '*EmbeddedWoffCatalogTest*'`
 Expected: PASS (2 tests).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add kalligraphie/font/core/src/commonMain/kotlin/org/graphiks/kalligraphie/font/core/EmbeddedFontCatalog.kt \
-        kalligraphie/font/core/src/commonTest/kotlin/org/graphiks/kalligraphie/font/core/EmbeddedWoffCatalogTest.kt
+        kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/EmbeddedWoffCatalogTest.kt
 git commit -m "feat(font-core): accept WOFF and WOFF2 in the embedded facade"
 ```
 
-### Task 11: Directory capture discovers and decodes `.woff`/`.woff2`
+### Task 12: Directory capture discovers and decodes `.woff`/`.woff2`
 
 **Files:**
 - Modify: `kalligraphie/src/jvmMain/kotlin/org/graphiks/kalligraphie/FontDirectoryCapture.kt`
 - Test: `kalligraphie/src/jvmTest/kotlin/org/graphiks/kalligraphie/FontDirectoryWoffCaptureTest.kt`
 
 **Interfaces:**
-- Consumes: `FontContainerDecoder.decode` (Tasks 6–7).
-- Produces: no new type; the capture retains the decoded `FontSource` and counts decoded sizes.
+- Consumes: `FontContainerDecoder.decode`, `WoffDecodeLimits.forCapture` (Tasks 5–7).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -866,15 +1003,18 @@ import kotlin.io.path.createTempDirectory
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontCatalogSnapshot
+import org.graphiks.kalligraphie.api.FontOperationResult
 
 class FontDirectoryWoffCaptureTest {
+    private fun fixture(name: String) =
+        checkNotNull(javaClass.getResourceAsStream("/fonts/woff-ibm-plex/$name")).use { it!!.readBytes() }
+
     @Test
-    fun discoversAndDecodesWoffAndWoff2Candidates() {
+    fun discoversAndDecodesBothContainers() {
         val root = createTempDirectory("woff-capture")
-        Files.copy(WoffCaptureFixtures.woffPath(), root.resolve("wrapped.woff"))
-        Files.copy(WoffCaptureFixtures.woff2Path(), root.resolve("wrapped.woff2"))
+        Files.write(root.resolve("plex.woff"), fixture("IBMPlexSans-Regular.woff"))
+        Files.write(root.resolve("plex.woff2"), fixture("IBMPlexSans-Regular.woff2"))
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
             FontDirectoryCatalog.open(FontDirectoryCatalogOptions(roots = listOf(root.toString()))),
         ).value
@@ -884,8 +1024,8 @@ class FontDirectoryWoffCaptureTest {
     @Test
     fun anInvalidWoffIsRejectedWithoutFailingTheCapture() {
         val root = createTempDirectory("woff-capture-bad")
-        Files.write(root.resolve("broken.woff"), ByteArray(8))
-        Files.copy(WoffCaptureFixtures.woffPath(), root.resolve("good.woff"))
+        Files.write(root.resolve("broken.woff"), "wOFF".encodeToByteArray())
+        Files.write(root.resolve("plex.woff"), fixture("IBMPlexSans-Regular.woff"))
         val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
             FontDirectoryCatalog.open(FontDirectoryCatalogOptions(roots = listOf(root.toString()))),
         ).value
@@ -899,9 +1039,9 @@ class FontDirectoryWoffCaptureTest {
 Run: `./gradlew :kalligraphie:jvmTest --tests '*FontDirectoryWoffCaptureTest*'`
 Expected: FAIL — `.woff` is not a candidate.
 
-- [ ] **Step 3: Implement discovery and decoding**
+- [ ] **Step 3: Implement discovery and decoded accounting**
 
-Add `"woff"` and `"woff2"` to `isFontCandidate`. After reading a candidate's bytes, build the `FontSource`, call `FontContainerDecoder.decode`; if it returns a value, re-bind to `FontSource(decoded.bytes, provenance)`; a decode failure routes through `reject(...)` and `continue`. `retainedBytes` accumulates decoded sizes; `maxSourceBytes` bounds the decoded size as documented.
+Add `woff`/`woff2` to `isFontCandidate`. For each candidate, build the `FontSource`, decode with `WoffDecodeLimits.forCapture(options.maxSourceBytes)`, deduplicate by **decoded** id, count `retainedBytes` and check `maxTotalSourceBytes` on the decoded size, charge the examination budget for every attempted decode, set `limited = true` when the failure is `ResourceLimitExceeded`, and route other decode failures through `reject(...)`.
 
 - [ ] **Step 4: Run the test to verify it passes**
 
@@ -918,170 +1058,101 @@ git commit -m "feat(kalligraphie): capture WOFF and WOFF2 directory candidates"
 
 ---
 
-## Phase 5 — Corpus and tooling
+## Phase 5 — e2e catalog, goldens, and generated docs
 
-### Task 12: Acquire the real fixtures and extend `scripts/fonts`
-
-**Files:**
-- Create: `test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff`
-- Create: `test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2`
-- Create: `test-fixtures/fonts/woff-ibm-plex/PROVENANCE.md`
-- Create: `test-fixtures/fonts/woff-ibm-plex/OFL.txt`
-- Modify: `.gitattributes`
-- Modify: `scripts/fonts/corpus.json`
-- Modify: `scripts/fonts/fetch_fonts.py`
-- Modify: `scripts/fonts/README.md`
-- Modify: `scripts/fonts/tests/test_fetch_fonts.py`
-
-**Interfaces:**
-- Consumes: the pinned source in spec §4.4 / §8.
-- Produces: a corpus family keyed `woff-ibm-plex` that later tasks reference.
-
-- [ ] **Step 1: Download the pinned files and compute their digests**
-
-```bash
-mkdir -p test-fixtures/fonts/woff-ibm-plex
-BASE=https://raw.githubusercontent.com/IBM/plex/763c36ef9117782905ae010056dfbe8fd2653a25/packages/plex-sans/fonts/complete
-curl -fL "$BASE/woff/IBMPlexSans-Regular.woff"  -o test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff
-curl -fL "$BASE/woff2/IBMPlexSans-Regular.woff2" -o test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2
-shasum -a 256 test-fixtures/fonts/woff-ibm-plex/*.woff*
-```
-
-- [ ] **Step 2: Write `PROVENANCE.md` and copy the licence**
-
-Record the repository, the pinned commit, both raw URLs, the measured SHA-256 and size of each file, the OFL-1.1 licence, and the note that both files are the same font. Copy `IBM/plex`'s OFL text to `OFL.txt`.
-
-- [ ] **Step 3: Add `*.woff binary` to `.gitattributes`**
-
-Confirm `*.woff2 binary` is already present (it is) and add the missing `*.woff binary` line.
-
-- [ ] **Step 4: Extend `fetch_fonts.py` and its tests for `.woff`/`.woff2`**
-
-Generalise the artifact-extension check so `.woff`/`.woff2` are font artifacts, and ensure the table reader opens them through `fontTools` (which requires `brotli` for WOFF2). Add a unit test covering a `.woff2` artifact path. Update `scripts/fonts/README.md`'s artifact definition and the WOFF2 brotli requirement.
-
-- [ ] **Step 5: Populate `corpus.json` from the committed bytes**
-
-Add the `woff-ibm-plex` family (`synthetic: false`) with the measured `sha256`/`sizeBytes` and the `tables` read by fontTools, plus `url`, `rawUrl`, `revision`, `license` (`OFL-1.1`), `licenseFile`.
-
-- [ ] **Step 6: Run the corpus checks**
-
-```bash
-python3 scripts/fonts/fetch_fonts.py --check --provenance
-uv run --with fonttools==4.65.0 --with brotli python scripts/fonts/check_exhaustiveness.py
-python3 -m unittest discover -s scripts/fonts/tests -v
-```
-
-Expected: `--check` passes; the exhaustiveness lint reports the new family's carried tables as unclaimed — that is Task 13's work, so record the exact list and continue.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add test-fixtures/fonts/woff-ibm-plex .gitattributes scripts/fonts
-git commit -m "chore(sfnt): add the WOFF/WOFF2 corpus family and tooling"
-```
-
----
-
-## Phase 6 — e2e catalog, goldens, and generated docs
-
-### Task 13: Promote the container entries and register their scenes
+### Task 13: Promote the container entries, register scenes, and commit the corpus
 
 **Files:**
 - Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/ContainerCatalog.kt`
 - Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/CorpusKeys.kt`
+- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/CatalogClaims.kt`
+- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/RobustnessCatalog.kt`
 - Modify: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/SceneFontPaths.kt`
 - Modify: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/PortableSceneRenderers.kt`
 - Modify: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/CatalogProbes.kt`
-- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/RobustnessCatalog.kt`
-- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/CatalogClaims.kt`
 - Test: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/ContainerEquivalenceTest.kt`
-- Test: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/ExpectationCatalogRatchetTest.kt` (existing, must still pass)
 
 **Interfaces:**
-- Consumes: the corpus family from Task 12, `outlineCapitalA(corpus, path, what)`.
-- Produces: two `Supported` container entries with scenes, two robustness entries with probes.
+- Consumes: the corpus from Task 10, `outlineCapitalA(corpus, path, what)`.
 
-- [ ] **Step 1: Write the failing cross-container equivalence test**
+- [ ] **Step 1: Write the failing semantic equivalence test**
 
 ```kotlin
 package org.graphiks.kalligraphie.e2e.catalog
 
 import kotlin.test.Test
-import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 
 class ContainerEquivalenceTest {
     @Test
-    fun woffAndWoff2DecodeToTheSameGlyphData() {
+    fun woffAndWoff2ResolveTheSameGlyphBehaviour() {
         val corpus = E2eTestEnvironment.corpus
-        val a = decodeTable(corpus.bytes(WoffPaths.WOFF), "glyf")
-        val b = decodeTable(corpus.bytes(WoffPaths.WOFF2), "glyf")
-        assertContentEquals(a, b)
+        assertEquals(
+            outlineCommandsOf(corpus.bytes(WoffPaths.WOFF2), 0x41),
+            outlineCommandsOf(corpus.bytes(WoffPaths.WOFF), 0x41),
+        )
+        assertEquals(
+            advanceOf(corpus.bytes(WoffPaths.WOFF2), 0x41),
+            advanceOf(corpus.bytes(WoffPaths.WOFF), 0x41),
+        )
     }
 }
 ```
 
-(`decodeTable` reads the `.ttf`/`.otf` face from the decoded catalog via `Kalligraphie.embedded` and returns the raw `glyf` table bytes through the internal `ParsedTrueTypeFont`.)
+(`outlineCommandsOf`/`advanceOf` resolve through `Kalligraphie.embedded` and the public facade; raw table bytes are not compared because WOFF2 reconstruction legitimately differs.)
 
 - [ ] **Step 2: Run it to verify it fails**
 
 Run: `./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*'`
 Expected: FAIL — `WoffPaths` unresolved.
 
-- [ ] **Step 3: Add paths, keys, renderers, and entries**
+- [ ] **Step 3: Add keys, paths, renderers, entries, claims, robustness**
 
-Add `WOFF_IBM_PLEX`/`WOFF2_IBM_PLEX` to `CorpusKeys` (both keyed `woff-ibm-plex`), the two paths to `SceneFontPaths`, the two renderers to `PortableSceneRenderers` (`glyph.outline.woff-ibm-plex.A.64`, `glyph.outline.woff2-ibm-plex.A.64`), and promote both `ContainerCatalog` entries to `CatalogStatus.Supported` with `family = GLYPH_OUTLINE`, `route = PORTABLE_GLYPH`, `frame = AutoSized(padding = 1)`, and the outline-table claim set (spec §9). Add the motivated `CatalogClaims.UNREAD_TABLES` entry for every carried-but-unread table the lint named in Task 12 Step 6.
+Add the `woff-ibm-plex` `CorpusKey` shared by both entries, the two `SceneFontPaths`, the two `PortableSceneRenderers` (`glyph.outline.woff-ibm-plex.A.64`, `glyph.outline.woff2-ibm-plex.A.64`), and promote both `ContainerCatalog` entries to `Supported` with a real `sinceCommit`, the outline-table claim set (mirroring `outline.glyf-simple-composite`), motivated `UNREAD_TABLES` entries for every table the Task 10 lint named, `family = GLYPH_OUTLINE`, `route = PORTABLE_GLYPH`, `frame = AutoSized(padding = 1)`. Add robustness entries (`robustness.woff-truncated`, `robustness.woff2-brotli-corrupted` using a deterministically malformed Brotli stream) with `CatalogProbes` whose `fontPath` is under `woff-ibm-plex`.
 
-- [ ] **Step 4: Run the equivalence and ratchet tests**
+- [ ] **Step 4: Run the equivalence and ratchets**
 
-Run: `./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*' --tests '*ExpectationCatalogRatchetTest*' --tests '*CatalogClaimsRunnerTest*'`
+Run: `./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*' --tests '*ExpectationCatalogRatchetTest*'`
 Expected: PASS.
 
-- [ ] **Step 5: Add the robustness entries and probes**
-
-Add `robustness.woff-truncated` (truncate the WOFF fixture) and `robustness.woff2-brotli-corrupted` (flip a byte in the WOFF2 payload) to `RobustnessCatalog`, with `CatalogProbes` entries whose `fontPath` lives under `woff-ibm-plex`, pinning the exact codes the decoder returns.
-
-- [ ] **Step 6: Run the probe ratchet**
-
-Run: `./gradlew :kalligraphie:e2e:jvmTest --tests '*ExpectationCatalogRatchetTest*'`
-Expected: PASS.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Run the corpus lint and commit fixtures + claims together**
 
 ```bash
-git add kalligraphie/e2e/src
-git commit -m "feat(e2e): certify the WOFF and WOFF2 container scenes"
+uv run --with fonttools==4.65.0 --with brotli python scripts/fonts/check_exhaustiveness.py
+python3 -m unittest discover -s scripts/fonts/tests -v
+```
+
+Expected: no output (lint passes). Then commit the corpus and catalog claims in one commit:
+
+```bash
+git add test-fixtures/fonts/woff-ibm-plex .gitattributes scripts/fonts kalligraphie/e2e/src
+git commit -m "feat(e2e): add the WOFF/WOFF2 corpus family and certify its scenes"
 ```
 
 ### Task 14: Regenerate goldens and generated docs; update user docs
 
 **Files:**
-- Modify: `kalligraphie/e2e/src/harnessResources/golden/manifest.tsv` (generated)
-- Modify: `docs/docs/generated/e2e-catalog-matrix.md` / `.fr.md` (generated)
-- Modify: `kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json` (generated)
-- Modify: `kalligraphie/e2e/build.gradle.kts` (iOS embedded corpus list)
-- Modify: `docs/docs/font-management.md` / `docs/docs/font-management.fr.md`
+- Modify (generated): `kalligraphie/e2e/src/harnessResources/golden/manifest.tsv`, `docs/docs/generated/e2e-catalog-matrix.md`/`.fr.md`, `kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json`
+- Modify: `kalligraphie/e2e/build.gradle.kts` (`iosFixtureCorpus`)
+- Modify: `docs/docs/font-management.md` / `.fr.md`
 - Modify: `CHANGELOG.md`
-
-**Interfaces:**
-- Consumes: Task 13's catalog.
-- Produces: committed goldens and docs consistent with the catalog.
 
 - [ ] **Step 1: Add the fixtures to the iOS embedded corpus**
 
-Add the two `woff-ibm-plex` files to the `iosFixtureCorpus` `entries` list in `kalligraphie/e2e/build.gradle.kts`.
+Append the two `woff-ibm-plex` files to the `iosFixtureCorpus` `entries` list.
 
-- [ ] **Step 2: Regenerate the committed artifacts**
+- [ ] **Step 2: Regenerate**
 
 ```bash
 ./gradlew :kalligraphie:e2e:updateE2eGolden
 ```
 
-Expected: `manifest.tsv`, both catalog matrices and `claimed-tables.json` gain the two scenes and the promoted entries.
+Expected: the manifest, both matrices and `claimed-tables.json` gain the two scenes and the promoted entries.
 
 - [ ] **Step 3: Document the feature**
 
-In `font-management.md`/`.fr.md`: add WOFF/WOFF2 to the supported-scope list, add `woff`/`woff2` to the discovery extensions, and add the identity paragraph (decoded-SFNT digest; `.woff` and `.ttf` share identity). Add the `CHANGELOG.md` entry.
+`font-management.md`/`.fr.md`: WOFF/WOFF2 in the supported scope, `woff`/`woff2` discovery extensions, and the decoded-byte identity paragraph (§4.3, including that different containers of one font generally do not share identity). `CHANGELOG.md`: the `feat(sfnt)` entry.
 
 - [ ] **Step 4: Run the freshness tests**
 
@@ -1097,19 +1168,19 @@ git commit -m "test(e2e): commit the WOFF and WOFF2 goldens and docs"
 
 ---
 
-## Phase 7 — Benchmarks
+## Phase 6 — Benchmarks
 
-### Task 15: Container bench scenarios
+### Task 15: Container bench scenarios and per-platform wiring
 
 **Files:**
 - Create: `kalligraphie/bench/src/commonMain/kotlin/org/graphiks/kalligraphie/bench/scenarios/ContainerScenarios.kt`
 - Modify: `kalligraphie/bench/src/commonMain/kotlin/org/graphiks/kalligraphie/bench/ScenarioRegistry.kt`
-- Modify: `kalligraphie/bench/src/jvmBenchmark/kotlin/org/graphiks/kalligraphie/bench/PortableGlyphMaterializationBenchmark.kt`
-- Modify: the per-platform bench fixture corpora (`JvmBenchmarkFixtureCorpus`, `IosBenchFixtureCorpus`, and the Android corpus) to expose the two files.
+- Modify: `kalligraphie/bench/src/jvmBenchmark/kotlin/org/graphiks/kalligraphie/bench/PortableGlyphMaterializationBenchmark.kt` (`@Param` list **and** its `ScenarioRegistry` lookup)
+- Modify: `kalligraphie/bench/src/androidDeviceTest/kotlin/org/graphiks/kalligraphie/bench/AndroidGlyphMaterializationBenchmark.kt` (three methods)
+- Modify: `kalligraphie/bench/build.gradle.kts` (iOS bench fixture corpus) and the JVM/Android bench fixture corpora
 - Test: `kalligraphie/bench/src/commonTest/kotlin/org/graphiks/kalligraphie/bench/scenarios/ContainerScenariosTest.kt`
 
 **Interfaces:**
-- Consumes: `FixtureCorpus`, `Kalligraphie.embedded`.
 - Produces: `public fun containerScenarios(corpus: FixtureCorpus): List<MeasurementScenario>` with `WoffColdCapture`, `Woff2ColdCapture`, `Woff2ColdGlyph`.
 
 - [ ] **Step 1: Write the failing scenario test**
@@ -1119,13 +1190,14 @@ package org.graphiks.kalligraphie.bench.scenarios
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import org.graphiks.kalligraphie.bench.fixture.FixtureCorpus
 
 class ContainerScenariosTest {
     @Test
     fun exposesTheThreeContainerProfiles() {
-        val names = containerScenarios(TestCorpus).map { it.name }
-        assertEquals(listOf("WoffColdCapture", "Woff2ColdCapture", "Woff2ColdGlyph"), names)
+        assertEquals(
+            listOf("WoffColdCapture", "Woff2ColdCapture", "Woff2ColdGlyph"),
+            containerScenarios(TestCorpus).map { it.name },
+        )
     }
 }
 ```
@@ -1135,33 +1207,33 @@ class ContainerScenariosTest {
 Run: `./gradlew :kalligraphie:bench:jvmTest --tests '*ContainerScenariosTest*'`
 Expected: FAIL — `containerScenarios` unresolved.
 
-- [ ] **Step 3: Implement the scenarios and wire the registry**
+- [ ] **Step 3: Implement the scenarios and the wiring**
 
-Each scenario follows the `TrueTypeColdPreparation` shape (cold per sample, `PORTABLE_GLYPH` route, no required capability): `WoffColdCapture`/`Woff2ColdCapture` call `Kalligraphie.embedded(bytes)` and consume the face; `Woff2ColdGlyph` goes through to resolving the scene glyph's outline and consumes it, counting `sourceBytes`. Add `containerScenarios(corpus)` to `ScenarioRegistry.all`. Add the three names to the `@Param` list of `PortableGlyphMaterializationBenchmark` and register the fixtures in the per-platform bench corpora.
+Each scenario follows the `TrueTypeColdPreparation` shape (cold per sample, `PORTABLE_GLYPH` route, no required capability): the two captures call `Kalligraphie.embedded(bytes)` and consume the face; `Woff2ColdGlyph` resolves the scene glyph's outline and consumes it, counting `sourceBytes`. Add `containerScenarios(corpus)` to `ScenarioRegistry.all`. Extend the JVM `@Param` list **and** change its setup to search `ScenarioRegistry.select(...)` (not `glyphMaterializationScenarios`). Add three benchmark methods to the Android class. Add both files to the iOS bench fixture corpus and to the JVM/Android corpora.
 
-- [ ] **Step 4: Run the test and the JVM profile**
+- [ ] **Step 4: Run the test and one JVM profile**
 
 Run: `./gradlew :kalligraphie:bench:jvmTest --tests '*ContainerScenariosTest*'`
-Run: `./gradlew :kalligraphie:bench:jvmBenchmark --tests '*PortableGlyphMaterializationBenchmark*WoffColdCapture*'`
-Expected: both PASS.
+Run: `./gradlew :kalligraphie:bench:jvmBenchmarkBenchmark -P... ` (the JVM benchmark `JavaExec`; `--tests` does not select `@Param` values, so run it or scope with the harness's own filter)
+Expected: test PASS; the `WoffColdCapture` profile appears in the produced observations/report.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add kalligraphie/bench
-git commit -m "feat(bench): measure WOFF and WOFF2 container capture"
+git commit -m "feat(bench): measure WOFF and WOFF2 container capture on every platform"
 ```
 
 ---
 
-## Phase 8 — Final verification
+## Phase 7 — Final verification
 
-### Task 16: Full local verification
+### Task 16: Full local verification and the PR gate
 
 **Files:**
-- Modify: `CHANGELOG.md` if the verification surfaces wording drift only.
+- Modify: `CHANGELOG.md` only if wording drifts.
 
-- [ ] **Step 1: Run the full check and all tests**
+- [ ] **Step 1: Full check and all tests**
 
 ```bash
 ./gradlew check
@@ -1170,7 +1242,7 @@ git commit -m "feat(bench): measure WOFF and WOFF2 container capture"
 
 Expected: PASS.
 
-- [ ] **Step 2: Re-run the corpus obligations**
+- [ ] **Step 2: Corpus obligations**
 
 ```bash
 python3 scripts/fonts/fetch_fonts.py --check --provenance
@@ -1180,7 +1252,7 @@ python3 -m unittest discover -s scripts/fonts/tests -v
 
 Expected: no output / all pass.
 
-- [ ] **Step 3: Confirm the generated artifacts are fresh**
+- [ ] **Step 3: Generated artifacts are fresh**
 
 ```bash
 ./gradlew :kalligraphie:e2e:updateE2eGolden
@@ -1189,7 +1261,11 @@ git diff --exit-code
 
 Expected: no diff.
 
-- [ ] **Step 4: Final commit if Step 3 produced changes**
+- [ ] **Step 4: PR gate (CONTRIBUTING)**
+
+Confirm: branch from the latest `master` in a fork; PR targets `Graphiks-org/Kalligraphie`; the PR template headings (`Description`, `Type of Change`, `Checklist`, `Screenshots (if applicable)`, `Additional Notes`) with exactly one change type; the changelog decision and documentation decision recorded; every non-merge commit subject in Conventional Commits with an allowed scope; branch up to date with `master`.
+
+- [ ] **Step 5: Final commit if Step 3 produced changes**
 
 ```bash
 git add -A
