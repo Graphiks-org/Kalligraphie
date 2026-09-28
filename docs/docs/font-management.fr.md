@@ -205,12 +205,16 @@ d’origine dans chaque collection. La découverte est bornée et peut omettre d
 candidats ; elle ne reproduit pas exactement les fontes activées par Fontconfig
 ou CoreText. La capture du système de fichiers n’est pas globalement atomique.
 
-L’identité de face de toute entrée acceptée est l’empreinte du contenu de ses
-octets SFNT décodés, jamais celle du fichier conteneur : `FontFaceId.source` pour
-une entrée WOFF 1.0 ou WOFF 2.0 identifie le SFNT autonome reconstruit, pas le
-conteneur. Deux encodages d’une même fonte ne partagent donc généralement pas la
-même identité. WOFF 2.0 reconstruit `glyf`/`loca` sous une forme non identique
-octet pour octet mais autorisée, si bien qu’un fichier WOFF 2.0 et son `.ttf`
+Pour les entrées de conteneur d’octets, l’identité de face est l’empreinte du
+contenu des octets SFNT décodés, jamais celle du fichier conteneur :
+`FontFaceId.source` pour une entrée WOFF 1.0 ou WOFF 2.0 identifie le SFNT
+autonome reconstruit, pas le conteneur. Les collections font exception : une
+entrée TTC/OTC n’a pas de SFNT décodé unique, donc `FontFaceId.source` reste
+l’empreinte du fichier de collection entier et les indices de face de la
+collection sont conservés. Entre conteneurs d’octets, deux encodages d’une même
+fonte ne partagent donc généralement pas la même identité. WOFF 2.0 reconstruit
+`glyf`/`loca` sous une forme non identique octet pour octet mais autorisée, si
+bien qu’un fichier WOFF 2.0 et son `.ttf`
 d’origine diffèrent habituellement en octets et en identité, bien que leur
 sémantique de glyphes soit identique. Une reconstruction WOFF 1.0 qui se trouve
 être identique octet pour octet à son `.ttf` source partage cette identité ; la
@@ -247,11 +251,14 @@ Ces contrôles empêchent l’admission d’un conteneur dont des répertoires n
 été examinés ; ils ne prétendent pas reproduire le container sanitizer (validateur
 de sécurité du conteneur) de HarfBuzz pour toute table non prise en charge.
 
-`FontFaceId.source` identifie le conteneur capturé d’origine et `faceIndex`
-sélectionne sa face. `copyOpenTypeData()` retourne les octets du conteneur
-d’origine et l’identité de face sélectionnée : aucune extraction de fonte à
-face unique, réécriture ou renumérotation n’est effectuée. Les faces voisines
-partagent la source retenue. `maxSourceBytes` borne chaque conteneur lu ;
+`FontFaceId.source` identifie la source retenue et `faceIndex` sélectionne sa
+face. Pour un candidat WOFF ou WOFF2, la source retenue est le SFNT autonome
+décodé : `copyOpenTypeData()` retourne ces octets décodés et l’identité de face
+sélectionnée. Pour un candidat TTC/OTC, la source retenue est le fichier de
+collection d’origine : `copyOpenTypeData()` retourne les octets du conteneur
+d’origine et l’identité de face sélectionnée, sans extraire de fonte à face unique
+ni réécrire ou renuméroter les octets de collection. Les faces voisines partagent
+la source retenue. `maxSourceBytes` borne chaque conteneur lu ;
 `maxTotalSourceBytes` compte une fois chaque conteneur unique accepté. Ces
 budgets ne plafonnent pas la mémoire du processus : copies défensives, lectures
 temporaires, métadonnées et mémoire de décodage sont exclues. Utiliser

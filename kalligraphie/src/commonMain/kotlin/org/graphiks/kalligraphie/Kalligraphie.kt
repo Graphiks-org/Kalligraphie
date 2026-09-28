@@ -117,7 +117,8 @@ public object Kalligraphie {
      * acquisitions while rejecting later ones. The catalog and layout values
      * remain usable independently of resolver closure.
      *
-     * @param sourceBytes bytes containing exactly one supported SFNT face.
+     * @param sourceBytes bytes containing exactly one supported SFNT face, or a
+     * single-face WOFF 1.0 or WOFF 2.0 container that decodes to one.
      * @param provenance caller-declared name or origin used for diagnostics and
      * audit trails.
      * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for
