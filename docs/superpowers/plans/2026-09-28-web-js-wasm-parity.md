@@ -172,15 +172,35 @@ git commit -m "docs: describe the neutral facade names"
 ### Task 1.1: Opt-in web target convention, applied to `:kalligraphie:api`
 
 **Files:**
+- Create: `buildSrc/src/main/kotlin/ygdrasil/conventions/kmp-web-library.gradle.kts`
 - Create: `buildSrc/src/main/kotlin/ygdrasil/conventions/kalligraphie-kmp-web-library.gradle.kts`
 - Create: `buildSrc/src/main/kotlin/ygdrasil/conventions/kalligraphie-internal-kmp-web-library.gradle.kts`
 - Modify: `kalligraphie/api/build.gradle.kts:1-3`
 
 **Interfaces:**
-- Consumes: `ygdrasil.conventions.kalligraphie-kmp-library` and `ygdrasil.conventions.kalligraphie-internal-kmp-library` (existing).
-- Produces: plugin ids `ygdrasil.conventions.kalligraphie-kmp-web-library` and `ygdrasil.conventions.kalligraphie-internal-kmp-web-library`, which register `js(IR)` and `wasmJs` on top of the existing target set. Later tasks switch participant modules to these ids.
+- Consumes: `ygdrasil.conventions.kmp-library`, `ygdrasil.conventions.kalligraphie-kmp-library` and `ygdrasil.conventions.kalligraphie-internal-kmp-library` (all existing).
+- Produces: plugin ids `ygdrasil.conventions.kmp-web-library` (base; for `conformance`, `e2e`), `ygdrasil.conventions.kalligraphie-kmp-web-library` (published; for `api`, `unicode`, `layout`, `shaping`, `:kalligraphie`) and `ygdrasil.conventions.kalligraphie-internal-kmp-web-library` (internal; for `font:*`, `raster-cpu`). Each registers `js(IR)` and `wasmJs` on top of its existing target set. Later tasks switch participant modules to these ids.
 
-- [ ] **Step 1: Create the public web convention**
+- [ ] **Step 1: Create the three web conventions**
+
+`buildSrc/src/main/kotlin/ygdrasil/conventions/kmp-web-library.gradle.kts`:
+
+```kotlin
+package ygdrasil.conventions
+
+plugins {
+    id("ygdrasil.conventions.kmp-library")
+}
+
+kotlin {
+    js {
+        nodejs()
+    }
+    wasmJs {
+        nodejs()
+    }
+}
+```
 
 `buildSrc/src/main/kotlin/ygdrasil/conventions/kalligraphie-kmp-web-library.gradle.kts`:
 
@@ -201,8 +221,6 @@ kotlin {
 }
 ```
 
-- [ ] **Step 2: Create the internal web convention**
-
 `buildSrc/src/main/kotlin/ygdrasil/conventions/kalligraphie-internal-kmp-web-library.gradle.kts`:
 
 ```kotlin
@@ -222,7 +240,7 @@ kotlin {
 }
 ```
 
-- [ ] **Step 3: Switch `:kalligraphie:api` to the public web convention**
+- [ ] **Step 2: Switch `:kalligraphie:api` to the public web convention**
 
 In `kalligraphie/api/build.gradle.kts`, replace:
 
@@ -240,7 +258,7 @@ plugins {
 }
 ```
 
-- [ ] **Step 4: Prove the shared `webMain` source set exists**
+- [ ] **Step 3: Prove the shared `webMain` source set exists**
 
 Create `kalligraphie/api/src/webMain/kotlin/org/graphiks/kalligraphie/api/WebTargetMarker.kt`:
 
@@ -251,17 +269,17 @@ package org.graphiks.kalligraphie.api
 internal const val WEB_TARGET_MARKER: String = "web"
 ```
 
-- [ ] **Step 5: Compile both web targets**
+- [ ] **Step 4: Compile both web targets**
 
 Run: `./gradlew :kalligraphie:api:compileKotlinJs :kalligraphie:api:compileKotlinWasmJs`
 Expected: BUILD SUCCESSFUL. If `compileKotlinJs` reports the unresolved `webMain` file, the default hierarchy did not create the `web` group: add `applyDefaultHierarchyTemplate { common { group("web") { withJs(); withWasmJs() } } }` inside `kotlin { }` in both new convention files and re-run.
 
-- [ ] **Step 6: Confirm the existing targets and tests are unaffected**
+- [ ] **Step 5: Confirm the existing targets and tests are unaffected**
 
 Run: `./gradlew :kalligraphie:api:allTests`
 Expected: BUILD SUCCESSFUL.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add buildSrc kalligraphie/api
@@ -350,16 +368,16 @@ In `kalligraphie/shaping/build.gradle.kts`, replace `id("ygdrasil.conventions.ka
 ```kotlin
 package org.graphiks.kalligraphie.shaping
 
-import org.graphiks.kalligraphie.api.ShapingBackendResult
+import org.graphiks.kalligraphie.api.FontOperationResult
 import kotlin.test.Test
-import kotlin.test.assertIs
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 class WebShapingBackendTest {
     @Test
     fun reportsTheUnsupportedPlatformFailureUntilTheBackendLands() {
-        val result = HarfBuzzShapingBackend.open()
-        val failure = assertIs<ShapingBackendResult.Failure>(result)
+        val opened = HarfBuzzShapingBackend.open()
+        val failure = assertIs<FontOperationResult.Failure>(opened)
         assertEquals("font.shaping-native-platform-unsupported", failure.error.code)
     }
 }
@@ -606,9 +624,9 @@ In `PlatformCapabilityConformanceTest.kt`, add a `"web"` branch to `expectedAvai
 
 (`END_TO_END_LAYOUT` is false in Phase 1 because the paragraph facade cannot compose without shaping; Phase 2 flips both to true.)
 
-- [ ] **Step 2: Switch the module to the public web convention**
+- [ ] **Step 2: Switch the module to the base web convention**
 
-In `kalligraphie/conformance/build.gradle.kts`, replace the plugin id with `ygdrasil.conventions.kalligraphie-kmp-web-library`, and add to `sourceSets`:
+In `kalligraphie/conformance/build.gradle.kts`, replace the plugin id `ygdrasil.conventions.kmp-library` with `ygdrasil.conventions.kmp-web-library` (base, **not** the published `kalligraphie-*` variant — conformance is not a published artifact), and add to `sourceSets`:
 
 ```kotlin
         webTest.dependencies {
@@ -725,10 +743,12 @@ git commit -m "feat(conformance): declare the web capability surface without sha
 **Files:**
 - Create: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/InflateSupport.kt`
 - Create: `kalligraphie/font/sfnt/src/jvmMain/kotlin/org/graphiks/kalligraphie/font/sfnt/OkioInflateSupport.jvm.kt`
+- Create: `kalligraphie/font/sfnt/src/androidMain/kotlin/org/graphiks/kalligraphie/font/sfnt/OkioInflateSupport.android.kt`
 - Create: `kalligraphie/font/sfnt/src/nativeMain/kotlin/org/graphiks/kalligraphie/font/sfnt/OkioInflateSupport.native.kt`
-- Create: `kalligraphie/font/sfnt/src/androidMain/kotlin/org/graphiks/kalligraphie/font/sfnt/OkioInflateSupport.android.kt` (if `font:sfnt` has an `androidMain`; otherwise the `jvmMain` actual is shared — verify with `find kalligraphie/font/sfnt/src -maxdepth 1 -type d`)
 - Modify: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/PngDecoder.kt:96-164`
 - Modify: `kalligraphie/font/sfnt/src/commonMain/kotlin/org/graphiks/kalligraphie/font/sfnt/SvgDocumentDecoder.kt:29-66`
+
+**Source-set note:** `font:sfnt` currently has only `commonMain` and `commonTest` (verified with `ls kalligraphie/font/sfnt/src`). The three platform actuals above create the `jvmMain`, `androidMain` and `nativeMain` directories for the first time; `nativeMain` covers both iOS targets. `jvmMain` and `androidMain` are **separate targets and need separate actuals** — an Android build does not share the JVM actual. `libs.okio` is already a `commonMain` dependency of this module, so it is on every platform classpath.
 
 **Interfaces:**
 - Consumes: nothing (existing decoders only).
@@ -773,7 +793,7 @@ internal expect fun platformInflateSupport(): InflateSupport
 
 - [ ] **Step 2: Add the Okio-backed actuals**
 
-`kalligraphie/font/sfnt/src/jvmMain/kotlin/org/graphiks/kalligraphie/font/sfnt/OkioInflateSupport.jvm.kt` (and identical bodies in `nativeMain`; `androidMain` only if that source set already exists for this module):
+`kalligraphie/font/sfnt/src/jvmMain/kotlin/org/graphiks/kalligraphie/font/sfnt/OkioInflateSupport.jvm.kt` — place the same package, body and `OkioInflateSupport` object in `androidMain` (`OkioInflateSupport.android.kt`) and `nativeMain` (`OkioInflateSupport.native.kt`), changing nothing but the file name:
 
 ```kotlin
 package org.graphiks.kalligraphie.font.sfnt
@@ -1209,7 +1229,7 @@ Expected: task graph listed; note which suites are pulled in. Record the failing
 
 For `kalligraphie/unicode`, `kalligraphie/layout`, `kalligraphie/font/glyph`, `kalligraphie/font/scaler`: replace `kalligraphie-kmp-library` with `kalligraphie-kmp-web-library`.
 For `kalligraphie/raster-cpu`: replace `kalligraphie-internal-kmp-library` with `kalligraphie-internal-kmp-web-library`.
-For `kalligraphie/e2e`: replace `kmp-library` with `kalligraphie-kmp-web-library` (compile-only for now).
+For `kalligraphie/e2e`: replace `kmp-library` with `kmp-web-library` (base, **not** the published variant; e2e is not published) — compile-only for now.
 
 - [ ] **Step 3: Add per-module web test dependencies**
 
@@ -1225,8 +1245,14 @@ Add `kalligraphie/unicode/src/webTest/kotlin/.../WebCorpusFixtureCorpus.kt` impl
 
 - [ ] **Step 6: Run the web suites and fix fixture gaps**
 
-Run: `./gradlew :kalligraphie:unicode:jsNodeTest :kalligraphie:raster-cpu:jsNodeTest :kalligraphie:layout:jsNodeTest :kalligraphie:font:sfnt:jsNodeTest :kalligraphie:font:scaler:jsNodeTest :kalligraphie:font:glyph:jsNodeTest`
-Expected: PASS. For each failure caused by a missing fixture, extend the `webCorpus` entry list rather than excluding the test. Record any test that genuinely cannot run on web as a Phase 4 item, not a silent skip.
+Run: `./gradlew :kalligraphie:unicode:jsNodeTest :kalligraphie:raster-cpu:jsNodeTest :kalligraphie:font:sfnt:jsNodeTest :kalligraphie:font:scaler:jsNodeTest :kalligraphie:font:glyph:jsNodeTest`
+Expected: PASS. For each failure caused by a missing fixture, extend the `webCorpus` entry list rather than excluding the test.
+
+`layout` is deliberately **not** in that command. Its `commonTest` may require a real shaping backend, which is absent until Phase 2. Determine which it is:
+
+Run: `./gradlew :kalligraphie:layout:jsNodeTest`
+- If it passes using synthetic shaped input, keep it in the web set.
+- If it fails only because no shaper is available, do **not** fabricate a shaper and do not silently exclude it: record `Task 1.8: layout web commonTest deferred to Phase 2 (no shaper)` in the ledger and leave the suite wired but untriggered. It becomes a Phase 2 exit criterion.
 
 - [ ] **Step 7: Compile the whole repository for both web targets**
 
