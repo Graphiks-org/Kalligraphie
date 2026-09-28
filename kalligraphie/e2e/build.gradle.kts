@@ -60,6 +60,7 @@ val iosFixtureCorpus by tasks.registering {
         "/fonts/cff2-liberation/LiberationSans-CFF2.otf" to fixtures.file("fonts/cff2-liberation/LiberationSans-CFF2.otf").asFile,
         "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf" to fixtures.file("fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf").asFile,
         "/fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf" to fixtures.file("fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf").asFile,
+        "/fonts/kalniaglaze/KalniaGlaze[wdth,wght].ttf" to fixtures.file("fonts/kalniaglaze/KalniaGlaze[wdth,wght].ttf").asFile,
         // The paragraph scenes' own fixtures: the variable family the weight ladder walks and the
         // vertical Japanese face the mosaic composes.
         "/fonts/worksans/WorkSans[wght].ttf" to fixtures.file("fonts/worksans/WorkSans[wght].ttf").asFile,
