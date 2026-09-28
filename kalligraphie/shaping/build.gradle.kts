@@ -2,7 +2,7 @@ import java.io.File
 import java.util.Base64
 
 plugins {
-    id("ygdrasil.conventions.kalligraphie-kmp-library")
+    id("ygdrasil.conventions.kalligraphie-kmp-web-library")
 }
 
 tasks.withType<Test>().configureEach {
@@ -110,6 +110,9 @@ kotlin {
         }
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
+        }
+        webTest.dependencies {
+            implementation(kotlin("test"))
         }
         val androidDeviceTest by getting {
             dependencies {

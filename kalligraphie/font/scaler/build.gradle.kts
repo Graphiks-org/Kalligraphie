@@ -1,5 +1,5 @@
 plugins {
-    id("ygdrasil.conventions.kalligraphie-internal-kmp-library")
+    id("ygdrasil.conventions.kalligraphie-internal-kmp-web-library")
 }
 
 kotlin {
@@ -13,6 +13,9 @@ kotlin {
         }
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
+        }
+        webTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }
