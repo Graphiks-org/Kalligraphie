@@ -379,10 +379,10 @@ public object EmbeddedFontCatalogFactory {
         val capturedSources = sources.toList()
         if (capturedSources.isEmpty()) return invalidCatalog("An embedded font catalog requires at least one source.")
 
-        // Every source is normalised to standalone SFNT bytes before any identity work, so a WOFF or
-        // WOFF2 container and the SFNT it wraps share the same content-derived identity. A
-        // non-container source keeps its original bytes. Because identity is the digest of the
-        // decoded SFNT, two sources that decode to identical bytes are duplicates even when their
+        // Every source is normalised to its decoded standalone SFNT bytes before any identity work:
+        // a WOFF or WOFF2 container is decoded to the SFNT it wraps, while a non-container source
+        // keeps its original bytes. Identity is the digest of those decoded bytes, so two sources
+        // share identity exactly when their decoded SFNT bytes are identical, even when their
         // containers differ; this is intentional and must not be "fixed".
         val diagnostics = mutableListOf<FontDiagnostic>()
         val normalisedSources = mutableListOf<FontSource>()
