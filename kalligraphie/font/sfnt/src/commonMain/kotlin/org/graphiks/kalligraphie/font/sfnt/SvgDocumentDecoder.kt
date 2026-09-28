@@ -1,7 +1,5 @@
 package org.graphiks.kalligraphie.font.sfnt
 
-import okio.Buffer
-import okio.GzipSource
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
@@ -35,33 +33,11 @@ internal fun decodeSvgDocument(
         return svgLimit("SVG compressed document-byte limit exceeded.")
     }
 
-    return try {
-        val compressed = Buffer().write(encoded)
-        val gzip = GzipSource(compressed)
-        val decoded = Buffer()
-        val chunk = Buffer()
-        var decodedBytes = 0L
-        try {
-            while (true) {
-                val read = gzip.read(chunk, SVG_DECODE_CHUNK_BYTES)
-                if (read == -1L) break
-                if (
-                    read > limits.maxSvgDecodedDocumentBytes.toLong() - decodedBytes ||
-                    read > remainingTotalDecodedBytes - decodedBytes
-                ) {
-                    return svgLimit("SVG decoded document-byte limit exceeded.")
-                }
-                decoded.write(chunk, read)
-                decodedBytes += read
-            }
-            FontOperationResult.Success(decoded.readByteArray())
-        } finally {
-            gzip.close()
-            decoded.close()
-            chunk.close()
-        }
-    } catch (_: Exception) {
-        invalidGzip("SVG gzip document is malformed or fails its integrity checks.")
+    val bound = minOf(limits.maxSvgDecodedDocumentBytes.toLong(), remainingTotalDecodedBytes)
+    return when (val outcome = platformInflateSupport().gunzip(encoded, bound)) {
+        is InflateOutcome.Success -> FontOperationResult.Success(outcome.bytes)
+        is InflateOutcome.Malformed -> invalidGzip("SVG gzip document is malformed or fails its integrity checks.")
+        is InflateOutcome.LimitExceeded -> svgLimit("SVG decoded document-byte limit exceeded.")
     }
 }
 
@@ -77,7 +53,6 @@ private fun invalidGzip(message: String): FontOperationResult.Failure =
 private fun svgLimit(message: String): FontOperationResult.Failure =
     FontOperationResult.Failure(FontError.ResourceLimitExceeded(message, FontDiagnosticLocation.Table("SVG ")))
 
-private const val SVG_DECODE_CHUNK_BYTES: Long = 8_192L
 private const val GZIP_COMPRESSION_METHOD_OFFSET: Int = 2
 private const val GZIP_DEFLATE_METHOD: Byte = 8
 private const val GZIP_FLAGS_OFFSET: Int = 3

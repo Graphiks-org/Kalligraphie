@@ -1,9 +1,6 @@
 package org.graphiks.kalligraphie.font.sfnt
 
 import okio.Buffer
-import okio.IOException
-import okio.Inflater
-import okio.InflaterSource
 import org.graphiks.kalligraphie.api.BitmapLimits
 import org.graphiks.kalligraphie.api.BitmapPixelFormat
 import org.graphiks.kalligraphie.api.BitmapResourceLimit
@@ -141,28 +138,18 @@ internal object PngDecoder {
         if (expectedRawBytes > Int.MAX_VALUE.toLong()) {
             return limit(BitmapResourceLimit.DECODED_BYTES, expectedRawBytes, Int.MAX_VALUE, table)
         }
-        val raw = try {
-            val decoded = Buffer()
-            val inflater = InflaterSource(compressed, Inflater())
-            try {
-                while (true) {
-                    val read = inflater.read(decoded, PNG_INFLATE_CHUNK_BYTES)
-                    if (read == -1L) break
-                    if (decoded.size > expectedRawBytes) {
-                        return limit(BitmapResourceLimit.DECODED_BYTES, decoded.size, expectedRawBytes, table)
-                    }
-                }
-            } finally {
-                inflater.close()
-            }
-            decoded.readByteArray()
-        } catch (_: IOException) {
-            return invalid("font.png.invalid-deflate", "PNG image data is malformed or fails its integrity checks.", table)
+        val expectedInflated = expectedRawBytes
+        val inflated = when (val outcome = platformInflateSupport().inflateZlib(compressed.readByteArray(), expectedInflated)) {
+            is InflateOutcome.Success -> outcome.bytes
+            is InflateOutcome.Malformed ->
+                return invalid("font.png.invalid-deflate", "PNG image data is malformed or fails its integrity checks.", table)
+            is InflateOutcome.LimitExceeded ->
+                return limit(BitmapResourceLimit.DECODED_BYTES, outcome.observed, outcome.maximum, table)
         }
-        if (raw.size.toLong() != expectedRawBytes) {
+        if (inflated.size.toLong() != expectedRawBytes) {
             return invalid("font.png.truncated", "PNG image data is truncated.", table)
         }
-        return unfilter(raw, width, height, bytesPerPixel, colorType, table)
+        return unfilter(inflated, width, height, bytesPerPixel, colorType, table)
     }
 
     private fun parseHeader(
@@ -381,5 +368,4 @@ private const val RGBA_BYTES_PER_PIXEL: Int = 4
 private const val PNG_COLOR_TYPE_TRUECOLOR: Int = 2
 private const val PNG_COLOR_TYPE_TRUECOLOR_ALPHA: Int = 6
 private const val PNG_FILTER_PAETH: Int = 4
-private const val PNG_INFLATE_CHUNK_BYTES: Long = 8_192L
 private const val UINT_MASK: Long = 0xFFFFFFFFL
