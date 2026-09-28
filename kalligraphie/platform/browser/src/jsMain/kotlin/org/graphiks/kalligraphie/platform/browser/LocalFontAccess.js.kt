@@ -36,7 +36,12 @@ private external interface JsFontData : JsAny {
     val fullName: String
     val postscriptName: String
     val style: String
-    fun blob(): Promise<JsAny>
+    fun blob(): Promise<JsBlob>
+}
+
+/** The `Blob` `FontData.blob()` resolves to; its bytes are read through `arrayBuffer()`. */
+private external interface JsBlob : JsAny {
+    fun arrayBuffer(): Promise<JsAny>
 }
 
 private class JsBrowserFontData(private val font: JsFontData) : BrowserFontData {
@@ -45,7 +50,8 @@ private class JsBrowserFontData(private val font: JsFontData) : BrowserFontData 
     override val postscriptName: String get() = font.postscriptName
     override val style: String get() = font.style
 
-    override suspend fun bytes(): ByteArray = font.blob().await<JsAny>().toByteArray()
+    override suspend fun bytes(): ByteArray =
+        font.blob().await<JsBlob>().arrayBuffer().await<JsAny>().toByteArray()
 }
 
 /** Copies the `ArrayBuffer` a `Blob` resolves to into Kotlin-managed bytes. */

@@ -1,5 +1,7 @@
 package org.graphiks.kalligraphie.platform.browser
 
+import kotlin.coroutines.cancellation.CancellationException
+
 /**
  * One system font the browser exposed, with the bytes the library parses itself.
  *
@@ -70,6 +72,9 @@ public suspend fun discoverLocalFonts(): BrowserFontDiscovery {
             }
         }
         BrowserFontDiscovery.Success(fonts)
+    } catch (cancellation: CancellationException) {
+        // A cancelled coroutine is not a discovery outcome: the caller asked to stop.
+        throw cancellation
     } catch (error: Throwable) {
         val message = error.message ?: "The browser font query failed."
         if (message.contains("permission", ignoreCase = true) || message.contains("SecurityError")) {

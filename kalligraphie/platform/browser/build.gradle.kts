@@ -28,7 +28,7 @@ kotlin {
         browser {
             testTask {
                 useKarma {
-                    useChromeHeadless()
+                    useChromeHeadlessNoSandbox()
                 }
             }
         }
@@ -38,7 +38,7 @@ kotlin {
         browser {
             testTask {
                 useKarma {
-                    useChromeHeadless()
+                    useChromeHeadlessNoSandbox()
                 }
             }
         }

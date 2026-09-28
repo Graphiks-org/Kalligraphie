@@ -5,9 +5,9 @@ package org.graphiks.kalligraphie.conformance
  *
  * Unicode analysis and line breaking resolve from the repository's own portable Unicode 16.0
  * tables, and the glyph representation route is the portable one, so both are present without a
- * platform engine. `SHAPING` is absent until the kffi HarfBuzz web artifact lands (Phase 2), and
- * `END_TO_END_LAYOUT` is consequently absent too: the paragraph facade cannot compose without a
- * shaper. The absence diagnostic is emitted for both.
+ * platform engine. `SHAPING` is present through the bundled WebAssembly HarfBuzz backend, and
+ * `END_TO_END_LAYOUT` follows from it: the paragraph facade composes once `initialize()` has awaited
+ * the module's asynchronous instantiation. No absence diagnostic is emitted.
  */
 public actual fun currentPortableCapabilityIdentity(): PortableCapabilityIdentity =
     PortableCapabilityIdentity(

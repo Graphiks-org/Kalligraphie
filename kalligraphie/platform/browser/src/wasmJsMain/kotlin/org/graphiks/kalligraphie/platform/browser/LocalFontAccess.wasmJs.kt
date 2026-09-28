@@ -36,7 +36,12 @@ private external interface WasmFontData : JsAny {
     val fullName: String
     val postscriptName: String
     val style: String
-    fun blob(): Promise<JsAny>
+    fun blob(): Promise<WasmBlob>
+}
+
+/** The `Blob` `FontData.blob()` resolves to; its bytes are read through `arrayBuffer()`. */
+private external interface WasmBlob : JsAny {
+    fun arrayBuffer(): Promise<JsAny>
 }
 
 private class WasmBrowserFontData(private val font: WasmFontData) : BrowserFontData {
@@ -45,7 +50,8 @@ private class WasmBrowserFontData(private val font: WasmFontData) : BrowserFontD
     override val postscriptName: String get() = font.postscriptName
     override val style: String get() = font.style
 
-    override suspend fun bytes(): ByteArray = font.blob().await<JsAny>().toByteArray()
+    override suspend fun bytes(): ByteArray =
+        font.blob().await<WasmBlob>().arrayBuffer().await<JsAny>().toByteArray()
 }
 
 /** Copies the `ArrayBuffer` a `Blob` resolves to into Kotlin-managed bytes. */
