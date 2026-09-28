@@ -22,9 +22,26 @@ kotlin {
 
     js {
         nodejs()
+        // The Local Font Access adapter is the one part of the web surface that needs a DOM, so this
+        // module also runs its suite in a real browser: Node proves the typed outcomes, Chrome proves
+        // the adapter against an actual `window`.
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadless()
+                }
+            }
+        }
     }
     wasmJs {
         nodejs()
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadless()
+                }
+            }
+        }
     }
 
     sourceSets {

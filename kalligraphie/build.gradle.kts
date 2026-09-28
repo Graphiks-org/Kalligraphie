@@ -3,6 +3,27 @@ plugins {
 }
 
 kotlin {
+    // The public portable surface is exercised in a real browser as well as under Node: the same
+    // suite runs twice, so a bundler-only or DOM-only regression is caught here.
+    js {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadless()
+                }
+            }
+        }
+    }
+    wasmJs {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadless()
+                }
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))

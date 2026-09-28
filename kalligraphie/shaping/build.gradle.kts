@@ -84,6 +84,27 @@ kotlin {
             }
         }
     }
+    // The WebAssembly backend is exercised in a real browser as well as under Node: the same probe
+    // runs twice, so the Emscripten instantiation is proven in a bundler for both web targets.
+    js {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadless()
+                }
+            }
+        }
+    }
+    wasmJs {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadless()
+                }
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))
