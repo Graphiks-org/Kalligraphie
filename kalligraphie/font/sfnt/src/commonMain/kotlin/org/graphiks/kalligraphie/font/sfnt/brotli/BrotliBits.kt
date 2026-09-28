@@ -29,9 +29,17 @@ internal class BrotliBits(private val input: ByteArray) {
         return result
     }
 
-    fun alignToByte() {
+    /**
+     * Advances to the next byte boundary and returns the bits that were skipped, as an integer
+     * whose bit `i` is the `i`-th skipped bit.
+     *
+     * RFC 7932 §9.2 and §9.3 require those bits to be zero; a caller that discards the result
+     * accepts a stream it must reject. Succeeding on a truncated input sets [overran].
+     */
+    fun alignToByte(): Int {
         val remainder = bitPosition and 7
-        if (remainder != 0) bitPosition += 8 - remainder
+        if (remainder == 0) return 0
+        return readBits(8 - remainder)
     }
 
     fun hasMore(): Boolean = (bitPosition ushr 3) < input.size

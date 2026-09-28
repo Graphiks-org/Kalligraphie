@@ -5,6 +5,7 @@ package org.graphiks.kalligraphie.font.sfnt.brotli
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 
@@ -136,6 +137,32 @@ class BrotliMetaBlockTest {
         assertEquals(1, header.literalBlockCategory.firstCount)
         assertEquals(2, header.literalContextModes.size)
         assertContentEquals(IntArray(128), header.literalContextMap)
+    }
+
+    @Test
+    fun rejectsANonZeroMetadataFillBit() {
+        val writer = BrotliTestBitWriter()
+        writer.writeBit(0)         // ISLAST = 0
+        writer.writeBits(3, 2)     // MNIBBLES code 11 => metadata
+        writer.writeBit(0)         // reserved = 0
+        writer.writeBits(0, 2)     // MSKIPBYTES = 0
+        writer.writeBit(1)         // the single fill bit, which must be zero
+        assertFailsWith<IllegalArgumentException> {
+            BrotliMetaBlock.read(BrotliBits(writer.toByteArray()))
+        }
+    }
+
+    @Test
+    fun rejectsNonZeroIgnoredBitsInAnUncompressedMetaBlock() {
+        val writer = BrotliTestBitWriter()
+        writer.writeBit(0)         // ISLAST = 0
+        writer.writeBits(0, 2)     // MNIBBLES code 00 => 4
+        writer.writeBits(1, 16)    // MLEN - 1 = 1
+        writer.writeBit(1)         // ISUNCOMPRESSED = 1
+        writer.writeBit(1)         // the first ignored bit, which must be zero
+        assertFailsWith<IllegalArgumentException> {
+            BrotliMetaBlock.read(BrotliBits(writer.toByteArray()))
+        }
     }
 
     /** A one-symbol simple prefix code; the canonical length is zero, so it emits no bits. */

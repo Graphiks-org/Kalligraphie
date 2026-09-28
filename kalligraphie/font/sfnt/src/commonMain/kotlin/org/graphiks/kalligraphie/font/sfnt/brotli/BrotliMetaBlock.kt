@@ -8,7 +8,8 @@ import org.graphiks.kalligraphie.api.KalligraphieInternalApi
  * The Brotli stream header and meta-block header (RFC 7932 §9.1 and §9.2).
  *
  * [readWbits] decodes the stream header's window-size code exactly once per stream. [read] then
- * parses one meta-block header; the decoder loops over it until [BrotliLastEmptyHeader].
+ * parses one meta-block header; the decoder loops until a header reports [BrotliMetaBlockHeader.isLast],
+ * which may be [BrotliLastEmptyHeader] or a non-empty `ISLAST = 1` compressed or metadata block.
  */
 @KalligraphieInternalApi
 internal object BrotliMetaBlock {
@@ -69,7 +70,9 @@ internal object BrotliMetaBlock {
                 }
             }
             val metadataLength = if (mskipBytes == 0) 0 else mskipLenMinusOne + 1
-            bits.alignToByte()
+            if (bits.alignToByte() != 0) {
+                throw IllegalArgumentException("Brotli metadata meta-block has non-zero fill bits.")
+            }
             return BrotliMetadataHeader(isLast, metadataLength)
         }
 
@@ -84,7 +87,9 @@ internal object BrotliMetaBlock {
 
         if (isLast) return readCompressed(bits, isLast = true, length = length)
         if (bits.readBit() == 1) {
-            bits.alignToByte()
+            if (bits.alignToByte() != 0) {
+                throw IllegalArgumentException("Brotli uncompressed meta-block has non-zero ignored bits.")
+            }
             return BrotliUncompressedHeader(isLast = false, length = length)
         }
         return readCompressed(bits, isLast = false, length = length)
