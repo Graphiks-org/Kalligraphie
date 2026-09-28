@@ -8,10 +8,19 @@ Le module rastérise les trois routes de représentation portables certifiées :
 
 - les contours (`GlyphOutlineIR`) en images de couverture (coverage) sur huit bits ;
 - les graphes de peinture (`GlyphPaintIR`) en images RGBA non prémultipliées avec
-  composition `SOURCE_OVER` ;
+  composition `SOURCE_OVER` : `SolidOutline`, `Path`, `Group`, ainsi que les
+  nœuds COLR v1 `GlyphClip`, `Solid`, `LinearGradient` et `Transform` ;
 - les bitmaps (images matricielles) embarqués (`BitmapGlyphIR`) en pixels
   `ALPHA_8` teintés par l'encre explicite, ou en pixels `RGBA_8888` droits
   (alpha non prémultiplié) copiés tels quels, l'encre étant ignorée.
+
+Le découpage (clip) intersecte la couverture exactement aux seize
+sous-échantillons fixes, de sorte qu'un bord partagé n'est jamais mis au carré, et
+les dégradés sont ombrés dans une table de transfert sRGB entière committée :
+aucune fonction mathématique de plateforme ne déplace un octet. `PathClip`,
+`RadialGradient`, `SweepGradient`, `Composite`, les modes de composition autres que
+`SOURCE_OVER`, un clip autour d'un `Group`, et les dégradés qui ne sont pas
+`LINEAR_SRGB` + `PREMULTIPLIED` sont refusés par un `InvalidRequest` typé.
 
 Chaque opération applique des limites déclarées avant toute allocation et
 retourne soit une image immuable, soit un refus typé (`InvalidRequest`,

@@ -6,12 +6,17 @@ enters the consumer dependency graph of `org.graphiks:kalligraphie`.
 ## What it rasterizes
 
 - outlines (`GlyphOutlineIR`) into eight-bit coverage images;
-- solid paint graphs (`GlyphPaintIR`: `SolidOutline`, `Path`, `Group`) into
+- solid paint graphs (`GlyphPaintIR`: `SolidOutline`, `Path`, `Group`, and the
+  COLR v1 `GlyphClip`, `Solid`, `LinearGradient` and `Transform` nodes) into
   non-premultiplied RGBA with `SOURCE_OVER` composition;
 - bitmap strikes (`BitmapGlyphIR`, `ALPHA_8`) with an explicit ink color.
 
-Gradients, clips, transforms, composites, and unbounded solids from paint schema
-2/3 are refused with a typed `InvalidRequest("nodeKind", ...)`.
+Clipping intersects coverage exactly at the sixteen fixed sub-pixel samples, so a
+shared edge is never squared, and gradients are shaded in a committed integer sRGB
+transfer, so no platform math moves a byte. `PathClip`, `RadialGradient`,
+`SweepGradient`, `Composite`, composition modes other than `SOURCE_OVER`, a clip
+around a `Group`, and gradients that are not `LINEAR_SRGB` + `PREMULTIPLIED` are
+refused with a typed `InvalidRequest`.
 
 Every operation checks its declared `RasterLimits` before allocating and returns
 either an immutable image (`A8Image`, `Rgba8Image`) or a typed
