@@ -2,6 +2,8 @@
 
 package org.graphiks.kalligraphie.font.sfnt.container
 
+import org.graphiks.kalligraphie.api.FontDiagnosticLocation
+import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontSource
 import org.graphiks.kalligraphie.api.KalligraphieInternalApi
@@ -37,7 +39,21 @@ public class DecodedFont(
 @KalligraphieInternalApi
 public object FontContainerDecoder {
     /** Decodes [source] under [limits], or returns `null` when it is not a managed container. */
-    public fun decode(source: FontSource, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?> {
+    public fun decode(source: FontSource, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?> =
+        try {
+            decodeContainer(source, limits)
+        } catch (_: OutOfMemoryError) {
+            // Defensive decoder boundary: a malformed container that slips past the independent
+            // limits must never let an Error escape the public API.
+            FontOperationResult.Failure(
+                FontError.ResourceLimitExceeded(
+                    "The container decode exhausted available memory.",
+                    FontDiagnosticLocation.Source,
+                ),
+            )
+        }
+
+    private fun decodeContainer(source: FontSource, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?> {
         val bytes = source.copyBytes()
         if (bytes.size < CONTAINER_SIGNATURE_BYTES) {
             return FontOperationResult.Success(null)

@@ -56,9 +56,12 @@ internal class GlyfReconstruction(
  * - When `optionFlags` bit 0 is set, each simple glyph's `overlapSimpleBitmap` bit becomes
  *   `OVERLAP_SIMPLE` (bit 6) of that glyph's first output flag byte.
  *
- * Every stream size is charged against [WoffDecodeLimits.maxWorkingBytes], the reconstructed
- * `glyf`/`loca` are bounded by [WoffDecodeLimits.maxDecodedFontBytes], and any structural violation
- * is `font.woff2.transform-failed`.
+ * Every stream size is charged against [WoffDecodeLimits.maxWorkingBytes], and so is the peak
+ * per-glyph point-array footprint ([BYTES_PER_POINT] live bytes per point), so a crafted transformed
+ * `glyf` cannot drive a transient allocation above the working bound. The reconstructed `glyf`/`loca`
+ * are bounded by [WoffDecodeLimits.maxDecodedFontBytes], and any structural violation is
+ * `font.woff2.transform-failed`. An `OutOfMemoryError` raised while the arrays or sink are grown is
+ * mapped to `ResourceLimitExceeded` rather than escaping.
  */
 internal object Woff2GlyfTransform {
     private const val TRANSFORM_FAILED: String = "font.woff2.transform-failed"
@@ -67,6 +70,24 @@ internal object Woff2GlyfTransform {
     private const val OVERLAP_SIMPLE_OPTION: Int = 0x01
     private const val OVERLAP_SIMPLE_FLAG: Int = 0x40
     private const val INITIAL_CAPACITY: Int = 256
+
+    /**
+     * Maximum number of points in one TrueType glyph: `endPtsOfContours` is an array of unsigned
+     * 16-bit endpoints, so the last point index cannot exceed 65535.
+     */
+    private const val MAX_POINTS_PER_GLYPH: Int = 65536
+
+    /**
+     * Conservative live-byte charge for each simple-glyph point while [writeSimpleGlyph] is
+     * reconstructing it: the copied flag byte (1), the two delta `IntArray`s (4 + 4), the on-curve
+     * `BooleanArray` (1) and the output-flag `IntArray` (4). The peak is charged against
+     * `maxWorkingBytes` before the arrays are allocated so a crafted `glyf` cannot drive a
+     * transient allocation far above the working bound.
+     */
+    private const val BYTES_PER_POINT: Int = 16
+
+    /** Inclusive range of a signed 16-bit TrueType coordinate or coordinate delta. */
+    private val COORDINATE_RANGE: IntRange = Short.MIN_VALUE.toInt()..Short.MAX_VALUE.toInt()
 
     /** Reconstructs [transformed], or returns a typed rejection. */
     fun reconstruct(
@@ -87,6 +108,10 @@ internal object Woff2GlyfTransform {
             limitExceeded(limit.message ?: "The WOFF2 glyf decoded limit was exceeded.")
         } catch (invalid: TransformException) {
             failure(invalid.message ?: "The WOFF2 glyf transform is malformed.")
+        } catch (_: OutOfMemoryError) {
+            // The point arrays and the reconstructed table can still exhaust the heap on a hostile
+            // input; map it to a typed limit failure rather than letting an Error escape.
+            limitExceeded("The WOFF2 glyf reconstruction exhausted available memory.")
         }
     }
 
@@ -178,7 +203,7 @@ internal object Woff2GlyfTransform {
                 }
                 contourCount > 0 -> xMins[glyphIndex] = writeSimpleGlyph(
                     glyphIndex, contourCount, nPoints, flags, glyph, instructions, bboxBitmap, bboxValues,
-                    overlapSimpleBitmap, sink,
+                    overlapSimpleBitmap, sink, maxWorkingBytes,
                 )
                 contourCount == -1 -> xMins[glyphIndex] = writeCompositeGlyph(
                     glyphIndex, composite, glyph, instructions, bboxBitmap, bboxValues, sink,
@@ -224,6 +249,7 @@ internal object Woff2GlyfTransform {
         bboxValues: Cursor,
         overlapSimpleBitmap: ByteArray?,
         sink: ByteSink,
+        maxWorkingBytes: Long,
     ): Int {
         val endPtsOfContours = IntArray(contourCount)
         var totalPoints = 0
@@ -231,7 +257,19 @@ internal object Woff2GlyfTransform {
             val points = nPoints.u255()
             if (points <= 0) throw TransformException("The transformed WOFF2 glyph $glyphIndex has an empty contour.")
             totalPoints += points
+            if (totalPoints > MAX_POINTS_PER_GLYPH) {
+                throw TransformException(
+                    "The transformed WOFF2 glyph $glyphIndex has $totalPoints points, over the " +
+                        "$MAX_POINTS_PER_GLYPH-point TrueType limit.",
+                )
+            }
             endPtsOfContours[contour] = totalPoints - 1
+        }
+        if (totalPoints.toLong() > maxWorkingBytes / BYTES_PER_POINT.toLong()) {
+            throw WorkingLimitException(
+                "The transformed WOFF2 glyph $glyphIndex needs ${totalPoints.toLong() * BYTES_PER_POINT} live bytes " +
+                    "for $totalPoints points, over the $maxWorkingBytes-byte working limit.",
+            )
         }
 
         val pointFlags = flags.take(totalPoints)
@@ -258,8 +296,18 @@ internal object Woff2GlyfTransform {
             val deltas = decodeTriplet(code, triplet)
             val deltaX = (deltas ushr 32).toInt()
             val deltaY = deltas.toInt()
+            if (deltaX !in COORDINATE_RANGE || deltaY !in COORDINATE_RANGE) {
+                throw TransformException(
+                    "The transformed WOFF2 glyph $glyphIndex has an out-of-range coordinate delta.",
+                )
+            }
             x += deltaX
             y += deltaY
+            if (x !in COORDINATE_RANGE || y !in COORDINATE_RANGE) {
+                throw TransformException(
+                    "The transformed WOFF2 glyph $glyphIndex has an out-of-range coordinate.",
+                )
+            }
             deltasX[index] = deltaX
             deltasY[index] = deltaY
             if (index == 0) {
