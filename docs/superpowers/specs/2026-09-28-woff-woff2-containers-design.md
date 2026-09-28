@@ -122,7 +122,7 @@ The license text is the repository's OFL. `sha256`, `sizeBytes` and `tables` are
 committed bytes by the corpus tooling at acquisition.
 
 The two files do **not** decode to identical bytes (see §4.3); the e2e proof is semantic, not
-byte-level, except for the tables that do coincide in practice (`hmtx`, `cmap` on this pair).
+byte-level.
 
 The untransformed (`transformVersion 3`) path is covered by constructed unit-test vectors rather
 than a second corpus family.
@@ -439,7 +439,7 @@ generation and duplicate semantics therefore use decoded identities (§4.3).
 | --- | --- |
 | A from-scratch Brotli decoder is subtle and security-sensitive. | Independent output bounds, successful differential/conformance vectors, malformed-stream tests. |
 | Untrusted declared lengths driving allocation. | `WoffDecodeLimits` independent of file fields; checked arithmetic; overflow and over-expansion tests. |
-| Correctly decoded fonts rejected (advisory lengths treated as authoritative). | Never reject on `totalSfntSize` or reconstructed-`glyf` size; only the decompressed font-data sum is normative. |
+| Correctly decoded fonts rejected (advisory lengths treated as authoritative). | In **WOFF 2.0**, never reject on `totalSfntSize` or reconstructed-`glyf` size; only the decompressed font-data sum is normative. In WOFF 1.0, `totalSfntSize` is normative and a mismatch is rejected. |
 | Incorrect identity/dedup expectations. | Identity narrowed to decoded bytes; semantic equivalence in e2e; byte-identity tested with a constructed byte-identical pair. |
 | `glyf`/`loca`/`hmtx` reconstruction wrong on real fonts. | Full transform test matrix; semantic cross-check against the approved corpus and fontTools. |
 | A plan that runs nothing on some platform. | Explicit per-platform bench entry points; iOS corpus embedding; documented platform runs. |
@@ -452,12 +452,13 @@ generation and duplicate semantics therefore use decoded identities (§4.3).
 2. `WoffDecodeLimits` + `SfntReassembler` (correct checksum sequencing) + WOFF 1.0 reader + dispatch.
 3. WOFF 2.0 header/directory + single-stream Brotli split.
 4. `glyf`/`loca` transform, then `hmtx` transform (with `xMin` dependency).
-5. Corpus acquisition + provenance + `scripts/fonts` tooling + catalog entries/renderers/probes +
-   claims + regenerated goldens/claims, committed together once the exhaustiveness lint passes
-   (the lint reads the generated `claimed-tables.json`, so regeneration must precede it).
+5. Corpus acquisition + provenance + `scripts/fonts` tooling, committed with a temporary
+   unreferenced-family excuse so the exhaustiveness lint stays green.
 6. Integration in `create` (normalised list) and capture (decoded accounting); its tests use the
-   committed corpus.
-7. `docs/docs/font-management.md`/`.fr.md`, `CHANGELOG.md`, and the `bench` scope row in
-   `CONTRIBUTING.md`.
+   acquired fixtures.
+7. Catalog entries/renderers/probes + real claims (the temporary excuse is removed) + regenerated
+   goldens/claims, committed once the lint passes.
 8. Bench scenarios and explicit per-platform wiring.
-9. Full local verification and the PR gate.
+9. `docs/docs/font-management.md`/`.fr.md`, `CHANGELOG.md`, and the `bench` scope row in
+   `CONTRIBUTING.md`.
+10. Full local verification and the PR gate.

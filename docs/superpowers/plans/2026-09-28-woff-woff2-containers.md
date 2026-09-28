@@ -38,7 +38,7 @@ The five input classes / failure modes most likely to bite a user, each pinned b
 
 Defined once, in the test source set of the task named; none is production code.
 
-- `WoffTestFonts` (`sfnt` `commonTest`, `container`): `singleTableSfnt()`, `wrapUncompressed(font, flavor = 0x00010000u)`, `wrapDeflated(font)` (okio `Deflater`), `wrapWithDuplicateTag()`.
+- `WoffTestFonts` (`sfnt` `commonTest`, `container`): `singleTableSfnt()`, `wrapUncompressed(font, flavor = 0x00010000u)`, `wrapDeflated(font)` (okio `Deflater`), `wrapWithDuplicateTag()`, `withWrongTotalSfntSize()`.
 - `Woff2TestFonts` (`sfnt` `commonTest`): `singleTableUntransformed()`, `withWrongTotalSfntSize()`, `withNonZeroReserved()`, `withCollectionFlavor()`, `withUnknownTransform()`, `withBadUIntBase128()`, `withWrongDirectoryLength()`.
 - `Woff2GlyfVectors` / `Woff2HmtxVectors` (`sfnt` `commonTest`): base64 data holders generated once with fontTools + brotli.
 - `BrotliVectors` (`sfnt` `commonTest`): base64 constants `EMPTY`, `TEXT`+`TEXT_EXPECTED`, `DICTIONARY_USER`+`DICTIONARY_EXPECTED`, `MULTI_BLOCK`, plus malformed streams.
@@ -256,7 +256,7 @@ Expected: FAIL — `BrotliMetaBlock` unresolved.
 
 - [ ] **Step 3: Implement the header, contexts, and alphabet tables**
 
-`readWbits` (§9.1): bit 0 ⇒ 16; else 3 bits `v`; `v != 0` ⇒ `17 + v`; else 3 bits `w`; `w == 0` ⇒ 17, `w == 1` ⇒ `null` (the reserved `9` pattern), else `8 + w`. The §9.2 header reader is exact: read `ISLAST`; if `ISLAST`, read `ISLASTEMPTY`; if not last, read `MNIBBLES` where **`MNIBBLES == 0` selects a metadata meta-block** (there is no `ISMETADATA` bit), otherwise read `MLEN` and then `ISUNCOMPRESSED` (uncompressed is only possible when `ISLAST == 0`). `BrotliContext` computes the literal context ID from the **previous two decoded bytes** and the context mode, the distance context from the copy length, and decodes the context-map RLE and inverse MTF. `BrotliAlphabet` carries the §5 insert/copy length offset tables, the §7 distance tables, and the §6 block-count/block-type tables.
+`readWbits` (§9.1): bit 0 ⇒ 16; else 3 bits `v`; `v != 0` ⇒ `17 + v`; else 3 bits `w`; `w == 0` ⇒ 17, `w == 1` ⇒ `null` (the reserved `9` pattern), else `8 + w`. The §9.2 header reader is exact: read `ISLAST`; when `ISLAST == 1` read `ISLASTEMPTY` and end the stream only when both are set; otherwise **always** read `MNIBBLES` (independently of `ISLAST`), where `MNIBBLES == 0` selects a metadata meta-block (there is no `ISMETADATA` bit) and otherwise `MLEN` follows from `MNIBBLES` nibbles; then read `ISUNCOMPRESSED`, which is only possible for a non-last, non-metadata block. `BrotliContext` computes the literal context ID from the **previous two decoded bytes** and the context mode, the distance context from the copy length, and decodes the context-map RLE and inverse MTF. `BrotliAlphabet` carries the §5 insert/copy length offset tables, the §7 distance tables, and the §6 block-count/block-type tables.
 
 - [ ] **Step 4: Run the meta-block test to verify it passes**
 
@@ -424,7 +424,7 @@ Wire the meta-block loop, three block categories with block switching, literal/c
 
 - [ ] **Step 4: Add the vectors**
 
-`BrotliVectors.kt` holds base64 constants and the expected plaintext for the success cases: an empty stream, a literal-only text, a dictionary-using text, a multi-block stream, plus a truncated and a bad-block-type stream. Record the exact producing Brotli CLI version and command in a comment.
+`BrotliVectors.kt` holds base64 constants and the expected plaintext for the success cases: an empty stream, a literal-only text, a dictionary-using text, a multi-block stream, plus a truncated and a bad-block-type stream. Include at least one stream ending in a **final non-empty compressed** block and one ending in an empty final block (`ISLASTEMPTY`), so the §9.2 `ISLAST`/`ISLASTEMPTY`/`MNIBBLES` branch is exercised. Record the exact producing Brotli CLI version and command in a comment.
 
 - [ ] **Step 5: Run the API test to verify it passes**
 
@@ -494,9 +494,14 @@ class SfntReassemblerTest {
     }
 
     @Test
-    fun refusesACombinedSizeBeyondTheLimit() {
+    fun refusesACombinedSizeBeyondTheLimitEvenWhenEachTableFits() {
+        // Each table is below 100, but the assembled font (12 + 32 + 56 + 8 = 108) is not.
         val failure = assertIs<FontOperationResult.Failure>(
-            SfntReassembler.assemble(0x00010000u, listOf(SfntTable("head", ByteArray(54))), maxAssembledBytes = 16),
+            SfntReassembler.assemble(
+                0x00010000u,
+                listOf(SfntTable("head", ByteArray(54)), SfntTable("cmap", ByteArray(5))),
+                maxAssembledBytes = 100,
+            ),
         )
         assertIs<FontError.ResourceLimitExceeded>(failure.error)
     }
@@ -969,9 +974,9 @@ git commit -m "feat(sfnt): reconstruct the WOFF2 hmtx transform"
 
 ---
 
-## Phase 4 — Corpus, catalog, claims, and goldens (one coupled commit)
+## Phase 4 — Corpus acquisition and tooling
 
-### Task 10: Corpus family, container scenes, claims, and regenerated goldens
+### Task 10: Acquire the real fixtures and extend `scripts/fonts`
 
 **Files:**
 - Create: `test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff`
@@ -980,15 +985,11 @@ git commit -m "feat(sfnt): reconstruct the WOFF2 hmtx transform"
 - Create: `test-fixtures/fonts/woff-ibm-plex/OFL.txt`
 - Modify: `.gitattributes`
 - Modify: `scripts/fonts/corpus.json`, `scripts/fonts/fetch_fonts.py`, `scripts/fonts/README.md`, `scripts/fonts/tests/test_fetch_fonts.py`
-- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/{ContainerCatalog.kt,CorpusKeys.kt,CatalogClaims.kt,RobustnessCatalog.kt}`
-- Modify: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/{SceneFontPaths.kt,PortableSceneRenderers.kt,CatalogProbes.kt}`
-- Modify: `kalligraphie/e2e/build.gradle.kts` (`iosFixtureCorpus`)
-- Modify (generated): `kalligraphie/e2e/src/harnessResources/golden/manifest.tsv`, `docs/docs/generated/e2e-catalog-matrix.md`/`.fr.md`, `kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json`
-- Test: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/ContainerEquivalenceTest.kt`
+- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/CatalogClaims.kt` (temporary unreferenced-family excuse)
+- Modify (generated): `kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json`
 
 **Interfaces:**
-- Consumes: the decoder (Tasks 1–9), `outlineCapitalA(corpus, path, what)`.
-- Produces: the `woff-ibm-plex` family and two `Supported` container entries; committed in one commit because the lint gate couples them.
+- Produces: the `woff-ibm-plex` family, plus a temporary claims excuse so the exhaustiveness lint stays green until Task 13 makes real claims. This commit contains no container scene yet, so `updateE2eGolden` still succeeds.
 
 - [ ] **Step 1: Download the pinned files and measure them**
 
@@ -1004,53 +1005,22 @@ shasum -a 256 test-fixtures/fonts/woff-ibm-plex/*.woff*
 
 Write `PROVENANCE.md` (repository, pinned commit, both raw URLs, measured digests/sizes, OFL-1.1, and the note that the two decode to different bytes) and copy the OFL text. Add `*.woff binary` to `.gitattributes`. Add `.woff`/`.woff2` to `FONT_SUFFIXES` in `scripts/fonts/fetch_fonts.py` and update its coverage tests. Update `scripts/fonts/README.md` (artifact definition; the table reader is `check_exhaustiveness.py`, needing fontTools + `brotli` for WOFF2). Populate `corpus.json` with the measured `sha256`/`sizeBytes`, real `tables` (fontTools + brotli, `GlyphOrder` excluded), `url`, `rawUrl`, `revision`, `license`, `licenseFile`.
 
-- [ ] **Step 3: Write the failing semantic equivalence test**
+- [ ] **Step 3: Add the temporary unreferenced-family excuse**
 
-```kotlin
-package org.graphiks.kalligraphie.e2e.catalog
+Add `"woff-ibm-plex"` to `CatalogClaims.UNREFERENCED_FAMILIES` with the reason `"corpus acquired ahead of the container scenes; this excuse is removed when the scenes land"`, so the lint accepts the not-yet-referenced family.
 
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
-
-class ContainerEquivalenceTest {
-    @Test
-    fun woffAndWoff2ResolveTheSameGlyphBehaviour() {
-        val corpus = E2eTestEnvironment.corpus
-        for (codePoint in listOf(0x41, 0x00C9, 0x20)) {
-            assertEquals(glyphIdOf(corpus.bytes(WoffPaths.WOFF2), codePoint), glyphIdOf(corpus.bytes(WoffPaths.WOFF), codePoint))
-            assertEquals(advanceOf(corpus.bytes(WoffPaths.WOFF2), codePoint), advanceOf(corpus.bytes(WoffPaths.WOFF), codePoint))
-            assertEquals(outlineCommandsOf(corpus.bytes(WoffPaths.WOFF2), codePoint), outlineCommandsOf(corpus.bytes(WoffPaths.WOFF), codePoint))
-        }
-    }
-}
-```
-
-- [ ] **Step 4: Run it to verify it fails**
-
-Run: `./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*'`
-Expected: FAIL — `WoffPaths` unresolved.
-
-- [ ] **Step 5: Add keys, paths, renderers, entries, claims, robustness, iOS corpus**
-
-Add the shared `woff-ibm-plex` `CorpusKey`, the two `SceneFontPaths`, the two `PortableSceneRenderers` (`glyph.outline.woff-ibm-plex.A.64`, `glyph.outline.woff2-ibm-plex.A.64`), and promote both `ContainerCatalog` entries to `Supported` with a real `sinceCommit`, the outline-table claim set (mirror `outline.glyf-simple-composite`), motivated `UNREAD_TABLES` entries for every table the lint names, `family = GLYPH_OUTLINE`, `route = PORTABLE_GLYPH`, `frame = AutoSized(padding = 1)`. Add robustness entries (`robustness.woff-truncated`, `robustness.woff2-brotli-corrupted` via a deterministically malformed stream) with `CatalogProbes` under `woff-ibm-plex`. Add both fixtures to the `iosFixtureCorpus` task list.
-
-- [ ] **Step 6: Regenerate, then lint, then commit**
+- [ ] **Step 4: Regenerate, lint, and commit the corpus**
 
 ```bash
 ./gradlew :kalligraphie:e2e:updateE2eGolden
 uv run --with fonttools==4.65.0 --with brotli python scripts/fonts/check_exhaustiveness.py
 python3 scripts/fonts/fetch_fonts.py --check --provenance
 python3 -m unittest discover -s scripts/fonts/tests -v
-./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*' --tests '*ExpectationCatalogRatchetTest*'
+git add test-fixtures/fonts/woff-ibm-plex .gitattributes scripts/fonts kalligraphie/e2e/src docs/docs/generated kalligraphie/e2e/src/harnessResources
+git commit -m "chore(sfnt): add the WOFF/WOFF2 corpus family and tooling"
 ```
 
-Expected: regeneration writes the manifest/matrices/claims; the lint and all tests pass. Commit everything together:
-
-```bash
-git add test-fixtures/fonts/woff-ibm-plex .gitattributes scripts/fonts kalligraphie/e2e docs/docs/generated
-git commit -m "feat(e2e): add and certify the WOFF/WOFF2 corpus family"
-```
+Expected: regeneration succeeds (no container scene yet), the lint passes with the temporary excuse, all checks pass.
 
 ---
 
@@ -1202,9 +1172,70 @@ git commit -m "feat(kalligraphie): capture WOFF and WOFF2 directory candidates"
 
 ---
 
-## Phase 6 — Documentation
+## Phase 6 — Catalog, claims, and goldens
 
-### Task 13: User docs, changelog, and scope sync
+### Task 13: Certify the container scenes and commit the goldens
+
+**Files:**
+- Modify: `kalligraphie/e2e/src/commonMain/kotlin/org/graphiks/kalligraphie/e2e/catalog/{ContainerCatalog.kt,CorpusKeys.kt,CatalogClaims.kt,RobustnessCatalog.kt}`
+- Modify: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/{SceneFontPaths.kt,PortableSceneRenderers.kt,CatalogProbes.kt}`
+- Modify: `kalligraphie/e2e/build.gradle.kts` (`iosFixtureCorpus`)
+- Modify (generated): `kalligraphie/e2e/src/harnessResources/golden/manifest.tsv`, `docs/docs/generated/e2e-catalog-matrix.md`/`.fr.md`, `kalligraphie/e2e/src/harnessResources/catalog/claimed-tables.json`
+- Test: `kalligraphie/e2e/src/sharedTest/kotlin/org/graphiks/kalligraphie/e2e/catalog/ContainerEquivalenceTest.kt`
+
+**Interfaces:**
+- Consumes: the decoder (Tasks 1–9), the facade integration (Task 11), the committed corpus (Task 10), `outlineCapitalA(corpus, path, what)`.
+
+- [ ] **Step 1: Write the failing semantic equivalence test**
+
+```kotlin
+package org.graphiks.kalligraphie.e2e.catalog
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
+
+class ContainerEquivalenceTest {
+    @Test
+    fun woffAndWoff2ResolveTheSameGlyphBehaviour() {
+        val corpus = E2eTestEnvironment.corpus
+        for (codePoint in listOf(0x41, 0x00C9, 0x20)) {
+            assertEquals(glyphIdOf(corpus.bytes(WoffPaths.WOFF2), codePoint), glyphIdOf(corpus.bytes(WoffPaths.WOFF), codePoint))
+            assertEquals(advanceOf(corpus.bytes(WoffPaths.WOFF2), codePoint), advanceOf(corpus.bytes(WoffPaths.WOFF), codePoint))
+            assertEquals(outlineCommandsOf(corpus.bytes(WoffPaths.WOFF2), codePoint), outlineCommandsOf(corpus.bytes(WoffPaths.WOFF), codePoint))
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*'`
+Expected: FAIL — `WoffPaths` unresolved.
+
+- [ ] **Step 3: Add keys, paths, renderers, entries, claims, robustness, iOS corpus**
+
+Add the shared `woff-ibm-plex` `CorpusKey`, the two `SceneFontPaths`, the two `PortableSceneRenderers` (`glyph.outline.woff-ibm-plex.A.64`, `glyph.outline.woff2-ibm-plex.A.64`), and promote both `ContainerCatalog` entries to `Supported` with a real `sinceCommit`, the outline-table claim set (mirror `outline.glyf-simple-composite`), motivated `UNREAD_TABLES` entries for every table the lint names, `family = GLYPH_OUTLINE`, `route = PORTABLE_GLYPH`, `frame = AutoSized(padding = 1)`. Remove the temporary `UNREFERENCED_FAMILIES` excuse added in Task 10. Add robustness entries (`robustness.woff-truncated`, `robustness.woff2-brotli-corrupted` via a deterministically malformed stream) with `CatalogProbes` under `woff-ibm-plex`. Add both fixtures to the `iosFixtureCorpus` task list.
+
+- [ ] **Step 4: Regenerate, then lint, then commit**
+
+```bash
+./gradlew :kalligraphie:e2e:updateE2eGolden
+uv run --with fonttools==4.65.0 --with brotli python scripts/fonts/check_exhaustiveness.py
+python3 -m unittest discover -s scripts/fonts/tests -v
+./gradlew :kalligraphie:e2e:jvmTest --tests '*ContainerEquivalenceTest*' --tests '*ExpectationCatalogRatchetTest*'
+```
+
+Expected: regeneration writes the manifest/matrices/claims; the lint and all tests pass (the family is now claimed and the excuse is gone). Commit:
+
+```bash
+git add kalligraphie/e2e docs/docs/generated
+git commit -m "feat(e2e): certify the WOFF and WOFF2 container scenes"
+```
+
+## Phase 7 — Documentation
+
+### Task 14: User docs, changelog, and scope sync
 
 **Files:**
 - Modify: `docs/docs/font-management.md` / `.fr.md`
@@ -1233,9 +1264,9 @@ git commit -m "docs(sfnt): document WOFF and WOFF2 containers"
 
 ---
 
-## Phase 7 — Benchmarks
+## Phase 8 — Benchmarks
 
-### Task 14: Container bench scenarios and per-platform wiring
+### Task 15: Container bench scenarios and per-platform wiring
 
 **Files:**
 - Create: `kalligraphie/bench/src/commonMain/kotlin/org/graphiks/kalligraphie/bench/scenarios/ContainerScenarios.kt`
@@ -1295,9 +1326,9 @@ git commit -m "feat(bench): measure WOFF and WOFF2 container capture on every pl
 
 ---
 
-## Phase 8 — Final verification
+## Phase 9 — Final verification
 
-### Task 15: Full local verification and the PR gate
+### Task 16: Full local verification and the PR gate
 
 - [ ] **Step 1: Full check and all tests**
 
