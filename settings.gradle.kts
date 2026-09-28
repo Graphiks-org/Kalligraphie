@@ -74,6 +74,8 @@ dependencyResolutionManagement {
                 includeModule("org.graphiks", "kffi-harfbuzz-android-native")
                 includeModule("org.graphiks", "kffi-harfbuzz-iosarm64")
                 includeModule("org.graphiks", "kffi-harfbuzz-iossimulatorarm64")
+                includeModule("org.graphiks", "kffi-harfbuzz-js")
+                includeModule("org.graphiks", "kffi-harfbuzz-wasm-js")
                 includeModule("org.graphiks", "kffi-android")
                 includeModule("org.graphiks", "kffi-android-native")
                 includeModule("org.graphiks", "kffi-iosarm64")
