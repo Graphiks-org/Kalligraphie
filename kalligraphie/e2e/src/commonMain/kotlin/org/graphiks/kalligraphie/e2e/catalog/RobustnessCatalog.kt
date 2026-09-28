@@ -33,6 +33,13 @@ public object RobustnessCatalog {
             code = "font.woff2.brotli-failed",
             stage = CatalogStage.DECODE,
         ),
+        expectedRejection(
+            id = "robustness.woff2-directory-corrupted",
+            technology = CatalogText("Malformed WOFF 2.0 table directory", "Répertoire de tables WOFF 2.0 malformé"),
+            font = CorpusKeys.WOFF_IBM_PLEX,
+            code = "font.woff2.invalid-table-directory",
+            stage = CatalogStage.DECODE,
+        ),
     )
 
     private fun expectedRejection(id: String, technology: CatalogText, font: CorpusKey, code: String, stage: CatalogStage) =

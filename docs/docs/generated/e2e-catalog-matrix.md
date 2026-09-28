@@ -7,7 +7,7 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 | Status | Entries |
 | --- | --- |
 | Supported | 28 |
-| Expected rejection | 4 |
+| Expected rejection | 5 |
 | Not yet | 7 |
 | Out of scope | 1 |
 
@@ -15,8 +15,8 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 
 | Entry | Technology | Font | Status |
 | --- | --- | --- | --- |
-| `container.woff2` | WOFF 2.0 container wrapping | woff-ibm-plex | Supported since f8c40fc2 |
-| `container.woff` | WOFF 1.0 container wrapping | woff-ibm-plex | Supported since f8c40fc2 |
+| `container.woff2` | WOFF 2.0 container wrapping | woff-ibm-plex | Supported since 02aaa1a7 |
+| `container.woff` | WOFF 1.0 container wrapping | woff-ibm-plex | Supported since 02aaa1a7 |
 
 ## OUTLINE
 
@@ -95,4 +95,5 @@ Generated from `ExpectationCatalog` by `./gradlew :kalligraphie:e2e:updateE2eGol
 | `robustness.empty-input` | Zero-byte font source | liberation | Expected rejection `font.invalid-font-data` at DECODE |
 | `robustness.woff-truncated` | Truncated WOFF 1.0 container | woff-ibm-plex | Expected rejection `font.woff.invalid-header` at DECODE |
 | `robustness.woff2-brotli-corrupted` | Corrupted WOFF 2.0 Brotli stream | woff-ibm-plex | Expected rejection `font.woff2.brotli-failed` at DECODE |
+| `robustness.woff2-directory-corrupted` | Malformed WOFF 2.0 table directory | woff-ibm-plex | Expected rejection `font.woff2.invalid-table-directory` at DECODE |
 

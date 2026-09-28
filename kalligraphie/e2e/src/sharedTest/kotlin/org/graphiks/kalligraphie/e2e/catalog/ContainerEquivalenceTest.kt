@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.GlyphMetrics
+import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import org.graphiks.kalligraphie.api.GlyphRepresentation
 import org.graphiks.kalligraphie.api.GlyphResolution
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
@@ -65,10 +66,10 @@ private fun advanceOf(bytes: ByteArray, codePoint: Int): Int =
  * behaviour as an outline with no commands: both containers must agree on which it is, so the
  * empty case is mapped to the empty list rather than refused.
  */
-private fun outlineCommandsOf(bytes: ByteArray, codePoint: Int): List<String> =
+private fun outlineCommandsOf(bytes: ByteArray, codePoint: Int): List<GlyphOutlineIR.Command> =
     openOutlineFixture(bytes).use { fixture ->
         when (val representation = fixture.representationOf(codePoint)) {
-            is GlyphRepresentation.Outline -> representation.outline.commands.map { command -> command.toString() }
+            is GlyphRepresentation.Outline -> representation.outline.commands
             is GlyphRepresentation.Empty -> emptyList()
             else -> error("U+${codePoint.toString(16).uppercase()} resolved to a non-outline representation: $representation")
         }

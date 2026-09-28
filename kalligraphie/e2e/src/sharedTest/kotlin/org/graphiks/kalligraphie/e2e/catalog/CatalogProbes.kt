@@ -26,6 +26,11 @@ internal object CatalogProbes {
         "robustness.woff2-brotli-corrupted" to CatalogProbe(WOFF_IBM_PLEX_WOFF2) { full ->
             decodeOutcome(corruptBrotliStream(full))
         },
+        // The container header, the Brotli stream and the declared sizes are untouched; only the
+        // table directory is malformed, so the failure is observed before decompression.
+        "robustness.woff2-directory-corrupted" to CatalogProbe(WOFF_IBM_PLEX_WOFF2) { full ->
+            decodeOutcome(corruptTableDirectory(full))
+        },
     )
 
     /**
@@ -67,6 +72,42 @@ internal object CatalogProbes {
 
     /** RFC 7932's reserved window-size encoding, which a compliant decoder must reject. */
     private const val RESERVED_WINDOW_SIZE_BYTE: Byte = 0x11
+
+    /**
+     * Returns [woff2] with the first table directory entry's `origLength` set to the forbidden
+     * leading-zero `UIntBase128` encoding.
+     *
+     * The directory begins immediately after the 48-byte header. An entry is one `flags` byte,
+     * followed by a four-byte custom tag exactly when the low six bits are the `0x3F` sentinel, then
+     * `origLength` as a `UIntBase128`. Replacing the first byte of that value with `0x80` — the
+     * encoding W3C WOFF2 §4.2 forbids — leaves the header, the transform selection, the declared
+     * sizes and the font-data block intact, so the reader rejects the directory before it reaches
+     * the Brotli stream with `font.woff2.invalid-table-directory`. The substitution is a fixed byte
+     * at a computed offset, never a random flip.
+     */
+    private fun corruptTableDirectory(woff2: ByteArray): ByteArray {
+        val corrupted = woff2.copyOf()
+        val flags = corrupted[DIRECTORY_HEADER_BYTES].toInt() and 0xFF
+        val origLengthOffset = if (flags and CUSTOM_TAG_INDEX == CUSTOM_TAG_INDEX) {
+            DIRECTORY_HEADER_BYTES + 1 + CUSTOM_TAG_BYTES
+        } else {
+            DIRECTORY_HEADER_BYTES + 1
+        }
+        corrupted[origLengthOffset] = FORBIDDEN_BASE128_LEADING_BYTE
+        return corrupted
+    }
+
+    /** Bytes of the fixed WOFF2 header, after which the table directory starts. */
+    private const val DIRECTORY_HEADER_BYTES: Int = 48
+
+    /** The `flags` tag-index sentinel that makes a four-byte custom tag follow. */
+    private const val CUSTOM_TAG_INDEX: Int = 0x3F
+
+    /** Width of a WOFF2 custom table tag. */
+    private const val CUSTOM_TAG_BYTES: Int = 4
+
+    /** The leading byte RFC 7932/W3C WOFF2 §4.2 forbids in a `UIntBase128`. */
+    private const val FORBIDDEN_BASE128_LEADING_BYTE: Byte = 0x80.toByte()
 
     /** Translates the facade's decode result into a probe observation. */
     private fun decodeOutcome(bytes: ByteArray): ProbeObservation =
