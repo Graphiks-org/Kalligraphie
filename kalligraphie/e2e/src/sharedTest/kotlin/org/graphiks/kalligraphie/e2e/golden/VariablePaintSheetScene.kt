@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.e2e.golden
 
 import org.graphiks.kalligraphie.api.FontVariationCoordinate
 import org.graphiks.kalligraphie.api.FontVariationCoordinates
+import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
 import org.graphiks.kalligraphie.e2e.GoldenImage
 import org.graphiks.kalligraphie.e2e.fixture.FixtureCorpus
@@ -63,6 +64,43 @@ internal object VariablePaintSheetScene {
         return composeOverWhite(rows, codepoints.size)
     }
 
+    /**
+     * Renders a real colour font's alphabet across [weights] as a paint sheet over white.
+     *
+     * Unlike [sheet], the columns are unrelated letterforms, so no cross-column equality is
+     * asserted: every cell must carry ink and coverage, the sheet must carry chroma, and each
+     * weight's row must differ from the first.
+     */
+    fun alphabetSheet(
+        corpus: FixtureCorpus,
+        fontPath: String,
+        codepoints: List<Int>,
+        weights: List<Float>,
+        pixelsPerEm: Double,
+    ): GoldenImage {
+        require(codepoints.isNotEmpty()) { "an alphabet sheet needs at least one code point." }
+        require(weights.size >= 2) { "an alphabet sheet needs at least two instances to prove variation." }
+        val rows = weights.map { weight ->
+            codepoints.map { codePoint -> rasterize(corpus, fontPath, codePoint, weight, pixelsPerEm) }
+        }
+        rows.forEach { row ->
+            row.forEach { image ->
+                check(image.width > 0 && image.height > 0) { "an alphabet cell produced no ink." }
+                check(hasInk(image)) { "an alphabet cell produced no coverage." }
+            }
+        }
+        check(rows.any { row -> row.any { image -> hasChroma(image) } }) { "the alphabet sheet carries no chroma." }
+        rows.forEachIndexed { index, row ->
+            if (index == 0) return@forEachIndexed
+            row.forEachIndexed { column, image ->
+                check(!sameRaster(image, rows[0][column])) {
+                    "U+" + codepoints[column].toString(16) + " is identical at wght ${weights[0]} and ${weights[index]}"
+                }
+            }
+        }
+        return composeOverWhite(rows, codepoints.size)
+    }
+
     private fun hasInk(image: Rgba8Image): Boolean {
         val pixels = image.copyPixels()
         var index = 3
@@ -105,9 +143,18 @@ internal object VariablePaintSheetScene {
             variation = FontVariationCoordinates(listOf(FontVariationCoordinate("wght", weight))),
         ).use { fixture ->
             val paint = fixture.paintOf(codePoint)
-            val unitsPerEm = assertIs<GlyphPaintNode.GlyphClip>(paint.nodes[paint.rootNode]).outline.unitsPerEm
+            val unitsPerEm = designScale(paint)
             requireRasterized(codePoint, GlyphRasterizer.rasterizePaint(paint, PaintRasterRequest(pixelsPerEm, unitsPerEm)))
         }
+
+    /**
+     * The design scale of a paint graph: the first outline it carries, whether a clip inside a
+     * real font's group or the synthetic scene's clip root.
+     */
+    private fun designScale(paint: GlyphPaintIR): Int =
+        paint.nodes.filterIsInstance<GlyphPaintNode.GlyphClip>().firstOrNull()?.outline?.unitsPerEm
+            ?: paint.nodes.filterIsInstance<GlyphPaintNode.SolidOutline>().firstOrNull()?.outline?.unitsPerEm
+            ?: error("the paint graph carries no outline to read a design scale from")
 
     private fun requireRasterized(codePoint: Int, result: RasterResult<Rgba8Image>): Rgba8Image =
         when (result) {

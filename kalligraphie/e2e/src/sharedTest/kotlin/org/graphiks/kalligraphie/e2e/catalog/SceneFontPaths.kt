@@ -19,6 +19,7 @@ internal const val CFF_LIBERATION = "/fonts/cff-liberation/LiberationSans-CFF.ot
 internal const val CFF2_LIBERATION = "/fonts/cff2-liberation/LiberationSans-CFF2.otf"
 internal const val KALLIGRAPHIE_VAR_VVAR = "/fonts/kalligraphie-var-vvar/KalligraphieVarVVAR.ttf"
 internal const val KALLIGRAPHIE_VAR_COLR = "/fonts/kalligraphie-var-colr/KalligraphieVarCOLRv1.ttf"
+internal const val KALNIA_GLAZE = "/fonts/kalniaglaze/KalniaGlaze[wdth,wght].ttf"
 internal const val WORK_SANS = "/fonts/worksans/WorkSans[wght].ttf"
 internal const val NOTO_SANS_JP = "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"
 
