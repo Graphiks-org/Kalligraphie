@@ -33,18 +33,21 @@ diagnostic returned when — and only when — the capability is unavailable.
 | JVM | Present | Present | Present | Present | `jvm-reference` |
 | iOS | Present | Present | Present | Present | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
 | Android | Present | Present | Present | Present | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
+| Web (js) | Present | Present | Present | Present | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
+| Web (wasmJs) | Present | Present | Present | Present | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
 
 Every platform declares the complete portable capability surface, and the results
-are the same on each of them. The JVM is the reference. Android and iOS take
-shaping from the bundled HarfBuzz backend (Android requires API 28 or later),
-the glyph representation route from portable code, and the remaining two from
-this repository's own portable code: Unicode analysis and line breaking resolve
-from the generated Unicode 16.0 tables, and the paragraph facade composes text
-through them, so a device's own Unicode engine cannot change a result. The
-absence diagnostic is emitted for every absent capability, independently of
-whether a caller requires it; no capability is absent anywhere, so nothing emits
-it today, and the declaration still carries it per platform for the next
-platform that is not complete.
+are the same on each of them. The JVM is the reference. Android, iOS and the web
+targets take shaping from the bundled HarfBuzz backend (Android requires API 28 or
+later; on web the WebAssembly module is instantiated asynchronously, so a consumer
+`await`s `initialize()` before opening a facade), the glyph representation route
+from portable code, and the remaining two from this repository's own portable
+code: Unicode analysis and line breaking resolve from the generated Unicode 16.0
+tables, and the paragraph facade composes text through them, so a device's own
+Unicode engine cannot change a result. The absence diagnostic is emitted for every
+absent capability, independently of whether a caller requires it; no capability is
+absent anywhere, so nothing emits it today, and the declaration still carries it
+per platform for the next platform that is not complete.
 
 ## Test coverage
 
