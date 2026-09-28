@@ -141,6 +141,7 @@ Choose the narrowest applicable scope from the current project structure:
 | `conformance` | Portable conformance capability identities and public-interface conformance tests in `:kalligraphie:conformance` |
 | `e2e` | End-to-end golden fingerprint verification in `:kalligraphie:e2e` |
 | `raster-cpu` | Deterministic CPU rasterization used by tests and demonstrations in `:kalligraphie:raster-cpu` |
+| `bench` | Non-published measurement harness in `:kalligraphie:bench` |
 | `platform` | Platform integration across the `kalligraphie/platform/` module family |
 | `apple` | Apple font integration in `:kalligraphie:platform:apple` |
 | `linux` | Linux font integration in `:kalligraphie:platform:linux` |

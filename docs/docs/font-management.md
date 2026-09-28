@@ -16,6 +16,9 @@ The supported functional scope is intentionally narrow:
 
 - JVM reference target only;
 - static SFNT TrueType only: `0x00010000` and `true`;
+- single-face WOFF 1.0 (`wOFF`) and WOFF 2.0 (`wOF2`) containers whose decoded
+  SFNT is supported; WOFF/WOFF2 collections (`flavor` `ttcf`) remain
+  unsupported;
 - standalone embedded OpenType sources with face index `0`, and directory-captured
   TTC version 1 or 2 sources with their original collection face indices;
 - `LAYOUT_ONLY` for cmap and metrics;
@@ -178,13 +181,25 @@ cooperative between filesystem operations and cannot interrupt a blocked OS
 call. A cancelled capture publishes no partial snapshot. Invalid option values
 (such as non-positive limits or repeated roots) are rejected at construction.
 
-Discovery considers `.ttf`, `.otf`, `.ttc` and `.otc` candidates without following
-symbolic links. An `.otf` extension does not imply CFF outlines: actual SFNT
-content determines support. Static TrueType content is supported; CFF/CFF2 and
-variable font data are outside this route. Captured candidates are ordered
-lexically, with original index order inside each collection. Directory discovery
-is bounded and can omit candidates; it is not an exact inventory of activated
-Fontconfig or CoreText fonts. Filesystem capture is not globally atomic.
+Discovery considers `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff` and `.woff2`
+candidates without following symbolic links. An `.otf` extension does not imply
+CFF outlines: actual SFNT content determines support. Static TrueType content is
+supported; CFF/CFF2 and variable font data are outside this route. Captured
+candidates are ordered lexically, with original index order inside each
+collection. Directory discovery is bounded and can omit candidates; it is not an
+exact inventory of activated Fontconfig or CoreText fonts. Filesystem capture is
+not globally atomic.
+
+The face identity of every accepted input is the content digest of its decoded
+SFNT bytes, never of the containing file: `FontFaceId.source` for a WOFF 1.0 or
+WOFF 2.0 input identifies the reconstructed standalone SFNT, not the container.
+Two encodings of one font therefore generally do **not** share identity. WOFF 2.0
+reconstructs `glyf`/`loca` in a permitted, non-byte-identical form, so a WOFF 2.0
+file and its original `.ttf` usually differ in bytes and identity even though
+their glyph semantics are identical. A WOFF 1.0 reconstruction that happens to be
+byte-identical to its source `.ttf` does share that identity; directory capture
+deduplicates byte-identical candidates by decoded digest, and the embedded route
+rejects two sources that decode to identical bytes as duplicates.
 
 Inspect diagnostics even on `Success`: unreadable or absent roots, rejected
 sources/faces and reached limits can leave a usable partial inventory. With no

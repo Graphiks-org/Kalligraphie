@@ -17,6 +17,9 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;
 - fontes TrueType SFNT statiques uniquement : `0x00010000` et `true` ;
+- conteneurs WOFF 1.0 (`wOFF`) et WOFF 2.0 (`wOF2`) à face unique dont le SFNT
+  décodé est pris en charge ; les collections WOFF/WOFF2 (`flavor` `ttcf`)
+  restent non prises en charge ;
 - des sources OpenType embarquées à face unique, d’index `0`, et des collections
   TTC version 1 ou 2 capturées dans des répertoires, avec leurs indices d’origine ;
 - `LAYOUT_ONLY` pour la table `cmap` (correspondance entre caractères et
@@ -193,14 +196,27 @@ de fichiers et n’interrompt pas un appel OS bloqué. Une annulation ne publie
 aucun snapshot (instantané immuable) partiel. Les options invalides, comme des
 limites non positives ou des racines répétées, sont refusées à la construction.
 
-La découverte considère `.ttf`, `.otf`, `.ttc` et `.otc` sans suivre les liens
-symboliques. L’extension `.otf` n’implique pas des contours CFF : le contenu SFNT
-détermine la prise en charge. Le TrueType statique est supporté ; CFF/CFF2 et
-les données de fontes variables sont exclus de cette route. Les candidats
-capturés sont ordonnés lexicalement, puis par indice d’origine dans chaque
-collection. La découverte est bornée et peut omettre des candidats ; elle ne
-reproduit pas exactement les fontes activées par Fontconfig ou CoreText. La
-capture du système de fichiers n’est pas globalement atomique.
+La découverte considère `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff` et `.woff2`
+sans suivre les liens symboliques. L’extension `.otf` n’implique pas des contours
+CFF : le contenu SFNT détermine la prise en charge. Le TrueType statique est
+supporté ; CFF/CFF2 et les données de fontes variables sont exclus de cette
+route. Les candidats capturés sont ordonnés lexicalement, puis par indice
+d’origine dans chaque collection. La découverte est bornée et peut omettre des
+candidats ; elle ne reproduit pas exactement les fontes activées par Fontconfig
+ou CoreText. La capture du système de fichiers n’est pas globalement atomique.
+
+L’identité de face de toute entrée acceptée est l’empreinte du contenu de ses
+octets SFNT décodés, jamais celle du fichier conteneur : `FontFaceId.source` pour
+une entrée WOFF 1.0 ou WOFF 2.0 identifie le SFNT autonome reconstruit, pas le
+conteneur. Deux encodages d’une même fonte ne partagent donc généralement pas la
+même identité. WOFF 2.0 reconstruit `glyf`/`loca` sous une forme non identique
+octet pour octet mais autorisée, si bien qu’un fichier WOFF 2.0 et son `.ttf`
+d’origine diffèrent habituellement en octets et en identité, bien que leur
+sémantique de glyphes soit identique. Une reconstruction WOFF 1.0 qui se trouve
+être identique octet pour octet à son `.ttf` source partage cette identité ; la
+capture de répertoire déduplique les candidats identiques en octets par empreinte
+décodée, et la route embarquée refuse comme doublons deux sources qui décodent
+vers des octets identiques.
 
 Examiner les diagnostics même sur `Success` : racines absentes ou illisibles,
 sources ou faces refusées et limites atteintes peuvent laisser un inventaire
