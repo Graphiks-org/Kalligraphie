@@ -61,6 +61,44 @@ internal object WoffTestFonts {
         return woff
     }
 
+    /** An otherwise valid WOFF whose header `reserved` field (bytes 14-15) is non-zero. */
+    fun withNonZeroReserved(): ByteArray = wrapUncompressed().also {
+        it[15] = 0x01
+    }
+
+    /** An otherwise valid WOFF whose second record's extent starts where the first record's does. */
+    fun withOverlappingExtents(): ByteArray {
+        val woff = wrapUncompressed()
+        val firstOffset = readUInt32(woff, WOFF_HEADER_BYTES + 4)!!
+        writeUInt32(woff, WOFF_HEADER_BYTES + WOFF_RECORD_BYTES + 4, firstOffset)
+        return woff
+    }
+
+    /** An otherwise valid WOFF whose first record's `compLength` exceeds its `origLength`. */
+    fun withCompressedLargerThanOriginal(): ByteArray {
+        val woff = wrapUncompressed()
+        val originalLength = readUInt32(woff, WOFF_HEADER_BYTES + 12)!!
+        writeUInt32(woff, WOFF_HEADER_BYTES + 8, originalLength + 1u)
+        return woff
+    }
+
+    /** An otherwise valid deflated WOFF whose first compressed table has a malformed zlib header. */
+    fun withMalformedDeflate(): ByteArray {
+        val woff = wrapDeflated()
+        for (index in 0 until readUInt16(woff, 12)!!.toInt()) {
+            val base = WOFF_HEADER_BYTES + index * WOFF_RECORD_BYTES
+            val compressedLength = readUInt32(woff, base + 8)!!.toLong()
+            val originalLength = readUInt32(woff, base + 12)!!.toLong()
+            if (compressedLength < originalLength) {
+                val offset = readUInt32(woff, base + 4)!!.toInt()
+                woff[offset] = 0x00
+                woff[offset + 1] = 0x00
+                return woff
+            }
+        }
+        return woff
+    }
+
     private fun wrap(font: ByteArray, flavor: UInt, compress: Boolean): ByteArray {
         val records = sfntRecords(font)
         val directoryBytes = WOFF_HEADER_BYTES + WOFF_RECORD_BYTES * records.size

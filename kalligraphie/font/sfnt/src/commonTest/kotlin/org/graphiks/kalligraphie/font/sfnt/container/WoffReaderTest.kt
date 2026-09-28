@@ -74,4 +74,46 @@ class WoffReaderTest {
             assertIs<FontOperationResult.Failure>(WoffReader.decode(WoffTestFonts.wrapWithDuplicateTag(), limits)).error.code,
         )
     }
+
+    @Test
+    fun refusesANonZeroReservedField() {
+        assertEquals(
+            "font.woff.invalid-header",
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(WoffTestFonts.withNonZeroReserved(), limits)).error.code,
+        )
+    }
+
+    @Test
+    fun refusesOverlappingTableExtents() {
+        assertEquals(
+            "font.woff.invalid-table-directory",
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(WoffTestFonts.withOverlappingExtents(), limits)).error.code,
+        )
+    }
+
+    @Test
+    fun refusesACompressedLengthLargerThanOriginal() {
+        assertEquals(
+            "font.woff.invalid-table-directory",
+            assertIs<FontOperationResult.Failure>(
+                WoffReader.decode(WoffTestFonts.withCompressedLargerThanOriginal(), limits),
+            ).error.code,
+        )
+    }
+
+    @Test
+    fun refusesAMalformedZlibStream() {
+        assertEquals(
+            "font.woff.invalid-deflate",
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(WoffTestFonts.withMalformedDeflate(), limits)).error.code,
+        )
+    }
+
+    @Test
+    fun refusesATableOverTheDecodingLimit() {
+        val limited = WoffDecodeLimits(maxDecodedFontBytes = 1, maxWorkingBytes = 64L * 1024 * 1024)
+        assertIs<FontError.ResourceLimitExceeded>(
+            assertIs<FontOperationResult.Failure>(WoffReader.decode(WoffTestFonts.wrapUncompressed(), limited)).error,
+        )
+    }
 }
