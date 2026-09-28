@@ -2,6 +2,7 @@ package org.graphiks.kalligraphie.raster
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class CoverageRasterClipTest {
     private fun square(left: Double, top: Double, right: Double, bottom: Double): List<FlatContour> =
@@ -32,10 +33,13 @@ class CoverageRasterClipTest {
 
     @Test
     fun nestedIdenticalClipsDoNotSquareTheEdge() {
-        val clip = square(0.0, 0.0, 2.0, 2.0)
+        // The clip's right edge at 1.5 falls inside pixel column 1, so that pixel is only partly
+        // covered; multiplying two masks would square its coverage.
+        val clip = square(0.0, 0.0, 1.5, 2.0)
         val once = CoverageRaster.rasterizeLeaf(null, listOf(clip), 0, 0, 2, 2)
         val twice = CoverageRaster.rasterizeLeaf(null, listOf(clip, clip), 0, 0, 2, 2)
-        assertEquals(once[0, 0], twice[0, 0])
+        assertTrue(once[1, 0] in 1..254, "the edge pixel must be partly covered, was ${once[1, 0]}")
+        assertEquals(once[1, 0], twice[1, 0])
     }
 
     @Test

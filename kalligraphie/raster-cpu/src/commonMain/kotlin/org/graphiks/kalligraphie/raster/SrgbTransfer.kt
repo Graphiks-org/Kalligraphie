@@ -267,8 +267,8 @@ internal object SrgbTransfer {
     fun toLinear(channel8: Int): Int = LINEAR[channel8]
 
     /**
-     * Returns the nearest 8-bit sRGB channel for [linear16], choosing the highest sRGB
-     * channel whose linear value does not exceed it (a fixed, monotone tie rule).
+     * Returns the 8-bit sRGB channel whose linear value does not exceed [linear16] — the
+     * highest such channel — a fixed monotone tie rule.
      */
     fun toSrgb(linear16: Int): Int {
         var low = 0

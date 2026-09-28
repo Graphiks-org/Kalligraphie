@@ -148,7 +148,9 @@ class PaintGradientTest {
             nodes = listOf(gradient(redBlueLine(GlyphPaintExtendMode.PAD)), moved, GlyphPaintNode.GlyphClip(clip, paint = 1)),
         )
         val image = PaintCompositor.rasterize(paint, 1_000.0, 1_000, 0, 0, RasterLimits.Default)
-        // p0=(0,2) and p1=(1,2) moved to (2,2) and (3,2): the right edge is past the last stop.
-        assertEquals(0xFF0000FF.toInt(), image[3, 2])
+        // p0=(0,2) and p1=(1,2) moved to (2,2) and (3,2). At device x=2.5 the translated gradient
+        // sits at parameter 0.5 (a red/blue mix) where the untranslated one is already pure blue.
+        assertEquals(0xFF, (image[2, 2] ushr 24) and 0xFF)
+        assertNotEquals(0xFF0000FF.toInt(), image[2, 2])
     }
 }

@@ -9,8 +9,9 @@ import org.graphiks.kalligraphie.api.GlyphPaintNode
  * Shades a clipped region with one linear gradient.
  *
  * The colour line is evaluated at the pixel centre with basic `+ - * /` on `Double`, then
- * interpolated in integer linear-light sRGB with premultiplied alpha and fixed rounding, so no
- * platform math can move a byte. [p0], [p1] and [p2] are already in device space.
+ * interpolated in linear-light sRGB with premultiplied alpha and converted through the committed
+ * integer transfer table. Only `+ - * /` and `floor` participate, so no platform math can move a
+ * byte. [p0], [p1] and [p2] are already in device space.
  */
 internal object LinearGradientShader {
     /** Below this projection denominator the gradient is degenerate. */
@@ -23,6 +24,9 @@ internal object LinearGradientShader {
         p1: FlatPoint,
         p2: FlatPoint,
     ): ByteArray {
+        if (!isFinite(p0) || !isFinite(p1) || !isFinite(p2)) {
+            throw RasterRequestRejected("gradient", "the gradient geometry is not finite.")
+        }
         val nx = -(p2.y - p0.y)
         val ny = p2.x - p0.x
         val denominator = (p1.x - p0.x) * nx + (p1.y - p0.y) * ny
@@ -37,6 +41,9 @@ internal object LinearGradientShader {
                 val x = coverage.left + column + 0.5
                 val y = coverage.top + row + 0.5
                 val t = ((x - p0.x) * nx + (y - p0.y) * ny) / denominator
+                if (!t.isFinite()) {
+                    throw RasterRequestRejected("gradient", "the gradient parameter is not finite.")
+                }
                 val argb = colorAt(gradient, t)
                 val alpha = (((argb ushr 24) and 0xFF) * sample + 127) / 255
                 val base = (row * coverage.width + column) * 4
@@ -49,7 +56,7 @@ internal object LinearGradientShader {
         return pixels
     }
 
-    /** Returns the straight `0xAARRGGBB` colour of the line at [t]. */
+    /** Returns the straight `0xAARRGGBB` colour of the line at [raw]. */
     private fun colorAt(gradient: GlyphPaintNode.LinearGradient, raw: Double): Int {
         val stops = gradient.colorLine.colorStops
         if (stops.isEmpty()) return 0
@@ -57,20 +64,28 @@ internal object LinearGradientShader {
         val first = stops.first().offset
         val last = stops.last().offset
         val span = last - first
+        if (!span.isFinite()) {
+            throw RasterRequestRejected("gradient", "the colour line span is not finite.")
+        }
+        if (gradient.colorLine.extendMode == GlyphPaintExtendMode.PAD) {
+            // Duplicate offsets: the first stop applies below the offset, the last at/above it.
+            if (raw < first) return straight(stops.first())
+            if (raw > last) return straight(stops.last())
+            return interpolate(stops, raw)
+        }
+        if (span <= 0.0) return 0
         val t = when (gradient.colorLine.extendMode) {
-            GlyphPaintExtendMode.PAD -> if (raw <= first) first else if (raw >= last) last else raw
-            GlyphPaintExtendMode.REPEAT -> {
-                if (span <= 0.0) return 0
-                first + (((raw - first) % span) + span) % span
-            }
+            GlyphPaintExtendMode.REPEAT -> first + (((raw - first) % span) + span) % span
             GlyphPaintExtendMode.REFLECT -> {
-                if (span <= 0.0) return 0
                 val phase = (((raw - first) % (2 * span)) + 2 * span) % (2 * span)
                 if (phase <= span) first + phase else last - (phase - span)
             }
+            GlyphPaintExtendMode.PAD -> raw
         }
         return interpolate(stops, t)
     }
+
+    private fun isFinite(point: FlatPoint): Boolean = point.x.isFinite() && point.y.isFinite()
 
     private fun interpolate(stops: List<GlyphPaintColorStop>, t: Double): Int {
         var index = 0

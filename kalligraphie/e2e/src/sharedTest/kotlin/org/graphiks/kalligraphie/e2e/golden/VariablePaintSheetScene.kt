@@ -42,18 +42,21 @@ internal object VariablePaintSheetScene {
                 check(hasInk(image)) { "a paint sheet cell produced no coverage." }
             }
         }
+        if (codepoints.size >= 3) {
+            check(hasChroma(rows.first().first())) { "the gradient column carries no chroma." }
+        }
         rows.forEachIndexed { index, row ->
             if (index == 0) return@forEachIndexed
             row.forEachIndexed { column, image ->
-                check(image.copyPixels().toList() != rows[0][column].copyPixels().toList()) {
+                check(!sameRaster(image, rows[0][column])) {
                     "U+" + codepoints[column].toString(16) + " is identical at wght ${weights[0]} and ${weights[index]}"
                 }
             }
         }
         if (codepoints.size >= 3) {
             rows.forEachIndexed { index, row ->
-                check(row[1].copyPixels().toList() == row[2].copyPixels().toList()) {
-                    "the inert transform changed a pixel at wght ${weights[index]}"
+                check(sameRaster(row[1], row[2])) {
+                    "the inert transform changed a raster at wght ${weights[index]}"
                 }
             }
         }
@@ -69,6 +72,25 @@ internal object VariablePaintSheetScene {
         }
         return false
     }
+
+    private fun hasChroma(image: Rgba8Image): Boolean {
+        val pixels = image.copyPixels()
+        var index = 0
+        while (index * 4 + 3 < pixels.size) {
+            val red = pixels[index * 4].toInt() and 0xFF
+            val green = pixels[index * 4 + 1].toInt() and 0xFF
+            val blue = pixels[index * 4 + 2].toInt() and 0xFF
+            val alpha = pixels[index * 4 + 3].toInt() and 0xFF
+            if (alpha != 0 && (red != green || green != blue)) return true
+            index += 1
+        }
+        return false
+    }
+
+    private fun sameRaster(left: Rgba8Image, right: Rgba8Image): Boolean =
+        left.left == right.left && left.top == right.top &&
+            left.width == right.width && left.height == right.height &&
+            left.copyPixels().toList() == right.copyPixels().toList()
 
     private fun rasterize(
         corpus: FixtureCorpus,

@@ -120,11 +120,19 @@ internal object ContourFlattener {
 
     /** Maps a local design point through [transform], then the request scale and origin. */
     private fun deviceX(x: Double, y: Double, transform: GlyphAffineTransform, scale: Double, originX: Double): Double =
-        (transform.xx * x + transform.xy * y + transform.dx) * scale + originX
+        requireFinite((transform.xx * x + transform.xy * y + transform.dx) * scale + originX)
 
     /** Maps a local design point through [transform], then the request scale and origin. */
     private fun deviceY(x: Double, y: Double, transform: GlyphAffineTransform, scale: Double, originY: Double): Double =
-        (transform.yx * x + transform.yy * y + transform.dy) * scale + originY
+        requireFinite((transform.yx * x + transform.yy * y + transform.dy) * scale + originY)
+
+    /** Rejects a flattened coordinate that left the finite domain, before bounds ever see it. */
+    private fun requireFinite(value: Double): Double {
+        if (!value.isFinite()) {
+            throw RasterRequestRejected("transform", "a flattened coordinate is not finite.")
+        }
+        return value
+    }
 
     private sealed interface Edge {
         class Move(val x: Double, val y: Double) : Edge

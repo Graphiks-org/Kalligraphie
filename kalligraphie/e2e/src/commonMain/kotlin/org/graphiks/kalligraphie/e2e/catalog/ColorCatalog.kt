@@ -67,7 +67,7 @@ public object ColorCatalog {
                 "Graphes de peinture COLR v1 variables : GlyphClip, Solid, LinearGradient et Transform composés à deux graisses",
             ),
             font = CorpusKeys.KALLIGRAPHIE_VAR_COLR,
-            status = CatalogStatus.Supported(sinceCommit = "005e38d"),
+            status = CatalogStatus.Supported(sinceCommit = "24051798"),
             tags = setOf("color:colr-v1", "variation:wght", "auto-sized"),
             tables = setOf("COLR", "CPAL", "fvar", "glyf", "loca"),
             family = GoldenSceneFamily.PAINT_SHEET,

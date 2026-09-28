@@ -98,6 +98,9 @@ internal object PaintCompositor {
                 is GlyphPaintNode.GlyphClip -> {
                     val flattened = flattenOutline(node.outline.contours, node.outline.unitsPerEm, transform)
                     if (flattened.isEmpty()) {
+                        // An empty clip paints nothing, but its subtree still consumes the node and
+                        // depth budgets, so limits stay monotonic.
+                        build(node.paint, depth + 1, clips + listOf(flattened), transform, node.outline.unitsPerEm)
                         null
                     } else {
                         build(node.paint, depth + 1, clips + listOf(flattened), transform, node.outline.unitsPerEm)
@@ -106,7 +109,6 @@ internal object PaintCompositor {
 
                 is GlyphPaintNode.Transform -> {
                     val composed = compose(transform, node.matrix)
-                    requireFinite(composed)
                     build(node.paint, depth + 1, clips, composed, unboundedUnitsPerEm)
                 }
 
@@ -192,21 +194,27 @@ internal object PaintCompositor {
         }
 
         private fun boundsOfClips(clips: List<List<FlatContour>>): PixelBounds? {
-            var left = Int.MAX_VALUE
-            var top = Int.MAX_VALUE
-            var right = Int.MIN_VALUE
-            var bottom = Int.MIN_VALUE
+            var left = Long.MIN_VALUE
+            var top = Long.MIN_VALUE
+            var right = Long.MAX_VALUE
+            var bottom = Long.MAX_VALUE
             var found = false
             for (clip in clips) {
-                val bounds = boundsOf(clip, limits) ?: continue
+                // Clips are intersected, so their envelopes intersect too; an empty clip has no
+                // envelope and therefore empties the whole region.
+                val bounds = boundsOf(clip, limits) ?: return null
                 found = true
-                left = minOf(left, bounds.left)
-                top = minOf(top, bounds.top)
-                right = maxOf(right, bounds.left + bounds.width)
-                bottom = maxOf(bottom, bounds.top + bounds.height)
+                left = maxOf(left, bounds.left.toLong())
+                top = maxOf(top, bounds.top.toLong())
+                right = minOf(right, bounds.left.toLong() + bounds.width.toLong())
+                bottom = minOf(bottom, bounds.top.toLong() + bounds.height.toLong())
             }
             if (!found) return null
-            return PixelBounds(left, top, right - left, bottom - top)
+            val width = right - left
+            val height = bottom - top
+            if (width <= 0L || height <= 0L) return null
+            checkCanvasSize(width, height)
+            return PixelBounds(left.toInt(), top.toInt(), width.toInt(), height.toInt())
         }
 
         private fun tintedSolid(mask: A8Image?, color: GlyphColor, opacity: Double): Layer? {
@@ -352,22 +360,24 @@ internal object PaintCompositor {
         }
     }
 
-    /** Composes [inner] first, then [outer]. */
-    private fun compose(outer: GlyphAffineTransform, inner: GlyphAffineTransform): GlyphAffineTransform =
-        GlyphAffineTransform(
-            xx = outer.xx * inner.xx + outer.xy * inner.yx,
-            yx = outer.yx * inner.xx + outer.yy * inner.yx,
-            xy = outer.xx * inner.xy + outer.xy * inner.yy,
-            yy = outer.yx * inner.xy + outer.yy * inner.yy,
-            dx = outer.xx * inner.dx + outer.xy * inner.dy + outer.dx,
-            dy = outer.yx * inner.dx + outer.yy * inner.dy + outer.dy,
-        )
-
-    /** Rejects a transform whose accumulation left the finite domain. */
-    private fun requireFinite(transform: GlyphAffineTransform) {
-        val finite = transform.xx.isFinite() && transform.yx.isFinite() && transform.xy.isFinite() &&
-            transform.yy.isFinite() && transform.dx.isFinite() && transform.dy.isFinite()
-        if (!finite) throw RasterRequestRejected("transform", "the accumulated transform is not finite.")
+    /**
+     * Composes [inner] first, then [outer].
+     *
+     * The coefficients are validated before construction: `GlyphAffineTransform` rejects a
+     * non-finite value by throwing, and an overflow during composition must surface as the
+     * raster facade's typed refusal instead.
+     */
+    private fun compose(outer: GlyphAffineTransform, inner: GlyphAffineTransform): GlyphAffineTransform {
+        val xx = outer.xx * inner.xx + outer.xy * inner.yx
+        val yx = outer.yx * inner.xx + outer.yy * inner.yx
+        val xy = outer.xx * inner.xy + outer.xy * inner.yy
+        val yy = outer.yx * inner.xy + outer.yy * inner.yy
+        val dx = outer.xx * inner.dx + outer.xy * inner.dy + outer.dx
+        val dy = outer.yx * inner.dx + outer.yy * inner.dy + outer.dy
+        if (!(xx.isFinite() && yx.isFinite() && xy.isFinite() && yy.isFinite() && dx.isFinite() && dy.isFinite())) {
+            throw RasterRequestRejected("transform", "the accumulated transform is not finite.")
+        }
+        return GlyphAffineTransform(xx, yx, xy, yy, dx, dy)
     }
 
     /** Maps a local design point through [transform], then the request scale and origin. */
