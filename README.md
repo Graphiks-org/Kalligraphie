@@ -68,7 +68,7 @@ left without a bundled shaping backend.
 
 ## Consumer route
 
-Applications consume the JVM facade from `org.graphiks:kalligraphie`.
+Applications consume the portable facade from `org.graphiks:kalligraphie`.
 `EditableParagraphFacade` composes a rectangular paragraph. For composition
 through exclusions and multiple regions, build a portable
 `IncrementalFlowLayoutRequest` and pass it to `FlowCompositionFacade`:

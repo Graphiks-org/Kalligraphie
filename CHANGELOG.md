@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes
+
+- Renamed the public facades to neutral names ahead of the web targets:
+  `JvmEditableParagraphFacade` → `EditableParagraphFacade`,
+  `JvmEditableLineFacade` → `EditableLineFacade`,
+  `JvmFlowCompositionFacade` → `FlowCompositionFacade`,
+  `JvmIncrementalParagraphLayoutSession` → `IncrementalParagraphLayoutSession`,
+  `JvmEditableLineLayoutSession` → `EditableLineLayoutSession`, and their
+  `*Request` companion types. No deprecated aliases are provided.
+
 ### Added
 - `:kalligraphie:e2e` proves **real letters with variable colour**: the corpus gains **Kalnia Glaze**, a real OFL variable COLR v1 Latin font (`wght` 100–700, `wdth` 100–125, a nine-colour first palette, no SVG table), and the catalogued scene `sheet.paint.kalniaglaze-latin.48` renders its A–Z capitals at `wght` 100 and 700, asserting per-cell ink, chroma and a visible variation between the two weights. The COLR v1 profile now accepts `Group` paint graphs, which the real font's `PaintColrLayers` roots need. The corpus checks (`fetch_fonts.py --check --provenance`, the fixture-tree coverage tests and the exhaustiveness lint) cover the new family.
 - `:kalligraphie:raster-cpu` composes the COLR v1 variable paint surface: `GlyphClip`, `Solid`, `LinearGradient` and `Transform` join `SolidOutline`, `Path` and `Group`. Clipping intersects coverage exactly at the sixteen fixed sub-pixel samples so a shared edge is never squared, an unbounded paint is bounded by the clips enclosing it, and gradients are shaded in a committed integer sRGB transfer so no platform math can move a byte; `PathClip`, `RadialGradient`, `SweepGradient`, `Composite`, a clip around a `Group`, and gradients that are not `LINEAR_SRGB` + `PREMULTIPLIED` stay typed refusals. `:kalligraphie:e2e` promotes `color.colr-v1-variable` to a supported golden scene (`sheet.paint.kalligraphie-var-colr.64`) that renders the variable fixture at two design weights and asserts each raw raster differs, and its `glyf`/`loca` tables are now claimed instead of excused.
