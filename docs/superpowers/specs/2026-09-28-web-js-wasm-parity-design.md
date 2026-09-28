@@ -88,9 +88,10 @@ de test (`e2e/src/sharedTest/.../fixture/FixtureCorpus.kt:14`).
 
 ### 5.1 Enregistrement opt-in des cibles web
 
-La convention `kmp-library` est appliquée par **tous** les modules, y compris
-`bench` (`bench/build.gradle.kts:19`) et `e2e`. Ajouter `js`/`wasmJs` dans cette
-convention contaminerait donc `bench` et ses 4 `expect` non voulus.
+La convention `kmp-library` est appliquée par les modules **cœur et
+vérification**, dont `bench` (`bench/build.gradle.kts:19`) et `e2e` ; les
+adaptateurs `platform:*` appliquent KMP directement. Ajouter `js`/`wasmJs` dans
+cette convention contaminerait donc `bench` et ses 4 `expect` non voulus.
 
 **Décision :** ne pas modifier les cibles de la convention de base. Introduire un
 mécanisme opt-in (nouvelle convention dédiée `kalligraphie-kmp-web`, appliquée
@@ -105,9 +106,10 @@ en plus, ou propriété Gradle) qui enregistre `js(IR)` + `wasmJs`. Modules
 
 Un groupe de hiérarchie `web` réunit `js` + `wasmJs`, avec `webMain`/`webTest`
 partagés ; les `actual` web sont écrits **une seule fois**. Le template de
-hiérarchie par défaut de KGP 2.4.10 **pourrait déjà** contenir ce groupe (à
-confirmer pendant l'implémentation ; s'il manque, le déclarer explicitement via
-`applyDefaultHierarchyTemplate`). `commonMain` reste sans type DOM.
+hiérarchie par défaut de KGP 2.4.10 **définit déjà** ce groupe
+(`group("web") { withJs(); withWasmJs() }`) : on s'appuie dessus, une simple
+compilation le confirme — ce n'est pas une porte de conception. `commonMain`
+reste sans type DOM.
 
 ### 5.3 Modules
 
@@ -131,27 +133,48 @@ Introduire un seam interne de décompression derrière les deux points d'entrée
 - **JVM/native/Android** : continuent d'utiliser Okio (`InflaterSource`,
   `GzipSource`) — aucun changement de comportement.
 - **web** : implémentation **pure Kotlin synchrone** de DEFLATE (RFC 1951) +
-  zlib (RFC 1950) + gzip (RFC 1952).
+  zlib (RFC 1950) + gzip (RFC 1952), **partagée entre `js` et `wasmJs`** ; elle
+  ne remplace pas Okio sur les cibles existantes.
 
 Contraintes obligatoires : vérification des sommes de contrôle (Adler-32,
-CRC-32), **limites de taille décompressée** préservées, et échecs typés
-inchangés. `DecompressionStream` (navigateur) est **banni** ici car asynchrone.
-Le seam peut être un `expect/actual` interne ou une implémentation portable
-unique ; le choix est reporté au plan, la sémantique ne l'est pas.
+CRC-32), **application incrémentale** des limites (jamais « tout décompresser puis
+vérifier »), **bornes de taille** préservées, et échecs typés inchangés
+(`font.png.invalid-deflate`, `font.svg.invalid-gzip`). `DecompressionStream`
+(navigateur) est **banni** ici car asynchrone. Le seam peut être un
+`expect/actual` interne ou une implémentation partagée par les deux cibles web ;
+le choix est reporté au plan, la sémantique ne l'est pas.
+
+**Tests d'acceptation obligatoires** (cas différentiels contre les décodeurs
+actuels) : flux tronqués, sommes de contrôle invalides, données résiduelles,
+**membres gzip multiples**, franchissements de limites, et respect des règles
+gzip d'Okio 3.18.1 (validation du trailer, rejet du membre suivant).
+
+### 5.5 Politique d'allocation web (`font:core`)
+
+`FontCacheAllocationError` est un `typealias` vers `OutOfMemoryError` sur
+jvm/native/android, et `FontMaterializationCache` ne l'attrape que pour
+abandonner proprement l'ownership optionnel du cache
+(`FontMaterializationCache.kt:35-44`). Le mapping web doit préserver cette
+sémantique : **ne pas** aliaser `Error` générique (qui masquerait des
+défaillances sans rapport) et **ne pas** promettre de récupération après un OOM
+fatal du moteur JS ou un trap Wasm. L'`actual` web et la portée exacte de la
+récupération sont fixés au plan ; **ce n'est pas un `actual` trivial**.
 
 ## 6. Backend shaping HarfBuzz
 
 ### 6.1 Contrat amont (porte de faisabilité)
 
-Avant tout développement aval, le dépôt `org.graphiks` doit publier des artefacts
-`js`/`wasmJs` exposant la même surface `org.graphiks.kffi.harfbuzz.*` que JVM/
-Android/iOS (blob/face/font/buffer/feature, `hb_font_set_var_coords_normalized`,
-ligature carets, `hb_font_get_glyph_extents`) et `bindingIdentity` complet. Un
-**prototype amont doit prouver** :
+**Porte préalable à la finalisation du plan web** (la Phase 0 « renommage » en
+est exemptée) : le dépôt `org.graphiks` doit publier des artefacts `js`/`wasmJs`
+exposant la même surface `org.graphiks.kffi.harfbuzz.*` que JVM/Android/iOS
+(blob/face/font/buffer/feature, `hb_font_set_var_coords_normalized`, ligature
+carets, `hb_font_get_glyph_extents`) et `bindingIdentity` complet. Un
+**prototype amont doit établir un contrat sélectionné**, pas seulement montrer
+qu'un comportement existe :
 
-- initialisation partagée (appels concurrents), sémantique d'échec/retry et
-  annulation ;
-- comportement déterministe avant/pendant l'initialisation ;
+- **contrat d'initialisation** : initialisation partagée (appels concurrents),
+  comportement observable avant/pendant l'init, politique de retry, et
+  **propriété de l'annulation** ;
 - `open`, allocation, `shape` et release **synchrones** en **Node et
   navigateur**, pour **les deux** cibles Kotlin ;
 - copie correcte et **rafraîchissement des vues mémoire** après croissance de la
@@ -293,8 +316,9 @@ Séparer deux niveaux :
 
 Une **sonde précoce inter-cibles** couvre : échelles fractionnaires, accumulation
 d'advances, seuils de retour à la ligne, bords de pixel. Une normalisation
-numérique délibérée est introduite là où c'est nécessaire. On ne suppose pas que
-« pur Kotlin ⇒ déterministe entre cibles ».
+numérique délibérée est introduite là où c'est nécessaire, puis la sonde **doit
+passer** : une divergence simplement documentée ne vaut pas succès. On ne
+suppose pas que « pur Kotlin ⇒ déterministe entre cibles ».
 
 ## 9. API publique — renommage neutre
 
@@ -321,15 +345,18 @@ découverte utilisateur) → facade synchrone → pipeline portable unicode → 
   Vérifiable seul par `./gradlew check`.
 - **Phase 1 — Socle web.** Enregistrement opt-in, `webMain`/`webTest`,
   compilation du cœur portable, **seam de décompression synchrone** (§5.4),
-  `actual` triviaux, conformance (sans backend : `SHAPING` absent + diagnostic,
-  comme le host Android aujourd'hui), **sonde numérique** (§8.6).
+  `actual` web (locks, `font/core` selon §5.5), conformance (sans backend :
+  `SHAPING` absent + diagnostic, comme le host Android aujourd'hui), **sonde
+  numérique** (§8.6).
 - **Phase 2 — Shaping.** Contrat amont kffi + prototype (§6.1), puis
   `HarfBuzzBindings.web.kt` + `initialize()` ; `SHAPING` passe Présent.
 - **Phase 3 — Polices.** `platform:browser` + découverte utilisateur.
 - **Phase 4 — Parité vérifiée.** e2e/goldens + CI + publication.
 
 Les phases sont conçues pour être exécutables séparément ; la Phase 0 peut être
-livrée indépendamment du web.
+livrée indépendamment du web. La **porte du §6.1 conditionne la finalisation du
+plan web** (Phase 0 exceptée) : on ne fige pas le plan des phases 1–4 avant que
+le contrat d'init amont soit établi.
 
 ## 11. Risques et inconnues
 
@@ -353,9 +380,12 @@ livrée indépendamment du web.
 3. La conformance web déclare les 4 capacités **Présentes**.
 4. e2e + goldens web passent en CI au même niveau que JVM/iOS/Android, dont au
    moins un e2e navigateur.
-5. Sonde numérique inter-cibles verte (ou normalisation explicitement documentée).
+5. Sonde numérique inter-cibles **verte après normalisation éventuelle** (une
+   divergence seulement documentée ne suffit pas).
 6. Un consommateur peut : `initialize()` → fournir des polices → composer/layout/
-   raster, sur `js` et `wasmJs`.
+   raster, sur `js` et `wasmJs`, **prouvé par un smoke test externe** qui résout
+   les artefacts publiés et charge l'asset HarfBuzz dans les deux environnements
+   (Node et navigateur).
 7. Renommage neutre appliqué partout, docs à jour.
 
 ## 13. Questions ouvertes (à trancher au plan)
@@ -365,4 +395,5 @@ livrée indépendamment du web.
 - Seam de décompression : `expect/actual` web vs implémentation portable unique.
 - Stratégie de chargement du `.wasm` kffi (embarqué base64 vs `fetch`).
 - Répartition précise Node vs navigateur headless ; emplacement et budget CI.
-- Confirmation que le template de hiérarchie KGP fournit déjà le groupe `web`.
+- Forme du smoke test externe (projet consommateur jetable, ou test d'intégration
+  de résolution) et environnements couverts.
