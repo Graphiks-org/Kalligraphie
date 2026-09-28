@@ -144,8 +144,8 @@ catalogs are unchanged (§3).
 | `container/Woff2Reader` | WOFF 2.0: 48-byte header, `flags`+UIntBase128 directory, **one** Brotli stream for the whole font-data block, transform dispatch, SFNT reassembly. |
 | `container/Woff2GlyfTransform` | Reconstruct `glyf` and `loca` (7 streams, `optionFlags`/`overlapSimpleBitmap`, `indexFormat`). |
 | `container/Woff2HmtxTransform` | Reconstruct `hmtx` from `flags` and, for omitted bearings, the glyph `xMin` values. |
-| `container/SfntReassembler` | Build the SFNT: big-endian header, tag-sorted directory, 4-byte padding, per-table checksums (with `head.checkSumAdjustment` zeroed first), then patch `head.checkSumAdjustment`. |
-| `brotli/BrotliDecoder` | RFC 7932 decoder, single stream, bounded output. |
+| `container/SfntReassembler` | Build the SFNT: big-endian header, tag-sorted directory, 4-byte padding, per-table checksums (with `head.checkSumAdjustment` zeroed first), then patch `head.checkSumAdjustment`; refuses a combined size over `maxDecodedFontBytes`. |
+| `brotli/BrotliDecoder` | RFC 7932 decoder, single stream, bounded output (`maxOutputBytes`) and bounded working set (`maxWorkingBytes`). |
 | `brotli/BrotliDictionary` (generated) | The pinned static dictionary bytes and the MIT notice. |
 
 No new Gradle dependency. `okio.Inflater` (already used by `PngDecoder`) serves WOFF 1.0 zlib;
@@ -166,6 +166,21 @@ public object FontContainerDecoder {
     public fun decode(source: FontSource, limits: WoffDecodeLimits): FontOperationResult<DecodedFont?>
 }
 ```
+
+Internal contracts that thread the limits:
+
+```kotlin
+internal object BrotliDecoder {
+    fun decode(input: ByteArray, maxOutputBytes: Long, maxWorkingBytes: Long): FontOperationResult<ByteArray>
+}
+internal object SfntReassembler {
+    fun assemble(flavor: UInt, tables: List<SfntTable>, maxAssembledBytes: Long): FontOperationResult<ByteArray>
+    fun tableChecksum(bytes: ByteArray): UInt
+    fun wholeFontChecksum(font: ByteArray): UInt
+}
+```
+
+`WoffDecodeLimits.EMBEDDED` is `(maxDecodedFontBytes = 64 MiB, maxWorkingBytes = 64 MiB)`; `forCapture(maxSourceBytes)` uses that value for both. Accounting: every produced buffer is charged against `maxDecodedFontBytes` (a table, the decompressed font-data block, and the combined reassembled font); the Brotli window, Huffman tables and a transform's live streams are charged against `maxWorkingBytes`. In WOFF 2.0 the Brotli stream decodes with only `maxDecodedFontBytes` as the cap; the decoded length is then compared to the directory sum, so a valid stream with the wrong length yields `font.woff2.invalid-font-data-size`, distinct from a malformed stream (`font.woff2.brotli-failed`).
 
 ### 5.2 Data flow
 
@@ -220,6 +235,10 @@ reassembly:
 A breach returns `FontError.ResourceLimitExceeded` with numeric context, and nothing partial is
 published.
 
+The advisory rule is **WOFF 2.0-specific**: there, `totalSfntSize` and a transformed `glyf`'s
+`origLength` are references only and must never reject a correctly decoded font. WOFF 1.0 is
+different (§6.2): its `totalSfntSize` and `reserved` fields are normative.
+
 ### 6.2 WOFF 1.0 (`WoffReader`)
 
 Big-endian header: `signature 0`, `flavor 4`, `length 8`, `numTables 12`, `reserved 14`,
@@ -232,8 +251,10 @@ Validations: signature; complete declared file extent including permitted paddin
 data; aligned, non-overlapping table/metadata/private extents; absent optional blocks have zero
 offset and length; `numTables > 0`; `compLength > origLength` is rejected; `compLength == origLength`
 copies raw; `compLength < origLength` inflates a **zlib-wrapped** stream to exactly `origLength`
-(bounded by `maxDecodedFontBytes`); the reassembled size must equal
-`12 + 16*numTables + Σ align4(origLength)`; `flavor == 'ttcf'` returns `UnsupportedContainer`.
+(bounded by `maxDecodedFontBytes`); `reserved` must be `0`; the header `totalSfntSize` must equal
+`12 + 16*numTables + Σ align4(origLength)`, and the reassembled size must equal the same value
+(WOFF 1.0 requires header equality, unlike WOFF 2.0); `flavor == 'ttcf'` returns
+`UnsupportedContainer`.
 
 ### 6.3 WOFF 2.0 (`Woff2Reader`)
 
@@ -338,9 +359,10 @@ generation and duplicate semantics therefore use decoded identities (§4.3).
 - Two renderers in `PortableSceneRenderers` reuse `outlineCapitalA(corpus, path, what)`;
   `family = GLYPH_OUTLINE`, `route = PORTABLE_GLYPH`, `frame = AutoSized(padding = 1)`, distinct
   `sceneId`s. No new auto-sizing exemption is needed.
-- **Semantic cross-container equivalence**, asserted through the public facade (not raw table
-  bytes, which the plan cannot reach and which differ by design): the two containers resolve 'A' to
-  the same outline commands/points and the same advances, and their `hmtx`/`cmap` table bytes agree.
+- **Semantic cross-container equivalence**, asserted through the public facade (raw table bytes are
+  not reachable from the e2e harness and differ by design): the two containers resolve a set of code
+  points — a capital letter, a composite glyph and an empty glyph — to the same glyph ids, outline
+  commands/points and advances. No raw table-byte comparison is asserted here.
 - Robustness entries pin typed refusals via probes built from the committed fixtures: truncation,
   a deterministically malformed Brotli stream (corpus for `font.woff2.brotli-failed`), and a
   directory-level malformation. A random byte flip is not used: Brotli has no content checksum.
@@ -382,12 +404,21 @@ generation and duplicate semantics therefore use decoded identities (§4.3).
   - Transforms: `glyf` simple/composite/empty, bbox inference and explicit bbox, overlap bitmap,
     255UInt16, all triplet codes; `hmtx` flags 1/2/3, empty glyphs, both count shapes, cross-checked
     against original metrics.
-  - Bounds: declared-size overflow, actual over-expansion, `maxDecodedFontBytes`/`maxWorkingBytes`
-    breaches.
+  - Bounds: declared-size overflow, actual over-expansion, combined-buffer and combined-assembled
+    breaches, `maxDecodedFontBytes`/`maxWorkingBytes` breaches, checked-conversion overflow.
+  - Brotli protocol corners: the reserved WBITS encoding is rejected; complex Huffman with repeat
+    symbols 16/17; metadata and final-block headers; a valid stream whose decoded length disagrees
+    with the WOFF2 directory yields `font.woff2.invalid-font-data-size`, distinct from a malformed
+    stream's `font.woff2.brotli-failed`.
+  - WOFF 1.0 `reserved != 0` and header `totalSfntSize` mismatch are rejected; the equivalent WOFF 2.0
+    fields are accepted.
+  - `glyf`: mixed `overlapSimpleBitmap` (the flag follows each glyph's bit), an odd-length glyph
+    followed by another, off-curve triplets, and exact `endPtsOfContours`.
 - e2e: golden scenes for both entries; semantic cross-container equivalence; robustness probes;
   catalog matrix/claims/manifest freshness.
-- Directory-capture tests: `.woff`/`.woff2` discovered, decoded, deduplicated, bounded, and
-  counted on failure.
+- Directory-capture and facade tests: `.woff`/`.woff2` discovered and decoded; two byte-distinct
+  containers that decode identically deduplicate; decoded-size aggregate limits; failed-decode
+  examination charging; `ResourceLimitExceeded` classification preserved.
 - W3C WOFF2 compiled decoder tests are used as a conformance source where feasible.
 
 ## 12. Process (CONTRIBUTING)
@@ -421,10 +452,12 @@ generation and duplicate semantics therefore use decoded identities (§4.3).
 2. `WoffDecodeLimits` + `SfntReassembler` (correct checksum sequencing) + WOFF 1.0 reader + dispatch.
 3. WOFF 2.0 header/directory + single-stream Brotli split.
 4. `glyf`/`loca` transform, then `hmtx` transform (with `xMin` dependency).
-5. Integration in `create` (normalised list) and capture (decoded accounting).
-6. Corpus acquisition, provenance, `scripts/fonts` tooling; commit only once the lint passes.
-7. Catalog entries, renderers, robustness probes, semantic equivalence, goldens, generated docs,
-   iOS corpus.
+5. Corpus acquisition + provenance + `scripts/fonts` tooling + catalog entries/renderers/probes +
+   claims + regenerated goldens/claims, committed together once the exhaustiveness lint passes
+   (the lint reads the generated `claimed-tables.json`, so regeneration must precede it).
+6. Integration in `create` (normalised list) and capture (decoded accounting); its tests use the
+   committed corpus.
+7. `docs/docs/font-management.md`/`.fr.md`, `CHANGELOG.md`, and the `bench` scope row in
+   `CONTRIBUTING.md`.
 8. Bench scenarios and explicit per-platform wiring.
-9. `docs/docs/font-management.md`/`.fr.md`, `CHANGELOG.md`.
-10. Full local verification and the PR gate.
+9. Full local verification and the PR gate.
