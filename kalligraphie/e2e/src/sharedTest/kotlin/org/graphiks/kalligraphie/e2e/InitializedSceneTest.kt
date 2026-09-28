@@ -17,7 +17,7 @@ import org.graphiks.kalligraphie.initialize
  * slowest target is a Kotlin/Wasm test process on a shared runner.
  */
 internal fun initializedSceneTest(block: suspend () -> Unit): TestResult =
-    runTest(timeout = 10.minutes) {
+    runTest(timeout = 8.minutes) {
         initialize()
         block()
     }

@@ -161,18 +161,19 @@ kotlin {
     }
 
     // The shared suite renders the whole catalog inside `runTest`, which is far slower than Mocha's
-    // two-second default: the timeout is raised to cover the work each Node run actually does.
+    // two-second default. Mocha's ceiling is deliberately larger than the coroutine's, so a hang is
+    // reported by `runTest` with its diagnostic rather than by Mocha first.
     js {
         nodejs {
             testTask {
-                useMocha { timeout = "10m" }
+                useMocha { timeout = "12m" }
             }
         }
     }
     wasmJs {
         nodejs {
             testTask {
-                useMocha { timeout = "10m" }
+                useMocha { timeout = "12m" }
             }
         }
     }

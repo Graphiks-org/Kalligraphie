@@ -25,10 +25,18 @@ kotlin {
     jvmToolchain(25)
     jvm()
     js {
-        nodejs()
+        nodejs {
+            testTask {
+                useMocha { timeout = "5m" }
+            }
+        }
     }
     wasmJs {
-        nodejs()
+        nodejs {
+            testTask {
+                useMocha { timeout = "5m" }
+            }
+        }
     }
 
     applyDefaultHierarchyTemplate {
@@ -102,4 +110,10 @@ kotlin {
         named("jsMain") { resources.srcDir(extractHarfBuzzWebRuntime) }
         named("wasmJsMain") { resources.srcDir(extractHarfBuzzWebRuntime) }
     }
+}
+
+// The JVM smoke opens the bundled native backend, the same launcher requirement every main module
+// states: without it the JVM run fails on a launcher that denies restricted native access.
+tasks.withType<Test>().configureEach {
+    jvmArgs("--enable-native-access=ALL-UNNAMED")
 }
