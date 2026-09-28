@@ -75,6 +75,22 @@ public object ColorCatalog {
             route = CatalogRoute.PORTABLE_GLYPH,
             frame = SceneFramePolicy.AutoSized(padding = 2),
         ),
+        CatalogEntry(
+            id = "color.colr-v1-variable-real",
+            axis = CatalogAxis.COLOR,
+            technology = CatalogText(
+                "A real variable COLR v1 Latin font: Kalnia Glaze's capitals at wght 100 and 700",
+                "Une vraie police latine COLR v1 variable : les capitales de Kalnia Glaze à wght 100 et 700",
+            ),
+            font = CorpusKeys.KALNIA_GLAZE,
+            status = CatalogStatus.Supported(sinceCommit = "85c6fd47"),
+            tags = setOf("color:colr-v1", "variation:wght", "auto-sized", "real-font"),
+            tables = setOf("COLR", "CPAL", "cmap", "fvar", "avar", "gvar", "glyf", "loca"),
+            family = GoldenSceneFamily.ALPHABET_SHEET,
+            sceneId = "sheet.paint.kalniaglaze-latin.48",
+            route = CatalogRoute.PORTABLE_GLYPH,
+            frame = SceneFramePolicy.AutoSized(padding = 2),
+        ),
         documented(
             id = "color.cpal-variable",
             technology = CatalogText("variable CPAL palettes", "Palettes CPAL variables"),

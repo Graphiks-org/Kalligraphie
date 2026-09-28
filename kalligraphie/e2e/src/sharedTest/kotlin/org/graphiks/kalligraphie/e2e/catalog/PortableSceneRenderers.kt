@@ -91,6 +91,21 @@ internal object PortableSceneRenderers {
                 )
             }
         },
+        "color.colr-v1-variable-real" to CatalogSceneRenderer(
+            fontPath = KALNIA_GLAZE,
+            route = CatalogRoute.PORTABLE_GLYPH,
+            sceneId = "sheet.paint.kalniaglaze-latin.48",
+        ) { corpus ->
+            composed {
+                VariablePaintSheetScene.alphabetSheet(
+                    corpus = corpus,
+                    fontPath = KALNIA_GLAZE,
+                    codepoints = (0x41..0x5A).toList(),
+                    weights = listOf(100f, 700f),
+                    pixelsPerEm = 48.0,
+                )
+            }
+        },
         "bitmap.cbdt-png.u1f600.16" to CatalogSceneRenderer(SKIA_CBDT, CatalogRoute.PORTABLE_GLYPH, render = ::renderCbdtColourStrike),
         "bitmap.sbix-png.u1f600.16" to CatalogSceneRenderer(SKIA_SBIX, CatalogRoute.PORTABLE_GLYPH, render = ::renderSbixColourStrike),
         "outline.cff1-static" to CatalogSceneRenderer(CFF_LIBERATION, CatalogRoute.PORTABLE_GLYPH, render = ::renderCff1CapitalA),

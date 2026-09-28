@@ -6,7 +6,7 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Statut | Entrées |
 | --- | --- |
-| Supporté | 25 |
+| Supporté | 26 |
 | Rejet attendu | 2 |
 | Pas encore | 9 |
 | Hors périmètre | 1 |
@@ -53,6 +53,7 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 | `color.colr-v0-emoji-sheet` | Planche d'alphabet emoji COLR v0 + CPAL v0 | emoji-two-colr-v0 | Supporté depuis fa405247 |
 | `color.colr-cff` | Glyphes COLR adossés à des charstrings CFF | — | Hors périmètre : Le CFF-dans-COLR ne fait pas partie de la surface de peinture supportée ; le motif est consigné dans font-management.md. |
 | `color.colr-v1-variable` | Graphes de peinture COLR v1 variables : GlyphClip, Solid, LinearGradient et Transform composés à deux graisses | kalligraphie-var-colr | Supporté depuis 24051798 |
+| `color.colr-v1-variable-real` | Une vraie police latine COLR v1 variable : les capitales de Kalnia Glaze à wght 100 et 700 | kalniaglaze | Supporté depuis 85c6fd47 |
 | `color.cpal-variable` | Palettes CPAL variables | — | Pas encore ; corpus non acquis |
 
 ## BITMAP

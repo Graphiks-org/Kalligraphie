@@ -67,6 +67,18 @@ public object CatalogClaims {
             "vmtx" to VVAR_VERTICAL_REASON,
             "fvar" to VVAR_AXIS_REASON,
         ),
+        "kalniaglaze" to mapOf(
+            "GDEF" to "no catalogued scene shapes text with this family: the alphabet sheet resolves " +
+                "code points through cmap and paints the COLR graph, never reading glyph definitions",
+            "GPOS" to "no catalogued scene shapes text with this family: the alphabet sheet paints " +
+                "each capital in isolation, never consulting pair positioning",
+            "GSUB" to "no catalogued scene shapes text with this family: the alphabet sheet selects " +
+                "no substitution",
+            "HVAR" to "the alphabet sheet draws one glyph per cell from its own bounds, so no " +
+                "advance is observed",
+            "STAT" to "the sheet selects its instances by design `wght` coordinate through " +
+                "`fvar`/`avar` and reads no style attribute",
+        ),
         "liberation" to mapOf(
             "kern" to "legacy pair-kerning records, every one of the 908 reproduced by the GPOS " +
                 "kerning the composed lines apply; no catalogued scene reads the redundant table",

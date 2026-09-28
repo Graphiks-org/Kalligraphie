@@ -23,4 +23,5 @@ sheet.outline.noto-devanagari.32	ALPHABET_SHEET	624x156	ALPHA_8	sha256:57ae7f66c
 sheet.paint.bungee-color-latin.48	ALPHABET_SHEET	656x90	RGBA_8888	sha256:ec56ff9c43a677cfda11a5586b0d5b550cb224384b4858b9d97ffcc06ce6dd9a
 sheet.paint.emoji-two-colr-v0.64	ALPHABET_SHEET	1200x76	RGBA_8888	sha256:5b388cff39f7347aa28a52eca91c94a4c227976179f08391393b19508e14fc88
 sheet.paint.kalligraphie-var-colr.64	PAINT_SHEET	172x116	RGBA_8888	sha256:886df462014e03df80d17d11481a16664aecd4159ee248099d5177cabbb6a9ff
+sheet.paint.kalniaglaze-latin.48	ALPHABET_SHEET	1642x104	RGBA_8888	sha256:eeadc59bddae3ea508262eab19f214e38703945ddbc1d6b3af9dbf0c4a4b0cf2
 variation.wght-ladder	COMPOSED_LINE	291x306	ALPHA_8	sha256:e2ed4e45e45e96aafe62214a5ba2e2e4dee45d7a17c1fcc8228c54f7004931b7
