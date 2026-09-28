@@ -32,6 +32,12 @@ import org.graphiks.kalligraphie.font.sfnt.readUInt32
  * directory sum (a malformed stream already failed as `font.woff2.brotli-failed`), then it is
  * split across the entries in directory order and handed to [SfntReassembler]. Per-table checksums
  * are recomputed because WOFF2 carries none.
+ *
+ * A transformed `glyf`/`loca` pair (transform version 0) is reconstructed by
+ * [Woff2GlyfTransform]: the `glyf` block supplies the reconstruction and the paired transformed
+ * `loca`, whose only role is to declare its original size and pair with `glyf`, is replaced by the
+ * produced table. An unpaired or mode-mismatched pair is `font.woff2.transform-failed`. The `hmtx`
+ * transform is still a forward stub for Task 9.
  */
 internal object Woff2Reader {
     private const val SIGNATURE: String = "wOF2"
@@ -108,10 +114,9 @@ internal object Woff2Reader {
                     ?: return invalidDirectory("WOFF2 table $tag has a malformed transformLength.")
                 transformLength = readTransformLength.value
                 cursor = readTransformLength.next
-                // A transformed `loca` is a placeholder: it consumes no font-data bytes. The
-                // remaining loca consistency rules (original size vs `(numGlyphs+1) * entrySize`,
-                // transform mode agreeing with `glyf`) need the reconstructed tables and land with
-                // Task 8.
+                // A transformed `loca` is a placeholder: it consumes no font-data bytes. Its
+                // original size vs `(numGlyphs+1) * entrySize` and transform-mode agreement with
+                // `glyf` are checked against the reconstruction below.
                 if (tag == "loca" && transformLength != 0L) {
                     return invalidDirectory("A transformed WOFF2 loca table must declare a zero transformLength.")
                 }
@@ -119,11 +124,11 @@ internal object Woff2Reader {
             entries += Entry(tag, readOrigLength.value, nonNullTransform, transformLength)
         }
 
-        // Task 8 (glyf/loca) and Task 9 (hmtx) implement transform reconstruction. Until then,
-        // refuse a non-null transform rather than pass transformed bytes through as if they were
-        // the original table. The rewritten `loca` consistency rules also land with Task 8.
+        // Task 9 (hmtx) still lacks its reconstruction. Refuse a non-null transform on any table
+        // other than `glyf`/`loca` rather than pass transformed bytes through as if they were the
+        // original table; the `glyf`/`loca` pair is reconstructed after decompression below.
         for (entry in entries) {
-            if (entry.nonNullTransform) {
+            if (entry.nonNullTransform && entry.tag != "glyf" && entry.tag != "loca") {
                 return failure(
                     TRANSFORM_FAILED,
                     "WOFF2 table ${entry.tag} uses a transform that is not yet supported.",
@@ -153,12 +158,64 @@ internal object Woff2Reader {
             )
         }
 
-        val tables = ArrayList<SfntTable>(numTables)
+        val tableData = ArrayList<ByteArray>(numTables)
         var offset = 0
         for (entry in entries) {
             val length = (entry.transformLength ?: entry.origLength).toInt()
-            tables += SfntTable(entry.tag, decompressed.copyOfRange(offset, offset + length), null)
+            tableData += decompressed.copyOfRange(offset, offset + length)
             offset += length
+        }
+
+        val pairedLoca = BooleanArray(numTables)
+        for (index in entries.indices) {
+            val entry = entries[index]
+            if (!entry.nonNullTransform) continue
+            if (entry.tag == "loca" && pairedLoca[index]) continue
+            when (entry.tag) {
+                "glyf" -> {
+                    val locaIndex = (index + 1 until numTables).firstOrNull { entries[it].tag == "loca" }
+                        ?: return failure(
+                            TRANSFORM_FAILED,
+                            "A transformed WOFF2 glyf table has no paired loca table.",
+                        )
+                    if (!entries[locaIndex].nonNullTransform) {
+                        return failure(
+                            TRANSFORM_FAILED,
+                            "A transformed WOFF2 glyf table is paired with an untransformed loca table.",
+                        )
+                    }
+                    val reconstructed = when (
+                        val result = Woff2GlyfTransform.reconstruct(tableData[index], limits)
+                    ) {
+                        is FontOperationResult.Success -> result.value
+                        is FontOperationResult.Failure -> return result
+                        is FontOperationResult.Cancelled -> return result
+                    }
+                    if (entries[locaIndex].origLength != reconstructed.loca.size.toLong()) {
+                        return failure(
+                            TRANSFORM_FAILED,
+                            "A transformed WOFF2 loca table declares ${entries[locaIndex].origLength} bytes but " +
+                                "the reconstructed table is ${reconstructed.loca.size}.",
+                        )
+                    }
+                    tableData[index] = reconstructed.glyf
+                    tableData[locaIndex] = reconstructed.loca
+                    pairedLoca[locaIndex] = true
+                }
+                "loca" -> return failure(
+                    TRANSFORM_FAILED,
+                    "A transformed WOFF2 loca table has no paired glyf table.",
+                )
+                else -> return failure(
+                    TRANSFORM_FAILED,
+                    "WOFF2 table ${entry.tag} uses a transform that is not supported.",
+                )
+            }
+        }
+
+        val tables = ArrayList<SfntTable>(numTables)
+        for (index in entries.indices) {
+            tables += SfntTable(entries[index].tag, tableData[index], null)
         }
         return SfntReassembler.assemble(flavor, tables, limits.maxDecodedFontBytes)
     }
