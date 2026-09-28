@@ -22,7 +22,6 @@ dependencyResolutionManagement {
     @Suppress("UnstableApiUsage")
     repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
     repositories {
-        mavenLocal()
         google()
         mavenCentral()
         exclusiveContent {
