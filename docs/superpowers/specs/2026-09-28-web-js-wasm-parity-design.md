@@ -1,6 +1,6 @@
 # Conception — Élargissement de Kalligraphie au web `js` + `wasmJs` en parité
 
-- **Statut :** proposé (en attente de revue)
+- **Statut :** proposé (révisé après revue `very-high-review`)
 - **Date :** 2026-09-28
 - **Portée :** ajout des cibles web `js(IR)` et `wasmJs` à la bibliothèque
   Kalligraphie, avec la même surface de capacités portables que JVM, Android et
@@ -13,183 +13,221 @@ Kalligraphie est une bibliothèque de typographie Kotlin Multiplatform (KMP). Le
 cibles actuelles sont `jvm`, `android`, `iosArm64` et `iosSimulatorArm64`
 (`buildSrc/src/main/kotlin/ygdrasil/conventions/kmp-library.gradle.kts`).
 
-Le cœur portable vit déjà en `commonMain` : contrats (`api`), décodage et
-analyse Unicode 16.0 (`unicode`), lecture SFNT / scaler / glyphes
+Le cœur portable vit en `commonMain` : contrats (`api`), décodage et analyse
+Unicode 16.0 (`unicode`), lecture SFNT / scaler / glyphes
 (`font:core|sfnt|scaler|glyph`), composition incrémentale (`layout`) et
-rastérisation CPU (`raster-cpu`). Une vérification de faisabilité a confirmé
-qu'**aucun `commonMain` n'importe de type non portable** (`java.*`,
-`kotlinx.cinterop`, `platform.*`, `android.*`, DOM).
+rastérisation CPU (`raster-cpu`). `commonMain` n'importe **ni** `java.*`, **ni**
+`kotlinx.cinterop`, **ni** type DOM — mais « sans import non portable » ne suffit
+pas à garantir la compilation web. Deux dépendances non triviales s'ajoutent :
 
-Les seuls points spécifiques sont des `expect/actual` :
+1. **Compression Okio indisponible sur js/wasmJs.** `font/sfnt` `commonMain`
+   utilise `okio.Inflater`/`InflaterSource`
+   (`font/sfnt/src/commonMain/.../PngDecoder.kt:5-6,146`) et `okio.GzipSource`
+   (`font/sfnt/src/commonMain/.../SvgDocumentDecoder.kt:4,40`). Or le metadata
+   `com.squareup.okio:okio:3.18.1` place ces API dans `zlibMain`, présent dans
+   `jvmApiElements` et `iosArm64ApiElements` mais **absent** de
+   `jsApiElements` et `wasmJsApiElements`. Le cœur portable ne compile donc
+   **pas** tel quel pour le web.
+2. **Backend HarfBuzz.** Le shaping passe par `expect fun
+   openHarfBuzzPlatformBinding()` (`shaping/src/commonMain/.../HarfBuzzPlatformBinding.kt:150`),
+   implémenté en `jvmMain`/`androidMain`/`iosMain` au-dessus de
+   `org.graphiks:kffi-harfbuzz`. Aucune cible web n'existe en amont.
 
-- shaping HarfBuzz derrière `HarfBuzzPlatformBinding` (kffi JVM/Android, cinterop
-  iOS) ;
-- verrous (`PortableLock`, `PortableConditionLock`, `currentThreadToken`) ;
-- `FontCacheAllocationError` (`font:core`) ;
-- `currentPortableCapabilityIdentity` (`conformance`) ;
-- mesure et corpus de test (`bench`, `e2e`).
+Inventaire exact des déclarations `expect` (11 au total) :
 
-Aujourd'hui, aucune cible web n'existe et aucun document ne mentionne
-`wasm`/`js`/navigateur.
+| Module | Déclarations |
+| --- | --- |
+| `:kalligraphie` | `PortableLock`, `PortableConditionLock`, `currentThreadToken` |
+| `shaping` | `openHarfBuzzPlatformBinding`, `PortableLock` |
+| `font:core` | `FontCacheAllocationError` |
+| `conformance` | `currentPortableCapabilityIdentity` |
+| `bench` | `measurementInstruments`, `measurementIdentity`, `allocationFigures`, `ThreadAllocationProbe` (hors périmètre web) |
+
+Il n'existe **aucun** `expect` dans `e2e` : `FixtureCorpus` y est une interface
+de test (`e2e/src/sharedTest/.../fixture/FixtureCorpus.kt:14`).
 
 ## 2. Objectifs
 
-1. Ajouter `js(IR)` et `wasmJs` à tous les modules KMP de la bibliothèque.
-2. Atteindre la **parité de capacités** avec les autres cibles : sur web, la
-   conformance déclare `UNICODE_ANALYSIS`, `SHAPING`, `END_TO_END_LAYOUT` et
-   `GLYPH_REPRESENTATION_VARIANTS` **Présentes**.
-3. Couvrir **toute la lib**, y compris `raster-cpu`, et fournir une **découverte
+1. Ajouter `js(IR)` et `wasmJs` aux modules KMP participants (voir §5.1).
+2. Atteindre la **parité de capacités** : `UNICODE_ANALYSIS`, `SHAPING`,
+   `END_TO_END_LAYOUT` et `GLYPH_REPRESENTATION_VARIANTS` **Présentes**.
+3. Couvrir **toute la lib** (y compris `raster-cpu`) et fournir une **découverte
    de polices navigateur**.
-4. Vérifier la parité **au même niveau** que JVM/iOS/Android : tests unitaires,
-   conformance et e2e/goldens exécutés dans un runtime web et câblés au CI.
-5. Publier les variantes web sur Maven Central.
+4. Fournir une **décompression synchrone** DEFLATE/zlib/gzip pour les décodeurs
+   PNG et SVG-in-OT sur le web.
+5. Établir tôt une **sonde de parité numérique** inter-cibles (entiers HarfBuzz
+   exacts ; géométrie flottante normalisée).
+6. Vérifier au **même niveau** que JVM/iOS/Android (tests, conformance, e2e) et
+   publier les variantes web.
 
 ## 3. Non-objectifs
 
-- Benchmarks web (`bench`) : `kotlinx-benchmark` ne couvre pas `wasmJs`
-  proprement. `bench` reste JVM/Android/iOS.
-- Threads wasm / `SharedArrayBuffer` : le runtime est mono-thread.
-- Découverte de polices sur les navigateurs hors Chromium.
+- Benchmarks web : `bench` **n'est pas enregistré** pour les cibles web
+  (`kotlinx-benchmark` ne couvre pas `wasmJs`).
+- Threads wasm / `SharedArrayBuffer` : runtime mono-thread.
+- Découverte de polices hors Chromium.
 - Publication npm (sauf demande ultérieure).
-- Rendu GPU ou compositing navigateur : la lib ne rend pas de pixels ; le
-  `raster-cpu` reste du calcul CPU pur.
+- Rendu GPU ou compositing navigateur.
 
 ## 4. Décisions de conception
 
 | Sujet | Décision |
 | --- | --- |
 | Étendue | Toute la lib + découverte de polices navigateur (`raster-cpu` inclus) |
-| Backend shaping web | Étendre **kffi-harfbuzz** (dépôt `org.graphiks`) avec des cibles `js`/`wasmJs`, même version épinglée 14.3.0 et même provenance |
-| Polices | Octets fournis par l'app en voie principale ; **Local Font Access API** en option (Chromium, permission), absence déclarée sinon |
-| Initialisation | `suspend fun initialize()` unique et idempotent ; facades **synchrones** ensuite |
-| API publique | **Renommage neutre global**, sans alias `Jvm*` dépréciés (incubation, ruptures acceptées) |
+| Enregistrement des cibles | **Opt-in par module**, pas via la convention de base (§5.1) |
+| Décompression | Décodeur DEFLATE/zlib/gzip **synchrone et borné** derrière les décodeurs PNG/SVG (§5.4) |
+| Backend shaping web | Étendre **kffi-harfbuzz** avec des cibles `js`/`wasmJs`, même version épinglée 14.3.0 et même provenance |
+| Polices | Octets fournis par l'app en voie principale ; `window.queryLocalFonts()` en option, **opération séparée et déclenchée par l'utilisateur** (§8.1) |
+| Initialisation | `suspend fun initialize()` unique et idempotent pour le **wasm seul** ; facades **synchrones** ensuite |
+| API publique | **Renommage neutre global**, sans alias `Jvm*` dépréciés |
+| Parité numérique | Entiers HarfBuzz exacts ; géométrie layout/raster normalisée après sonde (§8.6) |
 | Vérification | Même autorité que JVM/iOS/Android, incluse au CI |
-| Approche | Portage symétrique phasé, `webMain` partagé dès le départ |
+| Approche | Portage symétrique phasé, `webMain`/`webTest` partagés |
 
 ## 5. Architecture
 
-### 5.1 Cibles et source sets
+### 5.1 Enregistrement opt-in des cibles web
 
-- La convention `kmp-library` déclare en plus `js(IR)` et `wasmJs`. Les deux
-  cibles se propagent à tous les modules KMP.
-- Un **groupe de hiérarchie `web`** (via `applyDefaultHierarchyTemplate`) réunit
-  `js` et `wasmJs`, avec un `webMain`/`webTest` partagé. Les `actual` web sont
-  écrits **une seule fois**.
-- `commonMain` reste totalement dépourvu de types DOM et de binding natif. Le DOM
-  n'apparaît que dans `webMain` et `:kalligraphie:platform:browser`.
+La convention `kmp-library` est appliquée par **tous** les modules, y compris
+`bench` (`bench/build.gradle.kts:19`) et `e2e`. Ajouter `js`/`wasmJs` dans cette
+convention contaminerait donc `bench` et ses 4 `expect` non voulus.
 
-### 5.2 Modules
+**Décision :** ne pas modifier les cibles de la convention de base. Introduire un
+mécanisme opt-in (nouvelle convention dédiée `kalligraphie-kmp-web`, appliquée
+en plus, ou propriété Gradle) qui enregistre `js(IR)` + `wasmJs`. Modules
+**participants** : `api`, `unicode`, `shaping`, `layout`,
+`font:core|sfnt|scaler|glyph`, `raster-cpu`, `:kalligraphie`, `conformance`,
+`e2e`, plus le nouveau `:kalligraphie:platform:browser`. Modules **exclus** :
+`bench`, `platform:apple|linux|windows` (jvmMain), `platform:android`
+(Android-only), `platform:ios` (natif only).
+
+### 5.2 Source sets web
+
+Un groupe de hiérarchie `web` réunit `js` + `wasmJs`, avec `webMain`/`webTest`
+partagés ; les `actual` web sont écrits **une seule fois**. Le template de
+hiérarchie par défaut de KGP 2.4.10 **pourrait déjà** contenir ce groupe (à
+confirmer pendant l'implémentation ; s'il manque, le déclarer explicitement via
+`applyDefaultHierarchyTemplate`). `commonMain` reste sans type DOM.
+
+### 5.3 Modules
 
 | Module | Aujourd'hui | Après |
 | --- | --- | --- |
-| `api`, `unicode`, `layout`, `font:core/sfnt/scaler/glyph`, `raster-cpu` | `commonMain` pur | compilent tels quels pour `js`/`wasmJs` ; `actual` web pour `font:core` |
+| `api`, `unicode`, `layout`, `font:sfnt/scaler/glyph`, `raster-cpu` | `commonMain` pur | compilent pour `js`/`wasmJs` (participent) |
+| `font:core` | `commonMain` + `jvmMain`/`nativeMain`/`androidMain` | + `actual` web |
 | `shaping` | binding JVM/Android/iOS | + `HarfBuzzBindings.web.kt`, `PortableLock.web.kt` |
 | `:kalligraphie` | facades `commonMain`, locks | + `actual` web des locks, `initialize()` |
 | `conformance` | actual JVM/Android/iOS | + actual web |
-| `e2e` | corpus iOS embarqué | + corpus web embarqué, scènes web |
-| `:kalligraphie:platform:browser` | — | **nouveau**, cibles web seules, catalogue navigateur |
-| `:kalligraphie:platform:*` | `jvmMain` uniquement | inchangés |
-| `bench` | JVM/Android/iOS | inchangé (hors parité) |
+| `e2e` | corpus iOS embarqué | + corpus web (`webTest`), scènes web |
+| `:kalligraphie:platform:browser` | — | **nouveau**, cibles web seules |
+| `platform:apple|linux|windows`, `platform:android`, `platform:ios` | jvmMain / Android-only / natif only | inchangés |
+| `bench` | JVM/Android/iOS | inchangé (non enregistré web) |
 
-### 5.3 `expect/actual` à fournir côté web
+### 5.4 Décompression synchrone
 
-| Module | Déclaration | `actual` web |
-| --- | --- | --- |
-| `:kalligraphie` | `PortableLock` | verrou mono-thread (reentrant, sans contention) |
-| `:kalligraphie` | `PortableConditionLock` | voir §7.2 ; `awaitUninterruptibly` ne doit être atteint par aucun chemin |
-| `:kalligraphie` | `currentThreadToken` | jeton constant |
-| `shaping` | `HarfBuzzPlatformBinding` | binding kffi web (§6) |
-| `shaping` | `PortableLock` | verrou mono-thread |
-| `font:core` | `FontCacheAllocationError` | `Error` portable |
-| `conformance` | `currentPortableCapabilityIdentity` | déclaration web (§8.2) |
-| `e2e` | `FixtureCorpus`, mesure | corpus base64 généré (§8.4) |
+Introduire un seam interne de décompression derrière les deux points d'entrée de
+`PngDecoder` et `SvgDocumentDecoder` :
+
+- **JVM/native/Android** : continuent d'utiliser Okio (`InflaterSource`,
+  `GzipSource`) — aucun changement de comportement.
+- **web** : implémentation **pure Kotlin synchrone** de DEFLATE (RFC 1951) +
+  zlib (RFC 1950) + gzip (RFC 1952).
+
+Contraintes obligatoires : vérification des sommes de contrôle (Adler-32,
+CRC-32), **limites de taille décompressée** préservées, et échecs typés
+inchangés. `DecompressionStream` (navigateur) est **banni** ici car asynchrone.
+Le seam peut être un `expect/actual` interne ou une implémentation portable
+unique ; le choix est reporté au plan, la sémantique ne l'est pas.
 
 ## 6. Backend shaping HarfBuzz
 
-### 6.1 Dépendance amont kffi-harfbuzz
+### 6.1 Contrat amont (porte de faisabilité)
 
-Le dépôt `org.graphiks` doit publier des artefacts `js` et `wasmJs` exposant la
-**même surface** que les cibles existantes :
+Avant tout développement aval, le dépôt `org.graphiks` doit publier des artefacts
+`js`/`wasmJs` exposant la même surface `org.graphiks.kffi.harfbuzz.*` que JVM/
+Android/iOS (blob/face/font/buffer/feature, `hb_font_set_var_coords_normalized`,
+ligature carets, `hb_font_get_glyph_extents`) et `bindingIdentity` complet. Un
+**prototype amont doit prouver** :
 
-- `org.graphiks.kffi.harfbuzz.HarfBuzz.open()` et les types blob/face/font/
-  buffer/feature déjà utilisés par `HarfBuzzBindings.jvm.kt` ;
-- `hb_font_set_var_coords_normalized`, ligature carets et
-  `hb_font_get_glyph_extents` ;
-- `bindingIdentity` complet (`operatingSystem`, `architecture`, `artifactId`,
-  `artifactSha256`, `upstreamSourceRevision`, `buildChainIdentity`).
+- initialisation partagée (appels concurrents), sémantique d'échec/retry et
+  annulation ;
+- comportement déterministe avant/pendant l'initialisation ;
+- `open`, allocation, `shape` et release **synchrones** en **Node et
+  navigateur**, pour **les deux** cibles Kotlin ;
+- copie correcte et **rafraîchissement des vues mémoire** après croissance de la
+  mémoire linéaire HarfBuzz ;
+- résolution de l'asset embarqué et provenance réelle.
 
-Le module `.wasm` de HarfBuzz est embarqué et instancié **par kffi**, pas par
-Kalligraphie. C'est la condition de préservation de la provenance et de la
-version épinglée.
+Rappel d'interop Kotlin/Wasm : les `ByteArray` managés ne se passent pas
+directement à une API C/Wasm arbitraire ; la mémoire linéaire est un domaine de
+possession distinct. C'est cette couche de pont que le prototype doit valider.
 
 ### 6.2 Amorçage asynchrone
 
-Un unique point d'entrée portable et idempotent, `suspend fun initialize()` :
+`suspend fun initialize()` unique et idempotent, **limité au moteur wasm** :
 
-- **web** : attend l'instanciation du wasm kffi (et, en option, la permission
-  polices), puis marque l'état initialisé.
-- **JVM/Android/iOS** : `actual` no-op ; aucune rupture d'appel.
+- **web** : attend l'instanciation wasm kffi ; partage l'init en vol, échec/retry
+  typés ; ne demande **aucune** permission.
+- **JVM/Android/iOS** : `actual` no-op.
 
-Après amorçage, `HarfBuzz.open()` est synchrone dans le navigateur. Donc
-`HarfBuzzShapingBackend.open()` et **toutes les facades restent synchrones**,
-identiques aux autres cibles. C'est ce qui rend la parité d'API possible malgré
-`WebAssembly.instantiate` asynchrone.
+Après amorçage, `HarfBuzz.open()` est synchrone ; `HarfBuzzShapingBackend.open()`
+et **toutes les facades restent synchrones**. `initialize()` doit être
+accessible sans forcer un consommateur de `:shaping` seul à dépendre de la
+facade. La permission polices est **hors** de `initialize()` (§8.1).
 
 ### 6.3 Binding web
 
-`HarfBuzzBindings.web.kt` mirroite `HarfBuzzBindings.jvm.kt` :
-
-- mise à l'échelle en unités de dessin uniquement ; le facteur `unitsPerEm` du
-  face est appliqué au font, jamais la taille de layout (pas de double-scaling) ;
-- même ordre de possession `font → face → blob` et même libération en cas
-  d'erreur ;
-- même mapping des échecs vers `HarfBuzzBindingException` et les échecs
-  portables `font.shaping-*` ;
-- `supportsVariationLocation = true`.
+`HarfBuzzBindings.web.kt` mirroite `HarfBuzzBindings.jvm.kt` : échelle en unités
+de dessin uniquement (jamais la taille de layout → pas de double-scaling), même
+ordre de possession `font → face → blob`, même mapping des échecs,
+`supportsVariationLocation = true`, et rafraîchissement des vues après croissance
+mémoire.
 
 ## 7. Concurrence
 
-### 7.1 Verrous
+`PortableLock` web : verrou mono-thread reentrant. `currentThreadToken` web :
+constante.
 
-`PortableLock` web : implémentation mono-thread reentrant sans contention.
-`currentThreadToken` web : constante.
+**Constat vérifié :** les chemins ordinaires des sessions n'exigent **pas** de
+blocage inter-thread — les seules attentes de condition sont dans
+`JvmEditableLineLayoutSession.kt:121,126`, la fermeture de layout sur le même
+thread est rejetée avant (`:115-117`), et la session incrémentale utilise un
+verrou réentrant, pas une condition
+(`JvmIncrementalParagraphLayoutSession.kt:129-141,178-193`).
 
-### 7.2 Contrainte `PortableConditionLock`
-
-Le contrat commun interdit la réentrance et suppose qu'`awaitUninterruptibly()`
-libère le verrou puis attend qu'**un autre thread** signale. En runtime
-mono-thread (Kotlin/JS, Kotlin/Wasm sans threads), aucun autre thread ne peut
-signaler.
-
-**Exigence :** aucun chemin des sessions incrémentales ne doit atteindre
-`awaitUninterruptibly` sur web. Le spec de plan doit inclure une **trace
-explicite des usages** de `withLock`/`awaitUninterruptibly` dans
-`JvmEditableLineLayoutSession` / `JvmIncrementalParagraphLayoutSession` (renommées
-au §9), et l'`actual` web ne doit **jamais** bloquer le thread principal. Si un
-chemin atteignable subsiste, il est résolu par un échec portable explicite
-plutôt qu'un blocage.
+**Exigence :** préserver cette structure sur web. `awaitUninterruptibly` ne doit
+être atteint par aucun chemin ; l'`actual` web ne bloque jamais le thread
+principal. Des tests de réentrance et de non-atteignabilité l'établissent. Si un
+chemin atteignable subsiste, il produit un échec portable explicite, pas un
+blocage.
 
 ## 8. Polices et vérification
 
 ### 8.1 `:kalligraphie:platform:browser`
 
-- `BrowserSystemFontCatalog` au-dessus de la **Local Font Access API**
-  (`navigator.fonts.query()`), qui rend famille/style/**octets**
-  (`Blob` → `ByteArray`). Chromium uniquement, sous permission, asynchrone.
-- **Repli propre** : API absente ou permission refusée → résultat typé propre à
-  `platform:browser` (et non `CAPABILITY_ABSENCE_DIAGNOSTIC_CODE`, qui ne
-  concerne que les `PortableCapability`, cf. §8.2) ; la voie octets fournis par
-  l'app (`Kalligraphie.embedded(...)`, `fetch`, `File`) fonctionne partout.
-- Échecs typés : API absente, permission refusée, échec de requête.
+- Découverte système via **`window.queryLocalFonts()`** → `FontData[]` ; octets
+  via `await fontData.blob()` puis `await blob.arrayBuffer()`.
+- Exigences navigateur : **secure context**, permission, **Permissions Policy**
+  autorisée si dans une iframe, et **activation utilisateur** — une requête au
+  démarrage (sans activation) peut lever `SecurityError`. Attendre un
+  téléchargement wasm lent avant de demander la permission peut épuiser
+  l'activation transitoire.
+- **Décision :** la découverte de polices est une **opération `suspend` séparée,
+  déclenchée explicitement par l'utilisateur**, à invoquer avant toute autre
+  suspension. Elle est **retirée** de `initialize()`.
+- Repli propre : API absente / permission refusée / policy bloquée → résultat
+  typé propre à `platform:browser` (distinct de
+  `CAPABILITY_ABSENCE_DIAGNOSTIC_CODE`, qui ne vise que les `PortableCapability`).
+  La voie octets fournis par l'app (`Kalligraphie.embedded(...)`, `fetch`,
+  `File`) fonctionne partout.
+- `document.fonts` n'est **pas** nécessaire au shaping/raster par octets.
 
-**Frontière sync/async nette :** toute l'asynchronie (wasm, Blob) reste au bord.
-`platform:browser` expose des chargements `suspend` qui rendent des **octets** ;
-le cœur portable synchrone les consomme ensuite. La composition n'est jamais
-colorée `suspend`.
+**Frontière sync/async :** toute l'asynchronie (wasm, Blob) reste au bord ; le
+cœur synchrone consomme des octets. La composition n'est jamais `suspend`.
 
 ### 8.2 Conformance
 
-Ajout d'un `actual currentPortableCapabilityIdentity` web :
+`actual currentPortableCapabilityIdentity` web :
 
 | Capacité | Disponible | `profileId` |
 | --- | --- | --- |
@@ -198,37 +236,65 @@ Ajout d'un `actual currentPortableCapabilityIdentity` web :
 | `END_TO_END_LAYOUT` | oui | `portable-paragraph` |
 | `GLYPH_REPRESENTATION_VARIANTS` | oui | `portable-glyph` |
 
-`docs/docs/conformance-matrix.md` (et `.fr.md`) gagnent les lignes `js` et
-`wasmJs`. La présence/absence de la découverte de polices navigateur est une
-capacité de `platform:browser`, **distincte** des `PortableCapability`.
+`docs/docs/conformance-matrix.md` (+ `.fr.md`) gagnent les lignes `js`/`wasmJs`.
+La découverte de polices navigateur est une capacité de `platform:browser`,
+distincte des `PortableCapability`.
 
-### 8.3 Tests
+### 8.3 Tests — câblage explicite et bootstrap asynchrone
+
+Les suites ne s'exécutent pas par simple ajout de cible : elles sont câblées à
+des compilations précises (`e2e/build.gradle.kts:90-104,143-150,190-200` ;
+`unicode/build.gradle.kts:103-142` ; dépendances de test `layout` en `jvmTest`
+seulement, `layout/build.gradle.kts:15-25`). Le plan doit **énumérer** pour
+chaque tâche web : répertoires source, entrées de corpus, entrées de registre et
+nombre de tests.
 
 - `jsNodeTest` / `wasmJsNodeTest` : décodage portable, UAX #14, BiDi, parsing
-  SFNT, layout, **goldens raster-cpu** (pur Kotlin, déterministe, sans DOM).
+  SFNT, layout, **goldens raster-cpu**.
 - `jsBrowserTest` / `wasmJsBrowserTest` (Chrome headless) : `Blob`/`File`/
-  `fetch`, Local Font Access, catalogue navigateur.
+  `fetch`, `queryLocalFonts`, catalogue navigateur.
 
-### 8.4 e2e et goldens
+**Bootstrap asynchrone :** un `@BeforeTest` synchrone ne peut pas `await`
+`initialize()`. Le harnais doit prévoir un mécanisme d'attente supporté par le
+runner (ex. `runTest`/coroutine de test) avant la première composition. Au moins
+**un e2e en navigateur** est requis : Node ne valide pas le chargement navigateur.
 
-Le harnais lit les octets via un `FixtureCorpus` injecté. Le web n'a pas de
-classpath de ressources : le corpus est **embarqué en Kotlin généré (base64)**
-au build, en `webMain`, selon la technique déjà employée par `shaping` et `e2e`
-iOS. Les scènes sont rejouées en **Node** (calcul pur) et en **navigateur
-headless** (scènes DOM).
+### 8.4 Corpus e2e
+
+Le corpus est **généré dans `webTest`** (pas `webMain`, pour ne pas embarquer des
+fixtures dans les artefacts publiés), en Kotlin base64, sur le modèle des tâches
+iOS existantes. Les scènes composées/portables existantes sont réutilisées autant
+que possible plutôt que d'introduire une scission DOM arbitraire.
 
 ### 8.5 CI
 
-Nouveaux jobs dans `.github/workflows/font-tests.yml` et
-`golden-portability.yml` : `jsNodeTest`, `wasmJsNodeTest`, tests navigateur,
-`conformance` web, `e2e` web. Contraintes : Node récent avec drapeaux wasm-gc,
-Chrome headless.
+- Le job racine `check` (`.github/workflows/font-tests.yml:30-42`) exécute déjà
+  `check`, et les tâches de test enregistrées y sont rattachées : les nouvelles
+  tâches web impactent **ce job**, pas seulement des jobs neufs.
+- Configurer explicitement `nodejs()` / `browser()`, ChromeHeadless, et **épingler**
+  les versions de runtime ; ne pas ajouter d'anciens drapeaux
+  `--experimental-wasm-gc` sans vérifier la version de Node (des versions
+  récentes les rejettent).
+- Automatiser la permission polices et installer une **police de test** ;
+  séparer les tests de refus de permission des tests de succès.
+- Épingler les polices installées pour rendre les scènes déterministes.
 
-### 8.6 Tolérance numérique
+### 8.6 Police de parité numérique
 
-Assertions **exactes**. Le shaping web doit reproduire l'oracle HarfBuzz 14.3.0
-épinglé au bit près. Une tolérance n'apparaîtra que si une géométrie réellement
-flottante entre en jeu, selon la politique actuelle de la matrice.
+Séparer deux niveaux :
+
+1. **Sortie entière HarfBuzz** (glyph ids, advances, offsets, carets, extents) :
+   parité **exacte** avec l'oracle 14.3.0 épinglé.
+2. **Géométrie layout/raster Kotlin** : `Float` en Kotlin/JS n'est pas du
+   float32 JVM/Wasm ; `DesignToLayoutScale.convert()` calcule en `Double` puis
+   `toFloat()` (`HarfBuzzShapingBackend.kt:591-610`), et les scènes composées
+   arrondissent au pixel avant comparaison d'empreintes exactes
+   (`ComposedLineScenes.kt:136-140`, `GoldenVerifier.kt:47-55`).
+
+Une **sonde précoce inter-cibles** couvre : échelles fractionnaires, accumulation
+d'advances, seuils de retour à la ligne, bords de pixel. Une normalisation
+numérique délibérée est introduite là où c'est nécessaire. On ne suppose pas que
+« pur Kotlin ⇒ déterministe entre cibles ».
 
 ## 9. API publique — renommage neutre
 
@@ -242,63 +308,61 @@ Renommage sec (aucun alias `Jvm*` conservé) :
 | `JvmIncrementalParagraphLayoutSession` (+ `...Request`) | `IncrementalParagraphLayoutSession` |
 | `JvmEditableLineLayoutSession` | `EditableLineLayoutSession` |
 
-- Mise à jour des docs FR/EN, du Dokka, des tests, des benchmarks et des
-  scènes e2e qui référencent les noms actuels.
-- `suspend fun initialize()` exposé en `expect/actual` : réel sur web, no-op
-  ailleurs (pour ne pas imposer un appel inutile au JVM/native).
+Mise à jour docs FR/EN, Dokka, tests, benchmarks et scènes e2e. `suspend fun
+initialize()` reste `expect/actual` (réel sur web, no-op ailleurs).
 
-### Flux de données
-
-`app → initialize() (une fois) → fournit texte/typographie/polices (embedded,
-fetch ou BrowserSystemFontCatalog) → facade synchrone → pipeline portable
-unicode → shaping → layout → raster → géométrie/assets`.
-
-Identique aux autres cibles, à la frontière asynchrone près.
+**Flux :** `app → initialize() (une fois) → polices (embedded, fetch, ou
+découverte utilisateur) → facade synchrone → pipeline portable unicode → shaping
+→ layout → raster → géométrie/assets`.
 
 ## 10. Séquencement
 
-- **Phase 0 — Renommage neutre.** Facades/requests/sessions renommées, docs,
-  Dokka et tests à jour. Vérifiable seul par `./gradlew check`.
-- **Phase 1 — Socle web.** `js`+`wasmJs` dans la convention, groupe `webMain`,
-  compilation du cœur portable, `actual` triviaux (locks, `font/core`,
-  conformance). Sans backend : `SHAPING` déclaré **absent** avec diagnostic —
-  comportement identique au host Android aujourd'hui.
-- **Phase 2 — Shaping.** kffi-harfbuzz web + `HarfBuzzBindings.web.kt` +
-  `initialize()` ; `SHAPING` passe **Présent**.
-- **Phase 3 — Polices.** `platform:browser` + voie octets fournis par l'app.
-- **Phase 4 — Parité vérifiée.** e2e/goldens + CI + publication des variantes
-  web.
+- **Phase 0 — Renommage neutre.** Facades/requests/sessions, docs, Dokka, tests.
+  Vérifiable seul par `./gradlew check`.
+- **Phase 1 — Socle web.** Enregistrement opt-in, `webMain`/`webTest`,
+  compilation du cœur portable, **seam de décompression synchrone** (§5.4),
+  `actual` triviaux, conformance (sans backend : `SHAPING` absent + diagnostic,
+  comme le host Android aujourd'hui), **sonde numérique** (§8.6).
+- **Phase 2 — Shaping.** Contrat amont kffi + prototype (§6.1), puis
+  `HarfBuzzBindings.web.kt` + `initialize()` ; `SHAPING` passe Présent.
+- **Phase 3 — Polices.** `platform:browser` + découverte utilisateur.
+- **Phase 4 — Parité vérifiée.** e2e/goldens + CI + publication.
 
-Les phases sont conçues pour être exécutables et relisibles séparément : le plan
-d'implémentation peut être découpé par phase (la Phase 0 notamment peut être
-livrée indépendamment des cibles web).
+Les phases sont conçues pour être exécutables séparément ; la Phase 0 peut être
+livrée indépendamment du web.
 
 ## 11. Risques et inconnues
 
-1. **kffi-harfbuzz web** est le chemin critique : disponibilité de l'API
-   synchrone après init, taille du `.wasm`, stratégie de chargement.
-2. **Concurrence mono-thread** : prouver qu'aucun chemin des sessions n'exige un
-   vrai blocage inter-thread (§7.2).
-3. **Maturité Kotlin/Wasm** (wasm-gc) et outillage CI Node/Chrome.
-4. **Local Font Access** : Chromium-only et sous permission → parité *polices
-   système* partielle ; limite documentée, sans impact sur le cœur.
-5. **Dérive bit-à-bit** des goldens si la couche kffi web arrondit différemment
-   → décision de tolérance le moment venu.
-6. **Taille mémoire** : polices embarquées en base64 dans les klibs web et blob
-   wasm HarfBuzz.
+1. **Compression Okio (bloqueur confirmé)** : nécessite un DEFLATE/zlib/gzip
+   synchrone correct et borné ; chemin critique au même titre que HarfBuzz.
+2. **Contrat d'init kffi web** : non prouvé ; exige un prototype amont (§6.1).
+3. **Parité numérique** : risque réel de divergence float sur Kotlin/JS ; sonde
+   précoce et normalisation.
+4. **Activation/permission polices** : découverte séparée et déclenchée ;
+   Chromium-only → parité *polices système* partielle, documentée.
+5. **Maturité Kotlin/Wasm** et outillage CI (Node/Chrome, versions épinglées).
+6. **Croissance mémoire** HarfBuzz → vues périmées si non rafraîchies.
+7. **Publication/résolution** : filtres de dépôt kffi à étendre aux nouvelles
+   coordonnées ; suffixe d'artefact `-wasm-js` ; ajouter `platform:browser` à la
+   doc agrégée.
 
 ## 12. Critères de succès
 
 1. `:kalligraphie` compile et publie pour `js` et `wasmJs`.
-2. La conformance web déclare les 4 capacités **Présentes**.
-3. e2e + goldens web passent en CI au même niveau que JVM/iOS/Android.
-4. Un consommateur peut : `initialize()` → fournir des polices (app ou
-   navigateur) → composer/layout/raster, sur `js` et `wasmJs`.
-5. Renommage neutre appliqué partout, docs à jour.
+2. Décompression PNG/SVG synchrone opérationnelle sur web (checksums et bornes).
+3. La conformance web déclare les 4 capacités **Présentes**.
+4. e2e + goldens web passent en CI au même niveau que JVM/iOS/Android, dont au
+   moins un e2e navigateur.
+5. Sonde numérique inter-cibles verte (ou normalisation explicitement documentée).
+6. Un consommateur peut : `initialize()` → fournir des polices → composer/layout/
+   raster, sur `js` et `wasmJs`.
+7. Renommage neutre appliqué partout, docs à jour.
 
-## 13. Questions ouvertes (à trancher pendant le plan)
+## 13. Questions ouvertes (à trancher au plan)
 
 - Nom exact de l'objet d'amorçage (`Kalligraphie.initialize()` vs objet dédié).
+- Mécanisme d'enregistrement opt-in (nouvelle convention vs propriété Gradle).
+- Seam de décompression : `expect/actual` web vs implémentation portable unique.
 - Stratégie de chargement du `.wasm` kffi (embarqué base64 vs `fetch`).
-- Répartition précise des suites entre Node et navigateur headless.
-- Emplacement des jobs CI web et budget temps.
+- Répartition précise Node vs navigateur headless ; emplacement et budget CI.
+- Confirmation que le template de hiérarchie KGP fournit déjà le groupe `web`.
