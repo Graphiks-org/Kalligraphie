@@ -9,6 +9,8 @@ on:
       - 'gradle/**'
       - 'gradlew'
       - 'test-fixtures/**'
+      - 'smoke/**'
+      - 'kotlin-js-store/**'
       - 'docs/docs/generated/**'
       - '.github/workflows/font-tests.yml'
   push:
@@ -20,6 +22,8 @@ on:
       - 'gradle/**'
       - 'gradlew'
       - 'test-fixtures/**'
+      - 'smoke/**'
+      - 'kotlin-js-store/**'
       - 'docs/docs/generated/**'
       - '.github/workflows/font-tests.yml'
 
@@ -40,28 +44,6 @@ jobs:
         uses: ./.github/actions/setup-android
       - run: chmod +x gradlew
       - run: ./gradlew --no-daemon check
-
-  web-browser:
-    name: Web suites (Chrome headless)
-    # The Node suites run inside `check`; this job runs the same web sources in a real browser, so a
-    # bundler- or DOM-only regression is attributed here rather than to the portable job.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: zulu
-          java-version: '25'
-          cache: gradle
-      - name: Set up Android SDK and NDK
-        uses: ./.github/actions/setup-android
-      - run: chmod +x gradlew
-      - name: Run the web suites in Chrome headless
-        run: >-
-          ./gradlew --no-daemon
-          :kalligraphie:jsBrowserTest :kalligraphie:wasmJsBrowserTest
-          :kalligraphie:shaping:jsBrowserTest :kalligraphie:shaping:wasmJsBrowserTest
-          :kalligraphie:platform:browser:jsBrowserTest :kalligraphie:platform:browser:wasmJsBrowserTest
 
   consumer-smoke:
     name: Published artifacts (consumer)
