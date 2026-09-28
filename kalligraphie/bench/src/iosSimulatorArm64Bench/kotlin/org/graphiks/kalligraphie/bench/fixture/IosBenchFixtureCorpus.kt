@@ -6,7 +6,7 @@ import kotlin.io.encoding.Base64
  * Reads the corpus embedded in the simulator binary by the `iosBenchmarkCorpus` task.
  *
  * Kotlin/Native has no resource classpath, and a `simctl`-spawned process must not depend on host
- * paths, so the four fixtures the portable scenarios read travel inside the binary as base64
+ * paths, so the fixtures the portable scenarios read travel inside the binary as base64
  * source and decode once, lazily. [sha256Hex] hashes what was actually embedded, so a report can
  * be checked against the committed fixtures.
  */

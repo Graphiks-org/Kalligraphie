@@ -142,6 +142,21 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
     }
 
     @Test
+    public fun woffColdCapture() {
+        runScenario("WoffColdCapture")
+    }
+
+    @Test
+    public fun woff2ColdCapture() {
+        runScenario("Woff2ColdCapture")
+    }
+
+    @Test
+    public fun woff2ColdGlyph() {
+        runScenario("Woff2ColdGlyph")
+    }
+
+    @Test
     public fun interactiveEdit() {
         runScenario("InteractiveEdit")
     }
@@ -304,7 +319,7 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
             )
         }.associateBy { it.name }
 
-        /** The seven fixtures the glyph and paragraph profiles read, and nothing else. */
+        /** The nine fixtures the glyph and paragraph profiles read, and nothing else. */
         val MEASURED_CORPUS_PATHS = listOf(
             "/fonts/bungee-color/BungeeColor-Regular.ttf",
             "/fonts/twemoji-svginot-glyph5/TwitterColorEmoji-SVGinOT-15.1.0-glyph5.ttf.base64",
@@ -313,11 +328,13 @@ public class AndroidGlyphMaterializationBenchmark {    @get:Rule
             "/fonts/dejavu/DejaVuSans.ttf",
             "/fonts/amiri/Amiri-Regular.ttf",
             "/fonts/worksans/WorkSans[wght].ttf",
+            "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff",
+            "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2",
         )
 
         /**
          * The publication contract refuses an unnamed commit and unknown corpus: the identity line
-         * prints once per class run, before any profile, with the hashes of the seven fixtures the
+         * prints once per class run, before any profile, with the hashes of the nine fixtures the
          * profiles read.
          */
         @BeforeClass
