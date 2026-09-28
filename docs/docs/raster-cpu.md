@@ -8,10 +8,18 @@ The module rasterizes the three certified portable representation routes:
 
 - outlines (`GlyphOutlineIR`) into eight-bit coverage images;
 - paint graphs (`GlyphPaintIR`) into non-premultiplied RGBA images with
-  `SOURCE_OVER` composition;
+  `SOURCE_OVER` composition: `SolidOutline`, `Path`, `Group`, and the COLR v1
+  `GlyphClip`, `Solid`, `LinearGradient` and `Transform` nodes;
 - bitmap strikes (`BitmapGlyphIR`) as `ALPHA_8` pixels tinted by the explicit
   ink color, or as straight non-premultiplied `RGBA_8888` pixels copied
   unchanged with the ink ignored.
+
+Clipping intersects coverage exactly at the sixteen fixed sub-pixel samples, so a
+shared edge is never squared, and gradients are shaded in a committed integer sRGB
+transfer, so no platform math moves a byte. `PathClip`, `RadialGradient`,
+`SweepGradient`, `Composite`, composition modes other than `SOURCE_OVER`, a clip
+around a `Group`, and gradients that are not `LINEAR_SRGB` + `PREMULTIPLIED` are
+refused with a typed `InvalidRequest`.
 
 Every operation enforces declared bounds before allocation and returns either an
 immutable image or a typed failure (`InvalidRequest`, `LimitExceeded`). Curves

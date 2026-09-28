@@ -335,6 +335,49 @@
       "builtBy": "build_variable_vvar.py"
     },
     {
+      "key": "kalniaglaze",
+      "files": [
+        {
+          "path": "test-fixtures/fonts/kalniaglaze/KalniaGlaze[wdth,wght].ttf",
+          "url": "https://github.com/google/fonts/tree/d4c19446e537c001ba66b38649dae21a83770752/ofl/kalniaglaze",
+          "rawUrl": "https://raw.githubusercontent.com/google/fonts/d4c19446e537c001ba66b38649dae21a83770752/ofl/kalniaglaze/KalniaGlaze%5Bwdth%2Cwght%5D.ttf",
+          "fetchNote": null,
+          "revision": "d4c19446e537c001ba66b38649dae21a83770752",
+          "sha256": "526a3f364fff570bf01dfeb71b2de2f52bac0376b51004804e703df698b964ac",
+          "sizeBytes": 392184,
+          "tables": [
+            "COLR",
+            "CPAL",
+            "GDEF",
+            "GPOS",
+            "GSUB",
+            "HVAR",
+            "OS/2",
+            "STAT",
+            "avar",
+            "cmap",
+            "fvar",
+            "gasp",
+            "glyf",
+            "gvar",
+            "head",
+            "hhea",
+            "hmtx",
+            "loca",
+            "maxp",
+            "meta",
+            "name",
+            "post",
+            "prep"
+          ]
+        }
+      ],
+      "license": "OFL-1.1",
+      "licenseFile": "test-fixtures/fonts/kalniaglaze/OFL.txt",
+      "synthetic": false,
+      "builtBy": null
+    },
+    {
       "key": "liberation",
       "files": [
         {

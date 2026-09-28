@@ -17,9 +17,11 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.api.FontRenderAssetHandle
 import org.graphiks.kalligraphie.api.FontRenderVariantSnapshot
 import org.graphiks.kalligraphie.api.FontSourceProvenance
+import org.graphiks.kalligraphie.api.FontVariationCoordinates
 import org.graphiks.kalligraphie.api.GlyphColorSpace
 import org.graphiks.kalligraphie.api.GlyphOutlineIR
 import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
+import org.graphiks.kalligraphie.api.GlyphPaintExtendMode
 import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNodeKind
 import org.graphiks.kalligraphie.api.GlyphResolution
@@ -55,6 +57,7 @@ internal fun openRenderableFixture(
     requirements: FontAccessRequirementsSnapshot,
     renderVariant: FontRenderVariantSnapshot = FontRenderVariantSnapshot.default,
     layoutSize: LayoutUnit = LayoutUnit(2_048f),
+    variation: FontVariationCoordinates? = null,
 ): E2eFontFixture {
     val catalog = assertIs<FontOperationResult.Success<FontCatalogSnapshot>>(
         Kalligraphie.embedded(
@@ -68,7 +71,7 @@ internal fun openRenderableFixture(
             catalog.resolveFace(catalog.faces.single().id, requirements),
         ).value
         val instance = assertIs<FontOperationResult.Success<FontInstance>>(
-            face.instantiate(FontInstanceDescriptor(layoutSize)),
+            face.instantiate(FontInstanceDescriptor(layoutSize = layoutSize, variation = variation)),
         ).value
         val asset = assertIs<FontOperationResult.Success<FontRenderAssetHandle>>(
             instance.acquireRenderAsset(resolver, renderVariant, requirements),
@@ -132,6 +135,49 @@ internal fun paintProfile(): PaintGraphProfile = PaintGraphProfile(
         maxLayerRecords = 30_000,
     ),
     outlineProfile = outlineProfile(),
+)
+
+internal fun colrV1PaintRequirements(): FontAccessRequirementsSnapshot =
+    FontAccessRequirementsSnapshot.renderable(listOf(colrV1PaintProfile()))
+
+/**
+ * The COLR v1 paint surface the paint-sheet scene certifies: the four node kinds the variable
+ * fixture carries, `SOURCE_OVER`, every extend mode, and the schema-2 defaults
+ * (`LINEAR_SRGB` + `PREMULTIPLIED`).
+ */
+internal fun colrV1PaintProfile(): PaintGraphProfile = PaintGraphProfile(
+    acceptedNodeKinds = listOf(
+        GlyphPaintNodeKind.GLYPH_CLIP,
+        GlyphPaintNodeKind.SOLID,
+        GlyphPaintNodeKind.LINEAR_GRADIENT,
+        GlyphPaintNodeKind.TRANSFORM,
+        GlyphPaintNodeKind.GROUP,
+    ),
+    acceptedCompositionModes = listOf(GlyphPaintCompositionMode.SOURCE_OVER),
+    acceptedGradientExtendModes = listOf(
+        GlyphPaintExtendMode.PAD,
+        GlyphPaintExtendMode.REPEAT,
+        GlyphPaintExtendMode.REFLECT,
+    ),
+    limits = PaintGraphLimits(
+        maxNodes = 64,
+        maxReferences = 64,
+        maxDepth = 8,
+        maxGradients = 8,
+        maxColorStops = 32,
+        maxClips = 8,
+        maxTransforms = 4,
+        maxPaintVisits = 256,
+        maxSourceBytes = 200_000,
+        maxPaths = 6,
+        maxPalettes = 9,
+        maxPaletteEntries = 2_000,
+        maxColorRecords = 2_000,
+        maxBaseGlyphRecords = 3_000,
+        maxLayerRecords = 30_000,
+    ),
+    outlineProfile = outlineProfile(),
+    schemaVersion = 2,
 )
 
 internal fun bitmapRequirements(): FontAccessRequirementsSnapshot =

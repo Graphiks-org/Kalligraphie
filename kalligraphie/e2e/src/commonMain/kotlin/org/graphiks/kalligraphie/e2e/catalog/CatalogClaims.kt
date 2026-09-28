@@ -30,11 +30,6 @@ public object CatalogClaims {
         "the catalogue's sbix scene draws the strike and resolves advances through hhea/hmtx; the " +
             "sbix route does not require glyf, so this family's outlines are carried but never read"
 
-    /** The reason the outline tables of the COLR v1 fixture are excused, shared by `glyf` and `loca`. */
-    private const val REJECTED_FIXTURE_OUTLINES_REASON =
-        "the colour axis pins this fixture as rejected at face resolution, the CPU compositor " +
-            "refusing GlyphClip, so no catalogued scene ever decodes its outlines"
-
     /**
      * The reason the vertical-metric tables of the VVAR fixture are excused, shared by `VVAR`,
      * `vhea` and `vmtx`.
@@ -66,15 +61,23 @@ public object CatalogClaims {
             "GSUB" to "no catalogued scene shapes text with this family: the emoji sheets resolve " +
                 "code points through cmap and paint the COLR graph, never applying ccmp",
         ),
-        "kalligraphie-var-colr" to mapOf(
-            "glyf" to REJECTED_FIXTURE_OUTLINES_REASON,
-            "loca" to REJECTED_FIXTURE_OUTLINES_REASON,
-        ),
         "kalligraphie-var-vvar" to mapOf(
             "VVAR" to VVAR_VERTICAL_REASON,
             "vhea" to VVAR_VERTICAL_REASON,
             "vmtx" to VVAR_VERTICAL_REASON,
             "fvar" to VVAR_AXIS_REASON,
+        ),
+        "kalniaglaze" to mapOf(
+            "GDEF" to "no catalogued scene shapes text with this family: the alphabet sheet resolves " +
+                "code points through cmap and paints the COLR graph, never reading glyph definitions",
+            "GPOS" to "no catalogued scene shapes text with this family: the alphabet sheet paints " +
+                "each capital in isolation, never consulting pair positioning",
+            "GSUB" to "no catalogued scene shapes text with this family: the alphabet sheet selects " +
+                "no substitution",
+            "HVAR" to "the alphabet sheet draws one glyph per cell from its own bounds, so no " +
+                "advance is observed",
+            "STAT" to "the sheet selects its instances by design `wght` coordinate through " +
+                "`fvar`/`avar` and reads no style attribute",
         ),
         "liberation" to mapOf(
             "kern" to "legacy pair-kerning records, every one of the 908 reproduced by the GPOS " +

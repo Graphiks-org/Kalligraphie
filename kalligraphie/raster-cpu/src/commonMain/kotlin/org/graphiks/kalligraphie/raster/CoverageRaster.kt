@@ -48,6 +48,42 @@ internal object CoverageRaster {
         return A8Image(width, height, left, top, pixels)
     }
 
+    /**
+     * Rasterizes the coverage of a leaf restricted to [clips]: a sample counts when it is inside
+     * the leaf's winding (or the leaf is [geometry] `null`, an unbounded fill) and inside every
+     * clip. Intersecting at the samples is exact and never squares a shared edge.
+     */
+    fun rasterizeLeaf(
+        geometry: List<FlatContour>?,
+        clips: List<List<FlatContour>>,
+        left: Int,
+        top: Int,
+        width: Int,
+        height: Int,
+    ): A8Image {
+        val pixels = ByteArray(width * height)
+        for (row in 0 until height) {
+            val baseY = top + row
+            for (column in 0 until width) {
+                val baseX = left + column
+                var inside = 0
+                for (offsetY in sampleOffsets) {
+                    val sampleY = baseY + offsetY
+                    for (offsetX in sampleOffsets) {
+                        val sampleX = baseX + offsetX
+                        if (geometry != null && windingNumber(geometry, sampleX, sampleY) == 0) continue
+                        if (clips.any { clip -> windingNumber(clip, sampleX, sampleY) == 0 }) continue
+                        inside += 1
+                    }
+                }
+                if (inside > 0) {
+                    pixels[row * width + column] = (((inside * 255) + 8) / 16).toByte()
+                }
+            }
+        }
+        return A8Image(width, height, left, top, pixels)
+    }
+
     /** Counts signed crossings with the half-open convention `a.y <= y < b.y`, mirrored when descending. */
     private fun windingNumber(contours: List<FlatContour>, x: Double, y: Double): Int {
         var winding = 0
