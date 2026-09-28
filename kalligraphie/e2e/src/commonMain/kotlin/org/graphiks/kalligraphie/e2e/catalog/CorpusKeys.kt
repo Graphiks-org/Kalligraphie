@@ -17,6 +17,8 @@ public object CorpusKeys {
     public val BUNGEE_COLOR: CorpusKey = CorpusKey("bungee-color")
     /** Emoji Two COLR v0. */
     public val EMOJI_TWO_COLR_V0: CorpusKey = CorpusKey("emoji-two-colr-v0")
+    /** Kalnia Glaze, a real variable COLR v1 Latin font. */
+    public val KALNIA_GLAZE: CorpusKey = CorpusKey("kalniaglaze")
     /** Skia COLR v1 test glyphs. */
     public val SKIA_COLR_V1: CorpusKey = CorpusKey("skia-colr-v1")
     /** Synthetic variable COLR v1. */
