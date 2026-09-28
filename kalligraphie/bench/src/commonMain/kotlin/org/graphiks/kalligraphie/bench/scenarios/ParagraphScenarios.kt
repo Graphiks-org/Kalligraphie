@@ -1029,6 +1029,11 @@ private fun describeIncrementalFailure(result: IncrementalLayoutResult): String 
     val paragraph = failure.error as? org.graphiks.kalligraphie.api.IncrementalLayoutError.ParagraphFailure
     val paragraphError = paragraph?.paragraphError
     val font = paragraphError as? org.graphiks.kalligraphie.api.ParagraphLayoutError.FontFailure
+    val unrenderable = font?.fontError as? org.graphiks.kalligraphie.api.FontError.UnrenderableFontResolution
+    val rejections = unrenderable?.fallbackDiagnostics?.joinToString(separator = " | ") { decision ->
+        "face=${decision.faceId} rank=${decision.candidateRank} stage=${decision.stage} " +
+            "reason=${decision.reason} lastResort=${decision.lastResortState}"
+    }
     return "incremental=${failure.error.code} paragraph=${paragraphError?.code} " +
-        "font=${font?.fontError?.code} fontMessage=${font?.fontError?.message}"
+        "font=${font?.fontError?.code} fontMessage=${font?.fontError?.message} rejections=[$rejections]"
 }
