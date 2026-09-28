@@ -23,7 +23,7 @@ public data class RasterLimits(
     public val maxTotalPoints: Int,
     /** Maximum number of paint nodes visited while rasterizing one paint graph. */
     public val maxPaintNodes: Int,
-    /** Maximum group nesting depth accepted in one paint graph. */
+    /** Maximum paint-graph nesting depth accepted while rasterizing (groups, clips, transforms). */
     public val maxPaintDepth: Int,
 ) {
     init {
@@ -133,9 +133,9 @@ public class OutlineRasterRequest(
 /**
  * Inputs for [GlyphRasterizer.rasterizePaint].
  *
- * [unitsPerEm] is the design-unit scale of portable paint paths; solid outline
- * nodes use their own `unitsPerEm`. [originX] and [originY] translate the union
- * canvas in whole pixels.
+ * [unitsPerEm] is the design-unit scale of portable paint paths and of the unbounded
+ * `Solid`/gradient paints a `GlyphClip` encloses; solid outline and clip nodes use their own
+ * `unitsPerEm`. [originX] and [originY] translate the union canvas in whole pixels.
  */
 public class PaintRasterRequest(
     /** Target size in pixels per em. Must be finite and positive. */
