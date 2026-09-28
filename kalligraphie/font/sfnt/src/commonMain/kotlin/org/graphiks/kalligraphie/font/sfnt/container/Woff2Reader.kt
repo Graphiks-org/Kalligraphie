@@ -8,6 +8,7 @@ import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.font.sfnt.brotli.BrotliDecoder
 import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.decodeAsciiTag
+import org.graphiks.kalligraphie.font.sfnt.readInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
 
@@ -36,13 +37,23 @@ import org.graphiks.kalligraphie.font.sfnt.readUInt32
  * A transformed `glyf`/`loca` pair (transform version 0) is reconstructed by
  * [Woff2GlyfTransform]: the `glyf` block supplies the reconstruction and the paired transformed
  * `loca`, whose only role is to declare its original size and pair with `glyf`, is replaced by the
- * produced table. An unpaired or mode-mismatched pair is `font.woff2.transform-failed`. The `hmtx`
- * transform is still a forward stub for Task 9.
+ * produced table. An unpaired or mode-mismatched pair is `font.woff2.transform-failed`.
+ *
+ * A transformed `hmtx` (transform version 1) is reconstructed by [Woff2HmtxTransform] once every
+ * table is decoded, because it needs `hhea.numberOfHMetrics`, `maxp.numGlyphs` and each glyph's
+ * `xMin`. The `xMin` values are taken from the reconstructed `glyf` when that table was
+ * transformed, or from the passthrough `glyf` records (via `head.indexToLocFormat` and `loca`)
+ * when it used the null transform. A missing dependency, a reconstructed size that disagrees with
+ * the directory, or any other structural violation is `font.woff2.transform-failed`.
  */
 internal object Woff2Reader {
     private const val SIGNATURE: String = "wOF2"
     private const val COLLECTION_FLAVOR: UInt = 0x74746366u
     private const val HEADER_BYTES: Int = 48
+    private const val MAXP_NUM_GLYPHS_OFFSET: Int = 4
+    private const val HHEA_NUMBER_OF_HMETRICS_OFFSET: Int = 34
+    private const val HEAD_INDEX_TO_LOC_FORMAT_OFFSET: Int = 50
+    private const val X_MIN_OFFSET: Int = 2
 
     private const val INVALID_HEADER: String = "font.woff2.invalid-header"
     private const val INVALID_TABLE_DIRECTORY: String = "font.woff2.invalid-table-directory"
@@ -124,14 +135,15 @@ internal object Woff2Reader {
             entries += Entry(tag, readOrigLength.value, nonNullTransform, transformLength)
         }
 
-        // Task 9 (hmtx) still lacks its reconstruction. Refuse a non-null transform on any table
-        // other than `glyf`/`loca` rather than pass transformed bytes through as if they were the
-        // original table; the `glyf`/`loca` pair is reconstructed after decompression below.
+        // A non-null transform is only defined for `glyf`/`loca` (version 0) and `hmtx`
+        // (version 1). Refuse any other table rather than pass transformed bytes through as if
+        // they were the original table; the transformed tables are reconstructed after
+        // decompression below.
         for (entry in entries) {
-            if (entry.nonNullTransform && entry.tag != "glyf" && entry.tag != "loca") {
+            if (entry.nonNullTransform && entry.tag != "glyf" && entry.tag != "loca" && entry.tag != "hmtx") {
                 return failure(
                     TRANSFORM_FAILED,
-                    "WOFF2 table ${entry.tag} uses a transform that is not yet supported.",
+                    "WOFF2 table ${entry.tag} uses a transform that is not supported.",
                 )
             }
         }
@@ -167,6 +179,7 @@ internal object Woff2Reader {
         }
 
         val pairedLoca = BooleanArray(numTables)
+        var reconstructedGlyphXMins: IntArray? = null
         for (index in entries.indices) {
             val entry = entries[index]
             if (!entry.nonNullTransform) continue
@@ -200,16 +213,29 @@ internal object Woff2Reader {
                     }
                     tableData[index] = reconstructed.glyf
                     tableData[locaIndex] = reconstructed.loca
+                    reconstructedGlyphXMins = reconstructed.glyphXMins
                     pairedLoca[locaIndex] = true
                 }
                 "loca" -> return failure(
                     TRANSFORM_FAILED,
                     "A transformed WOFF2 loca table has no paired glyf table.",
                 )
+                // Reconstructed after every table is decoded, so hhea/maxp/glyf are all available.
+                "hmtx" -> Unit
                 else -> return failure(
                     TRANSFORM_FAILED,
                     "WOFF2 table ${entry.tag} uses a transform that is not supported.",
                 )
+            }
+        }
+
+        val transformedHmtxIndex = entries.indexOfFirst { it.tag == "hmtx" && it.nonNullTransform }
+        if (transformedHmtxIndex >= 0) {
+            val result = reconstructHmtx(entries, tableData, reconstructedGlyphXMins, transformedHmtxIndex, limits)
+            when (result) {
+                is FontOperationResult.Success -> tableData[transformedHmtxIndex] = result.value
+                is FontOperationResult.Failure -> return result
+                is FontOperationResult.Cancelled -> return result
             }
         }
 
@@ -219,6 +245,126 @@ internal object Woff2Reader {
         }
         return SfntReassembler.assemble(flavor, tables, limits.maxDecodedFontBytes)
     }
+
+    /**
+     * Reconstructs the transformed `hmtx` at [hmtxIndex] from `hhea`, `maxp` and each glyph's
+     * `xMin`, or returns a typed rejection.
+     *
+     * [reconstructedGlyphXMins] is the `xMin` array produced by a transformed `glyf`. A null
+     * transform `glyf` (version 3) instead has its `xMin` values read from the passthrough records
+     * using `head.indexToLocFormat` and `loca`.
+     */
+    private fun reconstructHmtx(
+        entries: List<Entry>,
+        tableData: List<ByteArray>,
+        reconstructedGlyphXMins: IntArray?,
+        hmtxIndex: Int,
+        limits: WoffDecodeLimits,
+    ): FontOperationResult<ByteArray> {
+        val hheaIndex = entries.indexOfFirst { it.tag == "hhea" }
+        val maxpIndex = entries.indexOfFirst { it.tag == "maxp" }
+        if (hheaIndex < 0 || maxpIndex < 0) {
+            return failure(TRANSFORM_FAILED, "A transformed WOFF2 hmtx table requires the hhea and maxp tables.")
+        }
+        val hhea = tableData[hheaIndex]
+        val maxp = tableData[maxpIndex]
+        if (hhea.size < HHEA_NUMBER_OF_HMETRICS_OFFSET + 2 || maxp.size < MAXP_NUM_GLYPHS_OFFSET + 2) {
+            return failure(TRANSFORM_FAILED, "A transformed WOFF2 hmtx table has a truncated hhea or maxp table.")
+        }
+        val numberOfHMetrics = readUInt16(hhea, HHEA_NUMBER_OF_HMETRICS_OFFSET)!!.toInt()
+        val numGlyphs = readUInt16(maxp, MAXP_NUM_GLYPHS_OFFSET)!!.toInt()
+
+        val xMinByGlyph = reconstructedGlyphXMins ?: run {
+            val glyfIndex = entries.indexOfFirst { it.tag == "glyf" }
+            val locaIndex = entries.indexOfFirst { it.tag == "loca" }
+            val headIndex = entries.indexOfFirst { it.tag == "head" }
+            if (glyfIndex < 0 || locaIndex < 0 || headIndex < 0) {
+                return failure(
+                    TRANSFORM_FAILED,
+                    "A transformed WOFF2 hmtx table requires glyf, loca and head to derive glyph xMin values.",
+                )
+            }
+            val head = tableData[headIndex]
+            if (head.size < HEAD_INDEX_TO_LOC_FORMAT_OFFSET + 2) {
+                return failure(TRANSFORM_FAILED, "A transformed WOFF2 hmtx table has a truncated head table.")
+            }
+            val indexFormat = readInt16(head, HEAD_INDEX_TO_LOC_FORMAT_OFFSET)!!
+            readGlyphXMins(tableData[glyfIndex], tableData[locaIndex], indexFormat, numGlyphs)
+                ?: return failure(
+                    TRANSFORM_FAILED,
+                    "A transformed WOFF2 hmtx table cannot read glyph xMin values from the passthrough glyf table.",
+                )
+        }
+        if (xMinByGlyph.size != numGlyphs) {
+            return failure(
+                TRANSFORM_FAILED,
+                "A transformed WOFF2 glyf table describes ${xMinByGlyph.size} glyphs but maxp declares $numGlyphs.",
+            )
+        }
+
+        val reconstructed = when (
+            val result = Woff2HmtxTransform.reconstruct(
+                transformed = tableData[hmtxIndex],
+                numberOfHMetrics = numberOfHMetrics,
+                numGlyphs = numGlyphs,
+                xMinByGlyph = xMinByGlyph,
+                limits = limits,
+            )
+        ) {
+            is FontOperationResult.Success -> result.value
+            is FontOperationResult.Failure -> return result
+            is FontOperationResult.Cancelled -> return result
+        }
+        if (entries[hmtxIndex].origLength != reconstructed.size.toLong()) {
+            return failure(
+                TRANSFORM_FAILED,
+                "A transformed WOFF2 hmtx table declares ${entries[hmtxIndex].origLength} bytes but " +
+                    "the reconstructed table is ${reconstructed.size}.",
+            )
+        }
+        return FontOperationResult.Success(reconstructed)
+    }
+
+    /**
+     * Reads each glyph's `xMin` from an untransformed (null-transform) `glyf` table using [loca].
+     *
+     * Returns `null` when [indexFormat] is neither 0 nor 1, the `loca` table is too small for
+     * [numGlyphs], an offset is not monotonic, or a glyph record is out of bounds.
+     */
+    private fun readGlyphXMins(
+        glyf: ByteArray,
+        loca: ByteArray,
+        indexFormat: Int,
+        numGlyphs: Int,
+    ): IntArray? {
+        if (indexFormat != 0 && indexFormat != 1) return null
+        val entrySize = if (indexFormat == 0) 2 else 4
+        val entryCount = numGlyphs.toLong() + 1L
+        if (entryCount * entrySize.toLong() > loca.size.toLong()) return null
+        val xMins = IntArray(numGlyphs)
+        var previousStart = 0L
+        for (index in 0 until numGlyphs) {
+            val start = readLocaOffset(loca, indexFormat, index)
+            val end = readLocaOffset(loca, indexFormat, index + 1)
+            if (end < start || start < previousStart) return null
+            if (end > glyf.size.toLong()) return null
+            previousStart = start
+            if (start == end) {
+                xMins[index] = 0
+                continue
+            }
+            if (start + X_MIN_OFFSET.toLong() + 2L > glyf.size.toLong()) return null
+            xMins[index] = readInt16(glyf, (start + X_MIN_OFFSET).toInt())!!
+        }
+        return xMins
+    }
+
+    private fun readLocaOffset(loca: ByteArray, indexFormat: Int, index: Int): Long =
+        if (indexFormat == 0) {
+            readUInt16(loca, index * 2)!!.toLong() * 2L
+        } else {
+            readUInt32(loca, index * 4)!!.toLong()
+        }
 
     /**
      * Reads one W3C `UIntBase128` value starting at [start].
