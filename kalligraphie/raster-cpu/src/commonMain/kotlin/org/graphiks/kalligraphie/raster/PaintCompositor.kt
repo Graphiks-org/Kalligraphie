@@ -2,9 +2,12 @@ package org.graphiks.kalligraphie.raster
 
 import org.graphiks.kalligraphie.api.GlyphAffineTransform
 import org.graphiks.kalligraphie.api.GlyphColor
+import org.graphiks.kalligraphie.api.GlyphPaintAlphaInterpolationMode
 import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
+import org.graphiks.kalligraphie.api.GlyphPaintInterpolationSpace
 import org.graphiks.kalligraphie.api.GlyphPaintIR
 import org.graphiks.kalligraphie.api.GlyphPaintNode
+import org.graphiks.kalligraphie.api.GlyphPaintPoint
 
 /**
  * Composites a portable paint graph into one non-premultiplied RGBA image.
@@ -117,15 +120,9 @@ internal object PaintCompositor {
                     composite(node.children.mapNotNull { child -> build(child, depth + 1, clips, transform, unboundedUnitsPerEm) })
                 }
 
-                is GlyphPaintNode.Solid -> throw RasterRequestRejected(
-                    "nodeKind",
-                    "unsupported paint node kind Solid.",
-                )
+                is GlyphPaintNode.Solid -> buildSolid(node, clips)
 
-                is GlyphPaintNode.LinearGradient -> throw RasterRequestRejected(
-                    "nodeKind",
-                    "unsupported paint node kind LinearGradient.",
-                )
+                is GlyphPaintNode.LinearGradient -> buildLinearGradient(node, clips, transform, unboundedUnitsPerEm)
 
                 else -> throw RasterRequestRejected(
                     "nodeKind",
@@ -156,6 +153,77 @@ internal object PaintCompositor {
             checkCanvas(bounds.width, bounds.height)
             val coverage = CoverageRaster.rasterizeLeaf(contours, clips, bounds.left, bounds.top, bounds.width, bounds.height)
             return tinted(coverage, node.color)
+        }
+
+        private fun buildSolid(node: GlyphPaintNode.Solid, clips: List<List<FlatContour>>): Layer? {
+            if (clips.isEmpty()) {
+                throw RasterRequestRejected("nodeKind", "unbounded paint requires an enclosing clip or root bounds.")
+            }
+            val bounds = boundsOfClips(clips) ?: return null
+            checkCanvas(bounds.width, bounds.height)
+            val coverage = CoverageRaster.rasterizeLeaf(null, clips, bounds.left, bounds.top, bounds.width, bounds.height)
+            return tintedSolid(coverage, node.color, node.opacity)
+        }
+
+        private fun buildLinearGradient(
+            node: GlyphPaintNode.LinearGradient,
+            clips: List<List<FlatContour>>,
+            transform: GlyphAffineTransform,
+            unboundedUnitsPerEm: Int,
+        ): Layer? {
+            if (node.colorLine.interpolationSpace != GlyphPaintInterpolationSpace.LINEAR_SRGB) {
+                throw RasterRequestRejected("interpolationSpace", "only LINEAR_SRGB gradients are supported.")
+            }
+            if (node.colorLine.alphaInterpolationMode != GlyphPaintAlphaInterpolationMode.PREMULTIPLIED) {
+                throw RasterRequestRejected("alphaInterpolationMode", "only PREMULTIPLIED gradients are supported.")
+            }
+            if (clips.isEmpty()) {
+                throw RasterRequestRejected("nodeKind", "unbounded paint requires an enclosing clip or root bounds.")
+            }
+            val bounds = boundsOfClips(clips) ?: return null
+            checkCanvas(bounds.width, bounds.height)
+            val coverage = CoverageRaster.rasterizeLeaf(null, clips, bounds.left, bounds.top, bounds.width, bounds.height)
+            val scale = pixelsPerEm / unboundedUnitsPerEm
+            val p0 = mapPoint(node.p0, transform, scale, originX.toDouble(), originY.toDouble())
+            val p1 = mapPoint(node.p1, transform, scale, originX.toDouble(), originY.toDouble())
+            val p2 = mapPoint(node.p2, transform, scale, originX.toDouble(), originY.toDouble())
+            val pixels = LinearGradientShader.shade(node, coverage, p0, p1, p2)
+            return Layer(bounds.left, bounds.top, bounds.width, bounds.height, pixels)
+        }
+
+        private fun boundsOfClips(clips: List<List<FlatContour>>): PixelBounds? {
+            var left = Int.MAX_VALUE
+            var top = Int.MAX_VALUE
+            var right = Int.MIN_VALUE
+            var bottom = Int.MIN_VALUE
+            var found = false
+            for (clip in clips) {
+                val bounds = boundsOf(clip, limits) ?: continue
+                found = true
+                left = minOf(left, bounds.left)
+                top = minOf(top, bounds.top)
+                right = maxOf(right, bounds.left + bounds.width)
+                bottom = maxOf(bottom, bounds.top + bounds.height)
+            }
+            if (!found) return null
+            return PixelBounds(left, top, right - left, bottom - top)
+        }
+
+        private fun tintedSolid(mask: A8Image?, color: GlyphColor, opacity: Double): Layer? {
+            if (mask == null || mask.width == 0 || mask.height == 0) return null
+            val coverage = mask.copyPixels()
+            val pixels = ByteArray(coverage.size * 4)
+            val effective = color.alpha * opacity
+            for (index in coverage.indices) {
+                val sample = coverage[index].toInt() and 0xFF
+                val alpha = roundToInt(effective * sample / 255.0).coerceIn(0, 255)
+                val base = index * 4
+                pixels[base] = color.red.toByte()
+                pixels[base + 1] = color.green.toByte()
+                pixels[base + 2] = color.blue.toByte()
+                pixels[base + 3] = alpha.toByte()
+            }
+            return Layer(mask.left, mask.top, mask.width, mask.height, pixels)
         }
 
         private fun flattenOutline(
@@ -301,4 +369,19 @@ internal object PaintCompositor {
             transform.yy.isFinite() && transform.dx.isFinite() && transform.dy.isFinite()
         if (!finite) throw RasterRequestRejected("transform", "the accumulated transform is not finite.")
     }
+
+    /** Maps a local design point through [transform], then the request scale and origin. */
+    private fun mapPoint(
+        point: GlyphPaintPoint,
+        transform: GlyphAffineTransform,
+        scale: Double,
+        originX: Double,
+        originY: Double,
+    ): FlatPoint = FlatPoint(
+        (transform.xx * point.x + transform.xy * point.y + transform.dx) * scale + originX,
+        (transform.yx * point.x + transform.yy * point.y + transform.dy) * scale + originY,
+    )
+
+    /** Rounds half up, deterministically, via integer-safe arithmetic. */
+    private fun roundToInt(value: Double): Int = kotlin.math.floor(value + 0.5).toInt()
 }
