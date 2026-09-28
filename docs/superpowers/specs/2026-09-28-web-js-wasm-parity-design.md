@@ -75,7 +75,7 @@ de test (`e2e/src/sharedTest/.../fixture/FixtureCorpus.kt:14`).
 | --- | --- |
 | Étendue | Toute la lib + découverte de polices navigateur (`raster-cpu` inclus) |
 | Enregistrement des cibles | **Opt-in par module**, pas via la convention de base (§5.1) |
-| Décompression | Décodeur DEFLATE/zlib/gzip **synchrone et borné** derrière les décodeurs PNG/SVG (§5.4) |
+| Décompression | Décodeur DEFLATE/zlib/gzip **synchrone et borné** derrière les décodeurs PNG/SVG ; Okio conservé, `kotlinx-io` écarté (§5.4) |
 | Backend shaping web | Étendre **kffi-harfbuzz** avec des cibles `js`/`wasmJs`, même version épinglée 14.3.0 et même provenance |
 | Polices | Octets fournis par l'app en voie principale ; `window.queryLocalFonts()` en option, **opération séparée et déclenchée par l'utilisateur** (§8.1) |
 | Initialisation | `suspend fun initialize()` unique et idempotent pour le **wasm seul** ; facades **synchrones** ensuite |
@@ -135,6 +135,11 @@ Introduire un seam interne de décompression derrière les deux points d'entrée
 - **web** : implémentation **pure Kotlin synchrone** de DEFLATE (RFC 1951) +
   zlib (RFC 1950) + gzip (RFC 1952), **partagée entre `js` et `wasmJs`** ; elle
   ne remplace pas Okio sur les cibles existantes.
+
+**`kotlinx-io` a été évalué et écarté** : il ne fournit **aucune** API de
+compression (son API publique se limite à `Buffer`, `Source`/`Sink`,
+`ByteString`, `FileSystem`), et il est en Alpha. Le migrer ne résoudrait donc pas
+le bloqueur et introduirait du churn sur une fondation instable.
 
 Contraintes obligatoires : vérification des sommes de contrôle (Adler-32,
 CRC-32), **application incrémentale** des limites (jamais « tout décompresser puis
