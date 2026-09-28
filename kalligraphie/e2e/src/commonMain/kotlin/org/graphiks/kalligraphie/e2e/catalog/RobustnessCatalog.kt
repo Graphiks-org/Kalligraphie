@@ -19,6 +19,20 @@ public object RobustnessCatalog {
             code = "font.invalid-font-data",
             stage = CatalogStage.DECODE,
         ),
+        expectedRejection(
+            id = "robustness.woff-truncated",
+            technology = CatalogText("Truncated WOFF 1.0 container", "Conteneur WOFF 1.0 tronqué"),
+            font = CorpusKeys.WOFF_IBM_PLEX,
+            code = "font.woff.invalid-header",
+            stage = CatalogStage.DECODE,
+        ),
+        expectedRejection(
+            id = "robustness.woff2-brotli-corrupted",
+            technology = CatalogText("Corrupted WOFF 2.0 Brotli stream", "Flux Brotli WOFF 2.0 corrompu"),
+            font = CorpusKeys.WOFF_IBM_PLEX,
+            code = "font.woff2.brotli-failed",
+            stage = CatalogStage.DECODE,
+        ),
     )
 
     private fun expectedRejection(id: String, technology: CatalogText, font: CorpusKey, code: String, stage: CatalogStage) =

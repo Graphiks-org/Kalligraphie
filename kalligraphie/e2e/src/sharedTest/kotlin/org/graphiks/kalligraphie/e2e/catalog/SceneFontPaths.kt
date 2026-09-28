@@ -22,6 +22,8 @@ internal const val KALLIGRAPHIE_VAR_COLR = "/fonts/kalligraphie-var-colr/Kalligr
 internal const val KALNIA_GLAZE = "/fonts/kalniaglaze/KalniaGlaze[wdth,wght].ttf"
 internal const val WORK_SANS = "/fonts/worksans/WorkSans[wght].ttf"
 internal const val NOTO_SANS_JP = "/fonts/noto-sans-jp/NotoSansJP-VerticalFixture.ttf"
+internal const val WOFF_IBM_PLEX_WOFF = "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff"
+internal const val WOFF_IBM_PLEX_WOFF2 = "/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2"
 
 /** The Latin letters a colour sheet draws, without the lower case. */
 internal val LATIN_LETTERS: List<Int> = (0x41..0x5A).toList()

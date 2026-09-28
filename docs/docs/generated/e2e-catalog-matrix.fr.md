@@ -6,17 +6,17 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 
 | Statut | Entrées |
 | --- | --- |
-| Supporté | 26 |
-| Rejet attendu | 2 |
-| Pas encore | 9 |
+| Supporté | 28 |
+| Rejet attendu | 4 |
+| Pas encore | 7 |
 | Hors périmètre | 1 |
 
 ## CONTAINER
 
 | Entrée | Technologie | Police | Statut |
 | --- | --- | --- | --- |
-| `container.woff2` | Encapsulation dans un conteneur WOFF 2.0 | — | Pas encore ; corpus non acquis |
-| `container.woff` | Encapsulation dans un conteneur WOFF 1.0 | — | Pas encore ; corpus non acquis |
+| `container.woff2` | Encapsulation dans un conteneur WOFF 2.0 | woff-ibm-plex | Supporté depuis f8c40fc2 |
+| `container.woff` | Encapsulation dans un conteneur WOFF 1.0 | woff-ibm-plex | Supporté depuis f8c40fc2 |
 
 ## OUTLINE
 
@@ -93,4 +93,6 @@ Généré depuis `ExpectationCatalog` par `./gradlew :kalligraphie:e2e:updateE2e
 | --- | --- | --- | --- |
 | `robustness.truncated-sfnt` | Conteneur TrueType tronqué | liberation | Rejet attendu `font.out-of-bounds` à DECODE |
 | `robustness.empty-input` | Source de police de zéro octet | liberation | Rejet attendu `font.invalid-font-data` à DECODE |
+| `robustness.woff-truncated` | Conteneur WOFF 1.0 tronqué | woff-ibm-plex | Rejet attendu `font.woff.invalid-header` à DECODE |
+| `robustness.woff2-brotli-corrupted` | Flux Brotli WOFF 2.0 corrompu | woff-ibm-plex | Rejet attendu `font.woff2.brotli-failed` à DECODE |
 
