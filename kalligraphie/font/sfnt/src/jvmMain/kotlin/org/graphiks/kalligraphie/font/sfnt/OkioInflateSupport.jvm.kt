@@ -31,7 +31,7 @@ private object OkioInflateSupport : InflateSupport {
                 }
             }
             InflateOutcome.Success(sink.readByteArray())
-        } catch (_: okio.IOException) {
+        } catch (_: Exception) {
             InflateOutcome.Malformed("decompression failed")
         } finally {
             sink.close()
