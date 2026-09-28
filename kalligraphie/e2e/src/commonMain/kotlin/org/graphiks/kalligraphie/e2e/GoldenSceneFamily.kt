@@ -14,6 +14,9 @@ public enum class GoldenSceneFamily {
     /** A multi-glyph alphabet sheet for one script. */
     ALPHABET_SHEET,
 
+    /** A multi-glyph paint-graph sheet at one or more variation instances. */
+    PAINT_SHEET,
+
     /** A composed text line through the paragraph facade. */
     COMPOSED_LINE,
 
