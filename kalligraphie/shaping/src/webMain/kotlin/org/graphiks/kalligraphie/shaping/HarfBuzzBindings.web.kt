@@ -1,15 +1,13 @@
 package org.graphiks.kalligraphie.shaping
 
 /**
- * Web actual for [openHarfBuzzPlatformBinding].
+ * Web (js + wasmJs) actual for [openHarfBuzzPlatformBinding].
  *
- * No kffi HarfBuzz web artifact exists yet (Phase 2), so the target reports the typed
- * graceful-degradation failure instead of pretending to shape. `HarfBuzzBindings.open` maps
- * [HarfBuzzBindingFailure.UNSUPPORTED_PLATFORM] to `font.shaping-native-platform-unsupported`,
- * exactly as the iOS actual did before its backend landed.
+ * Delegates to [openWebHarfBuzzPlatformBinding], which opens the published kffi HarfBuzz
+ * binding backed by the bundled WebAssembly module. The module must have been awaited through
+ * [initializeShapingRuntime] first; opening before that reports the typed
+ * `font.shaping-native-platform-unsupported` failure, exactly as an unloadable native library
+ * would on the other targets.
  */
 internal actual fun openHarfBuzzPlatformBinding(): HarfBuzzPlatformBinding =
-    throw HarfBuzzBindingException(
-        HarfBuzzBindingFailure.UNSUPPORTED_PLATFORM,
-        "The HarfBuzz web binding is not available on this target yet.",
-    )
+    openWebHarfBuzzPlatformBinding()
