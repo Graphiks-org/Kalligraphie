@@ -145,6 +145,12 @@ public data class GlyphAffineTransform(
         require(dx.isFinite()) { "dx must be finite." }
         require(dy.isFinite()) { "dy must be finite." }
     }
+
+    /** Named transforms. */
+    public companion object {
+        /** The transform that leaves every point unchanged. */
+        public val IDENTITY: GlyphAffineTransform = GlyphAffineTransform(1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+    }
 }
 
 /** Extension behavior outside a color line's declared stops. */

@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.raster
 
+import org.graphiks.kalligraphie.api.GlyphAffineTransform
 import org.graphiks.kalligraphie.api.GlyphContour
 import org.graphiks.kalligraphie.api.GlyphOutlineCommand
 import org.graphiks.kalligraphie.api.GlyphPaintPathCommand
@@ -79,6 +80,7 @@ internal object ContourFlattener {
         originX: Double,
         originY: Double,
         limits: RasterLimits,
+        transform: GlyphAffineTransform = GlyphAffineTransform.IDENTITY,
     ): List<FlatContour> {
         if (contours.size > limits.maxContours) {
             throw RasterLimitReached("maxContours", contours.size.toLong(), limits.maxContours.toLong())
@@ -86,7 +88,7 @@ internal object ContourFlattener {
         val budget = PointBudget(limits)
         val result = ArrayList<FlatContour>(contours.size)
         for (contour in contours) {
-            val edges = contour.commands.map { it.toEdge(scale, originX, originY) }
+            val edges = contour.commands.map { it.toEdge(scale, originX, originY, transform) }
             result += flattenEdges(edges, budget)
         }
         return result
@@ -106,14 +108,23 @@ internal object ContourFlattener {
         originX: Double,
         originY: Double,
         limits: RasterLimits,
+        transform: GlyphAffineTransform = GlyphAffineTransform.IDENTITY,
     ): List<FlatContour> {
         val contourCount = commands.count { command -> command is GlyphPaintPathCommand.MoveTo }
         if (contourCount > limits.maxContours) {
             throw RasterLimitReached("maxContours", contourCount.toLong(), limits.maxContours.toLong())
         }
         val budget = PointBudget(limits)
-        return flattenEdges(commands.map { it.toEdge(scale, originX, originY) }, budget)
+        return flattenEdges(commands.map { it.toEdge(scale, originX, originY, transform) }, budget)
     }
+
+    /** Maps a local design point through [transform], then the request scale and origin. */
+    private fun deviceX(x: Double, y: Double, transform: GlyphAffineTransform, scale: Double, originX: Double): Double =
+        (transform.xx * x + transform.xy * y + transform.dx) * scale + originX
+
+    /** Maps a local design point through [transform], then the request scale and origin. */
+    private fun deviceY(x: Double, y: Double, transform: GlyphAffineTransform, scale: Double, originY: Double): Double =
+        (transform.yx * x + transform.yy * y + transform.dy) * scale + originY
 
     private sealed interface Edge {
         class Move(val x: Double, val y: Double) : Edge
@@ -131,38 +142,60 @@ internal object ContourFlattener {
         data object Close : Edge
     }
 
-    private fun GlyphOutlineCommand.toEdge(scale: Double, originX: Double, originY: Double): Edge =
+    private fun GlyphOutlineCommand.toEdge(
+        scale: Double,
+        originX: Double,
+        originY: Double,
+        transform: GlyphAffineTransform,
+    ): Edge =
         when (this) {
-            is GlyphOutlineCommand.MoveTo -> Edge.Move(x * scale + originX, y * scale + originY)
-            is GlyphOutlineCommand.LineTo -> Edge.Line(x * scale + originX, y * scale + originY)
+            is GlyphOutlineCommand.MoveTo -> Edge.Move(
+                deviceX(x, y, transform, scale, originX),
+                deviceY(x, y, transform, scale, originY),
+            )
+            is GlyphOutlineCommand.LineTo -> Edge.Line(
+                deviceX(x, y, transform, scale, originX),
+                deviceY(x, y, transform, scale, originY),
+            )
             is GlyphOutlineCommand.QuadraticTo -> Edge.Quad(
-                controlX * scale + originX,
-                controlY * scale + originY,
-                endX * scale + originX,
-                endY * scale + originY,
+                deviceX(controlX, controlY, transform, scale, originX),
+                deviceY(controlX, controlY, transform, scale, originY),
+                deviceX(endX, endY, transform, scale, originX),
+                deviceY(endX, endY, transform, scale, originY),
             )
             is GlyphOutlineCommand.CubicTo -> Edge.Cubic(
-                control1X * scale + originX,
-                control1Y * scale + originY,
-                control2X * scale + originX,
-                control2Y * scale + originY,
-                endX * scale + originX,
-                endY * scale + originY,
+                deviceX(control1X, control1Y, transform, scale, originX),
+                deviceY(control1X, control1Y, transform, scale, originY),
+                deviceX(control2X, control2Y, transform, scale, originX),
+                deviceY(control2X, control2Y, transform, scale, originY),
+                deviceX(endX, endY, transform, scale, originX),
+                deviceY(endX, endY, transform, scale, originY),
             )
             is GlyphOutlineCommand.Close -> Edge.Close
         }
 
-    private fun GlyphPaintPathCommand.toEdge(scale: Double, originX: Double, originY: Double): Edge =
+    private fun GlyphPaintPathCommand.toEdge(
+        scale: Double,
+        originX: Double,
+        originY: Double,
+        transform: GlyphAffineTransform,
+    ): Edge =
         when (this) {
-            is GlyphPaintPathCommand.MoveTo -> Edge.Move(x * scale + originX, y * scale + originY)
-            is GlyphPaintPathCommand.LineTo -> Edge.Line(x * scale + originX, y * scale + originY)
+            is GlyphPaintPathCommand.MoveTo -> Edge.Move(
+                deviceX(x, y, transform, scale, originX),
+                deviceY(x, y, transform, scale, originY),
+            )
+            is GlyphPaintPathCommand.LineTo -> Edge.Line(
+                deviceX(x, y, transform, scale, originX),
+                deviceY(x, y, transform, scale, originY),
+            )
             is GlyphPaintPathCommand.CubicTo -> Edge.Cubic(
-                control1X * scale + originX,
-                control1Y * scale + originY,
-                control2X * scale + originX,
-                control2Y * scale + originY,
-                endX * scale + originX,
-                endY * scale + originY,
+                deviceX(control1X, control1Y, transform, scale, originX),
+                deviceY(control1X, control1Y, transform, scale, originY),
+                deviceX(control2X, control2Y, transform, scale, originX),
+                deviceY(control2X, control2Y, transform, scale, originY),
+                deviceX(endX, endY, transform, scale, originX),
+                deviceY(endX, endY, transform, scale, originY),
             )
             GlyphPaintPathCommand.Close -> Edge.Close
         }
