@@ -27,13 +27,37 @@ The two files package the same face, but their decompressed SFNT payloads are
 **not byte-identical**: WOFF 1.0 stores each table with zlib compression while
 WOFF 2.0 stores one Brotli stream with the `glyf`/`loca` and `hmtx` transforms,
 so a decoder that reassembles the tables produces two distinct SFNT
-serializations. Re-extracting both with fontTools 4.65.0 and `brotli` (saving
-with `flavor = None`) gives:
+serializations.
+
+The decoded digests below are reproducible. A plain `TTFont(...).save()` is not
+enough: `save()` recalculates `head.modified` from the wall clock by default, so
+its output changes between invocations. The exact command below disables both
+recalculations (`recalcTimestamp=False`, `recalcBBoxes=False`) and clears the
+container `flavor` so the save produces SFNT; it was run twice in separate
+processes and printed identical bytes both times:
+
+```python
+import hashlib, pathlib, tempfile
+from fontTools.ttLib import TTFont
+
+for src in ("test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff",
+            "test-fixtures/fonts/woff-ibm-plex/IBMPlexSans-Regular.woff2"):
+    with tempfile.TemporaryDirectory() as td:
+        out = pathlib.Path(td) / "out.ttf"
+        font = TTFont(src, recalcBBoxes=False, recalcTimestamp=False)
+        font.flavor = None
+        font.save(out, reorderTables=False)
+        font.close()
+        data = out.read_bytes()
+        print(src, len(data), hashlib.sha256(data).hexdigest())
+```
+
+Run with `uv run --with fonttools==4.65.0 --with brotli python <script>`:
 
 | Committed file | Decoded SFNT size | Decoded SFNT SHA-256 |
 | --- | --- | --- |
-| `IBMPlexSans-Regular.woff` | `200388` | `aafd4fac42b736d56926b627e4f20f3c4ae845ccef804bf99838515e3f92e819` |
-| `IBMPlexSans-Regular.woff2` | `199392` | `5fff03d6d266e250b02cd7e685ddcf7aa5631fbadead4bfbb770367e7de672a7` |
+| `IBMPlexSans-Regular.woff` | `200388` | `3761bea7ea7c938f59be5f3f85b2aed2b862d70dfcd5c753e4f14a41fa3c51cd` |
+| `IBMPlexSans-Regular.woff2` | `199392` | `db8229184e94a6218484230da2d94fb7d4e7b459f78c4f5be47d484ce0fa8018` |
 
 Both containers describe the same sfnt table directory, so the corpus `tables`
 list is the same for the two records. These decoded digests are evidence for

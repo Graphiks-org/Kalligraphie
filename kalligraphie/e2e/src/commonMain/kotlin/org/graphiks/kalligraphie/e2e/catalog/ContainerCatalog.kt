@@ -3,7 +3,11 @@ package org.graphiks.kalligraphie.e2e.catalog
 
 /** Container expectations, including the wrappers deliberately not supported yet. */
 public object ContainerCatalog {
-    /** Declared container expectations. */
+    /**
+     * Declared container expectations. The corpus is acquired (the `woff-ibm-plex` family), but
+     * these entries stay `CORPUS_NOT_ACQUIRED` until Task 13 promotes them to supported scenes and
+     * replaces the wording; Task 13 owns that transition.
+     */
     public val entries: List<CatalogEntry> = listOf(
         documented(
             id = "container.woff2",
