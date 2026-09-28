@@ -1,5 +1,6 @@
 package org.graphiks.kalligraphie.raster
 
+import org.graphiks.kalligraphie.api.GlyphAffineTransform
 import org.graphiks.kalligraphie.api.GlyphColor
 import org.graphiks.kalligraphie.api.GlyphPaintCompositionMode
 import org.graphiks.kalligraphie.api.GlyphPaintIR
@@ -8,16 +9,18 @@ import org.graphiks.kalligraphie.api.GlyphPaintNode
 /**
  * Composites a portable paint graph into one non-premultiplied RGBA image.
  *
- * Solid outline nodes use their own `unitsPerEm`; portable path nodes use the
- * request-level `unitsPerEm`. Children of a group are painted in index order
- * with `SOURCE_OVER` integer arithmetic, so identical graphs produce identical
- * pixels on every platform.
+ * Solid outline and portable path nodes rasterize their own geometry; a `GlyphClip` restricts
+ * the child paint to its outline, and a `Transform` composes its matrix into the child's
+ * coordinates. Clipping is an exact per-sample intersection at the rasterizer's sixteen fixed
+ * sub-pixel positions, so a shared edge is never squared and nested clips intersect correctly.
+ * Children of a group are painted in index order with `SOURCE_OVER` integer arithmetic, so
+ * identical graphs produce identical pixels on every platform.
  *
- * Each visited node materializes one layer before its group composites, and the
- * layers stay live until the group finishes, so peak memory scales with the live
- * stack: roughly `maxPaintNodes × layer bytes`. There is no aggregate byte
- * budget, so callers processing untrusted graphs must choose
- * [RasterLimits.maxPaintNodes] and [RasterLimits.maxPixelsPerImage] together.
+ * Each visited node materializes one layer before its group composites, and the layers stay live
+ * until the group finishes, so peak memory scales with the live stack: roughly
+ * `maxPaintNodes × layer bytes`. There is no aggregate byte budget, so callers processing
+ * untrusted graphs must choose [RasterLimits.maxPaintNodes] and [RasterLimits.maxPixelsPerImage]
+ * together.
  */
 internal object PaintCompositor {
     fun rasterize(
@@ -28,8 +31,23 @@ internal object PaintCompositor {
         originY: Int,
         limits: RasterLimits,
     ): Rgba8Image {
+        val rootClips = paint.clipBounds?.let { bounds ->
+            val scale = pixelsPerEm / unitsPerEm
+            listOf(
+                listOf(
+                    FlatContour(
+                        listOf(
+                            FlatPoint(bounds.minX * scale + originX, bounds.minY * scale + originY),
+                            FlatPoint(bounds.maxX * scale + originX, bounds.minY * scale + originY),
+                            FlatPoint(bounds.maxX * scale + originX, bounds.maxY * scale + originY),
+                            FlatPoint(bounds.minX * scale + originX, bounds.maxY * scale + originY),
+                        ),
+                    ),
+                ),
+            )
+        } ?: emptyList()
         val context = Context(paint, pixelsPerEm, unitsPerEm, originX, originY, limits)
-        val root = context.build(paint.rootNode, depth = 0)
+        val root = context.build(paint.rootNode, 0, rootClips, GlyphAffineTransform.IDENTITY, unitsPerEm)
         return if (root == null) {
             Rgba8Image(0, 0, 0, 0, ByteArray(0))
         } else {
@@ -55,7 +73,13 @@ internal object PaintCompositor {
     ) {
         private var visitedNodes = 0
 
-        fun build(nodeIndex: Int, depth: Int): Layer? {
+        fun build(
+            nodeIndex: Int,
+            depth: Int,
+            clips: List<List<FlatContour>>,
+            transform: GlyphAffineTransform,
+            unboundedUnitsPerEm: Int,
+        ): Layer? {
             visitedNodes += 1
             if (visitedNodes > limits.maxPaintNodes) {
                 throw RasterLimitReached("maxPaintNodes", visitedNodes.toLong(), limits.maxPaintNodes.toLong())
@@ -64,16 +88,44 @@ internal object PaintCompositor {
                 throw RasterLimitReached("maxPaintDepth", depth.toLong(), limits.maxPaintDepth.toLong())
             }
             return when (val node = paint.nodes[nodeIndex]) {
-                is GlyphPaintNode.SolidOutline -> tinted(coverageOfOutline(node), node.color)
+                is GlyphPaintNode.SolidOutline -> buildOutline(node, clips, transform)
 
-                is GlyphPaintNode.Path -> tinted(coverageOfPath(node), node.color)
+                is GlyphPaintNode.Path -> buildPath(node, clips, transform)
+
+                is GlyphPaintNode.GlyphClip -> {
+                    val flattened = flattenOutline(node.outline.contours, node.outline.unitsPerEm, transform)
+                    if (flattened.isEmpty()) {
+                        null
+                    } else {
+                        build(node.paint, depth + 1, clips + listOf(flattened), transform, node.outline.unitsPerEm)
+                    }
+                }
+
+                is GlyphPaintNode.Transform -> {
+                    val composed = compose(transform, node.matrix)
+                    requireFinite(composed)
+                    build(node.paint, depth + 1, clips, composed, unboundedUnitsPerEm)
+                }
 
                 is GlyphPaintNode.Group -> {
+                    if (clips.isNotEmpty()) {
+                        throw RasterRequestRejected("nodeKind", "a clip around a composite is not supported.")
+                    }
                     if (node.compositionMode != GlyphPaintCompositionMode.SOURCE_OVER) {
                         throw RasterRequestRejected("compositionMode", "unsupported paint composition mode.")
                     }
-                    composite(node.children.mapNotNull { child -> build(child, depth + 1) })
+                    composite(node.children.mapNotNull { child -> build(child, depth + 1, clips, transform, unboundedUnitsPerEm) })
                 }
+
+                is GlyphPaintNode.Solid -> throw RasterRequestRejected(
+                    "nodeKind",
+                    "unsupported paint node kind Solid.",
+                )
+
+                is GlyphPaintNode.LinearGradient -> throw RasterRequestRejected(
+                    "nodeKind",
+                    "unsupported paint node kind LinearGradient.",
+                )
 
                 else -> throw RasterRequestRejected(
                     "nodeKind",
@@ -82,31 +134,55 @@ internal object PaintCompositor {
             }
         }
 
-        private fun coverageOfOutline(node: GlyphPaintNode.SolidOutline): A8Image? {
-            val contours = ContourFlattener.flattenOutline(
-                contours = node.outline.contours,
-                scale = pixelsPerEm / node.outline.unitsPerEm,
-                originX = originX.toDouble(),
-                originY = originY.toDouble(),
-                limits = limits,
-            )
+        private fun buildOutline(
+            node: GlyphPaintNode.SolidOutline,
+            clips: List<List<FlatContour>>,
+            transform: GlyphAffineTransform,
+        ): Layer? {
+            val contours = flattenOutline(node.outline.contours, node.outline.unitsPerEm, transform)
             val bounds = boundsOf(contours, limits) ?: return null
             checkCanvas(bounds.width, bounds.height)
-            return CoverageRaster.rasterize(contours, bounds.left, bounds.top, bounds.width, bounds.height)
+            val coverage = CoverageRaster.rasterizeLeaf(contours, clips, bounds.left, bounds.top, bounds.width, bounds.height)
+            return tinted(coverage, node.color)
         }
 
-        private fun coverageOfPath(node: GlyphPaintNode.Path): A8Image? {
-            val contours = ContourFlattener.flattenPath(
-                commands = node.path.commands,
-                scale = pixelsPerEm / unitsPerEm,
-                originX = originX.toDouble(),
-                originY = originY.toDouble(),
-                limits = limits,
-            )
+        private fun buildPath(
+            node: GlyphPaintNode.Path,
+            clips: List<List<FlatContour>>,
+            transform: GlyphAffineTransform,
+        ): Layer? {
+            val contours = flattenPath(node.path.commands, unitsPerEm, transform)
             val bounds = boundsOf(contours, limits) ?: return null
             checkCanvas(bounds.width, bounds.height)
-            return CoverageRaster.rasterize(contours, bounds.left, bounds.top, bounds.width, bounds.height)
+            val coverage = CoverageRaster.rasterizeLeaf(contours, clips, bounds.left, bounds.top, bounds.width, bounds.height)
+            return tinted(coverage, node.color)
         }
+
+        private fun flattenOutline(
+            contours: List<org.graphiks.kalligraphie.api.GlyphContour>,
+            outlineUnitsPerEm: Int,
+            transform: GlyphAffineTransform,
+        ): List<FlatContour> = ContourFlattener.flattenOutline(
+            contours = contours,
+            scale = pixelsPerEm / outlineUnitsPerEm,
+            originX = originX.toDouble(),
+            originY = originY.toDouble(),
+            limits = limits,
+            transform = transform,
+        )
+
+        private fun flattenPath(
+            commands: List<org.graphiks.kalligraphie.api.GlyphPaintPathCommand>,
+            pathUnitsPerEm: Int,
+            transform: GlyphAffineTransform,
+        ): List<FlatContour> = ContourFlattener.flattenPath(
+            commands = commands,
+            scale = pixelsPerEm / pathUnitsPerEm,
+            originX = originX.toDouble(),
+            originY = originY.toDouble(),
+            limits = limits,
+            transform = transform,
+        )
 
         private fun tinted(mask: A8Image?, color: GlyphColor): Layer? {
             if (mask == null || mask.width == 0 || mask.height == 0) return null
@@ -206,5 +282,23 @@ internal object PaintCompositor {
                 throw RasterLimitReached("maxPixelsPerImage", pixels, Int.MAX_VALUE.toLong() / 4L)
             }
         }
+    }
+
+    /** Composes [inner] first, then [outer]. */
+    private fun compose(outer: GlyphAffineTransform, inner: GlyphAffineTransform): GlyphAffineTransform =
+        GlyphAffineTransform(
+            xx = outer.xx * inner.xx + outer.xy * inner.yx,
+            yx = outer.yx * inner.xx + outer.yy * inner.yx,
+            xy = outer.xx * inner.xy + outer.xy * inner.yy,
+            yy = outer.yx * inner.xy + outer.yy * inner.yy,
+            dx = outer.xx * inner.dx + outer.xy * inner.dy + outer.dx,
+            dy = outer.yx * inner.dx + outer.yy * inner.dy + outer.dy,
+        )
+
+    /** Rejects a transform whose accumulation left the finite domain. */
+    private fun requireFinite(transform: GlyphAffineTransform) {
+        val finite = transform.xx.isFinite() && transform.yx.isFinite() && transform.xy.isFinite() &&
+            transform.yy.isFinite() && transform.dx.isFinite() && transform.dy.isFinite()
+        if (!finite) throw RasterRequestRejected("transform", "the accumulated transform is not finite.")
     }
 }
