@@ -19,8 +19,9 @@ import platform.posix.getenv
 private const val CORPUS_ID = "portable-glyphs-and-paragraph-layout"
 
 private const val CORPUS_DESCRIPTION =
-    "the seven fixtures the glyph and paragraph profiles read: COLR v0, SVG-in-OT, EBDT bitmap, " +
-        "TrueType, DejaVu, Amiri and variable Work Sans"
+    "the nine fixtures the glyph and paragraph profiles read: COLR v0, SVG-in-OT, EBDT bitmap, " +
+        "TrueType, DejaVu, Amiri, variable Work Sans, and the IBM Plex Sans WOFF 1.0 and WOFF 2.0 " +
+        "containers"
 
 private const val WARMUP_ITERATIONS = 3
 

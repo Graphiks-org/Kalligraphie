@@ -15,7 +15,8 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import kotlin.io.encoding.Base64
 import org.graphiks.kalligraphie.bench.fixture.JvmBenchmarkFixtureCorpus
-import org.graphiks.kalligraphie.bench.scenarios.glyphMaterializationScenarios
+import org.graphiks.kalligraphie.bench.scenarios.threadedInstrumentScenarios
+import org.graphiks.kalligraphie.conformance.currentPortableCapabilityIdentity
 
 /**
  * The JVM entry point of the portable glyph scenarios.
@@ -50,6 +51,9 @@ public open class PortableGlyphMaterializationBenchmark {
         "TrueTypeWarmOutlines",
         "TrueTypeColdDetach",
         "TrueTypeWarmDetach",
+        "WoffColdCapture",
+        "Woff2ColdCapture",
+        "Woff2ColdGlyph",
     )
     public var scenarioName: String = ""
 
@@ -57,8 +61,17 @@ public open class PortableGlyphMaterializationBenchmark {
 
     @Setup
     public fun setup() {
+        // The resolution goes through the registry, so a scenario this platform stops serving fails
+        // here by name instead of being measured from a hand-written list that drifted.
         val corpus = JvmBenchmarkFixtureCorpus
-        val selected = glyphMaterializationScenarios(corpus).firstOrNull { it.name == scenarioName }
+        val selected = ScenarioRegistry
+            .select(
+                corpus = corpus,
+                identity = currentPortableCapabilityIdentity(),
+                platformScenarios = threadedInstrumentScenarios(corpus),
+            )
+            .filter { scenario -> scenario.scenarioRoute == ScenarioRoute.PORTABLE_GLYPHS }
+            .firstOrNull { it.name == scenarioName }
             ?: error("Unknown glyph-materialization scenario: $scenarioName")
         selected.prepare()
         scenario = selected

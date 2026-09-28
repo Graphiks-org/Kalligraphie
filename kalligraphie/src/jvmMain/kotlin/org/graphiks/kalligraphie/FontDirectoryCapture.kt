@@ -12,6 +12,9 @@ import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalog
 import org.graphiks.kalligraphie.font.core.EmbeddedFontCatalogEntry
 import org.graphiks.kalligraphie.font.sfnt.SfntReader
 import org.graphiks.kalligraphie.font.sfnt.TrueTypeCollectionReader
+import org.graphiks.kalligraphie.font.sfnt.container.DecodedFont
+import org.graphiks.kalligraphie.font.sfnt.container.FontContainerDecoder
+import org.graphiks.kalligraphie.font.sfnt.container.WoffDecodeLimits
 
 internal fun captureFontDirectories(options: FontDirectoryCatalogOptions, token: CancellationToken, provider: String): FontOperationResult<FontCatalogSnapshot> {
     val diagnostics = CaptureDiagnostics(options.maxDiagnostics)
@@ -76,11 +79,29 @@ internal fun captureFontDirectories(options: FontDirectoryCatalogOptions, token:
             }
         } catch (_: Exception) { diagnostics.add(FontError.InvalidFontData("Font candidate could not be read.")); null } ?: continue
         val source = FontSource(bytes, FontSourceProvenance(path.fileName.toString()))
-        if (!seen.add(source.id)) continue
-        if (retainedBytes + bytes.size > options.maxTotalSourceBytes) { limit("Aggregate source byte limit reached."); continue }
+        // A `wOFF`/`wOF2` source is normalised to its decoded standalone SFNT before identity,
+        // aggregate accounting and parsing; a non-container source keeps its original bytes.
+        // Decoding is a single-face examination attempt, so a failure is charged against the
+        // examination budget and never bypasses it through the `continue` below.
+        val decodedFont = when (val decoded = FontContainerDecoder.decode(source, WoffDecodeLimits.forCapture(options.maxSourceBytes))) {
+            is FontOperationResult.Success<*> -> {
+                diagnostics.addAll(decoded.diagnostics)
+                decoded.value as DecodedFont?
+            }
+            is FontOperationResult.Failure -> {
+                examined++
+                if (decoded.error is FontError.ResourceLimitExceeded) limited = true
+                reject(decoded.error, decoded.diagnostics, path.fileName.toString())
+                continue
+            }
+            is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(diagnostics.values())
+        }
+        val normalisedSource = if (decodedFont == null) source else FontSource(decodedFont.bytes, source.provenance)
+        if (!seen.add(normalisedSource.id)) continue
+        if (retainedBytes + normalisedSource.sizeInBytes > options.maxTotalSourceBytes) { limit("Aggregate source byte limit reached."); continue }
         val remaining = options.maxFacesToExamine - examined
         val faces = if (bytes.size >= 4 && bytes[0] == 't'.code.toByte() && bytes[1] == 't'.code.toByte() && bytes[2] == 'c'.code.toByte() && bytes[3] == 'f'.code.toByte()) {
-            when (val result = TrueTypeCollectionReader.readMetadata(source, remaining, token, onFaceExamined = { examined++ })) {
+            when (val result = TrueTypeCollectionReader.readMetadata(normalisedSource, remaining, token, onFaceExamined = { examined++ })) {
                 is FontOperationResult.Success -> { diagnostics.addAll(result.diagnostics); result.value.map { it.faceIndex to it.metadata } }
                 is FontOperationResult.Failure -> {
                     if (result.error is FontError.ResourceLimitExceeded) limited = true
@@ -91,19 +112,19 @@ internal fun captureFontDirectories(options: FontDirectoryCatalogOptions, token:
             }
         } else {
             examined++
-            listOf(0 to SfntReader.readMetadata(source))
+            listOf(0 to SfntReader.readMetadata(normalisedSource))
         }
         var acceptedSource = false
         for ((index, parsed) in faces) {
             if (token.isCancellationRequested()) return FontOperationResult.Cancelled(diagnostics.values())
             if (entries.size >= options.maxFaces) { limit("Accepted face limit reached."); break }
             when (parsed) {
-                is FontOperationResult.Success -> { entries += EmbeddedFontCatalogEntry(source, parsed.value, index); acceptedSource = true; diagnostics.addAll(parsed.diagnostics) }
+                is FontOperationResult.Success -> { entries += EmbeddedFontCatalogEntry(normalisedSource, parsed.value, index); acceptedSource = true; diagnostics.addAll(parsed.diagnostics) }
                 is FontOperationResult.Failure -> reject(parsed.error, parsed.diagnostics, "${path.fileName} face $index")
                 is FontOperationResult.Cancelled -> return FontOperationResult.Cancelled(diagnostics.values())
             }
         }
-        if (acceptedSource) retainedBytes += bytes.size
+        if (acceptedSource) retainedBytes += normalisedSource.sizeInBytes
     }
     if (token.isCancellationRequested()) return FontOperationResult.Cancelled(diagnostics.values())
     if (entries.isEmpty()) return FontOperationResult.Failure(
@@ -117,7 +138,7 @@ internal fun captureFontDirectories(options: FontDirectoryCatalogOptions, token:
 }
 
 private val captureGeneration = AtomicLong()
-private fun isFontCandidate(path: Path): Boolean = path.fileName.toString().substringAfterLast('.', "").lowercase() in setOf("ttf", "otf", "ttc", "otc")
+private fun isFontCandidate(path: Path): Boolean = path.fileName.toString().substringAfterLast('.', "").lowercase() in setOf("ttf", "otf", "ttc", "otc", "woff", "woff2")
 private fun hasSymbolicAncestor(path: Path): Boolean {
     var current: Path? = path
     while (current != null) { if (Files.isSymbolicLink(current)) return true; current = current.parent }

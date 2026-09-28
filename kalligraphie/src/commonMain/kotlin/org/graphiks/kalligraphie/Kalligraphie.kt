@@ -103,10 +103,12 @@ public object Kalligraphie {
      * [sourceBytes] cannot change the returned catalog. [provenance] is
      * retained as the caller-supplied origin label for diagnostics; it is not
      * treated as a cryptographic identity. The accepted SFNT signatures are
-     * TrueType `0x00010000` and the legacy `true` tag. Collection (`ttcf`),
-     * CFF/OpenType (`OTTO`), Type 1 (`typ1`), truncated data, missing tables,
-     * and malformed table ranges produce typed [FontOperationResult.Failure]
-     * values.
+     * TrueType `0x00010000` and the legacy `true` tag. Single-face WOFF 1.0
+     * (`wOFF`) and WOFF 2.0 (`wOF2`) containers are also accepted and decoded
+     * to a standalone SFNT before parsing. Collection (`ttcf`), a WOFF/WOFF2
+     * `ttcf` flavor, CFF/OpenType (`OTTO`), Type 1 (`typ1`), truncated data,
+     * missing tables, and malformed table ranges produce typed
+     * [FontOperationResult.Failure] values.
      *
      * A successful catalog is an immutable snapshot safe to share between
      * threads. It owns the parsed source snapshot but not any renderer
@@ -115,7 +117,8 @@ public object Kalligraphie {
      * acquisitions while rejecting later ones. The catalog and layout values
      * remain usable independently of resolver closure.
      *
-     * @param sourceBytes bytes containing exactly one supported SFNT face.
+     * @param sourceBytes bytes containing exactly one supported SFNT face, or a
+     * single-face WOFF 1.0 or WOFF 2.0 container that decodes to one.
      * @param provenance caller-declared name or origin used for diagnostics and
      * audit trails.
      * @param cachePolicy simultaneous per-face and aggregate per-catalog retention bounds for

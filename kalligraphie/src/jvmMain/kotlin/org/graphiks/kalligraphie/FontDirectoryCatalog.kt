@@ -5,8 +5,10 @@ import org.graphiks.kalligraphie.api.*
 /** Captures readable TrueType files and collections from explicitly supplied JVM directories. */
 public object FontDirectoryCatalog {
     /**
-     * Captures `.ttf`, `.otf`, `.ttc` and `.otc` candidates without following symbolic links.
-     * Content validates supported TrueType faces; CFF sources are reported as unsupported.
+     * Captures `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff` and `.woff2` candidates without
+     * following symbolic links. WOFF 1.0 and WOFF 2.0 candidates are decoded to a standalone
+     * SFNT before parsing. Content validates supported TrueType faces; CFF sources are reported
+     * as unsupported.
      * Unsafe examined collection directories reject their entire source; safely addressed
      * unsupported or invalid face metadata can be excluded while preserving sibling indices.
      * A collection whose face count exceeds the remaining

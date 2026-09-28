@@ -42,10 +42,11 @@ SIGNIFICANT_LICENSE_FIELD = "license"
 # The fixture tree the manifest describes: one directory per family key.
 FIXTURES_ROOT = "test-fixtures/fonts"
 
-# The font artifacts a family directory may commit: a `.ttf`, `.otf` or `.ttc`, or the base64
-# wrapper of one. Every other file of a family directory (PROVENANCE.md, a licence text, the
-# builder script, an audit record, a recorded outline oracle) is a companion, not an artifact.
-FONT_SUFFIXES = frozenset({".ttf", ".otf", ".ttc", ".b64", ".base64"})
+# The font artifacts a family directory may commit: a `.ttf`, `.otf`, `.ttc`, `.woff` or `.woff2`,
+# or the base64 wrapper of one. Every other file of a family directory (PROVENANCE.md, a licence
+# text, the builder script, an audit record, a recorded outline oracle) is a companion, not an
+# artifact.
+FONT_SUFFIXES = frozenset({".ttf", ".otf", ".ttc", ".woff", ".woff2", ".b64", ".base64"})
 
 
 def load_manifest(path: pathlib.Path) -> dict:

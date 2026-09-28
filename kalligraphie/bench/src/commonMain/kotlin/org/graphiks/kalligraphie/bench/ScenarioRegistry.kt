@@ -1,6 +1,7 @@
 package org.graphiks.kalligraphie.bench
 
 import org.graphiks.kalligraphie.bench.fixture.FixtureCorpus
+import org.graphiks.kalligraphie.bench.scenarios.containerScenarios
 import org.graphiks.kalligraphie.bench.scenarios.glyphMaterializationScenarios
 import org.graphiks.kalligraphie.bench.scenarios.paragraphScenarios
 import org.graphiks.kalligraphie.conformance.PortableCapabilityIdentity
@@ -34,7 +35,7 @@ public object ScenarioRegistry {
         corpus: FixtureCorpus,
         platformScenarios: List<MeasurementScenario> = emptyList(),
     ): List<MeasurementScenario> =
-        glyphMaterializationScenarios(corpus) + paragraphScenarios(corpus) + platformScenarios
+        glyphMaterializationScenarios(corpus) + containerScenarios(corpus) + paragraphScenarios(corpus) + platformScenarios
 
     /** The scenarios this platform serves, in [all] order. */
     public fun select(

@@ -111,6 +111,18 @@ internal object PortableSceneRenderers {
         "outline.cff1-static" to CatalogSceneRenderer(CFF_LIBERATION, CatalogRoute.PORTABLE_GLYPH, render = ::renderCff1CapitalA),
         "outline.cff2-static" to CatalogSceneRenderer(CFF2_LIBERATION, CatalogRoute.PORTABLE_GLYPH, render = ::renderCff2CapitalA),
         "metrics.vvar-advance-height" to CatalogSceneRenderer(KALLIGRAPHIE_VAR_VVAR, CatalogRoute.PORTABLE_GLYPH, render = ::renderVvarCapitalA),
+        "container.woff" to CatalogSceneRenderer(
+            fontPath = WOFF_IBM_PLEX_WOFF,
+            route = CatalogRoute.PORTABLE_GLYPH,
+            sceneId = "glyph.outline.woff-ibm-plex.A.64",
+            render = ::renderWoffCapitalA,
+        ),
+        "container.woff2" to CatalogSceneRenderer(
+            fontPath = WOFF_IBM_PLEX_WOFF2,
+            route = CatalogRoute.PORTABLE_GLYPH,
+            sceneId = "glyph.outline.woff2-ibm-plex.A.64",
+            render = ::renderWoff2CapitalA,
+        ),
     )
 
     private fun renderCbdtColourStrike(corpus: FixtureCorpus): GoldenRenderOutcome = colourStrike(corpus, SKIA_CBDT, "CBLC/CBDT strike")
@@ -122,6 +134,10 @@ internal object PortableSceneRenderers {
     private fun renderCff2CapitalA(corpus: FixtureCorpus): GoldenRenderOutcome = outlineCapitalA(corpus, CFF2_LIBERATION, "CFF 2 'A'")
 
     private fun renderVvarCapitalA(corpus: FixtureCorpus): GoldenRenderOutcome = outlineCapitalA(corpus, KALLIGRAPHIE_VAR_VVAR, "VVAR fixture 'A'")
+
+    private fun renderWoffCapitalA(corpus: FixtureCorpus): GoldenRenderOutcome = outlineCapitalA(corpus, WOFF_IBM_PLEX_WOFF, "WOFF 1.0 'A'")
+
+    private fun renderWoff2CapitalA(corpus: FixtureCorpus): GoldenRenderOutcome = outlineCapitalA(corpus, WOFF_IBM_PLEX_WOFF2, "WOFF 2.0 'A'")
 
     /** Renders the U+1F600 bitmap of [fontPath], as the 16 ppem RGBA strike it resolves to. */
     private fun colourStrike(corpus: FixtureCorpus, fontPath: String, what: String): GoldenRenderOutcome =

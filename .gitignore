@@ -13,3 +13,6 @@ __pycache__/
 # The UCD payloads `scripts/unicode/fetch_ucd.py` downloads: pinned by digest in `ucd.json`, and
 # never committed — the tables they produce are.
 scripts/unicode/.cache/
+# The Brotli dictionary source `scripts/brotli/fetch_dictionary.py` downloads: pinned by digest in
+# the script, and never committed — the generated `BrotliDictionary.kt` is.
+scripts/brotli/.cache/

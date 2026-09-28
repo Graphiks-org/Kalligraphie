@@ -17,6 +17,9 @@ Le périmètre fonctionnel supporté est volontairement étroit :
 
 - cible JVM de référence uniquement ;
 - fontes TrueType SFNT statiques uniquement : `0x00010000` et `true` ;
+- conteneurs WOFF 1.0 (`wOFF`) et WOFF 2.0 (`wOF2`) à face unique dont le SFNT
+  décodé est pris en charge ; les collections WOFF/WOFF2 (`flavor` `ttcf`)
+  restent non prises en charge ;
 - des sources OpenType embarquées à face unique, d’index `0`, et des collections
   TTC version 1 ou 2 capturées dans des répertoires, avec leurs indices d’origine ;
 - `LAYOUT_ONLY` pour la table `cmap` (correspondance entre caractères et
@@ -193,14 +196,31 @@ de fichiers et n’interrompt pas un appel OS bloqué. Une annulation ne publie
 aucun snapshot (instantané immuable) partiel. Les options invalides, comme des
 limites non positives ou des racines répétées, sont refusées à la construction.
 
-La découverte considère `.ttf`, `.otf`, `.ttc` et `.otc` sans suivre les liens
-symboliques. L’extension `.otf` n’implique pas des contours CFF : le contenu SFNT
-détermine la prise en charge. Le TrueType statique est supporté ; CFF/CFF2 et
-les données de fontes variables sont exclus de cette route. Les candidats
-capturés sont ordonnés lexicalement, puis par indice d’origine dans chaque
-collection. La découverte est bornée et peut omettre des candidats ; elle ne
-reproduit pas exactement les fontes activées par Fontconfig ou CoreText. La
-capture du système de fichiers n’est pas globalement atomique.
+La découverte considère `.ttf`, `.otf`, `.ttc`, `.otc`, `.woff` et `.woff2`
+sans suivre les liens symboliques. L’extension `.otf` n’implique pas des contours
+CFF : le contenu SFNT détermine la prise en charge. Le TrueType statique est
+supporté ; CFF/CFF2 et les données de fontes variables sont exclus de cette
+route. Les candidats capturés sont ordonnés lexicalement, puis par indice
+d’origine dans chaque collection. La découverte est bornée et peut omettre des
+candidats ; elle ne reproduit pas exactement les fontes activées par Fontconfig
+ou CoreText. La capture du système de fichiers n’est pas globalement atomique.
+
+Pour les entrées de conteneur d’octets, l’identité de face est l’empreinte du
+contenu des octets SFNT décodés, jamais celle du fichier conteneur :
+`FontFaceId.source` pour une entrée WOFF 1.0 ou WOFF 2.0 identifie le SFNT
+autonome reconstruit, pas le conteneur. Les collections font exception : une
+entrée TTC/OTC n’a pas de SFNT décodé unique, donc `FontFaceId.source` reste
+l’empreinte du fichier de collection entier et les indices de face de la
+collection sont conservés. Entre conteneurs d’octets, deux encodages d’une même
+fonte ne partagent donc généralement pas la même identité. WOFF 2.0 reconstruit
+`glyf`/`loca` sous une forme non identique octet pour octet mais autorisée, si
+bien qu’un fichier WOFF 2.0 et son `.ttf`
+d’origine diffèrent habituellement en octets et en identité, bien que leur
+sémantique de glyphes soit identique. Une reconstruction WOFF 1.0 qui se trouve
+être identique octet pour octet à son `.ttf` source partage cette identité ; la
+capture de répertoire déduplique les candidats identiques en octets par empreinte
+décodée, et la route embarquée refuse comme doublons deux sources qui décodent
+vers des octets identiques.
 
 Examiner les diagnostics même sur `Success` : racines absentes ou illisibles,
 sources ou faces refusées et limites atteintes peuvent laisser un inventaire
@@ -231,11 +251,14 @@ Ces contrôles empêchent l’admission d’un conteneur dont des répertoires n
 été examinés ; ils ne prétendent pas reproduire le container sanitizer (validateur
 de sécurité du conteneur) de HarfBuzz pour toute table non prise en charge.
 
-`FontFaceId.source` identifie le conteneur capturé d’origine et `faceIndex`
-sélectionne sa face. `copyOpenTypeData()` retourne les octets du conteneur
-d’origine et l’identité de face sélectionnée : aucune extraction de fonte à
-face unique, réécriture ou renumérotation n’est effectuée. Les faces voisines
-partagent la source retenue. `maxSourceBytes` borne chaque conteneur lu ;
+`FontFaceId.source` identifie la source retenue et `faceIndex` sélectionne sa
+face. Pour un candidat WOFF ou WOFF2, la source retenue est le SFNT autonome
+décodé : `copyOpenTypeData()` retourne ces octets décodés et l’identité de face
+sélectionnée. Pour un candidat TTC/OTC, la source retenue est le fichier de
+collection d’origine : `copyOpenTypeData()` retourne les octets du conteneur
+d’origine et l’identité de face sélectionnée, sans extraire de fonte à face unique
+ni réécrire ou renuméroter les octets de collection. Les faces voisines partagent
+la source retenue. `maxSourceBytes` borne chaque conteneur lu ;
 `maxTotalSourceBytes` compte une fois chaque conteneur unique accepté. Ces
 budgets ne plafonnent pas la mémoire du processus : copies défensives, lectures
 temporaires, métadonnées et mémoire de décodage sont exclues. Utiliser
