@@ -99,54 +99,10 @@ public class EditableParagraphFacadeRequest(
     /** Cooperative signal checked before and during bounded composition work. */
     public val cancellationToken: CancellationToken = CancellationToken.none,
     /** Shared finite resource policy for this complete analysis-through-composition operation. */
-    public val operationProfile: EditorOperationProfile,
+    public val operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
     /** Optional per-range face and variation preferences; `null` means no span styling. */
     public val styleSpans: ParagraphStyleSnapshot? = null,
 ) {
-    /** Creates a request through the historical constructor with an unbounded operation policy. */
-    public constructor(
-        snapshot: TextSnapshot,
-        sourceRange: TextRange = snapshot.range,
-        constraints: ParagraphConstraints,
-        baseDirection: BaseDirection,
-        language: String,
-        fontCatalog: FontCatalogSnapshot,
-        resolutionPolicy: FontResolutionPolicySnapshot,
-        fontInstanceDescriptor: FontInstanceDescriptor,
-        features: List<OpenTypeFeature> = emptyList(),
-        materialization: EditableLineMaterialization = EditableLineMaterialization.LayoutOnly,
-        overflowPolicy: OverflowPolicy = OverflowPolicy.Continue,
-        positioning: ParagraphPositioningPolicy = ParagraphPositioningPolicy(),
-        hyphenationMode: HyphenationMode = HyphenationMode.MANUAL,
-        hyphenationService: HyphenationService? = null,
-        inlineObjects: InlineObjectSnapshot? = null,
-        textOrientation: TextOrientation = TextOrientation.MIXED,
-        verticalMetricsPolicy: VerticalMetricsPolicy = VerticalMetricsPolicy.SYNTHESIZE_IF_UNAVAILABLE,
-        continuation: LayoutContinuation? = null,
-        cancellationToken: CancellationToken = CancellationToken.none,
-    ) : this(
-        snapshot,
-        sourceRange,
-        constraints,
-        baseDirection,
-        language,
-        fontCatalog,
-        resolutionPolicy,
-        fontInstanceDescriptor,
-        features,
-        materialization,
-        overflowPolicy,
-        positioning,
-        hyphenationMode,
-        hyphenationService,
-        inlineObjects,
-        textOrientation,
-        verticalMetricsPolicy,
-        continuation,
-        cancellationToken,
-        EditorOperationProfile.unbounded,
-    )
-
     /** Immutable defensive snapshot of deterministic OpenType feature overrides in caller order. */
     public val features: List<OpenTypeFeature> = features.toList().immutableListSnapshot()
 }

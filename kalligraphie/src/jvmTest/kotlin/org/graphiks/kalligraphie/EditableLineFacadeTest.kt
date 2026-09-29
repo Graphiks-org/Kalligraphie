@@ -47,26 +47,22 @@ import kotlin.test.assertTrue
 
 class EditableLineFacadeTest {
     @Test
-    fun java_consumer_using_the_original_constructor_still_lays_out_real_liberation_text() {
+    fun laysOutRealLiberationTextThroughThePrimaryConstructor() {
         val snapshot = Kalligraphie.decodeUtf16(
             version = TextVersion.create(),
             slices = listOf(TextSlice.Utf16("A".toCharArray())),
         ).snapshot
         val fixture = renderableFixture()
         try {
-            val request = LegacyEditableLineFacadeRequestFactory.create(
-                snapshot,
-                fixture.font,
-                BaseDirection.LEFT_TO_RIGHT,
-                "en",
-                HarfBuzzShapingBackend.pinnedFeaturePolicy,
-                emptyList(),
-                LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
-                EditableLineMaterialization.LayoutOnly,
-                null,
-                CancellationToken.none,
-                UnicodeAnalysisProfile.unbounded,
-                ShapingResourceProfile.unbounded,
+            val request = EditableLineFacadeRequest(
+                snapshot = snapshot,
+                font = fixture.font,
+                baseDirection = BaseDirection.LEFT_TO_RIGHT,
+                language = "en",
+                featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
+                features = emptyList(),
+                verticalMetrics = LineVerticalMetrics(LayoutUnit(18f), LayoutUnit(6f)),
+                materialization = EditableLineMaterialization.LayoutOnly,
             )
 
             val glyph = assertIs<EditableLineResult.Success>(EditableLineFacade.layout(request))
