@@ -2,7 +2,7 @@ import java.io.File
 import java.util.Base64
 
 plugins {
-    id("ygdrasil.conventions.kalligraphie-kmp-web-library")
+    id("ygdrasil.conventions.kalligraphie-kmp-library")
 }
 
 /**

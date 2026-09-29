@@ -1,5 +1,5 @@
 plugins {
-    id("ygdrasil.conventions.kalligraphie-internal-kmp-web-library")
+    id("ygdrasil.conventions.kalligraphie-internal-kmp-library")
 }
 
 tasks.withType<Test>().configureEach {

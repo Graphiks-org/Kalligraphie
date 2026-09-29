@@ -16,7 +16,7 @@ import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 import org.jetbrains.kotlin.gradle.targets.jvm.KotlinJvmTarget
 
 plugins {
-    id("ygdrasil.conventions.kmp-web-library")
+    id("ygdrasil.conventions.kmp-library")
     id("ygdrasil.conventions.kalligraphie-kffi-harfbuzz-web-runtime")
     alias(libs.plugins.kotlinx.benchmark)
 }

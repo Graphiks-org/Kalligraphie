@@ -2,7 +2,7 @@ import java.io.File
 import java.util.Base64
 
 plugins {
-    id("ygdrasil.conventions.kmp-web-library")
+    id("ygdrasil.conventions.kmp-library")
     // The web test bundle links the same WebAssembly HarfBuzz the library ships, so the authored
     // glue and the Emscripten module must be extracted where the bundler resolves them.
     id("ygdrasil.conventions.kalligraphie-kffi-harfbuzz-web-runtime")

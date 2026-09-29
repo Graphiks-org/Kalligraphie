@@ -1,5 +1,5 @@
 plugins {
-    id("ygdrasil.conventions.kmp-web-library")
+    id("ygdrasil.conventions.kmp-library")
 }
 
 kotlin {
