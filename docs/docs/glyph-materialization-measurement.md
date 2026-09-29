@@ -80,7 +80,7 @@ proof of a particular cache or pooling algorithm.
 ## Reusable HarfBuzz sessions
 
 `SessionColdSingleFont`, `SessionWarmSingleFont`, `SessionColdMixedBidi` and
-`SessionWarmMixedBidi` use `JvmIncrementalParagraphLayoutSession`. Both sides
+`SessionWarmMixedBidi` use `IncrementalParagraphLayoutSession`. Both sides
 seed the portable catalog/resolver asset state outside timing. Cold samples open
 a new session inside the timed boundary; warm samples retain one session and
 its HarfBuzz backend, seeded by an untimed layout. Every sample supplies a fresh
@@ -156,9 +156,9 @@ em, bounds `(4, 0, 1362, 1409)`, two contours). It also checks the paragraph's
 final distinct glyph sequence against the fixed corpus below.
 
 `FontAssetRetainReopenCold` creates a fresh embedded catalog, resolver, resolved
-face/font instance and public `JvmEditableLineLayoutSession` for every sample.
+face/font instance and public `EditableLineLayoutSession` for every sample.
 The session owns its real HarfBuzz backend. Its public `layout` method takes a
-`JvmEditableLineFacadeRequest` and composes the stable text as one renderable
+`EditableLineFacadeRequest` and composes the stable text as one renderable
 `EditableLine`. Each sample then calls `openLayoutHandle`, groups all final certificates by complete
 `FontRenderAssetKey`, retains one renderer asset per key, and resolves and
 consumes every final certified glyph, including repeats. The total includes

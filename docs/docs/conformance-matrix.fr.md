@@ -35,11 +35,16 @@ retourné lorsque — et seulement lorsque — la capacité est indisponible.
 | JVM | Présente | Présent | Présente | Présentes | `jvm-reference` |
 | iOS | Présente | Présent | Présente | Présentes | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
 | Android | Présente | Présent | Présente | Présentes | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
+| Web (js) | Présente | Présent | Présente | Présentes | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
+| Web (wasmJs) | Présente | Présent | Présente | Présentes | `portable-unicode-16.0` / `bundled-harfbuzz` / `portable-paragraph` / `portable-glyph` |
 
 Chaque plateforme déclare la surface de capacités portables complète, et les
-résultats sont les mêmes sur chacune d'elles. Le JVM est la référence. Android et
-iOS prennent le façonnage (shaping) du backend HarfBuzz embarqué (Android exige
-l'API 28 ou ultérieure), la route de représentation des glyphes du code portable,
+résultats sont les mêmes sur chacune d'elles. Le JVM est la référence. Android,
+iOS et les cibles web prennent le façonnage (shaping) du backend HarfBuzz
+embarqué (Android exige l'API 28 ou ultérieure ; sur le web le module
+WebAssembly est instancié de façon asynchrone, donc un consommateur `await`
+`initialize()` avant d'ouvrir une façade), la route de représentation des glyphes
+du code portable,
 et les deux capacités restantes du code portable de ce dépôt : l'analyse Unicode
 et le découpage de ligne se résolvent depuis les tables Unicode 16.0 générées, et
 la façade paragraphe compose le texte à travers elles, si bien que le moteur

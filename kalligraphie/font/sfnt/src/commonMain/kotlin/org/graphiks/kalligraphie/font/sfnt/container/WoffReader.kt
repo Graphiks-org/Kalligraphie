@@ -2,15 +2,13 @@
 
 package org.graphiks.kalligraphie.font.sfnt.container
 
-import okio.Buffer
-import okio.IOException
-import okio.Inflater
-import okio.InflaterSource
 import org.graphiks.kalligraphie.api.FontDiagnosticLocation
 import org.graphiks.kalligraphie.api.FontError
 import org.graphiks.kalligraphie.api.FontOperationResult
+import org.graphiks.kalligraphie.font.sfnt.InflateOutcome
 import org.graphiks.kalligraphie.font.sfnt.checkedRangeEnd
 import org.graphiks.kalligraphie.font.sfnt.decodeAsciiTag
+import org.graphiks.kalligraphie.font.sfnt.platformInflateSupport
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
 import org.graphiks.kalligraphie.font.sfnt.readUInt32
 
@@ -32,7 +30,6 @@ internal object WoffReader {
     private const val WOFF_RECORD_BYTES: Int = 20
     private const val SFNT_HEADER_BYTES: Int = 12
     private const val SFNT_RECORD_BYTES: Int = 16
-    private const val INFLATE_CHUNK_BYTES: Long = 8L * 1024L
 
     /** Decodes [bytes], or returns a typed rejection. */
     fun decode(bytes: ByteArray, limits: WoffDecodeLimits): FontOperationResult<ByteArray> {
@@ -179,30 +176,24 @@ internal object WoffReader {
         bytes: ByteArray,
         record: TableRecord,
     ): FontOperationResult<ByteArray> {
-        val decoded = Buffer()
-        try {
-            val source = Buffer().write(bytes, record.offset.toInt(), record.compressedLength.toInt())
-            val inflater = InflaterSource(source, Inflater())
-            try {
-                var total = 0L
-                while (true) {
-                    val read = inflater.read(decoded, INFLATE_CHUNK_BYTES)
-                    if (read == -1L) break
-                    total += read
-                    if (total > record.originalLength) {
-                        return invalidDeflate("WOFF table ${record.tag} inflates beyond its declared length.")
-                    }
+        val start = record.offset.toInt()
+        val compressed = bytes.copyOfRange(start, start + record.compressedLength.toInt())
+        // The portable seam, not Okio directly: Okio's `InflaterSource` exists on the JVM and native
+        // targets alone, and the web target inflates through its own synchronous DEFLATE.
+        return when (val outcome = platformInflateSupport().inflateZlib(compressed, record.originalLength)) {
+            is InflateOutcome.Success ->
+                if (outcome.bytes.size.toLong() == record.originalLength) {
+                    FontOperationResult.Success(outcome.bytes)
+                } else {
+                    invalidDeflate("WOFF table ${record.tag} inflates to the wrong length.")
                 }
-            } finally {
-                inflater.close()
-            }
-        } catch (_: IOException) {
-            return invalidDeflate("WOFF table ${record.tag} has a malformed zlib stream.")
+
+            is InflateOutcome.Malformed ->
+                invalidDeflate("WOFF table ${record.tag} has a malformed zlib stream.")
+
+            is InflateOutcome.LimitExceeded ->
+                invalidDeflate("WOFF table ${record.tag} inflates beyond its declared length.")
         }
-        if (decoded.size != record.originalLength) {
-            return invalidDeflate("WOFF table ${record.tag} inflates to the wrong length.")
-        }
-        return FontOperationResult.Success(decoded.readByteArray())
     }
 
     private fun invalidHeader(message: String): FontOperationResult.Failure =

@@ -2,9 +2,6 @@
 
 package org.graphiks.kalligraphie.font.sfnt.container
 
-import okio.Buffer
-import okio.Deflater
-import okio.DeflaterSink
 import org.graphiks.kalligraphie.api.FontOperationResult
 import org.graphiks.kalligraphie.font.sfnt.decodeAsciiTag
 import org.graphiks.kalligraphie.font.sfnt.readUInt16
@@ -112,7 +109,7 @@ internal object WoffTestFonts {
             } else {
                 raw
             }
-            val compressed = if (compress) zlib(original) else original
+            val compressed = if (compress) ZlibEncoder.encode(original) else original
             val data = if (compress && compressed.size < original.size) compressed else original
             entries += Entry(record.tag, cursor, data.size, original.size, record.checksum)
             stored += data
@@ -157,17 +154,6 @@ internal object WoffTestFonts {
                 length = readUInt32(font, base + 12)!!.toInt(),
             )
         }
-    }
-
-    private fun zlib(source: ByteArray): ByteArray {
-        val buffer = Buffer()
-        val sink = DeflaterSink(buffer, Deflater())
-        try {
-            sink.write(Buffer().write(source), source.size.toLong())
-        } finally {
-            sink.close()
-        }
-        return buffer.readByteArray()
     }
 
     private fun zeroHeadAdjustment(data: ByteArray): ByteArray = data.copyOf().also {

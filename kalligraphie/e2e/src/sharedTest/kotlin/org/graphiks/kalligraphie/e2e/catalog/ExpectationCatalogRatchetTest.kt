@@ -8,6 +8,7 @@ import kotlin.test.assertTrue
 import org.graphiks.kalligraphie.conformance.PortableCapability
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
+import org.graphiks.kalligraphie.e2e.initializedSceneTest
 
 class ExpectationCatalogRatchetTest {
     @Test
@@ -74,7 +75,7 @@ class ExpectationCatalogRatchetTest {
     }
 
     @Test
-    fun everySupportedEntryMaterializesOrRefusesTyped() {
+    fun everySupportedEntryMaterializesOrRefusesTyped() = initializedSceneTest {
         for (entry in ExpectationCatalog.entries.filter { candidate -> candidate.id in E2eTestEnvironment.renderers }) {
             val materialized = CatalogSceneMaterializer.materialize(
                 entry,

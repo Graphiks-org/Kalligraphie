@@ -2,8 +2,8 @@ package org.graphiks.kalligraphie.e2e.golden
 
 import kotlin.math.roundToInt
 import kotlin.test.assertIs
-import org.graphiks.kalligraphie.JvmEditableParagraphFacade
-import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
+import org.graphiks.kalligraphie.EditableParagraphFacade
+import org.graphiks.kalligraphie.EditableParagraphFacadeRequest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.CancellationToken
@@ -189,7 +189,7 @@ internal object PerSpanStyleScene {
         snapshot: TextSnapshot,
         spans: ParagraphStyleSnapshot,
     ): List<PositionedGlyphRun> {
-        val request = JvmEditableParagraphFacadeRequest(
+        val request = EditableParagraphFacadeRequest(
             snapshot = snapshot,
             sourceRange = snapshot.range,
             constraints = HorizontalParagraphConstraints(
@@ -208,7 +208,7 @@ internal object PerSpanStyleScene {
             operationProfile = EditorOperationProfile.unbounded,
             styleSpans = spans,
         )
-        val result = when (val outcome = JvmEditableParagraphFacade.layout(request)) {
+        val result = when (val outcome = EditableParagraphFacade.layout(request)) {
             is ParagraphLayoutResult.Success -> outcome
             is ParagraphLayoutResult.Failure -> error(
                 "the per-span paragraph failed: ${outcome.error.code}: ${outcome.error.message}",

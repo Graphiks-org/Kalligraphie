@@ -629,9 +629,9 @@ class IncrementalLayoutEditorJourneyTest {
         }
     }
 
-    private fun openSession(): JvmIncrementalParagraphLayoutSession =
-        assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
-            JvmIncrementalParagraphLayoutSession.open(),
+    private fun openSession(): IncrementalParagraphLayoutSession =
+        assertIs<FontOperationResult.Success<IncrementalParagraphLayoutSession>>(
+            IncrementalParagraphLayoutSession.open(),
         ).value
 
     private fun auditedFace(contentDigest: String): FontFaceId = FontFaceId(
@@ -717,7 +717,7 @@ class IncrementalLayoutEditorJourneyTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "ar",
         cancellationToken: CancellationToken = CancellationToken.none,
-    ): JvmIncrementalParagraphLayoutRequest {
+    ): IncrementalParagraphLayoutRequest {
         val portable = assertIs<LayoutContractResult.Success<IncrementalLayoutRequest>>(
             createIncrementalLayoutRequest(
                 input = LayoutInput(fixture.snapshot, fixture.typography),
@@ -729,7 +729,7 @@ class IncrementalLayoutEditorJourneyTest {
                 cancellationToken = cancellationToken,
             ),
         ).value
-        return JvmIncrementalParagraphLayoutRequest(
+        return IncrementalParagraphLayoutRequest(
             request = portable,
             baseDirection = baseDirection,
             language = language,
@@ -743,8 +743,8 @@ class IncrementalLayoutEditorJourneyTest {
         baseDirection: BaseDirection = BaseDirection.LEFT_TO_RIGHT,
         language: String = "ar",
     ): List<LineLayout> = assertIs<ParagraphLayoutResult.Success>(
-        JvmEditableParagraphFacade.layout(
-            JvmEditableParagraphFacadeRequest(
+        EditableParagraphFacade.layout(
+            EditableParagraphFacadeRequest(
                 snapshot = fixture.snapshot,
                 constraints = constraints,
                 baseDirection = baseDirection,

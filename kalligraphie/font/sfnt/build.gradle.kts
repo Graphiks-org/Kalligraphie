@@ -11,5 +11,8 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        webTest.dependencies {
+            implementation(kotlin("test"))
+        }
     }
 }

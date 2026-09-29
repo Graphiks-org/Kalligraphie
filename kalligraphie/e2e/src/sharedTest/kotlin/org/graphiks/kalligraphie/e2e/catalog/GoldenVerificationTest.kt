@@ -10,10 +10,11 @@ import org.graphiks.kalligraphie.e2e.GoldenManifestParseResult
 import org.graphiks.kalligraphie.e2e.GoldenRenderOutcome
 import org.graphiks.kalligraphie.e2e.fixture.E2eTestEnvironment
 import org.graphiks.kalligraphie.e2e.GoldenVerifier
+import org.graphiks.kalligraphie.e2e.initializedSceneTest
 
 class GoldenVerificationTest {
     @Test
-    fun everyCataloguedSceneMatchesTheCommittedManifest() {
+    fun everyCataloguedSceneMatchesTheCommittedManifest() = initializedSceneTest {
         val text = E2eTestEnvironment.corpus.text("/golden/manifest.tsv")
         val manifest = when (val parsed = GoldenManifest.parse(text)) {
             is GoldenManifestParseResult.Parsed -> parsed.manifest

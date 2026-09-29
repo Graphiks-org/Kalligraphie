@@ -3,6 +3,27 @@ plugins {
 }
 
 kotlin {
+    // The public portable surface is exercised in a real browser as well as under Node: the same
+    // suite runs twice, so a bundler-only or DOM-only regression is caught here.
+    js {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadlessNoSandbox()
+                }
+            }
+        }
+    }
+    wasmJs {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadlessNoSandbox()
+                }
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))
@@ -23,6 +44,9 @@ kotlin {
         }
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
+        }
+        webTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }

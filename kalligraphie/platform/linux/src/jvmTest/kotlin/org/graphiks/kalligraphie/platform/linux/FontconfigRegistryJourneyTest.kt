@@ -8,8 +8,8 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
-import org.graphiks.kalligraphie.JvmEditableLineFacadeRequest
-import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
+import org.graphiks.kalligraphie.EditableLineFacadeRequest
+import org.graphiks.kalligraphie.EditableLineLayoutSession
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLineMaterialization
@@ -48,12 +48,12 @@ class FontconfigRegistryJourneyTest {
                 success(catalog.resolveFace(face.id, requirements)).instantiate(FontInstanceDescriptor(LayoutUnit(1000f))),
             )
             val resolver = success(catalog.openAssetResolver())
-            val session = success(JvmEditableLineLayoutSession.open())
+            val session = success(EditableLineLayoutSession.open())
             try {
                 val snapshot = Kalligraphie.decodeUtf8(TextVersion.create(), listOf(TextSlice.Utf8("Affi".encodeToByteArray()))).snapshot
                 val line = assertIs<EditableLineResult.Success>(
                     session.layout(
-                        JvmEditableLineFacadeRequest(
+                        EditableLineFacadeRequest(
                             snapshot = snapshot,
                             font = font,
                             baseDirection = BaseDirection.LEFT_TO_RIGHT,

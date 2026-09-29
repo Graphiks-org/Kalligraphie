@@ -270,7 +270,7 @@ class AdvancedTypographyJourneyTest {
                 ),
             ).value
             val initialResult = session.layout(
-                JvmIncrementalParagraphLayoutRequest(
+                IncrementalParagraphLayoutRequest(
                     request = initialRequest,
                     baseDirection = BaseDirection.LEFT_TO_RIGHT,
                     language = "en",
@@ -303,7 +303,7 @@ class AdvancedTypographyJourneyTest {
 
             val incremental = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutResult.Success>(
                 session.layout(
-                    JvmIncrementalParagraphLayoutRequest(
+                    IncrementalParagraphLayoutRequest(
                         request = editedRequest,
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
                         language = "en",
@@ -1277,7 +1277,7 @@ class AdvancedTypographyJourneyTest {
             ).value
             val initial = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutResult.Success>(
                 session.layout(
-                    JvmIncrementalParagraphLayoutRequest(
+                    IncrementalParagraphLayoutRequest(
                         request = initialRequest,
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
                         language = "en",
@@ -1309,7 +1309,7 @@ class AdvancedTypographyJourneyTest {
             ).value
             val incremental = assertIs<org.graphiks.kalligraphie.api.IncrementalLayoutResult.Success>(
                 session.layout(
-                    JvmIncrementalParagraphLayoutRequest(
+                    IncrementalParagraphLayoutRequest(
                         request = validated,
                         baseDirection = BaseDirection.LEFT_TO_RIGHT,
                         language = "en",
@@ -1354,9 +1354,9 @@ class AdvancedTypographyJourneyTest {
         line.positionedInlineObjects.map { obj -> obj.sourceRange to obj.rect },
     )
 
-    private fun openJourneySession(): JvmIncrementalParagraphLayoutSession =
-        assertIs<FontOperationResult.Success<JvmIncrementalParagraphLayoutSession>>(
-            JvmIncrementalParagraphLayoutSession.open(),
+    private fun openJourneySession(): IncrementalParagraphLayoutSession =
+        assertIs<FontOperationResult.Success<IncrementalParagraphLayoutSession>>(
+            IncrementalParagraphLayoutSession.open(),
         ).value
 
     private fun range(snapshot: TextSnapshot, start: Int, endExclusive: Int): TextRange = TextRange(
@@ -1419,8 +1419,8 @@ class AdvancedTypographyJourneyTest {
             org.graphiks.kalligraphie.api.EditableLineMaterialization.LayoutOnly,
         continuation: org.graphiks.kalligraphie.api.LayoutContinuation? = null,
         operationProfile: EditorOperationProfile = EditorOperationProfile.unbounded,
-    ): ParagraphLayoutResult = JvmEditableParagraphFacade.layout(
-        JvmEditableParagraphFacadeRequest(
+    ): ParagraphLayoutResult = EditableParagraphFacade.layout(
+        EditableParagraphFacadeRequest(
             snapshot = fixture.snapshot,
             sourceRange = sourceRange,
             constraints = constraints,

@@ -1289,7 +1289,7 @@ propre `instantiate`.
 La cible JVM de référence fournit aussi un parcours sans interface graphique
 pour une seule ligne éditable non renvoyée à la ligne. `Kalligraphie.decodeUtf8(...)`
 ou `Kalligraphie.decodeUtf16(...)` crée un `TextSnapshot` immuable.
-`JvmEditableLineFacade`, disponible uniquement sur la JVM, analyse ensuite
+`EditableLineFacade`, disponible uniquement sur la JVM, analyse ensuite
 Unicode, résout les runs (séquences homogènes) de script et BiDi
 (bidirectionnel), compose chaque run avec son backend (moteur d’exécution)
 HarfBuzz embarqué, puis positionne la ligne finale.
@@ -1299,8 +1299,8 @@ val decoded = Kalligraphie.decodeUtf8(
     version = TextVersion.create(),
     slices = listOf(TextSlice.Utf8(editorBytes)),
 )
-val result = JvmEditableLineFacade.layout(
-    JvmEditableLineFacadeRequest(
+val result = EditableLineFacade.layout(
+    EditableLineFacadeRequest(
         snapshot = decoded.snapshot,
         font = instance,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,

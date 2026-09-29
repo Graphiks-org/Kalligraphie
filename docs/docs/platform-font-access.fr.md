@@ -115,12 +115,27 @@ absente de sa plateforme.
 | Windows `DirectWriteSystemFontCatalog` | Collection système DirectWrite via les bindings DirectWrite de kffi | Octets des fichiers rapportés ; les clés COM opaques sont résolues en chemins par le local font file loader (chargeur de fichiers local) | Routes portables | Un nouvel `open` crée une génération `directwrite-registry` | HarfBuzz embarqué sur Windows x64 |
 | Android `AndroidSystemFontCatalog` | `android.graphics.fonts.SystemFonts` (Android 10 et ultérieur) | Octets des fichiers rapportés | Routes portables | Un nouvel `open` crée une génération `android-platform-fonts` | Avant Android 10, aucune route d’énumération supportée : le fournisseur échoue avec une erreur typée plutôt que d’explorer des chemins inconnus |
 | iOS `IosSystemFontCatalog` | Registre CoreText via les bindings CoreText de la plateforme | Tables CoreText reconstruites en un conteneur SFNT autonome (format de fichier de police) avec checksum de répertoire et `head.checkSumAdjustment` recalculés | Routes portables | Un nouvel `open` crée une génération `ios-coretext-registry` | Les fichiers de fontes système sont isolés (sandbox) : aucun chemin n’est disponible ; un conteneur reconstruit n’est pas identique octet pour octet à l’original et sa signature `DSIG` devient obsolète |
+| Web `BrowserSystemFontCatalog` | `window.queryLocalFonts()` via l’API Local Font Access, sur un appel explicite de l’application | Le `Blob` que chaque `FontData` expose, lu comme `ArrayBuffer` | Routes portables | L’application appelle `discoverLocalFonts()` quand elle le décide ; il n’y a aucune génération mise en cache | L’API exige un contexte sécurisé et un geste de l’utilisateur : un navigateur qui ne l’implémente pas répond `Unsupported`, une permission refusée répond `PermissionDenied` ; aucune route n’énumère les fontes sans consentement |
 
 Les noms de famille et de face proviennent de l’analyse des octets capturés : un
 fournisseur ne sélectionne jamais par nom sur la plateforme. Un fournisseur
 incapable de capturer une face — fichier absent, source illisible ou limite
 dépassée — ajoute un diagnostic borné et typé puis l’ignore ; une annulation ne
 publie aucun catalogue partiel.
+
+## Module navigateur facultatif
+
+Ajouter `:kalligraphie:platform:browser` au module principal `:kalligraphie` sur
+les cibles `js` et `wasmJs`. Sa coordonnée de publication est
+`org.graphiks:kalligraphie-platform-browser` ; il n’a ni variante JVM ni variante
+native, le module principal ne dépend jamais de lui et ne touche jamais `window`.
+
+`discoverLocalFonts()` est un appel `suspend` que l’application déclenche depuis son
+propre geste utilisateur — jamais un initialiseur de bibliothèque — et qui répond
+par un `BrowserFontDiscovery` typé : `Success`, `Unsupported` quand le navigateur
+n’implémente pas l’API Local Font Access, `PermissionDenied`, ou `Failed`. Une
+coroutine annulée se propage au lieu de devenir un résultat. Les octets fournis par
+l’application restent la route principale sur toutes les plateformes.
 
 ## Module Apple facultatif
 
@@ -288,7 +303,7 @@ vivant, puis retenir le certificat publié exact via
 `retainFontAsset(certificate)`. La ressource retournée est un propriétaire
 indépendant, capable d’en détacher un autre.
 
-`JvmEditableParagraphFacade.layout` possède son backend de shaping (moteur
+`EditableParagraphFacade.layout` possède son backend de shaping (moteur
 sous-jacent) utilisé et le ferme avant publication du résultat. Le paragraphe
 immuable publié ne conserve pas ce moteur ; son résolveur correspondant doit
 toutefois rester vivant pour ouvrir un propriétaire de mise en page.

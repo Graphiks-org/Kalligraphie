@@ -47,7 +47,7 @@ public fun threadedInstrumentScenarios(corpus: FixtureCorpus): List<MeasurementS
 
 private class ConcurrentResolve(private val corpus: FixtureCorpus, private val fixture: CorpusFixture) : ParagraphScenario(
     name = "ConcurrentResolveWarm",
-    route = "one renderer-owned Liberation Sans asset from public JvmEditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset; 35 fixed distinct nonzero glyphs partitioned round-robin over four persistent workers",
+    route = "one renderer-owned Liberation Sans asset from public EditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset; 35 fixed distinct nonzero glyphs partitioned round-robin over four persistent workers",
     timedBoundary = "whole-wave wall time from dispatch until all four workers resolve and consume every corpus glyph exactly once; never divided by operations; allocation probes run inside workers",
     cacheState = "session/backend, resolver and layout handle closed before warmup; all corpus glyphs pre-resolved; workers started before timing; shared renderer asset closed after all waves",
 ) {

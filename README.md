@@ -68,10 +68,10 @@ left without a bundled shaping backend.
 
 ## Consumer route
 
-Applications consume the JVM facade from `org.graphiks:kalligraphie`.
-`JvmEditableParagraphFacade` composes a rectangular paragraph. For composition
+Applications consume the portable facade from `org.graphiks:kalligraphie`.
+`EditableParagraphFacade` composes a rectangular paragraph. For composition
 through exclusions and multiple regions, build a portable
-`IncrementalFlowLayoutRequest` and pass it to `JvmFlowCompositionFacade`:
+`IncrementalFlowLayoutRequest` and pass it to `FlowCompositionFacade`:
 
 ```kotlin
 val portable = requireFlowSuccess(createIncrementalFlowLayoutRequest(
@@ -82,8 +82,8 @@ val portable = requireFlowSuccess(createIncrementalFlowLayoutRequest(
     overscan = LineOverscan(2),
 ))
 
-val result = JvmFlowCompositionFacade.layout(
-    JvmFlowCompositionRequest(
+val result = FlowCompositionFacade.layout(
+    FlowCompositionRequest(
         request = portable,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en",

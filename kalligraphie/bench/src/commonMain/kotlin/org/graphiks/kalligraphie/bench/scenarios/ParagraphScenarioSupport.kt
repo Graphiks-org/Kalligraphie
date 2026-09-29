@@ -1,7 +1,7 @@
 package org.graphiks.kalligraphie.bench.scenarios
 
-import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
-import org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutSession
+import org.graphiks.kalligraphie.EditableLineLayoutSession
+import org.graphiks.kalligraphie.IncrementalParagraphLayoutSession
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.api.BaseDirection
 import org.graphiks.kalligraphie.api.EditableLine
@@ -132,8 +132,8 @@ internal fun openConsumerScenario(scenario: ConsumerScenario): OpenConsumerScena
 }
 
 internal fun layoutConsumerScenario(opened: OpenConsumerScenario): ParagraphLayoutResult =
-    org.graphiks.kalligraphie.JvmEditableParagraphFacade.layout(
-        org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest(
+    org.graphiks.kalligraphie.EditableParagraphFacade.layout(
+        org.graphiks.kalligraphie.EditableParagraphFacadeRequest(
             snapshot = opened.snapshot,
             constraints = HorizontalParagraphConstraints(
                 region = LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(8_000f), LayoutUnit(1_000f)),
@@ -251,7 +251,7 @@ internal fun incrementalRequest(
     previousState: LayoutStateHandle? = null,
     delta: org.graphiks.kalligraphie.api.LayoutDelta? = null,
     cancellationToken: org.graphiks.kalligraphie.api.CancellationToken = org.graphiks.kalligraphie.api.CancellationToken.none,
-): org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutRequest {
+): org.graphiks.kalligraphie.IncrementalParagraphLayoutRequest {
     val portable = when (
         val result = createIncrementalLayoutRequest(
             input = LayoutInput(fixture.snapshot, fixture.typography),
@@ -270,7 +270,7 @@ internal fun incrementalRequest(
         is org.graphiks.kalligraphie.api.LayoutContractResult.Failure ->
             error("Measurement request failed: ${result.error.code}: ${result.error.message}")
     }
-    return org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutRequest(
+    return org.graphiks.kalligraphie.IncrementalParagraphLayoutRequest(
         request = portable,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
         language = "en",
@@ -301,8 +301,8 @@ internal fun incrementalChange(
     is org.graphiks.kalligraphie.api.LayoutContractResult.Failure -> error("Measurement delta failed: ${result.error.code}: ${result.error.message}")
 }
 
-internal fun openIncrementalSession(): JvmIncrementalParagraphLayoutSession = when (
-    val opened = JvmIncrementalParagraphLayoutSession.open()
+internal fun openIncrementalSession(): IncrementalParagraphLayoutSession = when (
+    val opened = IncrementalParagraphLayoutSession.open()
 ) {
     is FontOperationResult.Success -> opened.value
     is FontOperationResult.Failure -> error("Could not open measurement session: ${opened.error.message}")
@@ -338,7 +338,7 @@ internal class HandoffSession(  // AutoCloseable so callers can `use` it
     val catalog: FontCatalogSnapshot,
     val resolver: FontAssetResolverHandle,
     val font: FontInstance,
-    val session: JvmEditableLineLayoutSession,
+    val session: EditableLineLayoutSession,
     private val owned: MeasurementOwners,
 ) : AutoCloseable {
     override fun close() = owned.close()
@@ -349,7 +349,7 @@ internal class HandoffSession(  // AutoCloseable so callers can `use` it
             listOf(TextSlice.Utf8(TRUE_TYPE_PARAGRAPH.encodeToByteArray())),
         ).snapshot
         val result = session.layout(
-            org.graphiks.kalligraphie.JvmEditableLineFacadeRequest(
+            org.graphiks.kalligraphie.EditableLineFacadeRequest(
                 snapshot = snapshot,
                 font = font,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -398,7 +398,7 @@ internal fun openHandoffSession(fixture: CorpusFixture): HandoffSession {
         val resolver = success(catalog.openAssetResolver()).also { value -> owned.add { success(value.close()) } }
         val face = success(catalog.resolveFace(catalog.faces.single().id, trueTypeRequirements()))
         val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1_000f))))
-        val session = success(JvmEditableLineLayoutSession.open()).also { value -> owned.add { success(value.close()) } }
+        val session = success(EditableLineLayoutSession.open()).also { value -> owned.add { success(value.close()) } }
         HandoffSession(catalog, resolver, font, session, owned)
     } catch (failure: Throwable) {
         try {

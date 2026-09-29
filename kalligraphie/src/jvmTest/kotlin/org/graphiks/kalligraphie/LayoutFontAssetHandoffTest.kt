@@ -71,7 +71,7 @@ class LayoutFontAssetHandoffTest {
         )
         val resolver = success(fixture.catalog.openAssetResolver())
         val backend = success(HarfBuzzShapingBackend.open())
-        val request = JvmEditableParagraphFacadeRequest(
+        val request = EditableParagraphFacadeRequest(
             snapshot = fixture.snapshot,
             sourceRange = fixture.snapshot.range,
             constraints = incrementalTestConstraints(width = 10_000f, top = 0f, height = 2_400f),
@@ -87,7 +87,7 @@ class LayoutFontAssetHandoffTest {
             ),
         )
         val paragraph = assertIs<ParagraphLayoutResult.Success>(
-            JvmEditableParagraphFacade.layoutBorrowing(request, backend),
+            EditableParagraphFacade.layoutBorrowing(request, backend),
         ).layout
         val publishedGeometry = paragraph.lines.map { line ->
             listOf(
@@ -172,7 +172,7 @@ class LayoutFontAssetHandoffTest {
             FontRenderVariantSnapshot.default,
             FontAccessRequirementsSnapshot.renderable(auditedOutlineProfile()),
         )
-        fun request(previousState: FlowLayoutState?, requestedEnd: Int): JvmFlowCompositionRequest {
+        fun request(previousState: FlowLayoutState?, requestedEnd: Int): FlowCompositionRequest {
             val portable = assertIs<FlowCompositionResult.Success<org.graphiks.kalligraphie.api.IncrementalFlowLayoutRequest>>(
                 createIncrementalFlowLayoutRequest(
                     input = LayoutInput(fixture.snapshot, fixture.typography),
@@ -183,7 +183,7 @@ class LayoutFontAssetHandoffTest {
                     previousState = previousState,
                 ),
             ).value
-            return JvmFlowCompositionRequest(
+            return FlowCompositionRequest(
                 request = portable,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
                 language = "en",
@@ -191,7 +191,7 @@ class LayoutFontAssetHandoffTest {
             )
         }
 
-        val first = flowSuccess(JvmFlowCompositionFacade.layoutBorrowing(request(null, 1), backend))
+        val first = flowSuccess(FlowCompositionFacade.layoutBorrowing(request(null, 1), backend))
         assertEquals(listOf(fixture.snapshot.incrementalRange(0, 2)), first.lines.map { it.range })
         assertEquals(
             fixture.snapshot.incrementalRange(2, 3),
@@ -201,7 +201,7 @@ class LayoutFontAssetHandoffTest {
             first.lines.single().positionedGlyphRuns.single().glyphs.single().materializationCertificate,
         )
         val completed = flowSuccess(
-            JvmFlowCompositionFacade.layoutBorrowing(request(first.state, 3), backend),
+            FlowCompositionFacade.layoutBorrowing(request(first.state, 3), backend),
         )
         assertEquals(
             listOf(fixture.snapshot.incrementalRange(0, 2), fixture.snapshot.incrementalRange(2, 3)),
@@ -562,7 +562,7 @@ class LayoutFontAssetHandoffTest {
         val backend = success(HarfBuzzShapingBackend.open())
         try {
             val paragraph = assertIs<ParagraphLayoutResult.Success>(
-                JvmEditableParagraphFacade.layoutBorrowing(JvmEditableParagraphFacadeRequest(
+                EditableParagraphFacade.layoutBorrowing(EditableParagraphFacadeRequest(
                     snapshot = fixture.snapshot,
                     sourceRange = fixture.snapshot.range,
                     constraints = incrementalTestConstraints(width = 10_000f, top = 0f, height = 2_400f),
@@ -790,14 +790,14 @@ class LayoutFontAssetHandoffTest {
             ),
         )))
         val resolver = success(catalog.openAssetResolver())
-        val session = success(JvmEditableLineLayoutSession.open())
+        val session = success(EditableLineLayoutSession.open())
         try {
             val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
             val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(16f))))
             val snapshot = Kalligraphie.decodeUtf8(
                 TextVersion.create(), listOf(TextSlice.Utf8("😀".encodeToByteArray())),
             ).snapshot
-            val line = assertIs<EditableLineResult.Success>(session.layout(JvmEditableLineFacadeRequest(
+            val line = assertIs<EditableLineResult.Success>(session.layout(EditableLineFacadeRequest(
                 snapshot = snapshot,
                 font = font,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -863,7 +863,7 @@ class LayoutFontAssetHandoffTest {
     }
 
     private data class Fixture(
-        val session: JvmEditableLineLayoutSession,
+        val session: EditableLineLayoutSession,
         val resolver: FontAssetResolverHandle,
         val line: EditableLine,
         val font: FontInstance,

@@ -16,12 +16,12 @@ between journeys and scenes.
 ## Module and isolation
 
 `:kalligraphie:e2e` lives at `kalligraphie/e2e/` and uses the standard
-non-published KMP convention (like `:kalligraphie:conformance`). The convention
-declares the `jvm`, `iosArm64`, `iosSimulatorArm64` and `android` targets, and the
-golden verification now executes on all of them but `iosArm64`: the JVM, the
-Android host and device compilations, and the iOS simulator. `iosArm64` compiles
-and executes nothing, because no hosted runner can supply a device.
-`explicitApi()` is enabled.
+non-published KMP web convention (like `:kalligraphie:conformance`), so its target
+set is the base `jvm`, `iosArm64`, `iosSimulatorArm64` and `android` targets plus
+`js` and `wasmJs`. The golden verification executes on all of them but `iosArm64`:
+the JVM, the web runs under Node, the Android host and device compilations, and the
+iOS simulator. `iosArm64` compiles and executes nothing, because no hosted runner
+can supply a device. `explicitApi()` is enabled.
 
 Its dependencies keep it outside the consumer graph: `commonMain` depends only on
 `:kalligraphie:api`, and the test source sets add `:kalligraphie`,
@@ -49,8 +49,11 @@ carries the portable scenes alone.
 
 Protection is free on the reference platform: the root `check` runs
 `:kalligraphie:e2e:jvmTest` like any other subproject, and the existing
-pull-request workflow already covers `kalligraphie/**`. The other targets are
-executed by `.github/workflows/golden-portability.yml`: the JVM suite on the five
+pull-request workflow already covers `kalligraphie/**`. The web golden suites run
+there too — `jsNodeTest` and `wasmJsNodeTest` execute under Node, on a test scope
+that awaits the portable `initialize()` the WebAssembly shaper needs — as do the
+browser suites in Chrome headless. The other targets are executed by
+`.github/workflows/golden-portability.yml`: the JVM suite on the five
 runner architectures the library ships, `testAndroidHostTest` and
 `connectedAndroidDeviceTest` on an emulator, and `iosSimulatorArm64Test` on a
 macOS runner together with the portable rasterizer suite. A platform that stops
@@ -61,19 +64,21 @@ re-frozen to match.
 
 Every scene declares the `CatalogRoute` it needs, and each platform verifies the
 scenes its own declared capabilities can serve. That is the whole catalog on the
-JVM, on the Android device runtime and on the iOS simulator, since all three
-declare the complete portable capability surface; the Android host compilation,
-which runs on a JVM, serves the portable route alone. The `Sources` column below
-is derived from the route, and the `Manifest` column from the committed record.
+JVM, on the web runtimes, on the Android device runtime and on the iOS simulator,
+since all of them declare the complete portable capability surface; the Android
+host compilation, which runs on a JVM, serves the portable route alone. The
+`Sources` column below is derived from the route, and the `Manifest` column from
+the committed record.
 
 | Command | Platform | Scenes |
 | --- | --- | --- |
 | `./gradlew :kalligraphie:e2e:jvmTest` | JVM, all runners | Every catalogued scene |
+| `./gradlew :kalligraphie:e2e:jsNodeTest :kalligraphie:e2e:wasmJsNodeTest` | Web (js and wasmJs), Node | Every catalogued scene |
 | `./gradlew :kalligraphie:e2e:testAndroidHostTest` | Android unit test, JVM runtime | The portable scenes |
 | `./gradlew :kalligraphie:e2e:connectedAndroidDeviceTest` | Android emulator, ART | Every catalogued scene |
 | `./gradlew :kalligraphie:e2e:iosSimulatorArm64Test` | iOS simulator, Kotlin/Native | Every catalogued scene |
 
-All four compare against the same committed manifest, byte for byte, with no
+All of them compare against the same committed manifest, byte for byte, with no
 numeric tolerance: the fingerprint of a scene is a fact about the rasterizer, not
 about the platform that ran it. A scene a platform does not verify is named by
 `deferredSceneIds()`, derived from that platform's capability identity, so it is

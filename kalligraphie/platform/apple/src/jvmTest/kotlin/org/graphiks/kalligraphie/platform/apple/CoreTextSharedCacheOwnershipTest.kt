@@ -122,7 +122,7 @@ class CoreTextSharedCacheOwnershipTest {
         val source = Kalligraphie.decodeUtf16(TextVersion.create(), listOf(TextSlice.Utf16("A".toCharArray()))).snapshot
         val face = catalog.faces.single().id
         try {
-            val paragraph = assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(JvmEditableParagraphFacadeRequest(
+            val paragraph = assertIs<ParagraphLayoutResult.Success>(EditableParagraphFacade.layout(EditableParagraphFacadeRequest(
                 snapshot = source, sourceRange = source.range,
                 constraints = HorizontalParagraphConstraints(LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(10100f), LayoutUnit(2450f)),
                     LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f))),

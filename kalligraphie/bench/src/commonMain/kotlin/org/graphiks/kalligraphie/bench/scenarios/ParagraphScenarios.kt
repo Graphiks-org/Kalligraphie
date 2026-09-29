@@ -1,8 +1,8 @@
 package org.graphiks.kalligraphie.bench.scenarios
 
-import org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutSession
-import org.graphiks.kalligraphie.JvmEditableLineLayoutSession
-import org.graphiks.kalligraphie.JvmEditableParagraphFacadeRequest
+import org.graphiks.kalligraphie.IncrementalParagraphLayoutSession
+import org.graphiks.kalligraphie.EditableLineLayoutSession
+import org.graphiks.kalligraphie.EditableParagraphFacadeRequest
 import org.graphiks.kalligraphie.Kalligraphie
 import org.graphiks.kalligraphie.layout.openLayoutHandle
 import org.graphiks.kalligraphie.api.BaseDirection
@@ -77,7 +77,7 @@ private class InteractiveEdit(private val corpus: FixtureCorpus) : ParagraphScen
     private val source = incrementalRealFontFixture(corpus, INCREMENTAL_SOURCE_TEXT, INCREMENTAL_FONTS)
     private val target = source.withText(INCREMENTAL_TARGET_TEXT)
 
-    private var session: JvmIncrementalParagraphLayoutSession? = null
+    private var session: IncrementalParagraphLayoutSession? = null
     private var current: IncrementalLayoutResult.Success? = null
     private var currentIsSource = true
     private val forward = incrementalChange(source, target, sourceStart = 7, sourceEnd = 11, targetStart = 7, targetEnd = 8)
@@ -88,7 +88,7 @@ private class InteractiveEdit(private val corpus: FixtureCorpus) : ParagraphScen
         current = opened.layout(
             incrementalRequest(source, source.snapshot.incrementalRange(0, 18), overscan = 1),
         ).let { result ->
-            result as? IncrementalLayoutResult.Success ?: error("InteractiveEdit seed failed: $result")
+            result as? IncrementalLayoutResult.Success ?: error("InteractiveEdit seed failed: ${describeIncrementalFailure(result)}")
         }
         session = opened
     }
@@ -127,7 +127,7 @@ private class ViewportLayout(private val corpus: FixtureCorpus) : ParagraphScena
     cacheState = "warm: one untimed uncancelled seed layout, then the harness warmup, populate the session caches",
 ) {
     private val fixture = incrementalRealFontFixture(corpus, INCREMENTAL_SOURCE_TEXT, INCREMENTAL_FONTS)
-    private var session: JvmIncrementalParagraphLayoutSession? = null
+    private var session: IncrementalParagraphLayoutSession? = null
     private var current: IncrementalLayoutResult.Success? = null
 
     override fun prepare() {
@@ -177,7 +177,7 @@ private class IncrementalCancellation(private val corpus: FixtureCorpus) : Parag
     cacheState = "warm: one untimed uncancelled seed layout; the cache is warm so cancellation exercises real work",
 ) {
     private val fixture = incrementalRealFontFixture(corpus, INCREMENTAL_SOURCE_TEXT, INCREMENTAL_FONTS)
-    private var session: JvmIncrementalParagraphLayoutSession? = null
+    private var session: IncrementalParagraphLayoutSession? = null
     private var maxCancellationDelayNanos = 0L
 
     override fun prepare() {
@@ -332,8 +332,8 @@ private fun prepareDejaVu(corpus: FixtureCorpus): FontInstance {
     return success(face.instantiate(FontInstanceDescriptor(layoutSize = LayoutUnit(2048f))))
 }
 
-private fun editableLineRequest(snapshot: TextSnapshot, font: FontInstance): org.graphiks.kalligraphie.JvmEditableLineFacadeRequest =
-    org.graphiks.kalligraphie.JvmEditableLineFacadeRequest(
+private fun editableLineRequest(snapshot: TextSnapshot, font: FontInstance): org.graphiks.kalligraphie.EditableLineFacadeRequest =
+    org.graphiks.kalligraphie.EditableLineFacadeRequest(
         snapshot = snapshot,
         font = font,
         baseDirection = BaseDirection.LEFT_TO_RIGHT,
@@ -369,7 +369,7 @@ private class ColdMixedBidiLine(private val corpus: FixtureCorpus) : ParagraphSc
 
     override fun operation() {
         val font = prepareDejaVu(corpus)
-        val session = success(JvmEditableLineLayoutSession.open())
+        val session = success(EditableLineLayoutSession.open())
         try {
             val result = session.layout(editableLineRequest(snapshot, font))
             val line = (result as? org.graphiks.kalligraphie.api.EditableLineResult.Success)?.line
@@ -405,12 +405,12 @@ private class WarmMixedBidiLine(private val corpus: FixtureCorpus) : ParagraphSc
             listOf(TextSlice.Utf16(EDITABLE_LINE_TEXT.toCharArray())),
         ).snapshot
     }
-    private var session: JvmEditableLineLayoutSession? = null
-    private var preparedRequest: org.graphiks.kalligraphie.JvmEditableLineFacadeRequest? = null
+    private var session: EditableLineLayoutSession? = null
+    private var preparedRequest: org.graphiks.kalligraphie.EditableLineFacadeRequest? = null
 
     override fun prepare() {
         val font = prepareDejaVu(corpus)
-        val opened = success(JvmEditableLineLayoutSession.open())
+        val opened = success(EditableLineLayoutSession.open())
         val request = editableLineRequest(snapshot, font)
         val result = opened.layout(request)
         val line = (result as? org.graphiks.kalligraphie.api.EditableLineResult.Success)?.line
@@ -506,20 +506,20 @@ private class ParagraphSession(
     },
 ) {
     private var opened: OpenConsumerScenario? = null
-    private var reusedSession: JvmIncrementalParagraphLayoutSession? = null
+    private var reusedSession: IncrementalParagraphLayoutSession? = null
 
     override fun prepare() {
         opened = openConsumerScenario(scenario)
         // Both profiles start with identical warmed portable render-asset state.
         observeConsumerLayout(this, layoutConsumerScenario(checkNotNull(opened)), checkNotNull(opened), 0)
         if (warm) {
-            reusedSession = success(JvmIncrementalParagraphLayoutSession.open())
+            reusedSession = success(IncrementalParagraphLayoutSession.open())
             observeSessionLayout(checkNotNull(reusedSession), backendReused = false)
         }
     }
 
     override fun operation() {
-        val session = reusedSession ?: success(JvmIncrementalParagraphLayoutSession.open())
+        val session = reusedSession ?: success(IncrementalParagraphLayoutSession.open())
         try {
             observeSessionLayout(session, backendReused = warm)
         } finally {
@@ -527,7 +527,7 @@ private class ParagraphSession(
         }
     }
 
-    private fun observeSessionLayout(session: JvmIncrementalParagraphLayoutSession, backendReused: Boolean) {
+    private fun observeSessionLayout(session: IncrementalParagraphLayoutSession, backendReused: Boolean) {
         val active = checkNotNull(opened)
         val snapshot = Kalligraphie.decodeUtf8(
             TextVersion.create(),
@@ -560,7 +560,7 @@ private class ParagraphSession(
                 error("Invalid session measurement request: ${contract.error}")
         }
         val result = session.layout(
-            org.graphiks.kalligraphie.JvmIncrementalParagraphLayoutRequest(
+            org.graphiks.kalligraphie.IncrementalParagraphLayoutRequest(
                 request = request,
                 baseDirection = BaseDirection.LEFT_TO_RIGHT,
                 language = scenario.language,
@@ -600,7 +600,7 @@ private class Handoff(
     private val warm: Boolean,
 ) : ParagraphScenario(
     name = if (warm) "FontAssetRetainReopenWarm" else "FontAssetRetainReopenCold",
-    route = "Liberation Sans stable text as one EditableLine -> public JvmEditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset by complete key -> resolve every final certified glyph",
+    route = "Liberation Sans stable text as one EditableLine -> public EditableLineLayoutSession.layout -> openLayoutHandle -> retainFontAsset by complete key -> resolve every final certified glyph",
     timedBoundary = if (warm) {
         "fresh text version and complete renderable editable-line certification through renderer-asset and layout-handle closure; persistent catalog/resolver/face/font/public-session preparation, seed and cleanup excluded"
     } else {
@@ -782,8 +782,8 @@ private fun openStyledSpanFixture(corpus: FixtureCorpus): StyledSpanFixture {
     }
 }
 
-private fun styledSpanRequest(fixture: StyledSpanFixture): JvmEditableParagraphFacadeRequest =
-    JvmEditableParagraphFacadeRequest(
+private fun styledSpanRequest(fixture: StyledSpanFixture): EditableParagraphFacadeRequest =
+    EditableParagraphFacadeRequest(
         snapshot = fixture.snapshot,
         constraints = HorizontalParagraphConstraints(
             region = LayoutRect(LayoutUnit(0f), LayoutUnit(0f), LayoutUnit(20_000f), LayoutUnit(2_000f)),
@@ -804,7 +804,7 @@ private fun styledSpanRequest(fixture: StyledSpanFixture): JvmEditableParagraphF
     )
 
 private fun layoutStyledSpanParagraph(fixture: StyledSpanFixture): ParagraphLayoutResult =
-    org.graphiks.kalligraphie.JvmEditableParagraphFacade.layout(styledSpanRequest(fixture))
+    org.graphiks.kalligraphie.EditableParagraphFacade.layout(styledSpanRequest(fixture))
 
 private fun TextRange.overlapsStyledSpan(other: TextRange): Boolean =
     start < other.endExclusive && other.start < endExclusive
@@ -1021,4 +1021,19 @@ public fun paragraphScenarios(corpus: FixtureCorpus): List<org.graphiks.kalligra
         StyledSpanParagraphCold(corpus),
         StyledSpanParagraphWarm(corpus),
     )
+}
+
+/** Renders the nested typed failure codes so a web report never prints an opaque `[object Object]`. */
+private fun describeIncrementalFailure(result: IncrementalLayoutResult): String {
+    val failure = result as? IncrementalLayoutResult.Failure ?: return result.toString()
+    val paragraph = failure.error as? org.graphiks.kalligraphie.api.IncrementalLayoutError.ParagraphFailure
+    val paragraphError = paragraph?.paragraphError
+    val font = paragraphError as? org.graphiks.kalligraphie.api.ParagraphLayoutError.FontFailure
+    val unrenderable = font?.fontError as? org.graphiks.kalligraphie.api.FontError.UnrenderableFontResolution
+    val rejections = unrenderable?.fallbackDiagnostics?.joinToString(separator = " | ") { decision ->
+        "face=${decision.faceId} rank=${decision.candidateRank} stage=${decision.stage} " +
+            "reason=${decision.reason} lastResort=${decision.lastResortState}"
+    }
+    return "incremental=${failure.error.code} paragraph=${paragraphError?.code} " +
+        "font=${font?.fontError?.code} fontMessage=${font?.fontError?.message} rejections=[$rejections]"
 }

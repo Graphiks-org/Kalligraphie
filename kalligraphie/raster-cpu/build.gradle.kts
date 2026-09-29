@@ -21,6 +21,11 @@ kotlin {
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
         }
+        // Mirrors the web-capable half of `jvmTest.dependencies`. `:kalligraphie` has no web target
+        // yet (Task 1.4), so a web test source set cannot reference it.
+        webTest.dependencies {
+            implementation(kotlin("test"))
+        }
     }
 }
 

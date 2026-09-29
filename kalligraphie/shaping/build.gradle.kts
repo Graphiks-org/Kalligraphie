@@ -3,6 +3,7 @@ import java.util.Base64
 
 plugins {
     id("ygdrasil.conventions.kalligraphie-kmp-library")
+    id("ygdrasil.conventions.kalligraphie-kffi-harfbuzz-web-runtime")
 }
 
 tasks.withType<Test>().configureEach {
@@ -83,6 +84,27 @@ kotlin {
             }
         }
     }
+    // The WebAssembly backend is exercised in a real browser as well as under Node: the same probe
+    // runs twice, so the Emscripten instantiation is proven in a bundler for both web targets.
+    js {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadlessNoSandbox()
+                }
+            }
+        }
+    }
+    wasmJs {
+        browser {
+            testTask {
+                useKarma {
+                    useChromeHeadlessNoSandbox()
+                }
+            }
+        }
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(project(":kalligraphie:api"))
@@ -94,6 +116,11 @@ kotlin {
         iosMain.dependencies {
             implementation(libs.kotlinx.atomicfu)
             implementation(libs.kffi.harfbuzz)
+        }
+        webMain.dependencies {
+            // The js and wasmJs variants of the bundled HarfBuzz binding.
+            implementation(libs.kffi.harfbuzz)
+            implementation(libs.kotlinx.coroutines.core)
         }
         jvmMain.dependencies {
             implementation(libs.kffi.harfbuzz.jvm)
@@ -110,6 +137,10 @@ kotlin {
         }
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
+        }
+        webTest.dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
         }
         val androidDeviceTest by getting {
             dependencies {

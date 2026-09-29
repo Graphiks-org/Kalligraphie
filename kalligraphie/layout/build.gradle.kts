@@ -23,5 +23,14 @@ kotlin {
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
         }
+        // The subset of `jvmTest.dependencies` that this module's web tests reference. `:kalligraphie`
+        // and `:kalligraphie:font:core` are intentionally omitted: their integration suites remain in
+        // `jvmTest`, and no web test source set here depends on them.
+        webTest.dependencies {
+            implementation(project(":kalligraphie:unicode"))
+            implementation(project(":kalligraphie:shaping"))
+            implementation(project(":kalligraphie:font:sfnt"))
+            implementation(kotlin("test"))
+        }
     }
 }

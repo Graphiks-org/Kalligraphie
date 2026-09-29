@@ -26,6 +26,10 @@ kotlin {
             implementation(project(":kalligraphie"))
             implementation(kotlin("test"))
         }
+        webTest.dependencies {
+            implementation(project(":kalligraphie"))
+            implementation(kotlin("test"))
+        }
         val androidDeviceTest by getting {
             dependencies {
                 implementation(project(":kalligraphie"))

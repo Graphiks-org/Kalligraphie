@@ -38,9 +38,9 @@ facts (2048 units per em, bounds `(4, 0, 1362, 1409)`, two contours) are checked
 outside timing. No expected outline value is derived with Kalligraphie.
 
 `FontAssetRetainReopenCold` creates a fresh embedded catalog, resolver, resolved
-face/font instance and public `JvmEditableLineLayoutSession` for every sample.
+face/font instance and public `EditableLineLayoutSession` for every sample.
 This session owns its real HarfBuzz backend and its public `layout` call accepts
-`JvmEditableLineFacadeRequest` to publish a renderable `EditableLine`.
+`EditableLineFacadeRequest` to publish a renderable `EditableLine`.
 The sample opens its `LayoutHandle`, groups final
 certificates by complete `FontRenderAssetKey`, retains one renderer asset per
 key, and resolves/consumes every final certified glyph. All owner cleanup is
@@ -53,7 +53,7 @@ the measured interval; persistent session/backend and resolver cleanup is
 outside it. This is the named 60 Hz reference profile.
 
 `ConcurrentResolveWarm` obtains one renderer-owned asset through public
-`JvmEditableLineLayoutSession.layout` -> `openLayoutHandle` -> `retainFontAsset`, then closes the layout handle,
+`EditableLineLayoutSession.layout` -> `openLayoutHandle` -> `retainFontAsset`, then closes the layout handle,
 session/backend and resolver before warmup/timing. It pre-resolves the following
 fixed 35 distinct nonzero glyph IDs, in paragraph first-occurrence order:
 

@@ -14,5 +14,8 @@ kotlin {
         jvmTest {
             resources.srcDir(rootProject.file("test-fixtures"))
         }
+        webTest.dependencies {
+            implementation(kotlin("test"))
+        }
     }
 }

@@ -202,7 +202,7 @@ class CoreTextCertifiedLayoutTest {
     ): EditableLineResult {
         val face = success(catalog.resolveFace(catalog.faces.single().id, requirements))
         val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(2048f))))
-        return JvmEditableLineFacade.layout(JvmEditableLineFacadeRequest(
+        return EditableLineFacade.layout(EditableLineFacadeRequest(
             snapshot = snapshot("A"), font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
             language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy, features = emptyList(),
             verticalMetrics = LineVerticalMetrics(LayoutUnit(1500f), LayoutUnit(500f)),
@@ -306,8 +306,8 @@ class CoreTextCertifiedLayoutTest {
     ): ParagraphLayout {
         val snapshot = textSnapshot
         val face = catalog.faces.single().id
-        return assertIs<ParagraphLayoutResult.Success>(JvmEditableParagraphFacade.layout(
-            JvmEditableParagraphFacadeRequest(
+        return assertIs<ParagraphLayoutResult.Success>(EditableParagraphFacade.layout(
+            EditableParagraphFacadeRequest(
                 snapshot = snapshot, sourceRange = snapshot.range,
                 constraints = HorizontalParagraphConstraints(
                     LayoutRect(LayoutUnit(100f), LayoutUnit(50f), LayoutUnit(100f + width), LayoutUnit(2450f)),
@@ -331,7 +331,7 @@ class CoreTextCertifiedLayoutTest {
         val font = success(face.instantiate(FontInstanceDescriptor(LayoutUnit(1000f))))
         val snapshot = Kalligraphie.decodeUtf16(TextVersion.create(), listOf(TextSlice.Utf16("ffi".toCharArray()))).snapshot
         try {
-            val result = JvmEditableLineFacade.layout(JvmEditableLineFacadeRequest(
+            val result = EditableLineFacade.layout(EditableLineFacadeRequest(
                 snapshot = snapshot, font = font, baseDirection = BaseDirection.LEFT_TO_RIGHT,
                 language = "en", featurePolicy = HarfBuzzShapingBackend.pinnedFeaturePolicy,
                 features = emptyList(), verticalMetrics = LineVerticalMetrics(LayoutUnit(900f), LayoutUnit(300f)),

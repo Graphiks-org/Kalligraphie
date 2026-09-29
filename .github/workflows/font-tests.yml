@@ -9,6 +9,7 @@ on:
       - 'gradle/**'
       - 'gradlew'
       - 'test-fixtures/**'
+      - 'kotlin-js-store/**'
       - 'docs/docs/generated/**'
       - '.github/workflows/font-tests.yml'
   push:
@@ -20,6 +21,7 @@ on:
       - 'gradle/**'
       - 'gradlew'
       - 'test-fixtures/**'
+      - 'kotlin-js-store/**'
       - 'docs/docs/generated/**'
       - '.github/workflows/font-tests.yml'
 

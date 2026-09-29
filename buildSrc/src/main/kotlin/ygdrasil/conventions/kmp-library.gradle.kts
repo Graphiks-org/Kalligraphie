@@ -17,6 +17,17 @@ kotlin {
 
     iosArm64()
     iosSimulatorArm64()
+
+    // Every library in this repository targets the web too, so the convention carries the two Node
+    // runtimes instead of a parallel `*-web-library` family: a module whose own dependencies cannot
+    // compile for the web is the only case that may declare its targets separately, as the
+    // platform-specific adapters under `:kalligraphie:platform` do.
+    js {
+        nodejs()
+    }
+    wasmJs {
+        nodejs()
+    }
 }
 
 extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
