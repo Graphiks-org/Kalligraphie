@@ -8,18 +8,14 @@ import kotlin.test.assertEquals
 
 class PlatformCapabilityConformanceTest {
     /**
-     * Every platform now declares the complete portable surface, and the matrix is written out per
-     * platform rather than derived from the entries, so a declaration that silently gained or lost
-     * a capability fails here instead of agreeing with itself.
+     * Every platform declares the complete portable surface — web included, since its shaping and
+     * end-to-end layout landed — and the matrix is written out per platform rather than derived from
+     * the entries, so a declaration that silently gained or lost a capability fails here instead of
+     * agreeing with itself. One map serves them all: a platform that grows its own surface is the
+     * only reason to name it separately.
      */
     private fun expectedAvailability(platformId: String): Map<PortableCapability, Boolean> = when (platformId) {
-        "jvm", "ios", "android" -> mapOf(
-            PortableCapability.UNICODE_ANALYSIS to true,
-            PortableCapability.SHAPING to true,
-            PortableCapability.END_TO_END_LAYOUT to true,
-            PortableCapability.GLYPH_REPRESENTATION_VARIANTS to true,
-        )
-        "web" -> mapOf(
+        "jvm", "ios", "android", "web" -> mapOf(
             PortableCapability.UNICODE_ANALYSIS to true,
             PortableCapability.SHAPING to true,
             PortableCapability.END_TO_END_LAYOUT to true,
