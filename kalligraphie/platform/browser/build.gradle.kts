@@ -64,7 +64,7 @@ kotlin {
 }
 
 /**
- * The browser adapter publishes under the same `kalligraphie-platform-*` coordinate family as the
- * JVM and native adapters; without this the coordinate would have been the bare project name.
+ * The browser adapter publishes under the same `platform-*` coordinate family as the JVM and
+ * native adapters; without this the coordinate would have been the bare project name.
  */
-mavenPublishing { coordinates(artifactId = "kalligraphie-platform-browser") }
+mavenPublishing { coordinates(artifactId = "platform-browser") }

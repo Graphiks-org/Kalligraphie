@@ -34,7 +34,7 @@ kotlin {
 extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
     finalizeDsl(
         org.gradle.api.Action<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
-            namespace = "io.ygdrasil.shared"
+            namespace = "org.graphiks.kalligraphie.platform.android"
             compileSdk = 36
             minSdk = 28
         }
@@ -45,4 +45,4 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
 dokka { dokkaSourceSets.configureEach { reportUndocumented.set(true) } }
-mavenPublishing { coordinates(artifactId = "kalligraphie-platform-android") }
+mavenPublishing { coordinates(artifactId = "platform-android") }

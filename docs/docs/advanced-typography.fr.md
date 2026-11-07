@@ -1,7 +1,7 @@
 # Typographie avancée et contenu dérivé
 
 Ce guide documente le parcours consommateur des comportements typographiques
-avancés publiés par `org.graphiks:kalligraphie`. Chaque comportement listé est
+avancés publiés par `org.graphiks.kalligraphie:kalligraphie`. Chaque comportement listé est
 un comportement réel de chaîne de traitement (`pipeline`) : il façonne du vrai texte avec de vraies
 polices et publie de la géométrie observable via `EditableParagraphFacade`
 (ou le contrat portable `ParagraphLayouter`).

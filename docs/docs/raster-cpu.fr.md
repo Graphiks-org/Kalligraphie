@@ -2,7 +2,7 @@
 
 Kalligraphie fournit un rastériseur (moteur de remplissage de pixels) CPU
 déterministe réservé aux tests et aux démonstrations. Il n'entre jamais dans le
-graphe de dépendances du consommateur `org.graphiks:kalligraphie`.
+graphe de dépendances du consommateur `org.graphiks.kalligraphie:kalligraphie`.
 
 Le module rastérise les trois routes de représentation portables certifiées :
 

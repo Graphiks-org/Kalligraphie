@@ -4,7 +4,7 @@ plugins {
     id("com.vanniktech.maven.publish")
 }
 
-group = "org.graphiks"
+group = "org.graphiks.kalligraphie"
 version = (project.findProperty("releaseVersion") as? String)
     ?.takeIf { it.isNotBlank() }
     ?: "1.0.0-SNAPSHOT"
@@ -20,7 +20,13 @@ mavenPublishing {
     coordinates(group.toString(), project.name, version.toString())
 
     pom {
-        name.set(project.name)
+        // A searchable display name on Maven Central: `:kalligraphie:font:core` publishes as
+        // "Kalligraphie Font Core" rather than the bare leaf name "core".
+        name.set(
+            project.path.trim(':').split(':').joinToString(" ") { segment ->
+                segment.replaceFirstChar { it.uppercaseChar() }
+            }
+        )
         description.set("Kalligraphie portable font pipeline")
         url.set("https://github.com/Graphiks-org/Kalligraphie")
 

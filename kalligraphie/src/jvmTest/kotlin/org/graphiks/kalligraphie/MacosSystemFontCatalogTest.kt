@@ -12,6 +12,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class MacosSystemFontCatalogTest {
     @Test
@@ -44,6 +45,35 @@ class MacosSystemFontCatalogTest {
             val result = MacosSystemFontCatalog.open(MacosSystemFontCatalogOptions(roots = listOf(root), maxPathsToVisit = 1))
             assertIs<FontError.ResourceLimitExceeded>(assertIs<FontOperationResult.Failure>(result).error)
         }
+    }
+
+    @Test
+    fun parsesStockSystemFacesThatPublishOnlyMacintoshRomanNames() {
+        org.junit.Assume.assumeTrue(System.getProperty("os.name").startsWith("Mac"))
+        val menlo = java.nio.file.Path.of("/System/Library/Fonts/Menlo.ttc")
+        org.junit.Assume.assumeTrue(java.nio.file.Files.exists(menlo))
+        val catalog = catalogSuccess(FontDirectoryCatalog.open(FontDirectoryCatalogOptions(listOf(menlo.toString()))))
+        assertTrue(catalog.faces.any { it.metadata.familyName == "Menlo" })
+    }
+
+    @Test
+    fun defaultLimitsCoverAStockSystem() {
+        val options = MacosSystemFontCatalogOptions()
+        assertEquals(2048, options.maxPathsToVisit)
+        assertEquals(256, options.maxFaces)
+        assertEquals(16 * 1024 * 1024, options.maxSourceBytes)
+        assertEquals(256 * 1024 * 1024, options.maxTotalSourceBytes)
+        assertEquals(1024, options.maxFacesToExamine)
+    }
+
+    @Test
+    fun defaultOptionsRetainStockSystemClassicFaces() {
+        org.junit.Assume.assumeTrue(System.getProperty("os.name").startsWith("Mac"))
+        org.junit.Assume.assumeTrue(java.nio.file.Files.isDirectory(java.nio.file.Path.of("/System/Library/Fonts")))
+        val catalog = catalogSuccess(MacosSystemFontCatalog.open())
+        val families = catalog.faces.map { it.metadata.familyName }.toSet()
+        assertTrue("Menlo" in families, "Menlo is missing from the default macOS catalog: ${families.sorted()}")
+        assertTrue("Helvetica" in families, "Helvetica is missing from the default macOS catalog: ${families.sorted()}")
     }
 
     @Test

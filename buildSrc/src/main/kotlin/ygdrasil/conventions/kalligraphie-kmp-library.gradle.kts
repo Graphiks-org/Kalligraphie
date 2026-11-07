@@ -6,7 +6,7 @@ plugins {
     id("dev.opensavvy.dokka-mkdocs")
 }
 
-group = "org.graphiks"
+group = "org.graphiks.kalligraphie"
 version = providers.gradleProperty("releaseVersion")
     .orElse("1.0.0-SNAPSHOT")
     .get()

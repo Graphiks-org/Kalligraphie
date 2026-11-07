@@ -1,7 +1,7 @@
 # Font Management
 
 Kalligraphie exposes embedded and directory-captured TrueType paths through
-`org.graphiks:kalligraphie` on the JVM reference target only. The public
+`org.graphiks.kalligraphie:kalligraphie` on the JVM reference target only. The public
 contracts stay portable, but this executable route is JVM-only. A
 consumer supplies captured SFNT bytes to `Kalligraphie.embedded(...)`,
 selects a stable face record, creates a font instance, and uses a render asset handle to
