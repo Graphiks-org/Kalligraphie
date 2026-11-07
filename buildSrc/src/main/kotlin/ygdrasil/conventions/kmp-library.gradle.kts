@@ -33,7 +33,10 @@ kotlin {
 extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
     finalizeDsl(
         org.gradle.api.Action<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
-            namespace = "io.ygdrasil.shared"
+            // One namespace per module, mirroring its Kotlin packages exactly: the generated R
+            // class lands in this package, and a namespace shared by several modules would
+            // collide the day one of them declares an Android resource.
+            namespace = "org.graphiks" + project.path.replace(':', '.')
             compileSdk = 36
             minSdk = 28
         }
