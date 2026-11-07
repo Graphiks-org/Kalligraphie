@@ -113,7 +113,7 @@ typed diagnostic and skips it; cancellation publishes no partial catalogue.
 
 Use `:kalligraphie:platform:browser` alongside the main `:kalligraphie` module on
 the `js` and `wasmJs` targets. Its publication coordinate is
-`org.graphiks:kalligraphie-platform-browser`; it has no JVM or native variant, and
+`org.graphiks.kalligraphie:platform-browser`; it has no JVM or native variant, and
 the main artifact never depends on it and never touches `window`.
 
 `discoverLocalFonts()` is a `suspend` call the application triggers from its own
@@ -126,7 +126,7 @@ remain the primary route on every platform.
 ## Optional Apple module
 
 Use `:kalligraphie:platform:apple` alongside the main `:kalligraphie` module.
-Its publication coordinate is `org.graphiks:kalligraphie-platform-apple`; a
+Its publication coordinate is `org.graphiks.kalligraphie:platform-apple`; a
 Kotlin Multiplatform consumer resolves the JVM variant. This route requires
 macOS 15 or later, an x64 or arm64 JVM, and JDK 25. Start the application JVM
 with `--enable-native-access=ALL-UNNAMED` for its native calls.

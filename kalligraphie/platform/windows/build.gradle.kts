@@ -27,7 +27,7 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
 dokka { dokkaSourceSets.configureEach { reportUndocumented.set(true) } }
-mavenPublishing { coordinates(artifactId = "kalligraphie-platform-windows") }
+mavenPublishing { coordinates(artifactId = "platform-windows") }
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
 }

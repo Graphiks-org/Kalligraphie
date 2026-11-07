@@ -127,7 +127,7 @@ publie aucun catalogue partiel.
 
 Ajouter `:kalligraphie:platform:browser` au module principal `:kalligraphie` sur
 les cibles `js` et `wasmJs`. Sa coordonnée de publication est
-`org.graphiks:kalligraphie-platform-browser` ; il n’a ni variante JVM ni variante
+`org.graphiks.kalligraphie:platform-browser` ; il n’a ni variante JVM ni variante
 native, le module principal ne dépend jamais de lui et ne touche jamais `window`.
 
 `discoverLocalFonts()` est un appel `suspend` que l’application déclenche depuis son
@@ -140,7 +140,7 @@ l’application restent la route principale sur toutes les plateformes.
 ## Module Apple facultatif
 
 Ajouter `:kalligraphie:platform:apple` au module principal `:kalligraphie`.
-Sa coordonnée de publication est `org.graphiks:kalligraphie-platform-apple` ;
+Sa coordonnée de publication est `org.graphiks.kalligraphie:platform-apple` ;
 un consommateur Kotlin Multiplatform sélectionne la variante JVM (machine
 virtuelle Java). Cette route exige macOS 15 ou ultérieur, une JVM x64 ou
 arm64 et JDK 25. Lancer la JVM applicative avec

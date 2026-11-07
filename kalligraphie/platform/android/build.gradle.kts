@@ -45,4 +45,4 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
 dokka { dokkaSourceSets.configureEach { reportUndocumented.set(true) } }
-mavenPublishing { coordinates(artifactId = "kalligraphie-platform-android") }
+mavenPublishing { coordinates(artifactId = "platform-android") }

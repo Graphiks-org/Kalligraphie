@@ -1,7 +1,7 @@
 # raster-cpu
 
 Deterministic CPU rasterizer used only by tests and demonstrations. It never
-enters the consumer dependency graph of `org.graphiks:kalligraphie`.
+enters the consumer dependency graph of `org.graphiks.kalligraphie:kalligraphie`.
 
 ## What it rasterizes
 

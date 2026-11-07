@@ -31,7 +31,7 @@ configurations.configureEach {
     resolutionStrategy.cacheChangingModulesFor(0, "seconds")
 }
 dokka { dokkaSourceSets.configureEach { reportUndocumented.set(true) } }
-mavenPublishing { coordinates(artifactId = "kalligraphie-platform-apple") }
+mavenPublishing { coordinates(artifactId = "platform-apple") }
 tasks.withType<Test>().configureEach {
     onlyIf { System.getProperty("os.name").startsWith("Mac") }
     jvmArgs("--enable-native-access=ALL-UNNAMED")

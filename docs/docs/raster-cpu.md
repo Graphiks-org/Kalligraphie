@@ -2,7 +2,7 @@
 
 Kalligraphie ships a deterministic CPU rasterizer used only by tests and
 demonstrations. It never enters the consumer dependency graph of
-`org.graphiks:kalligraphie`.
+`org.graphiks.kalligraphie:kalligraphie`.
 
 The module rasterizes the three certified portable representation routes:
 

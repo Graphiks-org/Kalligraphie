@@ -1,7 +1,7 @@
 # Gestion des fontes
 
 Kalligraphie propose des fontes TrueType embarquées ou capturées dans des répertoires via
-`org.graphiks:kalligraphie`, uniquement sur la cible de référence de la
+`org.graphiks.kalligraphie:kalligraphie`, uniquement sur la cible de référence de la
 machine virtuelle Java (JVM). Les contrats publics restent portables, mais
 cette prise en charge exécutable est limitée à la JVM. L’utilisateur de la
 bibliothèque fournit des octets SFNT capturés à `Kalligraphie.embedded(...)`,
