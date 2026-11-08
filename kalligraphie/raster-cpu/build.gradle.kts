@@ -1,9 +1,24 @@
+import com.android.build.api.variant.KotlinMultiplatformAndroidComponentsExtension
+
 plugins {
     id("ygdrasil.conventions.kalligraphie-internal-kmp-library")
 }
 
 tasks.withType<Test>().configureEach {
     jvmArgs("--enable-native-access=ALL-UNNAMED")
+}
+
+extensions.configure<KotlinMultiplatformAndroidComponentsExtension> {
+    finalizeDsl(
+        org.gradle.api.Action<com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryExtension> {
+            // The Gradle path segment `raster-cpu` is not a Java identifier, so the path-derived
+            // namespace of the kmp-library convention would publish an AAR that every consumer
+            // build rejects; the module's Kotlin package is `org.graphiks.kalligraphie.raster`,
+            // and the namespace mirrors it. This action runs after the convention's, so the
+            // explicit value wins.
+            namespace = "org.graphiks.kalligraphie.raster"
+        }
+    )
 }
 
 kotlin {
