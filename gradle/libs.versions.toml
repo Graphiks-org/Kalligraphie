@@ -53,13 +53,13 @@ kotlinx-benchmark-runtime = { module = "org.jetbrains.kotlinx:kotlinx-benchmark-
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 androidx-benchmark-junit4 = { module = "androidx.benchmark:benchmark-junit4", version.ref = "androidx-benchmark" }
 
-# Native bindings
-kffi-coretext-jvm = { module = "org.graphiks:kffi-coretext-jvm", version.ref = "kffi" }
-kffi-fontconfig-jvm = { module = "org.graphiks:kffi-fontconfig-jvm", version.ref = "kffi" }
-kffi-directwrite-jvm = { module = "org.graphiks:kffi-directwrite-jvm", version.ref = "kffi" }
-kffi-harfbuzz = { module = "org.graphiks:kffi-harfbuzz", version.ref = "kffi" }
-kffi-harfbuzz-jvm = { module = "org.graphiks:kffi-harfbuzz-jvm", version.ref = "kffi" }
-kffi-harfbuzz-android = { module = "org.graphiks:kffi-harfbuzz-android", version.ref = "kffi" }
+# Native bindings — the kffi groupId carries the project and artifactIds drop the `kffi-` prefix
+kffi-coretext-jvm = { module = "org.graphiks.kffi:coretext-jvm", version.ref = "kffi" }
+kffi-fontconfig-jvm = { module = "org.graphiks.kffi:fontconfig-jvm", version.ref = "kffi" }
+kffi-directwrite-jvm = { module = "org.graphiks.kffi:directwrite-jvm", version.ref = "kffi" }
+kffi-harfbuzz = { module = "org.graphiks.kffi:harfbuzz", version.ref = "kffi" }
+kffi-harfbuzz-jvm = { module = "org.graphiks.kffi:harfbuzz-jvm", version.ref = "kffi" }
+kffi-harfbuzz-android = { module = "org.graphiks.kffi:harfbuzz-android", version.ref = "kffi" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }

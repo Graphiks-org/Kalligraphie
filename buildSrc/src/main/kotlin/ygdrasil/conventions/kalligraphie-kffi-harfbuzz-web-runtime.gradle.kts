@@ -31,8 +31,8 @@ val harfBuzzWebRuntimeJs by configurations.creating { isTransitive = false }
 val harfBuzzWebRuntimeWasm by configurations.creating { isTransitive = false }
 
 dependencies {
-    harfBuzzWebRuntimeJs("org.graphiks:kffi-harfbuzz-js:$kffiVersion")
-    harfBuzzWebRuntimeWasm("org.graphiks:kffi-harfbuzz-wasm-js:$kffiVersion")
+    harfBuzzWebRuntimeJs("org.graphiks.kffi:harfbuzz-js:$kffiVersion")
+    harfBuzzWebRuntimeWasm("org.graphiks.kffi:harfbuzz-wasm-js:$kffiVersion")
 }
 
 abstract class ExtractHarfBuzzWebRuntimeTask : DefaultTask() {

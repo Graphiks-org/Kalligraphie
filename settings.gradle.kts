@@ -61,26 +61,30 @@ dependencyResolutionManagement {
             name = "KffiSnapshots"
             url = uri("https://central.sonatype.com/repository/maven-snapshots/")
             content {
-                includeModule("org.graphiks", "kffi-coretext")
-                includeModule("org.graphiks", "kffi-coretext-jvm")
-                includeModule("org.graphiks", "kffi-fontconfig")
-                includeModule("org.graphiks", "kffi-fontconfig-jvm")
-                includeModule("org.graphiks", "kffi-directwrite")
-                includeModule("org.graphiks", "kffi-directwrite-jvm")
-                includeModule("org.graphiks", "kffi-harfbuzz")
-                includeModule("org.graphiks", "kffi-harfbuzz-jvm")
-                includeModule("org.graphiks", "kffi-harfbuzz-android")
-                includeModule("org.graphiks", "kffi-harfbuzz-android-native")
-                includeModule("org.graphiks", "kffi-harfbuzz-iosarm64")
-                includeModule("org.graphiks", "kffi-harfbuzz-iossimulatorarm64")
-                includeModule("org.graphiks", "kffi-harfbuzz-js")
-                includeModule("org.graphiks", "kffi-harfbuzz-wasm-js")
-                includeModule("org.graphiks", "kffi-android")
-                includeModule("org.graphiks", "kffi-android-native")
-                includeModule("org.graphiks", "kffi-iosarm64")
-                includeModule("org.graphiks", "kffi-iossimulatorarm64")
-                includeModule("org.graphiks", "kffi")
-                includeModule("org.graphiks", "kffi-jvm")
+                // kffi aligns on this repository's convention: the groupId carries the
+                // project and artifactIds drop the `kffi-` prefix — except the root
+                // module's own variants (`kffi`, `kffi-jvm`, `kffi-android`,
+                // `kffi-iosarm64`, `kffi-iossimulatorarm64`), which keep it.
+                includeModule("org.graphiks.kffi", "coretext")
+                includeModule("org.graphiks.kffi", "coretext-jvm")
+                includeModule("org.graphiks.kffi", "fontconfig")
+                includeModule("org.graphiks.kffi", "fontconfig-jvm")
+                includeModule("org.graphiks.kffi", "directwrite")
+                includeModule("org.graphiks.kffi", "directwrite-jvm")
+                includeModule("org.graphiks.kffi", "harfbuzz")
+                includeModule("org.graphiks.kffi", "harfbuzz-jvm")
+                includeModule("org.graphiks.kffi", "harfbuzz-android")
+                includeModule("org.graphiks.kffi", "harfbuzz-android-native")
+                includeModule("org.graphiks.kffi", "harfbuzz-iosarm64")
+                includeModule("org.graphiks.kffi", "harfbuzz-iossimulatorarm64")
+                includeModule("org.graphiks.kffi", "harfbuzz-js")
+                includeModule("org.graphiks.kffi", "harfbuzz-wasm-js")
+                includeModule("org.graphiks.kffi", "android-native")
+                includeModule("org.graphiks.kffi", "kffi-android")
+                includeModule("org.graphiks.kffi", "kffi-iosarm64")
+                includeModule("org.graphiks.kffi", "kffi-iossimulatorarm64")
+                includeModule("org.graphiks.kffi", "kffi")
+                includeModule("org.graphiks.kffi", "kffi-jvm")
             }
         }
     }

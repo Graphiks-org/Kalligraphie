@@ -338,17 +338,17 @@ class IosHarfBuzzBackendTest {
         /**
          * Frozen kffi-harfbuzz iOS **simulator** (`iosSimulatorArm64`) slice provenance.
          *
-         * These values are pinned by the published `org.graphiks:kffi-harfbuzz-iossimulatorarm64`
+         * These values are pinned by the published `org.graphiks.kffi:harfbuzz-iossimulatorarm64`
          * snapshot and the Xcode/CMake build chain that produced it. Re-publishing that snapshot —
          * or moving to a new Xcode toolchain — changes [IOS_SIMULATOR_ARTIFACT_SHA256] (and
          * possibly the artifactId/build chain), so refresh all of these constants together with the
-         * binding upgrade. The device slice (`kffi-harfbuzz-iosarm64`, sha256
+         * binding upgrade. The device slice (`harfbuzz-iosarm64`, sha256
          * `d3393c61a7276578f203e6b7115d2ea549311d5d0be0d302963652c70e0a18b7`) is not addressable
          * from the simulator test process.
          */
         const val IOS_SOURCE_REVISION = "4c2aa804671d7276e8a0eb95da07202ead05c843"
         const val IOS_SIMULATOR_ARTIFACT_ID =
-            "org.graphiks:kffi-harfbuzz-iossimulatorarm64:1.0.0-SNAPSHOT:iosSimulatorArm64/libharfbuzz.a"
+            "org.graphiks.kffi:harfbuzz-iossimulatorarm64:1.0.0-SNAPSHOT:iosSimulatorArm64/libharfbuzz.a"
         const val IOS_SIMULATOR_ARTIFACT_SHA256 =
             "f3c5e805c72362362e1b8f467dbd4f27ba07fb4f1f68619858c76de662764cb2"
         const val IOS_SIMULATOR_BUILD_CHAIN_IDENTITY =
