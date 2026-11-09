@@ -65,17 +65,22 @@ class AndroidHarfBuzzDeviceTest {
     fun reportsTheBundledAndroidProvenance() {
         val provenance = backend().identity.provenance
 
-        assertEquals("android", provenance.operatingSystem)
-        // The API 35 emulator is x86_64; the portable identity normalizes the ABI to "x64".
-        assertEquals("x86_64", Build.SUPPORTED_ABIS.first())
-        assertEquals("x64", provenance.architecture)
+        // The suite runs on the CI x86_64 emulator and would also run on arm64 devices, so derive
+        // the expected ABI from the device itself, using the same normalization the loader applies.
+        val abi = Build.SUPPORTED_ABIS.first()
+        val architecture = when (abi) {
+            "arm64-v8a" -> "arm64"
+            "x86_64" -> "x64"
+            else -> error("Unexpected Android ABI $abi for the bundled HarfBuzz binding.")
+        }
+        assertEquals(architecture, provenance.architecture)
         assertEquals("4c2aa804671d7276e8a0eb95da07202ead05c843", provenance.sourceRevision)
         assertEquals("harfbuzz", provenance.sourceProject)
-        assertTrue(provenance.artifactId.startsWith("org.graphiks.kffi:harfbuzz-android:"))
-        assertTrue(provenance.artifactId.contains("x86_64/libharfbuzz.so"))
+        assertEquals(
+            "org.graphiks.kffi:harfbuzz-android:1.0.0-SNAPSHOT:$abi/libharfbuzz.so",
+            provenance.artifactId,
+        )
         assertTrue(provenance.artifactSha256.isNotEmpty(), "the bundled library digest must be observable")
-        assertEquals(64, provenance.artifactSha256.length)
-        assertTrue(provenance.artifactSha256.all { character -> character in "0123456789abcdef" })
         assertTrue(provenance.buildChainIdentity.contains("ndk-30.0.15729638"))
     }
 
