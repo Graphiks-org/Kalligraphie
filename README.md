@@ -56,14 +56,14 @@ The JVM reference route includes:
   explicit unmaterialized suffix.
 
 Android builds on the same portable contracts and now ships the bundled HarfBuzz
-14.3.0 shaping backend as `org.graphiks:kffi-harfbuzz-android`. The shared
+14.3.0 shaping backend as `org.graphiks.kffi:harfbuzz-android`. The shared
 Android library floor is API 28, raised from API 24 — a deliberate breaking
 change for API 24–27 consumers.
 
 iOS builds on the same portable contracts and ships the bundled HarfBuzz 14.3.0
 shaping backend, statically linked through cinterop, as
-`org.graphiks:kffi-harfbuzz-iosarm64` (device) and
-`org.graphiks:kffi-harfbuzz-iossimulatorarm64` (simulator). No current target is
+`org.graphiks.kffi:harfbuzz-iosarm64` (device) and
+`org.graphiks.kffi:harfbuzz-iossimulatorarm64` (simulator). No current target is
 left without a bundled shaping backend.
 
 ## Consumer route

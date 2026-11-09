@@ -73,10 +73,10 @@ Android dédiée exécute les tests de shaping et de conformance sur appareil, s
 un émulateur `x86_64` API 35, à partir des mêmes polices auditées, et une tâche
 iOS-simulateur exécute les suites de shaping et de conformance sur la tranche
 `iosSimulatorArm64`. Chaque cible actuelle embarque désormais un backend HarfBuzz
-embarqué : Android via `org.graphiks:kffi-harfbuzz-android` (API 28+), iOS via
-les artefacts cinterop liés statiquement `org.graphiks:kffi-harfbuzz-iosarm64` et
-`org.graphiks:kffi-harfbuzz-iossimulatorarm64`, et Linux/macOS/Windows via la
-liaison multiplateforme `org.graphiks:kffi-harfbuzz`. Chaque parcours
+embarqué : Android via `org.graphiks.kffi:harfbuzz-android` (API 28+), iOS via
+les artefacts cinterop liés statiquement `org.graphiks.kffi:harfbuzz-iosarm64` et
+`org.graphiks.kffi:harfbuzz-iossimulatorarm64`, et Linux/macOS/Windows via la
+liaison multiplateforme `org.graphiks.kffi:harfbuzz`. Chaque parcours
 s’exécute sur une frontière de fournisseur contrôlée avec des polices
 auditées, et les vérifications sur les polices installées restent des
 contrôles optionnels, non l’oracle.
@@ -90,7 +90,7 @@ spécialisés de kffi et son service Darwin d’information système ; le charge
 des bibliothèques, les symboles, les signatures et la disposition mémoire de la
 matrice appartiennent à kffi. Le backend (moteur) de shaping HarfBuzz
 multiplateforme utilise de même la liaison publiée
-`org.graphiks:kffi-harfbuzz` : le chargement de la
+`org.graphiks.kffi:harfbuzz` : le chargement de la
 bibliothèque, les signatures ABI, les dispositions mémoire et les propriétaires
 natifs appartiennent à kffi, tandis que Kalligraphie garde la politique de
 features (options OpenType), l’interprétation des clusters et des carets de
@@ -160,10 +160,10 @@ dont Android API 28, relevée depuis l’API 24 avec l’arrivée du backend Har
 Android.
 
 Les dépendances kffi internes utilisent
-`org.graphiks:kffi-coretext-jvm:1.0.0-SNAPSHOT` (module Apple) et
-`org.graphiks:kffi-harfbuzz:1.0.0-SNAPSHOT` (shaping multiplateforme), plus les
-artefacts liés statiquement `org.graphiks:kffi-harfbuzz-iosarm64` et
-`org.graphiks:kffi-harfbuzz-iossimulatorarm64` sur les cibles appareil et
+`org.graphiks.kffi:coretext-jvm:1.0.0-SNAPSHOT` (module Apple) et
+`org.graphiks.kffi:harfbuzz:1.0.0-SNAPSHOT` (shaping multiplateforme), plus les
+artefacts liés statiquement `org.graphiks.kffi:harfbuzz-iosarm64` et
+`org.graphiks.kffi:harfbuzz-iossimulatorarm64` sur les cibles appareil et
 simulateur iOS, et suivent la
 dernière publication de la ligne de développement actuelle. Un snapshot est une
 version de développement dont le contenu peut changer. Leur résolution exige le
@@ -185,16 +185,16 @@ dependencyResolutionManagement {
         maven {
             url = uri("https://central.sonatype.com/repository/maven-snapshots/")
             content {
-                includeModule("org.graphiks", "kffi-coretext")
-                includeModule("org.graphiks", "kffi-coretext-jvm")
-                includeModule("org.graphiks", "kffi-harfbuzz")
-                includeModule("org.graphiks", "kffi-harfbuzz-jvm")
-                includeModule("org.graphiks", "kffi-harfbuzz-android")
-                includeModule("org.graphiks", "kffi-harfbuzz-android-native")
-                includeModule("org.graphiks", "kffi-harfbuzz-iosarm64")
-                includeModule("org.graphiks", "kffi-harfbuzz-iossimulatorarm64")
-                includeModule("org.graphiks", "kffi")
-                includeModule("org.graphiks", "kffi-jvm")
+                includeModule("org.graphiks.kffi", "coretext")
+                includeModule("org.graphiks.kffi", "coretext-jvm")
+                includeModule("org.graphiks.kffi", "harfbuzz")
+                includeModule("org.graphiks.kffi", "harfbuzz-jvm")
+                includeModule("org.graphiks.kffi", "harfbuzz-android")
+                includeModule("org.graphiks.kffi", "harfbuzz-android-native")
+                includeModule("org.graphiks.kffi", "harfbuzz-iosarm64")
+                includeModule("org.graphiks.kffi", "harfbuzz-iossimulatorarm64")
+                includeModule("org.graphiks.kffi", "kffi")
+                includeModule("org.graphiks.kffi", "kffi-jvm")
             }
         }
     }

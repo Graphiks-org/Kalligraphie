@@ -930,7 +930,7 @@ class HarfBuzzPortableBackendTest {
     }
 
     private fun expectedNativeArtifactId(): String =
-        "org.graphiks:kffi-harfbuzz-jvm:1.0.0-SNAPSHOT:${osFamily()}-${archName()}/${nativeFileName()}"
+        "org.graphiks.kffi:harfbuzz-jvm:1.0.0-SNAPSHOT:${osFamily()}-${archName()}/${nativeFileName()}"
 
     private fun nativeFileName(): String = when (osFamily()) {
         "macos" -> "libharfbuzz.dylib"

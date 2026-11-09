@@ -71,7 +71,7 @@ class AndroidHarfBuzzDeviceTest {
         assertEquals("x64", provenance.architecture)
         assertEquals("4c2aa804671d7276e8a0eb95da07202ead05c843", provenance.sourceRevision)
         assertEquals("harfbuzz", provenance.sourceProject)
-        assertTrue(provenance.artifactId.startsWith("org.graphiks:kffi-harfbuzz-android:"))
+        assertTrue(provenance.artifactId.startsWith("org.graphiks.kffi:harfbuzz-android:"))
         assertTrue(provenance.artifactId.contains("x86_64/libharfbuzz.so"))
         assertTrue(provenance.artifactSha256.isNotEmpty(), "the bundled library digest must be observable")
         assertEquals(64, provenance.artifactSha256.length)
