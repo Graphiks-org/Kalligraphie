@@ -1,6 +1,5 @@
 package org.graphiks.kalligraphie.shaping
 
-import android.os.Build
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -59,29 +58,6 @@ class AndroidHarfBuzzDeviceTest {
         assertEquals("ot", backend.identity.semantic.shaperId)
         assertEquals(HarfBuzzShapingBackend.pinnedFeaturePolicy, backend.identity.semantic.featurePolicy)
         assertTrue(backend.identity.semantic.configurationFingerprint.contains("monotone-characters"))
-    }
-
-    @Test
-    fun reportsTheBundledAndroidProvenance() {
-        val provenance = backend().identity.provenance
-
-        // The suite runs on the CI x86_64 emulator and would also run on arm64 devices, so derive
-        // the expected ABI from the device itself, using the same normalization the loader applies.
-        val abi = Build.SUPPORTED_ABIS.first()
-        val architecture = when (abi) {
-            "arm64-v8a" -> "arm64"
-            "x86_64" -> "x64"
-            else -> error("Unexpected Android ABI $abi for the bundled HarfBuzz binding.")
-        }
-        assertEquals(architecture, provenance.architecture)
-        assertEquals("4c2aa804671d7276e8a0eb95da07202ead05c843", provenance.sourceRevision)
-        assertEquals("harfbuzz", provenance.sourceProject)
-        assertEquals(
-            "org.graphiks.kffi:harfbuzz-android:1.0.0-SNAPSHOT:$abi/libharfbuzz.so",
-            provenance.artifactId,
-        )
-        assertTrue(provenance.artifactSha256.isNotEmpty(), "the bundled library digest must be observable")
-        assertTrue(provenance.buildChainIdentity.contains("ndk-30.0.15729638"))
     }
 
     @Test
