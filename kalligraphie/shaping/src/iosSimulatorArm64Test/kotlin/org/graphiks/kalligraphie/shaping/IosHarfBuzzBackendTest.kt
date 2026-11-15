@@ -307,7 +307,7 @@ class IosHarfBuzzBackendTest {
         assertEquals("arm64", provenance.architecture)
         assertEquals("harfbuzz", provenance.sourceProject)
         assertEquals(IOS_SOURCE_REVISION, provenance.sourceRevision)
-        assertEquals(IOS_SIMULATOR_ARTIFACT_ID, provenance.artifactId)
+        assertTrue(provenance.artifactId.endsWith(IOS_SIMULATOR_NATIVE_TARGET))
         assertEquals(IOS_SIMULATOR_ARTIFACT_SHA256, provenance.artifactSha256)
         assertEquals(IOS_SIMULATOR_BUILD_CHAIN_IDENTITY, provenance.buildChainIdentity)
     }
@@ -339,16 +339,20 @@ class IosHarfBuzzBackendTest {
          * Frozen kffi-harfbuzz iOS **simulator** (`iosSimulatorArm64`) slice provenance.
          *
          * These values are pinned by the published `org.graphiks.kffi:harfbuzz-iossimulatorarm64`
-         * snapshot and the Xcode/CMake build chain that produced it. Re-publishing that snapshot —
+         * release and the Xcode/CMake build chain that produced it. Re-publishing that slice —
          * or moving to a new Xcode toolchain — changes [IOS_SIMULATOR_ARTIFACT_SHA256] (and
-         * possibly the artifactId/build chain), so refresh all of these constants together with the
-         * binding upgrade. The device slice (`harfbuzz-iosarm64`, sha256
+         * possibly the build chain), so refresh all of these constants together with the binding
+         * upgrade. The device slice (`harfbuzz-iosarm64`, sha256
          * `d3393c61a7276578f203e6b7115d2ea549311d5d0be0d302963652c70e0a18b7`) is not addressable
          * from the simulator test process.
+         *
+         * The group, artifact and version are deliberately absent: the resolved coordinate is
+         * Gradle's business, and re-stating it here only duplicates the version catalogue. What
+         * the build cannot prove is which slice was linked, so [IOS_SIMULATOR_NATIVE_TARGET] pins
+         * the selected target and [IOS_SIMULATOR_ARTIFACT_SHA256] pins its bytes.
          */
         const val IOS_SOURCE_REVISION = "4c2aa804671d7276e8a0eb95da07202ead05c843"
-        const val IOS_SIMULATOR_ARTIFACT_ID =
-            "org.graphiks.kffi:harfbuzz-iossimulatorarm64:1.0.0-SNAPSHOT:iosSimulatorArm64/libharfbuzz.a"
+        const val IOS_SIMULATOR_NATIVE_TARGET = "iosSimulatorArm64/libharfbuzz.a"
         const val IOS_SIMULATOR_ARTIFACT_SHA256 =
             "f3c5e805c72362362e1b8f467dbd4f27ba07fb4f1f68619858c76de662764cb2"
         const val IOS_SIMULATOR_BUILD_CHAIN_IDENTITY =

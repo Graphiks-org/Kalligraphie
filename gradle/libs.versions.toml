@@ -20,7 +20,7 @@ androidx-test-ext-junit = "1.2.1"
 androidx-test-runner = "1.6.2"
 icu4j = "77.1"
 okio = "3.18.1"
-kffi = "1.0.0-SNAPSHOT"
+kffi = "0.1.0"
 
 [libraries]
 # Coroutines
