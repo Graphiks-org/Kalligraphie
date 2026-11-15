@@ -160,51 +160,20 @@ dont Android API 28, relevée depuis l’API 24 avec l’arrivée du backend Har
 Android.
 
 Les dépendances kffi internes utilisent
-`org.graphiks.kffi:coretext-jvm:1.0.0-SNAPSHOT` (module Apple) et
-`org.graphiks.kffi:harfbuzz:1.0.0-SNAPSHOT` (shaping multiplateforme), plus les
+`org.graphiks.kffi:coretext-jvm:0.1.0` (module Apple) et
+`org.graphiks.kffi:harfbuzz:0.1.0` (shaping multiplateforme), plus les
 artefacts liés statiquement `org.graphiks.kffi:harfbuzz-iosarm64` et
 `org.graphiks.kffi:harfbuzz-iossimulatorarm64` sur les cibles appareil et
-simulateur iOS, et suivent la
-dernière publication de la ligne de développement actuelle. Un snapshot est une
-version de développement dont le contenu peut changer. Leur résolution exige le
-dépôt de snapshots Central Portal, filtré pour les artefacts racines/JVM/Android/iOS
-CoreText, HarfBuzz et du runtime (moteur d’exécution) générique requis par les
-métadonnées de publication. Les modules consommateurs revérifient les artefacts
-modifiables à chaque résolution en ligne ; ils n’épinglent pas d’artefact
-horodaté et n’imposent pas de politique globale de vérification des sommes de
-contrôle. Une publication plus récente peut changer entre deux constructions et
-nécessiter une adaptation du code source.
-
-Ajouter ce dépôt au `settings.gradle.kts` du consommateur, à côté de ses
-dépôts Maven habituels :
-
-```kotlin
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        maven {
-            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            content {
-                includeModule("org.graphiks.kffi", "coretext")
-                includeModule("org.graphiks.kffi", "coretext-jvm")
-                includeModule("org.graphiks.kffi", "harfbuzz")
-                includeModule("org.graphiks.kffi", "harfbuzz-jvm")
-                includeModule("org.graphiks.kffi", "harfbuzz-android")
-                includeModule("org.graphiks.kffi", "harfbuzz-android-native")
-                includeModule("org.graphiks.kffi", "harfbuzz-iosarm64")
-                includeModule("org.graphiks.kffi", "harfbuzz-iossimulatorarm64")
-                includeModule("org.graphiks.kffi", "kffi")
-                includeModule("org.graphiks.kffi", "kffi-jvm")
-            }
-        }
-    }
-}
-```
+simulateur iOS. Ce sont des versions de publication (release) publiées sur
+Maven Central sous le groupe `org.graphiks.kffi` : aucun dépôt supplémentaire
+n’est nécessaire au-delà de `mavenCentral()`. Une version publiée est immuable :
+la mise à jour consiste à déplacer la version `kffi` du catalogue, et les modules
+consommateurs résolvent exactement cette version au lieu de revérifier des
+artefacts modifiables.
 
 Les réglages du cache des dépendances ne sont pas publiés aux consommateurs.
-Pour rechercher immédiatement une publication kffi plus récente, lancer la
-construction du consommateur avec `--refresh-dependencies` ou régler ses
-durées de cache des modules modifiables. Une
+Pour rechercher immédiatement une version kffi plus récente, lancer la
+construction du consommateur avec `--refresh-dependencies`. Une
 construction hors ligne utilise les dépendances déjà en cache.
 
 ## Capturer une source exacte

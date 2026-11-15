@@ -275,7 +275,7 @@ class HarfBuzzPortableBackendTest {
         assertEquals(expectedOperatingSystem(), shaped.backendIdentity.provenance.operatingSystem)
         assertEquals(expectedArchitecture(), shaped.backendIdentity.provenance.architecture)
         assertEquals(expectedNativeSourceRevision(), shaped.backendIdentity.provenance.sourceRevision)
-        assertEquals(expectedNativeArtifactId(), shaped.backendIdentity.provenance.artifactId)
+        assertTrue(shaped.backendIdentity.provenance.artifactId.endsWith(expectedNativeTarget()))
         assertEquals(expectedNativeArtifactSha256(), shaped.backendIdentity.provenance.artifactSha256)
         assertEquals("harfbuzz", shaped.backendIdentity.provenance.sourceProject)
         assertEquals(expectedBuildChainIdentity(), shaped.backendIdentity.provenance.buildChainIdentity)
@@ -289,7 +289,7 @@ class HarfBuzzPortableBackendTest {
         val identity = backend().identity
 
         assertEquals(expectedNativeSourceRevision(), identity.provenance.sourceRevision)
-        assertEquals(expectedNativeArtifactId(), identity.provenance.artifactId)
+        assertTrue(identity.provenance.artifactId.endsWith(expectedNativeTarget()))
         assertEquals(expectedNativeArtifactSha256(), identity.provenance.artifactSha256)
         assertEquals("ot", identity.semantic.shaperId)
     }
@@ -929,8 +929,15 @@ class HarfBuzzPortableBackendTest {
         else -> error("Unexpected shaping test architecture.")
     }
 
-    private fun expectedNativeArtifactId(): String =
-        "org.graphiks.kffi:harfbuzz-jvm:1.0.0-SNAPSHOT:${osFamily()}-${archName()}/${nativeFileName()}"
+    /**
+     * The native target the binding selected at runtime, as `os-arch/file`.
+     *
+     * The group, artifact and version are deliberately not asserted: the resolved coordinate is
+     * Gradle's business and re-stating it here only duplicates the version catalogue. What the
+     * build cannot prove is which of the libraries bundled in the artifact was actually loaded,
+     * so this pins the selected target and [expectedNativeArtifactSha256] pins its bytes.
+     */
+    private fun expectedNativeTarget(): String = "${osFamily()}-${archName()}/${nativeFileName()}"
 
     private fun nativeFileName(): String = when (osFamily()) {
         "macos" -> "libharfbuzz.dylib"

@@ -143,49 +143,15 @@ The portable targets retain their existing requirements, including Android API 2
 raised from API 24 when the Android HarfBuzz backend landed.
 
 The internal kffi dependencies use
-`org.graphiks.kffi:coretext-jvm:1.0.0-SNAPSHOT` (Apple module) and
-`org.graphiks.kffi:harfbuzz:1.0.0-SNAPSHOT` (multiplatform shaping), plus the
+`org.graphiks.kffi:coretext-jvm:0.1.0` (Apple module) and
+`org.graphiks.kffi:harfbuzz:0.1.0` (multiplatform shaping), plus the
 statically linked `org.graphiks.kffi:harfbuzz-iosarm64` and
 `org.graphiks.kffi:harfbuzz-iossimulatorarm64` artifacts on the iOS device and
-simulator targets, following the latest publication of the current development
-line. Projects resolving them
-need the Central Portal snapshot repository, narrowly filtered to the CoreText,
-HarfBuzz and generic runtime root/JVM/Android/iOS artifacts required by their
-publication metadata. The consuming modules recheck changing artifacts on every online
-dependency resolution; they do not pin a timestamped artifact or enforce a
-global dependency-checksum policy. A newer publication can change between
-builds and may require source adaptation.
-
-Add this repository in the consuming project's `settings.gradle.kts`,
-alongside its normal Maven repositories:
-
-```kotlin
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        maven {
-            url = uri("https://central.sonatype.com/repository/maven-snapshots/")
-            content {
-                includeModule("org.graphiks.kffi", "coretext")
-                includeModule("org.graphiks.kffi", "coretext-jvm")
-                includeModule("org.graphiks.kffi", "harfbuzz")
-                includeModule("org.graphiks.kffi", "harfbuzz-jvm")
-                includeModule("org.graphiks.kffi", "harfbuzz-android")
-                includeModule("org.graphiks.kffi", "harfbuzz-android-native")
-                includeModule("org.graphiks.kffi", "harfbuzz-iosarm64")
-                includeModule("org.graphiks.kffi", "harfbuzz-iossimulatorarm64")
-                includeModule("org.graphiks.kffi", "kffi")
-                includeModule("org.graphiks.kffi", "kffi-jvm")
-            }
-        }
-    }
-}
-```
-
-Dependency-cache settings are not published to consumers. To check for a
-newer kffi publication immediately, run the consuming build with
-`--refresh-dependencies` or configure its changing-module cache lifetime.
-Offline builds use already cached dependencies.
+simulator targets. These are release versions published to Maven Central under
+the `org.graphiks.kffi` group, so no extra repository is needed beyond
+`mavenCentral()`. A published release is immutable: upgrading means moving the
+`kffi` version in the catalogue, and the consuming modules resolve exactly that
+version instead of rechecking changing artifacts.
 
 ## Capture an exact font source
 
